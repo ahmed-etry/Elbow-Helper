@@ -15,9 +15,9 @@ from ..engine.capability_contract import CapabilityContract
 from ..access import accessible_message_channel, require_evidence_access
 from ..models import AgentRequestContext, RegisteredAgentTool
 from ..member_names import duplicate_names, identity_fields
-from ..capabilities.validation import invalid_arguments
+from ..tool_support.validation import invalid_arguments
 from ..plan.input_rules import RULES
-from ..capabilities.hibernation.report import HibernationReport
+from ..tool_support.adapters.hibernation.report import HibernationReport
 from ..clan_roles import clan_role_purposes
 from .member_identity import clarification, matching_members
 MEMBER_RESULT_LIMIT = 8

@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.families import identity_reads as reads
 from elbow_helper.agent.families import account_names
-from elbow_helper.agent.families import reference_reads
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.reads import reference as reference_reads
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.agent.clan_roles import ROLE_PURPOSES
 from agent.engine.test_agent_plan_flow import _context
@@ -331,8 +331,8 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(partial['unknown_account_profiles'],1)
 
     async def test_cohort_reference_opens_complete_snapshot_and_rechecks_authority(self):
-        from elbow_helper.agent.families.core import family_tool
-        from elbow_helper.agent.families.projections import cohort_selection
+        from elbow_helper.agent.tool_support.core import family_tool
+        from elbow_helper.agent.reads.projections import cohort_selection
         async def source(context,arguments):
             return {'rows':[{'member_id':index+100} for index in range(30)]}
         context = _context()
@@ -362,7 +362,7 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result['rows'][1]['war_attendance'])
 
     async def test_tags_view_uses_all_retained_cohort_accounts_without_duplicates(self):
-        from elbow_helper.agent.families.core import family_tool
+        from elbow_helper.agent.tool_support.core import family_tool
         async def source(context,arguments):
             return {'rows':[{'accounts':[{'player_tag':'#P0'},{'player_tag':'#Q0'}]},
                             {'accounts':[{'player_tag':'#P0'}]}]}

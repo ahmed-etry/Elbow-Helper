@@ -52,7 +52,7 @@ class GameAdviceRouteTests(unittest.IsolatedAsyncioTestCase):
                         await model.close()
 
     async def test_advice_route_can_read_approved_faq_before_a_decline(self):
-        from elbow_helper.agent.families.reference_reads import TOOLS
+        from elbow_helper.agent.reads.reference import TOOLS
         from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
         section = KnowledgeSection('Synthetic reward FAQ', 'The earned reward is retained.', file_name='faq.md')
         catalog = KnowledgeCatalog('2026-10-23T00:00:00+00:00', (section,))

@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.families import identity_reads as reads
-from elbow_helper.agent.families import reference_reads
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.reads import reference as reference_reads
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.configuration.roles import LEAD
 from agent.engine.test_agent_plan_flow import _context

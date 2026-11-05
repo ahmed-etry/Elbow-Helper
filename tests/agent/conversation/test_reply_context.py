@@ -39,7 +39,7 @@ class ReplyContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.reply_context['conversation']['entities'][0]['id'], 42)
 
     async def test_authorized_family_selection_survives_as_structured_reply_metadata(self):
-        from elbow_helper.agent.families.core import family_tool
+        from elbow_helper.agent.tool_support.core import family_tool
         async def source(context, arguments):
             return {'rows': []}
         context = self.context()

@@ -3,9 +3,9 @@
 from __future__ import annotations
 from dataclasses import replace
 
-from ..capabilities import FEATURES
-from ..families import TOOLS as FAMILY_TOOLS
-from ..families.catalogue import group_for
+from .adapters import FEATURES
+from ..reads.tools import TOOLS as FAMILY_TOOLS
+from .catalogue import group_for
 from ..discord_actions import UNDO_HANDLERS as DISCORD_UNDO_HANDLERS
 from ..actions.undo import merge_undo_handlers, UndoHandler
 
@@ -41,7 +41,7 @@ from ..files.spreadsheet_tools import spreadsheet_tools
 from ..research.threads import thread_tools
 from ..conversation.instruction_tools import working_state_tools
 from ..scheduled.tools import standing_tools
-from ..datasets.tools import dataset_tools
+from ..tool_support.sql.tools import dataset_tools
 from ..datasets.clash import clash_tools
 from ..datasets.membership import membership_tools
 from ..models import RegisteredAgentTool

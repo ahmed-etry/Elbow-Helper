@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import json
 import unittest
 
-from elbow_helper.agent.capabilities.role_connections.data import SOURCES
-from elbow_helper.agent.datasets.query import run_query
+from elbow_helper.agent.tool_support.adapters.role_connections.data import SOURCES
+from elbow_helper.agent.tool_support.sql.query import run_query
 
 
 class RoleConnectionDatasetGateTests(unittest.TestCase):

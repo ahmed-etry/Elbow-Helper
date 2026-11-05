@@ -8,13 +8,13 @@ from unittest.mock import patch
 
 from openpyxl import load_workbook
 
-from elbow_helper.agent.families.core import family_tool
+from elbow_helper.agent.tool_support.core import family_tool
 from agent.engine.test_agent_plan_flow import _context
 
 
 class ExportRegressionTests(unittest.IsolatedAsyncioTestCase):
     async def test_identical_xlsx_snapshots_reuse_the_existing_file_before_zip_generation(self):
-        from elbow_helper.agent.families import core
+        from elbow_helper.agent.tool_support import core
         async def source(context, arguments):
             return {'rows': [{'name': 'Account', 'count': 1}]}
         context = _context()

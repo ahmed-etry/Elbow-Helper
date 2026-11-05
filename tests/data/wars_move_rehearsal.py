@@ -40,7 +40,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
-from elbow_helper.agent.families import war_reads
+from elbow_helper.agent.reads import war_tools as war_reads
 from elbow_helper.agent.models import AgentRequestContext
 from elbow_helper.configuration.channels import CLAN_LEADERSHIP_CHANNELS, CLAN_WAR_CHANNELS
 from elbow_helper.configuration.clans import CLANS, CLAN_LEADERSHIP_ROLE_IDS, CLAN_WAR_ROLE_IDS

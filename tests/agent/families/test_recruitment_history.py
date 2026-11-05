@@ -11,9 +11,10 @@ from elbow_helper.configuration.channels import TRIAL_LIST, TICKETS_LOG
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.infrastructure.discord.message_search import DiscordHistoryPage, DiscordSearchMessage
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
-from elbow_helper.agent.families import identity_reads, recruitment_history, reference_reads, workflow_reads
-from elbow_helper.agent.families.bot_workflows import bot_workflows
-from elbow_helper.agent.families.catalogue import FAMILY_INSTRUCTION
+from elbow_helper.agent.families import identity_reads, recruitment_history, workflow_reads
+from elbow_helper.agent.reads import reference as reference_reads
+from elbow_helper.agent.reads.bot_workflows import bot_workflows
+from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
 from elbow_helper.agent.models import EvidenceScope
 from elbow_helper.agent.plan.format import answer_instructions
 from elbow_helper.features.recruitment.helpers import HelperMixin

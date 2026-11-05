@@ -71,7 +71,7 @@ def writer_payload(options):
 
 class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
     async def test_channel_clan_policy_uses_current_host_heading_and_keeps_unreadable_rule_unknown(self):
-        from elbow_helper.agent.families.reference_reads import TOOLS
+        from elbow_helper.agent.reads.reference import TOOLS
         from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
         from elbow_helper.agent.models import EvidenceScope
 

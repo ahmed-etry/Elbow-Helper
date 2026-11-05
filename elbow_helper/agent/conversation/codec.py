@@ -8,22 +8,22 @@ import time
 from typing import Any
 
 from ..reports.base import retain_report
-from ..families.core import FamilyReport
+from ..tool_support.core import FamilyReport
 from ..access import KNOWN_ACCESS_REQUIREMENTS
 from .state import (
     CONVERSATION_IDLE_SECONDS, MAX_RETAINED_BYTES, MAX_RETAINED_TURNS, MAX_REPLY_REFERENCES,
     Conversation, ConversationCheckpoint, ConversationRecord, ConversationTurn,
     checkpoint_input_hash,
 )
-from ..capabilities.achievements.report import AchievementProgressReport
-from ..capabilities.events.report import EventScheduleReport
+from ..tool_support.adapters.achievements.report import AchievementProgressReport
+from ..tool_support.adapters.events.report import EventScheduleReport
 from ..capabilities.member_lifecycle.report import MemberLifecycleReport
-from ..capabilities.clan_reporting.report import MissingElderReport
-from ..capabilities.cwl.report import CwlPerformanceReport
-from ..capabilities.clan_transfers.report import TransferQueueReport
-from ..capabilities.hibernation.report import HibernationReport
-from ..capabilities.support_tickets.report import SupportTicketReport
-from ..capabilities.recruitment.report import RecruitmentTrialReport
+from ..tool_support.adapters.clan_reporting.report import MissingElderReport
+from ..tool_support.adapters.cwl.report import CwlPerformanceReport
+from ..tool_support.adapters.clan_transfers.report import TransferQueueReport
+from ..tool_support.adapters.hibernation.report import HibernationReport
+from ..tool_support.adapters.support_tickets.report import SupportTicketReport
+from ..tool_support.adapters.recruitment.report import RecruitmentTrialReport
 from ..capabilities.examination.report import ExaminationCaseReport
 from ..files.contracts import (
     CsvImportArtifact,

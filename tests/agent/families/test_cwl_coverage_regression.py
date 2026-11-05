@@ -5,7 +5,7 @@ from dataclasses import replace
 from tempfile import TemporaryDirectory
 import unittest
 
-from elbow_helper.agent.families import war_reads
+from elbow_helper.agent.reads import war_tools as war_reads
 from agent.engine.test_agent_plan_flow import _context
 from tests.features.cwl_record_stub import LeagueRecord, league_war, member
 

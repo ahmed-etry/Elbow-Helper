@@ -10,7 +10,7 @@ from itertools import count
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.families import record_wars
+from elbow_helper.agent.reads import record_wars
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.data.reads.war_selection import compact_member, regular_aliases
 

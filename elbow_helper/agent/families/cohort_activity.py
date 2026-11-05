@@ -7,7 +7,7 @@ from ..reads.people import PeopleAdapter, PeopleSelection
 
 async def roster_cohort(context, arguments):
     from .identity_reads import clan_rosters, member_fields, DEFAULT_ROSTER_BASIS
-    from .member_context import PROFILE_ROLE_GROUPS
+    from ..reads.member_context import PROFILE_ROLE_GROUPS
     roster = await clan_rosters(context, {**arguments,
         'basis': arguments.get('roster_basis', DEFAULT_ROSTER_BASIS)})
     if 'error' in roster:

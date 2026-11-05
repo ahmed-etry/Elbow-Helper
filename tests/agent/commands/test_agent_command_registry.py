@@ -15,7 +15,7 @@ from elbow_helper.agent.commands.bridge import build_command_tools
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.conversation.context import estimate_tokens
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
-from elbow_helper.agent.capabilities import enabled_adapters
+from elbow_helper.agent.engine.adapters import enabled_adapters
 from elbow_helper.agent.plan.format import capability_list, system_instructions
 from elbow_helper.agent.models import RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.agent.models import AgentTurnState
@@ -88,7 +88,7 @@ class CommandRegistryTests(unittest.TestCase):
         registry.update(commands)
         from tempfile import TemporaryDirectory
         from agent.dataset_helpers import synthetic_datasets
-        from elbow_helper.agent.datasets.guide import DataGuide
+        from elbow_helper.agent.tool_support.sql.guide import DataGuide
         from elbow_helper.agent.access import KNOWN_ACCESS_REQUIREMENTS
         registry.update(build_agent_tools())
         with TemporaryDirectory() as directory:

@@ -9,7 +9,7 @@ from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
 from elbow_helper.agent.engine.answer_inputs import answer_evidence, bounded_answer_evidence
 from elbow_helper.agent.plan.results import model_result
-from elbow_helper.agent.families.core import family_tool
+from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.agent.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
 from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan

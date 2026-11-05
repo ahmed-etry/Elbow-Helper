@@ -21,7 +21,7 @@ from elbow_helper.infrastructure.ai.agent import AgentToolDefinition
 from unittest.mock import patch
 from unittest.mock import AsyncMock
 from elbow_helper.agent.commands.bridge import build_command_tools
-from elbow_helper.agent.capabilities.achievements.commands import achievement_adapters
+from elbow_helper.agent.tool_support.adapters.achievements.commands import achievement_adapters
 from elbow_helper.agent.models import AgentTurnState
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 

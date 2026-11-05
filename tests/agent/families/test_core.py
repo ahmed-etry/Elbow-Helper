@@ -5,8 +5,8 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 from dataclasses import replace
-from elbow_helper.agent.families.core import family_tool, FamilyReport, decode_family
-from elbow_helper.agent.families.catalogue import discovery_tool
+from elbow_helper.agent.tool_support.core import family_tool, FamilyReport, decode_family
+from elbow_helper.agent.engine.catalogue import discovery_tool
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.models import RegisteredAgentTool
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
@@ -41,7 +41,7 @@ class FamilyReportTests(unittest.IsolatedAsyncioTestCase):
             return {'rows': [{'count': 1}]}
         tool = family_tool('read_synthetic', 'Read synthetic rows.', {}, read)
         context = _context()
-        with patch('elbow_helper.agent.families.core.export_report', side_effect=OSError('Synthetic')):
+        with patch('elbow_helper.agent.tool_support.core.export_report', side_effect=OSError('Synthetic')):
             result = await tool.handler(context, {'delivery': 'csv'})
         self.assertEqual(result['rows'], [{'count': 1}])
         self.assertEqual(result['artifact_status'], 'unavailable')
@@ -107,7 +107,7 @@ class FamilyReportTests(unittest.IsolatedAsyncioTestCase):
         active = {}
         discovery = discovery_tool({'query_bot_data': tool}, active, Mock(), guide)
         context = _context()
-        with patch('elbow_helper.agent.families.catalogue.reader_levels', return_value={'lead'}):
+        with patch('elbow_helper.agent.engine.catalogue.reader_levels', return_value={'lead'}):
             result = await discovery.handler(context, {'group': 'records', 'intent': 'inspect'})
             other = await discovery.handler(context, {'group': 'events', 'intent': 'inspect'})
         self.assertEqual(set(active), {'query_bot_data'})

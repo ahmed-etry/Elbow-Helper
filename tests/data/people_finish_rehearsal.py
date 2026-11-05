@@ -26,9 +26,9 @@ from elbow_helper.data.store.clans import collect_clans
 from elbow_helper.data.store.legacy_links import FIELDS, legacy_shape
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.rosters.services.accounts import RosterAccountDirectory
-from elbow_helper.agent.capabilities.account_links.data import SOURCES
+from elbow_helper.agent.tool_support.adapters.account_links.data import SOURCES
 from elbow_helper.agent.reads.people import read_people_links as read_linked_accounts
-from elbow_helper.agent.datasets.query import run_query
+from elbow_helper.agent.tool_support.sql.query import run_query
 from elbow_helper.agent.families import account_names, identity_reads
 from elbow_helper.infrastructure.clash import ClashResponse
 

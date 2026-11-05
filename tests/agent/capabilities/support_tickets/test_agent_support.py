@@ -10,8 +10,8 @@ from elbow_helper.configuration.roles import CORE
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.models import AgentRequestContext
 from agent.report_helpers import make_event_report
-from elbow_helper.agent.capabilities.support_tickets.report import SupportTicketReport
-from elbow_helper.agent.capabilities.support_tickets.reads import (
+from elbow_helper.agent.tool_support.adapters.support_tickets.report import SupportTicketReport
+from elbow_helper.agent.tool_support.adapters.support_tickets.reads import (
     read_accessible_support_tickets,
     read_support_ticket_report,
 )

@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.capabilities.attack_plans.commands import (
+from elbow_helper.agent.tool_support.adapters.attack_plans.commands import (
     attack_plan_adapters, prepare_attack_plan,
 )
 from elbow_helper.features.attack_plans.cog import Planning

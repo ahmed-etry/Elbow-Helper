@@ -6,8 +6,8 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.families.core import family_tool
-from elbow_helper.agent.families.war_reads import TOOLS
+from elbow_helper.agent.tool_support.core import family_tool
+from elbow_helper.agent.reads.war_tools import TOOLS
 from elbow_helper.features.rosters.config import CWL_SIGNUP_ROSTER_ID
 from elbow_helper.features.rosters.repository import RosterRepository
 from elbow_helper.features.rosters.services.queries import RosterQueries

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.conversation.context import estimate_tokens
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.families.core import family_tool
+from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.agent.plan.format import answer_instructions
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
@@ -31,7 +31,7 @@ class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):
     async def test_final_instruction_boundary_still_calls_provider_and_retains_citation_sources(self):
         from elbow_helper.agent.engine.assessment import discussion_ids
         from elbow_helper.agent.engine.budgets import ASSESSMENT_LIMITS
-        from elbow_helper.agent.families.core import FamilyReport
+        from elbow_helper.agent.tool_support.core import FamilyReport
         from elbow_helper.agent.prompts import LIMIT_ANSWER_INSTRUCTION
         context = _context()
         tool = family_tool('read_conversation_evidence', 'Read discussion.', {}, AsyncMock())

@@ -8,7 +8,7 @@ from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.infrastructure.discord.command_registry import setup as setup_command_registry
 from elbow_helper.agent.commands.help_tool import read_bot_command_help
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
-from elbow_helper.agent.families.reference_reads import TOOLS
+from elbow_helper.agent.reads.reference import TOOLS
 from elbow_helper.features.rosters.cog import Rosters
 from elbow_helper.features.rosters.ui.views import RosterSettingsView
 from contracts.test_architecture_boundaries import _RegistryBot

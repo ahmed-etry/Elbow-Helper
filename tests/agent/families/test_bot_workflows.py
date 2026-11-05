@@ -9,9 +9,9 @@ import discord
 from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
 from elbow_helper.configuration.clans import CLAN_INFO_BOARDS
 from elbow_helper.agent.access import can_access_message_channel
-from elbow_helper.agent.families.bot_workflows import bot_workflows
-from elbow_helper.agent.families.reference_reads import TOOLS
-from elbow_helper.agent.families.reference_reads import community_reference
+from elbow_helper.agent.reads.bot_workflows import bot_workflows
+from elbow_helper.agent.reads.reference import TOOLS
+from elbow_helper.agent.reads.reference import community_reference
 from elbow_helper.agent.knowledge.store import KnowledgeSection
 from elbow_helper.agent.models import EvidenceScope
 from elbow_helper.agent.families.workflow_reads import requester_tickets

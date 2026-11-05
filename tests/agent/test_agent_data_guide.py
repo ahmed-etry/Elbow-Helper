@@ -4,8 +4,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from pathlib import Path
 from agent.dataset_helpers import synthetic_datasets
-from elbow_helper.agent.datasets.catalogue import SOURCES
-from elbow_helper.agent.datasets.guide import DataGuide
+from elbow_helper.agent.tool_support.sql.catalogue import SOURCES
+from elbow_helper.agent.tool_support.sql.guide import DataGuide
 from elbow_helper.agent.access import KNOWN_ACCESS_REQUIREMENTS
 from elbow_helper.agent.conversation.context import estimate_tokens
 

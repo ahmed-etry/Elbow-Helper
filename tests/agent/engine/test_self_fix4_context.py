@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock
 from elbow_helper.agent.conversation.context import bot_read_overview
 from elbow_helper.agent.engine.member_facts import read_topics
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.families import TOOLS
-from elbow_helper.agent.families.core import family_tool
+from elbow_helper.agent.reads.tools import TOOLS
+from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
 from elbow_helper.agent.plan.results import model_result
-from elbow_helper.agent.families.catalogue import FAMILY_INSTRUCTION
+from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
 from elbow_helper.agent.plan.format import WRITER_INSTRUCTION
 from elbow_helper.agent.plan.planning import read_request
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage

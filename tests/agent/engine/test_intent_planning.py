@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.channels import HIBERNATION_LOG
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.capabilities.hibernation.reads import hibernation_tools
+from elbow_helper.agent.tool_support.adapters.hibernation.reads import hibernation_tools
 from elbow_helper.agent.datasets.clash import clash_tools
-from elbow_helper.agent.datasets.guide import DataGuide
+from elbow_helper.agent.tool_support.sql.guide import DataGuide
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
 from elbow_helper.agent.knowledge.tools import knowledge_tools

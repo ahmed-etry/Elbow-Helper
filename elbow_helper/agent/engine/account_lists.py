@@ -9,7 +9,7 @@ import re
 import discord
 
 from elbow_helper.configuration.clans import CLANS
-from ..families.model_view import record_rows
+from ..tool_support.model_view import record_rows
 
 FACT_FIELDS = ('name', 'town_hall', 'current_clan', 'player_tag', 'flags')
 COLUMN_SCHEMA = {'anyOf': [

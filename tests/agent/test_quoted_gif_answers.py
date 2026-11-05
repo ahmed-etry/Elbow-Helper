@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.delivery import AgentDeliveryMixin
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.families.core import family_tool
+from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.agent.models import AgentDelivery
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan

@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from elbow_helper.agent.families.domain_facts import clan_profile
+from elbow_helper.agent.reads.domain_facts import clan_profile
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.knowledge.store import KnowledgeStore
 

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 import discord
 
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.capabilities.hibernation.commands import (
+from elbow_helper.agent.tool_support.adapters.hibernation.commands import (
     hibernation_adapters, prepare_hibernate, prepare_reactivate,
 )
 from agent.discord_actions.helpers import register_requester

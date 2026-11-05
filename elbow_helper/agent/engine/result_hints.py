@@ -424,7 +424,7 @@ for _role_change in ('add_discord_roles', 'remove_discord_roles'):
     RESULT_FIELDS[_role_change] = {
         **names('status,role_id,role_name,requested_has_role'),
         'members': [names('member_id,display_name,has_role')]}
-from ..families.shapes import RESULT_FIELDS as FAMILY_RESULT_FIELDS
+from ..tool_support.shapes import RESULT_FIELDS as FAMILY_RESULT_FIELDS
 RESULT_FIELDS.update(FAMILY_RESULT_FIELDS)
 RETURN_HINTS = {name: format_returns(shape) for name, shape in RESULT_FIELDS.items()}
 

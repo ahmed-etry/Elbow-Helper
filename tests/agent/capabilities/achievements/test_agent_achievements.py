@@ -14,10 +14,10 @@ from elbow_helper.features.achievements.queries import (
 )
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.models import AgentRequestContext
-from elbow_helper.agent.capabilities.achievements.reads import (
+from elbow_helper.agent.tool_support.adapters.achievements.reads import (
     read_member_achievement_report, read_member_achievements,
 )
-from elbow_helper.agent.capabilities.achievements.economy import (
+from elbow_helper.agent.tool_support.adapters.achievements.economy import (
     read_achievement_economy_rules, read_member_inventory,
 )
 

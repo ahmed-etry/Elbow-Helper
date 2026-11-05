@@ -12,11 +12,11 @@ from unittest.mock import AsyncMock
 from unittest.mock import patch
 
 from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID
-from elbow_helper.agent.capabilities.cwl.report import CwlPerformanceReport
+from elbow_helper.agent.tool_support.adapters.cwl.report import CwlPerformanceReport
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.models import AgentRequestContext
 from agent.report_helpers import make_event_report
-from elbow_helper.agent.capabilities.cwl.reads import read_cwl_performance, read_cwl_performance_report, read_cwl_threads
+from elbow_helper.agent.tool_support.adapters.cwl.reads import read_cwl_performance, read_cwl_performance_report, read_cwl_threads
 from elbow_helper.agent.reads.cwl import cwl_ass_scores, cwl_bonus_scores
 from elbow_helper.agent.files.spreadsheet_tools import prepare_spreadsheet
 from elbow_helper.agent.engine.registry import build_agent_tools

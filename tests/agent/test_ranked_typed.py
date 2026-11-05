@@ -8,7 +8,7 @@ from agent import test_ranked_contracts as contracts
 from agent.families.test_ranked import account, stored, BATTLE, AFTER, BEFORE
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.families.core import FamilyReport
+from elbow_helper.agent.tool_support.core import FamilyReport
 from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.plan.results import model_result, model_view
 from elbow_helper.agent.reads.ranked import read_ranked

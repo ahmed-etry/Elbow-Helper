@@ -17,11 +17,11 @@ import discord
 
 from elbow_helper.configuration.roles import LEAD
 from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
-from elbow_helper.agent.capabilities.recruitment.report import RecruitmentTrialReport
+from elbow_helper.agent.tool_support.adapters.recruitment.report import RecruitmentTrialReport
 from elbow_helper.agent.conversation.context import compile_context
 from elbow_helper.agent.conversation.state import ConversationRecord, ConversationTurn
-from elbow_helper.agent.datasets.query import run_query
-from elbow_helper.agent.datasets.sources import DataSource
+from elbow_helper.agent.tool_support.sql.query import run_query
+from elbow_helper.agent.tool_support.sql.sources import DataSource
 from elbow_helper.agent.delivery import AgentDeliveryMixin
 from elbow_helper.agent.engine.budgets import RequestLimits
 from elbow_helper.agent.engine.registry import build_agent_tools

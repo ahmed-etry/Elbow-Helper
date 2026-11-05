@@ -17,7 +17,7 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
             "/synthetic", "public", AsyncMock(), capability_name="read_clash",
         ),)
         with patch(
-            "elbow_helper.agent.capabilities.enabled_adapters", return_value=adapters,
+            'elbow_helper.agent.engine.adapters.enabled_adapters', return_value=adapters,
         ):
             with self.assertRaisesRegex(ValueError, "read_clash"):
                 await setup(bot)

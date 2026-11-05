@@ -16,8 +16,8 @@ import discord
 from ..access import accessible_message_channel, can_access_message_channel, message_channel_unavailable
 from ..models import AgentRequestContext
 from ..text import message_text
-from ..capabilities.validation import bounded_int
-from ..capabilities.validation import positive_int
+from ..tool_support.validation import bounded_int
+from ..tool_support.validation import positive_int
 from .history_cache import history_page
 
 

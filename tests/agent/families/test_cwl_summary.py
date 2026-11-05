@@ -4,9 +4,9 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.features.cwl.results_summary import cwl_analysis
-from elbow_helper.agent.families.war_reads import cwl_results
-from elbow_helper.agent.families.core import family_tool
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.reads.war_tools import cwl_results
+from elbow_helper.agent.tool_support.core import family_tool
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
 from agent.cwl_helpers import ResultQueries
 from agent.engine.test_agent_plan_flow import _context

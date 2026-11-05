@@ -10,7 +10,7 @@ from elbow_helper.agent.engine.assessment import (
 from elbow_helper.infrastructure.ai import AgentToolCall
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.agent.plan.checker import check_plan
-from elbow_helper.agent.families.core import family_tool
+from elbow_helper.agent.tool_support.core import family_tool
 
 
 def payload(**values):

@@ -26,7 +26,7 @@ from .engine.registry import build_undo_handlers
 
 
 async def setup(bot) -> None:
-    from .capabilities import enabled_adapters
+    from .engine.adapters import enabled_adapters
     from .commands.registry import validate_command_names
     validate_command_names(enabled_adapters())
     account_links = bot.get_cog("AccountLinks")
@@ -92,7 +92,7 @@ async def setup(bot) -> None:
         bot=bot, repository=action_repository, guild_id=GUILD_ID,
         undo_handlers=build_undo_handlers(),
     )
-    from .datasets.guide import DataGuide
+    from .tool_support.sql.guide import DataGuide
     data_guide = await asyncio.to_thread(DataGuide, bot.paths)
     knowledge_store = KnowledgeStore(bot.paths.data_root / "agent" / "knowledge")
     await asyncio.to_thread(knowledge_store.load)

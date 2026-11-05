@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.capabilities.cwl.transfer_reminder import (
+from elbow_helper.agent.tool_support.adapters.cwl.transfer_reminder import (
     cwl_transfer_reminder_adapters, prepare_transfer_reminder,
 )
 from elbow_helper.features.cwl.transfers import CwlTransferMixin

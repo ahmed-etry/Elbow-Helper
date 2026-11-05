@@ -82,7 +82,7 @@ def command_capability_name(adapter):
 
 
 def legacy_capability_names():
-    from ..capabilities import enabled_adapters
+    from ..engine.adapters import enabled_adapters
     return {
         "run_command_" + adapter.path.lstrip("/").replace(" ", "_"):
         command_capability_name(adapter)

@@ -101,6 +101,6 @@ class ReportStepReferenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(second['measure']['rows']), 3)
 
     async def test_lost_report_still_says_read_it_again(self):
-        from elbow_helper.agent.families.projections import cohort_selection
+        from elbow_helper.agent.reads.projections import cohort_selection
         selection = await cohort_selection(_context(), 'was-held', 'member_ids')
         self.assertIn('Read it again', selection['error'])

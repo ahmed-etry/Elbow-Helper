@@ -3,18 +3,18 @@ from types import SimpleNamespace
 import unittest
 
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.capabilities.cwl.announcement import (
+from elbow_helper.agent.tool_support.adapters.cwl.announcement import (
     cwl_announcement_adapters, prepare_roster_announcement,
 )
 from elbow_helper.features.cwl.announcements import PENDING_ROSTER_HUB_LINK
-from elbow_helper.agent.capabilities.cwl.brief import (
+from elbow_helper.agent.tool_support.adapters.cwl.brief import (
     prepare_cwl_brief, run_cwl_brief,
 )
 from elbow_helper.agent.models import AgentTurnState
 from elbow_helper.features.cwl.announcements import CwlAnnouncementMixin
 from unittest.mock import AsyncMock, MagicMock
 import discord
-from elbow_helper.agent.capabilities.cwl.thread_registration import (
+from elbow_helper.agent.tool_support.adapters.cwl.thread_registration import (
     prepare_cwl_register, run_cwl_register,
 )
 from elbow_helper.features.cwl.config import CLAN_NAME_TO_CODE

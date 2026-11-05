@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.capabilities.recruitment.commands import (
+from elbow_helper.agent.tool_support.adapters.recruitment.commands import (
     prepare_checkup, recruitment_adapters,
 )
 from agent.capabilities.recruitment.test_agent_recruitment_decisions import recording_workflow

@@ -7,13 +7,13 @@ import discord
 
 from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
 from elbow_helper.features.examination.queries import CASE_TYPES
-from .core import family_tool, IDS
+from ..tool_support.core import family_tool, IDS
 from .identity_reads import member_fields
-from .projections import PERFORMANCE, performance_projection
+from ..reads.projections import PERFORMANCE, performance_projection
 from .workflow_events import workflow_events, event_order, group_pipeline
 from ..access import (accessible_message_channel, can_access_message_channel, has_lookup_access,
                       require_evidence_access, ACCESS_RECRUITMENT, ACCESS_PROMOTION)
-from ..capabilities.hibernation.reads import read_active_hibernation
+from ..tool_support.adapters.hibernation.reads import read_active_hibernation
 from ..capabilities.examination.promotion_route import read_promotion_review
 from ..capabilities.member_lifecycle.reads import read_member_lifecycle
 from ..reads.ranked import read_ranked

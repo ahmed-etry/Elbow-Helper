@@ -16,8 +16,8 @@ from elbow_helper.data.store.legacy_links import LinkConflict, snapshot
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.rosters.services.accounts import RosterAccountDirectory
 from elbow_helper.agent.reads.people import read_people_links as read_linked_accounts
-from elbow_helper.agent.capabilities.account_links.data import SOURCES
-from elbow_helper.agent.datasets.query import run_query
+from elbow_helper.agent.tool_support.adapters.account_links.data import SOURCES
+from elbow_helper.agent.tool_support.sql.query import run_query
 
 from .link_fixtures import CLANS, FrozenLegacyLinks
 from .test_people_import import _PeopleFixture, ProcessCrash, row

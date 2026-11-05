@@ -9,9 +9,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch, AsyncMock
 
-from elbow_helper.agent.datasets.sources import DataSource
-from elbow_helper.agent.datasets.query import run_query
-from elbow_helper.agent.datasets.guide import DataGuide
+from elbow_helper.agent.tool_support.sql.sources import DataSource
+from elbow_helper.agent.tool_support.sql.query import run_query
+from elbow_helper.agent.tool_support.sql.guide import DataGuide
 
 
 class QueryTests(unittest.IsolatedAsyncioTestCase):
@@ -108,7 +108,7 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
         )
 
     def test_deadline_and_missing_source(self):
-        with patch("elbow_helper.agent.datasets.query.QUERY_SECONDS", 0.001):
+        with patch('elbow_helper.agent.tool_support.sql.query.QUERY_SECONDS', 0.001):
             result, _ = self.query(
                 "WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM numbers) "
                 "SELECT sum(n) FROM numbers"
@@ -138,7 +138,7 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
             return connection
 
         sql = 'SELECT id FROM first.accounts ORDER BY id'
-        with patch('elbow_helper.agent.datasets.query.sqlite3.connect', traced):
+        with patch('elbow_helper.agent.tool_support.sql.query.sqlite3.connect', traced):
             result, _ = self.query(sql, max_rows=2)
         self.assertEqual(result['rows'], [{'id': 0}, {'id': 1}])
         self.assertEqual(result['total_rows'], 5)
@@ -150,7 +150,7 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['truncated'])
 
     def test_sqlite_rejects_an_oversized_scalar_before_allocating_it(self):
-        from elbow_helper.agent.datasets.query import MAX_QUERY_VALUE_BYTES
+        from elbow_helper.agent.tool_support.sql.query import MAX_QUERY_VALUE_BYTES
         result, touched = self.query('SELECT zeroblob(:size) AS value',
                                      {'size': MAX_QUERY_VALUE_BYTES + 1})
         self.assertEqual(result['cause'], 'capacity')
@@ -159,7 +159,7 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
     def test_interactive_and_export_results_share_the_fetch_memory_bound(self):
         for max_rows in (200, None):
             with self.subTest(max_rows=max_rows), patch(
-                'elbow_helper.agent.datasets.query.MAX_QUERY_RESULT_BYTES', 64):
+                'elbow_helper.agent.tool_support.sql.query.MAX_QUERY_RESULT_BYTES', 64):
                 result, touched = self.query('SELECT :value AS text FROM first.accounts',
                                              {'value': 'x' * 100}, max_rows=max_rows)
             self.assertEqual(result['cause'], 'capacity')
@@ -167,13 +167,13 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(touched)
 
     def test_result_over_the_size_limit_returns_what_fits_and_says_how_many_rows_were_cut(self):
-        with patch('elbow_helper.agent.datasets.query.MAX_QUERY_RESULT_BYTES', 250):
+        with patch('elbow_helper.agent.tool_support.sql.query.MAX_QUERY_RESULT_BYTES', 250):
             result, _ = self.query('SELECT :value AS text FROM first.accounts', {'value': 'x' * 100})
         self.assertEqual(result['row_count'], 2)
         self.assertTrue(result['truncated'])
         self.assertEqual((result['total_rows'], result['rows_cut']), (5, 3))
         self.assertIn('size limit', result['instruction'])
-        with patch('elbow_helper.agent.datasets.query.MAX_QUERY_RESULT_BYTES', 250):
+        with patch('elbow_helper.agent.tool_support.sql.query.MAX_QUERY_RESULT_BYTES', 250):
             result, _ = self.query('SELECT :value AS text FROM first.accounts', {'value': 'x' * 100},
                                    max_rows=None)
         self.assertEqual(result['cause'], 'capacity')
@@ -197,7 +197,7 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('instruction', result)
 
     def test_query_time_limit_fits_inside_the_tool_timeout(self):
-        from elbow_helper.agent.datasets.query import QUERY_SECONDS
+        from elbow_helper.agent.tool_support.sql.query import QUERY_SECONDS
         from elbow_helper.agent.engine.budgets import TOOL_TIMEOUT_SECONDS
         self.assertGreaterEqual(QUERY_SECONDS, 10)
         self.assertLessEqual(QUERY_SECONDS, TOOL_TIMEOUT_SECONDS - 5)
@@ -230,7 +230,7 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("error", self.query("SELECT id,id FROM first.accounts")[0])
 
     async def test_context_retains_and_rechecks_touched_access(self):
-        from elbow_helper.agent.datasets.query import query_context
+        from elbow_helper.agent.tool_support.sql.query import query_context
         from elbow_helper.agent.models import AgentTurnState
 
         context = SimpleNamespace(
@@ -239,12 +239,12 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
         )
         access = {"lead"}
         with (
-            patch("elbow_helper.agent.datasets.catalogue.SOURCES", self.sources),
+            patch('elbow_helper.agent.tool_support.sql.catalogue.SOURCES', self.sources),
             patch(
-                "elbow_helper.agent.datasets.query.require_evidence_access", AsyncMock(),
+                'elbow_helper.agent.tool_support.sql.query.require_evidence_access', AsyncMock(),
             ),
             patch(
-                "elbow_helper.agent.datasets.query.has_reader_access_requirements",
+                'elbow_helper.agent.tool_support.sql.query.has_reader_access_requirements',
                 side_effect=lambda guild, member, levels: levels <= access,
             ),
         ):
@@ -259,7 +259,7 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
                 return result
 
             with patch(
-                "elbow_helper.agent.datasets.query.asyncio.to_thread", read_and_revoke,
+                'elbow_helper.agent.tool_support.sql.query.asyncio.to_thread', read_and_revoke,
             ):
                 result = await query_context(context, "SELECT * FROM second.accounts")
             self.assertEqual(result["required_access"], ["lead"])

@@ -5,14 +5,14 @@ import unittest
 from unittest.mock import AsyncMock
 from elbow_helper.features.achievements.raffle import AchievementRaffleMixin
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.capabilities.achievements.commands import achievement_adapters
-from elbow_helper.agent.capabilities.achievements.raffle_commands import prepare_raffle_draw
-from elbow_helper.agent.capabilities.achievements.raffle_commands import prepare_raffle_reroll
-from elbow_helper.agent.capabilities.achievements.raffle_commands import run_raffle_draw
-from elbow_helper.agent.capabilities.achievements.raffle_commands import run_raffle_reroll
-from elbow_helper.agent.capabilities.achievements.raffle_commands import prepare_raffle_prize
-from elbow_helper.agent.capabilities.achievements.raffle_commands import prepare_raffle_prize_undo
-from elbow_helper.agent.capabilities.achievements.raffle_commands import run_raffle_prize
+from elbow_helper.agent.tool_support.adapters.achievements.commands import achievement_adapters
+from elbow_helper.agent.tool_support.adapters.achievements.raffle_commands import prepare_raffle_draw
+from elbow_helper.agent.tool_support.adapters.achievements.raffle_commands import prepare_raffle_reroll
+from elbow_helper.agent.tool_support.adapters.achievements.raffle_commands import run_raffle_draw
+from elbow_helper.agent.tool_support.adapters.achievements.raffle_commands import run_raffle_reroll
+from elbow_helper.agent.tool_support.adapters.achievements.raffle_commands import prepare_raffle_prize
+from elbow_helper.agent.tool_support.adapters.achievements.raffle_commands import prepare_raffle_prize_undo
+from elbow_helper.agent.tool_support.adapters.achievements.raffle_commands import run_raffle_prize
 
 
 class _Raffle(AchievementRaffleMixin):

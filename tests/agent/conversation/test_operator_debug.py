@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.conversation.debug import OperatorDebugRecord
 from elbow_helper.agent.conversation.transcripts import TranscriptArchive, _schema
 from elbow_helper.agent.delivery import AgentDeliveryMixin
-from elbow_helper.agent.datasets.catalogue import SOURCES
+from elbow_helper.agent.tool_support.sql.catalogue import SOURCES
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.engine.service import AgentService, AgentUnavailableError
 from elbow_helper.agent.models import RegisteredAgentTool

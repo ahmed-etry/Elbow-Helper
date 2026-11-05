@@ -9,9 +9,9 @@ from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
 from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.models import AgentRequestContext
-from elbow_helper.agent.capabilities.recruitment.report import RecruitmentTrialReport
+from elbow_helper.agent.tool_support.adapters.recruitment.report import RecruitmentTrialReport
 from agent.report_helpers import make_event_report
-from elbow_helper.agent.capabilities.recruitment.reads import (
+from elbow_helper.agent.tool_support.adapters.recruitment.reads import (
     read_active_recruitment_trial_report,
     read_active_recruitment_trials,
 )

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import importlib
+import importlib.util
 from pathlib import Path
 import unittest
 
@@ -114,7 +116,7 @@ class DependencyBoundaryTests(unittest.TestCase):
         self.assertNotIn("LocalExportStore", spreadsheet_tools)
         self.assertNotIn("features.cwl", export_delivery)
         self.assertNotIn("RoleAccountReport", export_delivery)
-        cwl_tools = (agent_root / "capabilities" / "cwl" / "reads.py").read_text(
+        cwl_tools = (agent_root / "tool_support" / "adapters" / "cwl" / "reads.py").read_text(
             encoding="utf-8"
         )
         self.assertNotIn("roster.analysis", cwl_tools)
@@ -130,13 +132,13 @@ class DependencyBoundaryTests(unittest.TestCase):
         cwl_results = (FEATURE_ROOT / "cwl" / "results.py").read_text(encoding="utf-8")
         self.assertNotIn("elbow_helper.agent", cwl_results)
         achievement_tools = (
-            agent_root / "capabilities" / "achievements" / "reads.py"
+            agent_root / "tool_support" / "adapters" / "achievements" / "reads.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("sqlite3", achievement_tools)
         self.assertNotIn("features.achievements.database", achievement_tools)
         self.assertNotIn("features.achievements.cog", achievement_tools)
         event_tools = (
-            agent_root / "capabilities" / "events" / "reads.py"
+            agent_root / "tool_support" / "adapters" / "events" / "reads.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("features.event_stats.cog", event_tools)
         self.assertNotIn("features.event_stats.state", event_tools)
@@ -148,7 +150,7 @@ class DependencyBoundaryTests(unittest.TestCase):
         self.assertNotIn("features.member_lifecycle.state", lifecycle_tools)
         self.assertNotIn("save_state", lifecycle_tools)
         clan_reporting_tools = (
-            agent_root / "capabilities" / "clan_reporting" / "reads.py"
+            agent_root / "tool_support" / "adapters" / "clan_reporting" / "reads.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("features.clan_reporting.cog", clan_reporting_tools)
         self.assertNotIn("features.account_links", clan_reporting_tools)
@@ -245,6 +247,40 @@ class DependencyBoundaryTests(unittest.TestCase):
                 self.assertNotIn("DEEPSEEK_API_KEY", source)
                 self.assertNotIn("deepseek-", source)
                 self.assertNotIn("gpt-", source)
+
+    def test_features_do_not_import_the_agent_runtime(self) -> None:
+        offenders = []
+        for path in FEATURE_ROOT.rglob("*.py"):
+            parts = path.relative_to(PROJECT_ROOT).with_suffix("").parts
+            package = ".".join(parts[:-1])
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8-sig"))):
+                if isinstance(node, ast.Import):
+                    imports = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    name = "." * node.level + (node.module or "")
+                    parent = importlib.util.resolve_name(name, package) if node.level else name
+                    imports = [parent, *(parent + "." + alias.name for alias in node.names)]
+                else:
+                    continue
+                if any(name == "elbow_helper.agent" or name.startswith("elbow_helper.agent.")
+                       for name in imports):
+                    offenders.append(f"{path.relative_to(FEATURE_ROOT)}:{node.lineno}")
+        self.assertEqual(offenders, [])
+
+    def test_relocated_agent_modules_have_no_legacy_copies(self) -> None:
+        for name in ("core", "cursor", "paging", "model_view", "shapes", "catalogue",
+                     "access_reads", "bot_workflows", "domain_facts", "member_context",
+                     "projections", "record_wars", "reference_reads", "signup_reads", "war_reads"):
+            with self.subTest(module=name):
+                self.assertFalse((AGENT_ROOT / "families" / (name + ".py")).exists())
+        for name in ("catalogue", "family", "guide", "query", "sources", "tools"):
+            with self.subTest(module=name):
+                self.assertFalse((AGENT_ROOT / "datasets" / (name + ".py")).exists())
+        self.assertFalse((AGENT_ROOT / "capabilities" / "validation.py").exists())
+        self.assertEqual(
+            {path.parent.name for path in (AGENT_ROOT / "capabilities").glob("*/*.py")},
+            {"clan_health", "examination", "member_lifecycle"},
+        )
 
     def test_feature_modules_do_not_load_process_settings(self) -> None:
         forbidden = ("os.getenv(", "os.environ[", "load_dotenv(")

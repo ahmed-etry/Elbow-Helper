@@ -5,7 +5,7 @@ from pathlib import Path
 import sqlite3
 from types import SimpleNamespace
 from unittest.mock import patch
-from elbow_helper.agent.datasets.catalogue import SOURCES
+from elbow_helper.agent.tool_support.sql.catalogue import SOURCES
 from elbow_helper.features.account_links.database import AccountLinksDbMixin
 from elbow_helper.features.clan_health.database import DATABASE as HEALTH_SETTINGS
 from elbow_helper.features.rosters.repository.repository import RosterRepository

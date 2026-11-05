@@ -18,9 +18,9 @@ from elbow_helper.agent.engine.tool_call import execute_tool
 from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.families import account_names, identity_reads
 from elbow_helper.agent.families import account_activity
-from elbow_helper.agent.families.catalogue import FAMILY_INSTRUCTION
-from elbow_helper.agent.families.model_view import family_model_view
-from elbow_helper.agent.families.projections import cohort_selection
+from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
+from elbow_helper.agent.tool_support.model_view import family_model_view
+from elbow_helper.agent.reads.projections import cohort_selection
 from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.plan.format import capability_list
 from elbow_helper.features.cwl.queries import CwlQueries

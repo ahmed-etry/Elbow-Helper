@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 from base64 import urlsafe_b64encode
 import zlib
 
-from elbow_helper.agent.families.core import FamilyReport, decode_family, family_tool
+from elbow_helper.agent.tool_support.core import FamilyReport, decode_family, family_tool
 from elbow_helper.agent.conversation.codec import encode_conversation, decode_conversation
 from elbow_helper.agent.conversation.state import Conversation
 from elbow_helper.agent.reports.base import MAX_REPORT_PAYLOAD_BYTES
@@ -60,7 +60,7 @@ class OversizedPageTests(unittest.IsolatedAsyncioTestCase):
         first = await tool.handler(context, {})
         retained = dict(context.state.reports)
         for target in ('elbow_helper.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES',
-                       'elbow_helper.agent.families.core.MAX_FAMILY_SNAPSHOT_BYTES'):
+                       'elbow_helper.agent.tool_support.core.MAX_FAMILY_SNAPSHOT_BYTES'):
             with self.subTest(target=target), patch(target, 1):
                 result = await tool.handler(context, {})
                 self.assertEqual(result['cause'], 'capacity')
@@ -73,7 +73,7 @@ class OversizedPageTests(unittest.IsolatedAsyncioTestCase):
                'payload': json.dumps({'rows': [{'value': 1}], 'summary': {}})}
         self.assertIsInstance(decode_family(row, 3), FamilyReport)
         corrupt = ['z1:invalid', 'z1:' + urlsafe_b64encode(zlib.compress(b'x' * 300)).decode()]
-        with patch('elbow_helper.agent.families.core.MAX_FAMILY_SNAPSHOT_BYTES', 200):
+        with patch('elbow_helper.agent.tool_support.core.MAX_FAMILY_SNAPSHOT_BYTES', 200):
             for payload in corrupt:
                 with self.subTest(payload=payload), self.assertRaises(ValueError):
                     decode_family({**row, 'payload': payload}, 3)

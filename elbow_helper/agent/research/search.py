@@ -11,7 +11,7 @@ import discord
 
 from ..access import accessible_message_channel, message_channel_unavailable
 from ..models import AgentRequestContext
-from ..capabilities.validation import bounded_int, bounded_text
+from ..tool_support.validation import bounded_int, bounded_text
 from .history import (
     SEARCH_RESULT_LIMIT,
     COMPLETE_HISTORY_CHARACTER_BUDGET,

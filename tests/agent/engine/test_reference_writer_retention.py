@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.member_facts import reference_facts
-from elbow_helper.agent.families.core import family_tool
+from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.agent.plan.results import compact_result
 from agent.engine.test_agent_plan_flow import _context, _plan, _Session
 from agent.engine.test_complete_read_composition import CaptureModel

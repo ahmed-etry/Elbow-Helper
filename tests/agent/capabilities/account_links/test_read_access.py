@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock, Mock
 
 from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID
 from elbow_helper.agent.access import AgentAccessLost
-from elbow_helper.agent.capabilities.account_links.data import SOURCES
+from elbow_helper.agent.tool_support.adapters.account_links.data import SOURCES
 from elbow_helper.agent.reads.people import read_people_links as read_linked_accounts
 from elbow_helper.agent.reads.people_tools import account_read_tools
-from elbow_helper.agent.datasets.query import run_query
+from elbow_helper.agent.tool_support.sql.query import run_query
 from elbow_helper.agent.delivery import AgentDeliveryMixin
 from agent.engine.test_agent_plan_flow import _context
 

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.models import AgentTurnState
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.capabilities.leadership_news.actions import (
+from elbow_helper.agent.tool_support.adapters.leadership_news.actions import (
     leadership_news_tools, prepare_lead_news, prepare_news_dismiss,
 )
 
@@ -19,11 +19,11 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         context = SimpleNamespace(private_pass=True, bot=SimpleNamespace(get_cog=lambda _: workflow),
                                   guild=SimpleNamespace(me=object()), member=object(),
                                   state=AgentTurnState())
-        with (patch("elbow_helper.agent.capabilities.leadership_news.actions.require_evidence_access",
+        with (patch('elbow_helper.agent.tool_support.adapters.leadership_news.actions.require_evidence_access',
                     new_callable=AsyncMock),
-              patch("elbow_helper.agent.capabilities.leadership_news.actions.resolve_channel",
+              patch('elbow_helper.agent.tool_support.adapters.leadership_news.actions.resolve_channel',
                     new_callable=AsyncMock, return_value=source),
-              patch("elbow_helper.agent.capabilities.leadership_news.actions.check_post_access")):
+              patch('elbow_helper.agent.tool_support.adapters.leadership_news.actions.check_post_access')):
             await prepare_news_dismiss(context, {"prompt_message_id": prompt.id})
         tool = next(tool for tool in leadership_news_tools()
                     if tool.definition.name == "dismiss_lead_news_prompt")
@@ -46,12 +46,12 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=SimpleNamespace(me=object()), member=SimpleNamespace(id=42), state=AgentTurnState(),
         )
-        with (patch("elbow_helper.agent.capabilities.leadership_news.actions.require_evidence_access",
+        with (patch('elbow_helper.agent.tool_support.adapters.leadership_news.actions.require_evidence_access',
                     new_callable=AsyncMock),
-              patch("elbow_helper.agent.capabilities.leadership_news.actions.resolve_channel",
+              patch('elbow_helper.agent.tool_support.adapters.leadership_news.actions.resolve_channel',
                     new_callable=AsyncMock, side_effect=(source, target)),
-              patch("elbow_helper.agent.capabilities.leadership_news.actions.check_view_access"),
-              patch("elbow_helper.agent.capabilities.leadership_news.actions.check_post_access")):
+              patch('elbow_helper.agent.tool_support.adapters.leadership_news.actions.check_view_access'),
+              patch('elbow_helper.agent.tool_support.adapters.leadership_news.actions.check_post_access')):
             result = await prepare_lead_news(context, {"message_id": 7})
         self.assertEqual(result["status"], "confirmation_required")
         action = context.state.proposed_changes[0]
@@ -68,8 +68,8 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any("A public update" in line for line in action.preview.lines))
         self.assertNotIn("A public update", str(result))
         workflow.publish_public_news.assert_not_awaited()
-        with (patch("elbow_helper.agent.capabilities.leadership_news.actions.check_view_access"),
-              patch("elbow_helper.agent.capabilities.leadership_news.actions.check_post_access")):
+        with (patch('elbow_helper.agent.tool_support.adapters.leadership_news.actions.check_view_access'),
+              patch('elbow_helper.agent.tool_support.adapters.leadership_news.actions.check_post_access')):
             self.assertTrue(await action.preview.recheck())
         outcome = await action.run()
         self.assertIn("posted-url", outcome.text)
@@ -79,7 +79,7 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(workflow.publish_public_news.await_args.kwargs["actor_discord_id"], 42)
         self.assertEqual(workflow.publish_public_news.await_args.kwargs["via"], "agent")
         source.fetch_message.side_effect = RuntimeError("Synthetic source failure")
-        with (patch("elbow_helper.agent.capabilities.leadership_news.actions.check_view_access"),
-              patch("elbow_helper.agent.capabilities.leadership_news.actions.check_post_access"),
+        with (patch('elbow_helper.agent.tool_support.adapters.leadership_news.actions.check_view_access'),
+              patch('elbow_helper.agent.tool_support.adapters.leadership_news.actions.check_post_access'),
               self.assertLogs("elbow_helper.agent.actions.contracts", level="ERROR")):
             self.assertFalse(await action.preview.recheck())

@@ -9,7 +9,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
-from ..datasets.query import query_context
+from ..tool_support.sql.query import query_context
 from .workbooks import render_workbook_bytes
 from .report_tables import materialize_report_table
 from ..models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool

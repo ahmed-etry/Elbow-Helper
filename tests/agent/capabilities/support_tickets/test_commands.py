@@ -3,12 +3,12 @@ from types import SimpleNamespace
 import unittest
 
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.capabilities.support_tickets.commands import (
+from elbow_helper.agent.tool_support.adapters.support_tickets.commands import (
     prepare_support_close,
 )
 from unittest.mock import AsyncMock, MagicMock
 from elbow_helper.configuration.channels import SUPPORT_TICKET_CATEGORY
-from elbow_helper.agent.capabilities.support_tickets.commands import (
+from elbow_helper.agent.tool_support.adapters.support_tickets.commands import (
     prepare_support_open, support_ticket_adapters,
 )
 from elbow_helper.features.support_tickets.commands import SupportCommandMixin

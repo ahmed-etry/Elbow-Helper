@@ -6,7 +6,7 @@ import unittest
 
 from elbow_helper.configuration import roles
 from elbow_helper.agent.access import AgentAccessLost, require_evidence_access
-from elbow_helper.agent.datasets.query import query_context
+from elbow_helper.agent.tool_support.sql.query import query_context
 from agent.dataset_helpers import synthetic_datasets
 from agent import test_evidence_scope as fixtures
 

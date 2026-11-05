@@ -8,7 +8,8 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.families import identity_reads, workflow_reads, war_reads
+from elbow_helper.agent.families import identity_reads, workflow_reads
+from elbow_helper.agent.reads import war_tools as war_reads
 from elbow_helper.features.recruitment.queries import RecruitmentQueries
 from agent.capabilities.recruitment.test_agent_recruitment import _Channel
 from agent.engine.test_agent_plan_flow import _context

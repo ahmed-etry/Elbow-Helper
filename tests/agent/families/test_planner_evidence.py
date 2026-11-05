@@ -10,9 +10,10 @@ import discord
 from openpyxl import load_workbook
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.families import identity_reads, war_reads
-from elbow_helper.agent.families.access_reads import TOOLS as ACCESS_TOOLS
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.families import identity_reads
+from elbow_helper.agent.reads import war_tools as war_reads
+from elbow_helper.agent.reads.access import TOOLS as ACCESS_TOOLS
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from agent.cwl_helpers import ResultQueries
 from agent.engine.test_agent_plan_flow import _context
 
@@ -135,7 +136,7 @@ class PlannerEvidenceTests(unittest.IsolatedAsyncioTestCase):
     async def test_role_matrix_refuses_an_unreadable_channel_without_retaining_a_report(self):
         context = _context()
         context.guild.roles = [SimpleNamespace(id=12, name='Role A')]
-        with patch('elbow_helper.agent.families.access_reads.accessible_message_channel',
+        with patch('elbow_helper.agent.reads.access.accessible_message_channel',
                    AsyncMock(return_value=None)):
             result = await ACCESS_TOOLS[0].handler(context, {'role_names': ['Role A'], 'channel_ids': [102]})
         self.assertEqual(result['cause'], 'scope_refused')

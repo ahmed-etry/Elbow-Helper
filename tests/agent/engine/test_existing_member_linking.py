@@ -3,7 +3,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 import unittest
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
-from elbow_helper.agent.families.reference_reads import community_reference
+from elbow_helper.agent.reads.reference import community_reference
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
 from elbow_helper.agent.models import EvidenceScope
 from agent.engine.test_agent_plan_flow import _context

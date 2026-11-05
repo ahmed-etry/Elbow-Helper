@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.models import AgentTurnState
-from elbow_helper.agent.capabilities.rosters.management import (
+from elbow_helper.agent.tool_support.adapters.rosters.management import (
     roster_management_tools, prepare_roster_layout_undo,
 )
 from elbow_helper.features.rosters.models import RosterLayout
@@ -43,7 +43,7 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
         context = register_requester(context)
         tool = next(tool for tool in roster_management_tools()
                     if tool.definition.name == "set_roster_layout")
-        with patch("elbow_helper.agent.capabilities.rosters.management.require_evidence_access",
+        with patch('elbow_helper.agent.tool_support.adapters.rosters.management.require_evidence_access',
                    new_callable=AsyncMock):
             await tool.handler(context, {"roster_id": 17, "show_clan": False})
         action = context.state.proposed_changes[0]
@@ -88,7 +88,7 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
         context = register_requester(context)
         tool = next(tool for tool in roster_management_tools()
                     if tool.definition.name == "clear_roster_signups")
-        with patch("elbow_helper.agent.capabilities.rosters.management.require_evidence_access",
+        with patch('elbow_helper.agent.tool_support.adapters.rosters.management.require_evidence_access',
                    new_callable=AsyncMock):
             result = await tool.handler(context, {"roster_id": 17})
         self.assertEqual(result["status"], "confirmation_required")

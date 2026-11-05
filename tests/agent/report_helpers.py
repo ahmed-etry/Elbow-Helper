@@ -1,5 +1,5 @@
 """Retained event reports for orchestration tests."""
-from elbow_helper.agent.capabilities.events.report import EventScheduleReport
+from elbow_helper.agent.tool_support.adapters.events.report import EventScheduleReport
 from elbow_helper.features.event_stats.queries import EventScheduleSnapshot
 
 

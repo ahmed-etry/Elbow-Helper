@@ -2,7 +2,7 @@
 import unittest
 
 from elbow_helper.agent.families import identity_reads, workflow_reads
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.tool_support.model_view import family_model_view
 
 BASIS = 'Discord role assignment, not a main account location'
 ACCOUNT = {'player_tag': '#P0', 'player_name': 'Synthetic', 'townHallLevel': 12, 'clan': {'tag': '#C0', 'name': 'Clan'},

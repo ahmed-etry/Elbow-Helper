@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 import discord
-from elbow_helper.agent.capabilities.recruitment.commands import (
+from elbow_helper.agent.tool_support.adapters.recruitment.commands import (
     prepare_recstatement, run_recstatement,
 )
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin

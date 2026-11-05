@@ -8,15 +8,15 @@ from unittest.mock import AsyncMock, patch
 
 import discord
 
-from elbow_helper.agent.capabilities.rosters.setup_commands import prepare_roster_clone
-from elbow_helper.agent.capabilities.rosters.setup_commands import prepare_roster_create
-from elbow_helper.agent.capabilities.rosters.setup_commands import prepare_roster_delete
-from elbow_helper.agent.capabilities.rosters.setup_commands import prepare_roster_edit
-from elbow_helper.agent.capabilities.rosters.timing_commands import prepare_roster_timing
-from elbow_helper.agent.capabilities.rosters.timing_commands import prepare_roster_schedule
-from elbow_helper.agent.capabilities.rosters.post_commands import prepare_roster_post
-from elbow_helper.agent.capabilities.rosters.post_commands import prepare_roster_export
-from elbow_helper.agent.capabilities.rosters.setup_commands import roster_adapters
+from elbow_helper.agent.tool_support.adapters.rosters.setup_commands import prepare_roster_clone
+from elbow_helper.agent.tool_support.adapters.rosters.setup_commands import prepare_roster_create
+from elbow_helper.agent.tool_support.adapters.rosters.setup_commands import prepare_roster_delete
+from elbow_helper.agent.tool_support.adapters.rosters.setup_commands import prepare_roster_edit
+from elbow_helper.agent.tool_support.adapters.rosters.timing_commands import prepare_roster_timing
+from elbow_helper.agent.tool_support.adapters.rosters.timing_commands import prepare_roster_schedule
+from elbow_helper.agent.tool_support.adapters.rosters.post_commands import prepare_roster_post
+from elbow_helper.agent.tool_support.adapters.rosters.post_commands import prepare_roster_export
+from elbow_helper.agent.tool_support.adapters.rosters.setup_commands import roster_adapters
 from elbow_helper.features.rosters.cog import Rosters
 from agent.discord_actions.helpers import register_requester
 
@@ -288,7 +288,7 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
             source_message=SimpleNamespace(channel=channel),
         )
         context = register_requester(context)
-        with patch("elbow_helper.agent.capabilities.rosters.post_commands.discord.TextChannel",
+        with patch('elbow_helper.agent.tool_support.adapters.rosters.post_commands.discord.TextChannel',
                    new=SimpleNamespace):
             prepared = await prepare_roster_post(context, {"roster": "4"})
             self.assertTrue(await prepared.preview.recheck())

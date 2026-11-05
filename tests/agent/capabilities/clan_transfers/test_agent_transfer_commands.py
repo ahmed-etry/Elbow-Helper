@@ -6,11 +6,11 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.capabilities.clan_transfers.commands import (
+from elbow_helper.agent.tool_support.adapters.clan_transfers.commands import (
     clan_transfer_adapters, prepare_transfer_cancel, prepare_transfer_request,
 )
 from elbow_helper.agent.models import AgentTurnState
-from elbow_helper.agent.capabilities.clan_transfers.queue import prepare_clear_transfer_queue
+from elbow_helper.agent.tool_support.adapters.clan_transfers.queue import prepare_clear_transfer_queue
 
 
 class TransferCommandTests(unittest.IsolatedAsyncioTestCase):
@@ -26,7 +26,7 @@ class TransferCommandTests(unittest.IsolatedAsyncioTestCase):
             member=SimpleNamespace(id=42),
             state=AgentTurnState(),
         )
-        with patch("elbow_helper.agent.capabilities.clan_transfers.queue.require_evidence_access",
+        with patch('elbow_helper.agent.tool_support.adapters.clan_transfers.queue.require_evidence_access',
                    new_callable=AsyncMock):
             result = await prepare_clear_transfer_queue(context, {"clan_code": "BEH"})
         self.assertEqual(result["status"], "confirmation_required")
