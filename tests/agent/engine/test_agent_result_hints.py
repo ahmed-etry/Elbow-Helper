@@ -26,7 +26,7 @@ from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.plan.executor import execute_plan
 from elbow_helper.agent.plan.results import model_result
 from elbow_helper.agent.models import AgentCapabilityEffect
-from elbow_helper.features.ranked_stats.queries import RankedAccount
+from elbow_helper.agent.datasets.ranked import RankedAccount
 from elbow_helper.agent.capabilities.achievements.report import AchievementProgressReport
 from elbow_helper.agent.capabilities.clan_reporting.report import MissingElderReport
 from elbow_helper.agent.capabilities.clan_transfers.report import TransferQueueReport

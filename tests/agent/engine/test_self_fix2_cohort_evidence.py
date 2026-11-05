@@ -86,7 +86,7 @@ class CohortWriterTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
         rows = [{'player_tag': f'#P{i}', 'player_name': f'Player {i}',
                  'attacks_used': i, 'attacks_available': i + 1,
-                 'counts_complete': False, 'live_status': 'ok',
+                 'counts_complete': False, 'watch_status': 'partial',
                  'observed_attacks': None, 'observed_defenses': None} for i in range(200)]
         tool = family_tool('read_ranked_activity', 'Read ranked activity.', {},
                            AsyncMock(return_value={'rows': rows}))

@@ -3,7 +3,7 @@
 from decimal import Decimal
 import math
 
-from elbow_helper.features.ranked_stats.battles import RANKED_MODES
+from elbow_helper.domain.ranked import RANKED_MODES
 from .battle_logs import select_battles
 
 

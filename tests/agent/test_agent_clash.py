@@ -13,7 +13,6 @@ from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.agent.engine.tool_call import bound_tool_result
 from elbow_helper.agent.plan.results import model_result, model_view
 from elbow_helper.agent.datasets.clash_cache import RequestClashReads
-from elbow_helper.agent.datasets.ranked import _live_batch
 from elbow_helper.agent.models import AgentRequestContext, AgentTurnState
 
 
@@ -299,9 +298,7 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(item["reused"])
         self.assertEqual(item["data"]["items"][0]["army"], [18])
         self.assertEqual(item["row_counts"]["/items"], {"returned_rows": 2, "total_rows": 18})
-        nested = await _live_batch(self.context, "battle_log", ["#P0", "#P2"])
-        self.assertEqual(len(nested["items"][0]["data"]["items"]), 18)
-        self.assertEqual(self.client.get.await_count, 5)
+        self.assertEqual(self.client.get.await_count, 3)
         self.assertNotEqual(full["observed_at"], result["items"][1]["observed_at"])
         item["data"]["items"][0]["army"].append("mutated")
         repeated = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P2"], "detail": "full"})
@@ -395,5 +392,3 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("columns", json.loads(content)["items"])
         view = json.loads(bound_tool_result(content, 100))
         self.assertEqual(view, {"truncated": True, "returned_rows": 0, "total_rows": 120})
-        nested = json.dumps({"accounts": [], "live_battle_logs": {"result": model_result(result)}})
-        self.assertEqual(json.loads(bound_tool_result(nested, 100)), view)

@@ -24,9 +24,9 @@ from elbow_helper.data.store.profile_import_plan import HEALTH, RANKED, TOTALS, 
 from elbow_helper.data.store.projections import canonical_json
 from elbow_helper.data.store.schema import MIGRATIONS
 from elbow_helper.features.clan_health.database.schema import create_schema as health_schema
-from elbow_helper.features.ranked_stats.schema import create_schema as ranked_schema
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration, SQLiteMigrationError, run_sqlite_migrations
 
+from .legacy_ranked_schema import create_schema as ranked_schema
 from .test_ranked_import import BASE, SECOND, iso
 
 

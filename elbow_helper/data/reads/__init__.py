@@ -9,5 +9,6 @@ from .membership import MembershipReads
 from .people import PeopleReads
 from .wars import WarReads
 from .profile_history import ProfileReads
+from .ranked import RankedReads
 
-__all__ = ["CwlReads", "MembershipReads", "PeopleReads", "ProfileReads", "WarReads"]
+__all__ = ["CwlReads", "MembershipReads", "PeopleReads", "ProfileReads", "RankedReads", "WarReads"]

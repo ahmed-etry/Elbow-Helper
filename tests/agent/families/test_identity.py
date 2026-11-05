@@ -277,6 +277,32 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['clans'][0]['in_game_capacity'], 50)
         self.assertEqual(result['clans'][0]['open_in_game_slots'], 2)
 
+    async def test_roster_tier_filters_read_the_stored_profile_not_live_profiles(self):
+        response = {'items':[{'tag':CLANS['BEC'].tag,'status':'ok','data':{'members':3,
+            'memberList':[{'tag':'#P0','townHallLevel':17,'role':'member','leagueTier':{'id':1,'name':'Live'}},
+                          {'tag':'#Q0','townHallLevel':17,'role':'member'},
+                          {'tag':'#P2','townHallLevel':16,'role':'member'}]}}]}
+        async def summary(tags, as_of=None):
+            stored = {'#P0': {'id': 9, 'name': 'Legend III'}, '#Q0': {'id': 1, 'name': 'Different'}}
+            return {'rows': [{'player_tag': tag, 'ranked_league': stored.get(tag),
+                              'field_observed_at': {'leagueTier': 1_790_000_000_000_000} if tag in stored else {}}
+                             for tag in tags]}
+        people = SimpleNamespace(account_summary=AsyncMock(side_effect=summary))
+        context = replace(_context(), bot=SimpleNamespace(people_reads=people))
+        with patch.object(reads,'read_clash',AsyncMock(return_value=response)), \
+                patch.object(reads,'profiles',AsyncMock(side_effect=AssertionError('live profiles'))):
+            result = await reads.clan_rosters(context,{'clan_codes':['BEC'],'basis':'current_in_game',
+                                                       'ranked_tier_ids':[9]})
+        # The live roster says #P0 is in tier 1; the stored profile's tier 9 decides.
+        self.assertEqual([row['player_tag'] for row in result['rows']], ['#P0'])
+        people.account_summary.assert_awaited_once()
+        context = replace(_context(), bot=SimpleNamespace())
+        with patch.object(reads,'read_clash',AsyncMock(return_value=response)):
+            unknown = await reads.clan_rosters(context,{'clan_codes':['BEC'],'basis':'current_in_game',
+                                                        'ranked_tier_prefix':'Legend'})
+        # Without the record every tier is unknown, never the live roster's value.
+        self.assertEqual(unknown['rows'], [])
+
     async def test_cohort_joins_every_account_and_filters_actual_ranked_tier(self):
         context = _context()
         context.guild.members = [member(41),member(42),member(43)]

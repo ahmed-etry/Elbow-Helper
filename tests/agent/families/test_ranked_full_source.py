@@ -1,23 +1,18 @@
-"""Family reads consume rolling source rows beyond drill-down page limits."""
-from dataclasses import replace
-from types import SimpleNamespace
+"""Family reads consume every stored battle, beyond drill-down page limits."""
 import unittest
 
 from elbow_helper.agent.families.ranked_reads import TOOLS
-from agent.engine.test_agent_plan_flow import _context
-from agent.test_compact_clash import read_context
-from features.test_ranked_stats import battle, stamp
+from agent.test_agent_ranked import RankedRecordFixture, iso
+from data.test_ranked_import import BASE, SECOND, battle
 
 
-class RankedFullSourceTests(unittest.IsolatedAsyncioTestCase):
-    async def test_live_only_family_keeps_all_attacks_and_defenses_past_row_fifty(self):
-        rows = [battle(minute=index + 1, attack=index % 2 == 0,
-                       mode='ranked' if index % 3 else 'legend', stars=3) for index in range(90)]
-        api_context = read_context({'#P0': {'items': rows}})
-        context = replace(_context(), bot=api_context.bot,
-            account_links=SimpleNamespace(get_links_for_members=lambda members: {41: [{'player_tag': '#P0'}]}))
-        result = await TOOLS[0].handler(context, {'member_ids': [41], 'after': stamp(), 'before': stamp(4)})
+class RankedFullSourceTests(RankedRecordFixture, unittest.IsolatedAsyncioTestCase):
+    async def test_family_keeps_all_attacks_and_defenses_past_row_fifty(self):
+        rows = [battle(index + 1, attack=index % 2 == 0, mode='ranked' if index % 3 else 'legend', stars=3)
+                for index in range(90)]
+        await self.live({'items': rows}, 100)
+        result = await TOOLS[0].handler(self.context, {'member_ids': [100], 'after': iso(BASE),
+                                                       'before': iso(BASE + 200 * SECOND)})
         self.assertEqual(result['rows'][0]['observed_attacks']['battles'], 45)
         self.assertEqual(result['rows'][0]['observed_defenses']['battles'], 45)
         self.assertEqual(result['rows'][0]['observed_attacks']['stars_total'], 135)
-        context.bot.clash_client.get.assert_awaited_once()

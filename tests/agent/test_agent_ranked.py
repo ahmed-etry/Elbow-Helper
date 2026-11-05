@@ -1,123 +1,103 @@
+"""read_ranked_stats over the family record: stored counts, coverage gaps and no live Clash reads."""
+
 from dataclasses import replace
-from pathlib import Path
-from tempfile import TemporaryDirectory
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
+import sqlite3
 import unittest
 
 from agent.capabilities.member_lifecycle.test_agent_member_lifecycle import AgentMemberLifecycleTests
-from features.test_ranked_stats import observation, battle, save_log
-from elbow_helper.configuration.clans import CLANS
+from data.test_ranked_import import BASE, SECOND, RankedFixture, battle
 from elbow_helper.agent.access import AgentAccessLost
+from elbow_helper.agent.datasets import ranked
 from elbow_helper.agent.datasets.ranked import read_ranked_stats
-from elbow_helper.features.ranked_stats.queries import RankedQueries
-from elbow_helper.features.ranked_stats.store import RankedStore
 from elbow_helper.agent.plan.results import model_result
+from elbow_helper.data.reads import RankedReads
 
 
-class AgentRankedTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+def iso(value):
+    return datetime.fromtimestamp(value / SECOND, timezone.utc).isoformat()
+
+
+class RankedRecordFixture(RankedFixture):
+    """A synthetic family record holding one linked account (#P0, member 100)."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
         fixture = AgentMemberLifecycleTests()
         fixture.setUp()
-        self.temp = TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        self.store = RankedStore(Path(self.temp.name) / "ranked.sqlite3")
-        self.store.initialize()
-        self.queries = RankedQueries(self.store)
-        self.context = replace(fixture.context, ranked_queries=self.queries)
-        self.arguments = {"member_ids": [42], "after": "2026-09-01", "before": "2026-09-02"}
+        self.reads = RankedReads(self.store)
+        self.context = replace(fixture.context, bot=SimpleNamespace(ranked_reads=self.reads))
+        self.arguments = {"member_ids": [100], "after": iso(BASE - 3600 * SECOND), "before": iso(BASE + 3600 * SECOND)}
 
-    async def test_historical_read_works_without_current_clash_configuration(self):
-        save_log(self.store, [battle(), battle(minute=2)])
-        result = await read_ranked_stats(self.context, self.arguments)
-        self.assertEqual(result["accounts"][0]["attacks_used"], 2)
-        self.assertEqual(result["accounts"][0]["daily"][0]["attacks_used"], 2)
 
-    async def test_clan_codes_account_normalization_and_exclusive_end(self):
-        code, clan = next(iter(CLANS.items()))
-        self.store.append([observation(clan=clan.tag), observation(day=2, minute=0)])
-        result = await read_ranked_stats(self.context, {**self.arguments, "member_ids": [], "clan_tags": [code]})
-        self.assertEqual(result["accounts"][0]["sample_count"], 1)
+class AgentRankedTests(RankedRecordFixture, unittest.IsolatedAsyncioTestCase):
+    async def test_stored_counts_come_from_copied_and_live_battles_without_clash(self):
+        self.add_battle(battle(-10))
+        await self.copy()
+        await self.live({"items": [battle(-10), battle(60)]}, 100)
+        with patch.object(ranked, "require_evidence_access", AsyncMock()), \
+                patch("elbow_helper.agent.datasets.clash.read_clash", AsyncMock(side_effect=AssertionError("live read"))):
+            result = await read_ranked_stats(self.context, self.arguments)
+        row = result["accounts"][0]
+        self.assertEqual((row["attacks_used"], row["battle_records"]), (2, 2))
+        self.assertEqual(row["daily"][0], {"date": "2026-10-15", "attacks_used": 1, "defenses": 0})
+        self.assertEqual(row["log_coverage"]["watched_from"], iso(BASE))
+        self.assertEqual(result["source"], "family_record")
+        self.assertNotIn("live_battle_logs", result)
+
+    async def test_clan_codes_account_normalization_and_selection(self):
+        await self.copy()
         result = await read_ranked_stats(self.context, {**self.arguments, "member_ids": [], "account_tags": ["p0"]})
         self.assertEqual(result["accounts"][0]["player_tag"], "#P0")
+        result = await read_ranked_stats(self.context, {**self.arguments, "member_ids": [], "clan_tags": ["#Q0"]})
+        self.assertEqual((result["accounts"], result["unobserved_selections"]), ([], ["#Q0"]))
+        self.assertEqual(result["history_coverage"]["status"], "empty")
 
-    async def test_invalid_scope_window_and_paging_are_rejected_before_querying(self):
-        context = replace(self.context, ranked_queries=Mock())
-        for overrides in ({"account_tags": ["#P0"]}, {"after": "2026-09-02"},
-                          {"after": "invalid"},
-                          {"member_ids": [True]}, {"member_ids": []}, {"limit": 26},
-                          {"offset": -1}):
+    async def test_invalid_scope_window_and_paging_are_rejected_before_reading(self):
+        context = replace(self.context, bot=SimpleNamespace(ranked_reads=Mock()))
+        for overrides in ({"account_tags": ["#P0"]}, {"after": iso(BASE + 3600 * SECOND)},
+                          {"after": "invalid"}, {"member_ids": [True]}, {"member_ids": []},
+                          {"limit": 26}, {"offset": -1}):
             with self.subTest(overrides=overrides):
                 result = await read_ranked_stats(context, {**self.arguments, **overrides})
                 self.assertIn("error", result)
-        context.ranked_queries.window.assert_not_called()
+        context.bot.ranked_reads.window.assert_not_called()
 
     async def test_lost_agent_access_prevents_historical_disclosure(self):
         self.context.member.roles.clear()
         with self.assertRaises(AgentAccessLost):
             await read_ranked_stats(self.context, self.arguments)
 
-    async def test_missing_feature_and_unobserved_account_are_distinct(self):
-        missing = await read_ranked_stats(replace(self.context, ranked_queries=None), self.arguments)
-        self.assertIn("error", missing)
-        empty = await read_ranked_stats(self.context, self.arguments)
-        self.assertEqual(empty["accounts"], [])
-        self.assertEqual(empty["unobserved_selections"], [42])
+    async def test_missing_record_unreadable_record_and_unobserved_member_are_distinct(self):
+        missing = await read_ranked_stats(replace(self.context, bot=SimpleNamespace()), self.arguments)
+        self.assertEqual(missing, {"error": "Ranked observations are not available."})
+        failing = SimpleNamespace(ranked_reads=SimpleNamespace(window=AsyncMock(side_effect=sqlite3.OperationalError("x"))))
+        self.assertEqual(await read_ranked_stats(replace(self.context, bot=failing), self.arguments),
+                         {"error": "Ranked observations could not be read."})
+        empty = await read_ranked_stats(self.context, {**self.arguments, "member_ids": [999]})
+        self.assertEqual((empty["accounts"], empty["unobserved_selections"]), ([], [999]))
 
-    async def test_empty_member_history_reads_linked_live_accounts_automatically(self):
-        client = SimpleNamespace(configured=True, get=AsyncMock(return_value=SimpleNamespace(
-            ok=True, status=200, payload={"items": [battle()]},
-        )))
-        links = Mock(get_links_for_members=Mock(return_value={42: [{"player_tag": "p0"}]}))
-        context = replace(self.context, bot=SimpleNamespace(clash_client=client), account_links=links)
-        result = model_result(await read_ranked_stats(context, self.arguments))
-        self.assertEqual(result["flags"]["status"], "partial")
-        self.assertEqual(result["history_coverage"]["status"], "empty")
-        self.assertIn("empty_ranked_history", result["flags"]["limits"])
-        self.assertEqual(client.get.await_args.args[0], "/players/%23P0/battlelog")
-        live = result["live_battle_logs"]
-        self.assertFalse(live["covers_requested_window"])
-        self.assertEqual(live["result"]["items"][0]["data"]["items"][0]["battleType"], "RANKED")
-
-    async def test_each_incomplete_indicator_marks_result_partial_and_reads_live(self):
-        complete_row = {"player_tag": "#P0", "battle_records": 1, "counts_complete": True,
-                        "failed_battle_log_polls": 0, "first_observed_at": "2026-09-01",
-                        "last_observed_at": "2026-09-02"}
-        for changes, reason in (({"counts_complete": False}, "incomplete_ranked_counts"),
-                                ({"failed_battle_log_polls": 1}, "failed_battle_log_polls"),
-                                ({"first_observed_at": "2026-09-01T01:00:00Z"}, "shorter_observation_window"),
-                                ({"last_observed_at": "2026-09-01T23:00:00Z"}, "shorter_observation_window")):
-            with self.subTest(changes=changes):
-                query = Mock(window=Mock(return_value={"accounts": [{**complete_row, **changes}],
-                                                       "complete": True, "coverage_complete": True}))
-                with patch("elbow_helper.agent.datasets.ranked.read_clash", AsyncMock(
-                    return_value={"items": [], "observed_at": "synthetic"},
-                )) as read:
-                    result = model_result(await read_ranked_stats(
-                        replace(self.context, ranked_queries=query), self.arguments))
-                self.assertIn(reason, result["flags"]["limits"])
-                self.assertEqual(result["flags"]["status"], "partial")
-                read.assert_awaited_once()
-
-    async def test_complete_history_does_not_trigger_live_read(self):
-        query = Mock(window=Mock(return_value={"accounts": [{"player_tag": "#P0", "battle_records": 1,
-            "counts_complete": True, "first_observed_at": "2026-09-01", "last_observed_at": "2026-09-02"}],
-            "complete": True, "coverage_complete": True}))
-        with patch("elbow_helper.agent.datasets.ranked.read_clash", AsyncMock()) as read:
-            result = model_result(await read_ranked_stats(replace(self.context, ranked_queries=query), self.arguments))
-        self.assertEqual(result["flags"]["status"], "complete")
-        read.assert_not_awaited()
-
-    async def test_live_unavailability_keeps_stored_counts_partial(self):
-        save_log(self.store, [battle()])
+    async def test_coverage_gaps_mark_the_result_partial_instead_of_reading_live(self):
+        self.add_battle(battle(-10))
+        await self.copy()
+        await self.live({"items": []}, 100)
+        await self.live(None, 120, status=0)
+        await self.live({"items": []}, 140)
         result = model_result(await read_ranked_stats(self.context, self.arguments))
-        self.assertEqual(result["accounts"][0]["attacks_used"], 1)
         self.assertEqual(result["flags"]["status"], "partial")
-        self.assertIn("error", result["live_battle_logs"]["result"])
+        for reason in ("battle_log_before_first_read", "battle_log_between_watchers", "battle_log_log_not_read",
+                       "failed_battle_log_reads", "shorter_observation_window"):
+            self.assertIn(reason, result["history_coverage"]["reasons"])
+        self.assertEqual(result["accounts"][0]["attacks_used"], 1)
 
-    async def test_empty_clan_history_does_not_fan_out_to_every_member_log(self):
-        with patch("elbow_helper.agent.datasets.ranked.read_clash", AsyncMock()) as read:
-            result = await read_ranked_stats(self.context, {**self.arguments, "member_ids": [], "clan_tags": ["#Q0"]})
-        read.assert_not_awaited()
-        self.assertIn("skipped", result["live_battle_logs"]["result"])
-        self.assertEqual(result["history_coverage"]["status"], "empty")
+    async def test_a_fully_watched_window_is_not_marked_partial_by_coverage(self):
+        self.poll(200)  # The old collector still read the log after the record's first read.
+        await self.copy()
+        await self.live({"items": [battle(30)]}, 100)
+        arguments = {**self.arguments, "after": iso(BASE), "before": iso(BASE + 50 * SECOND)}
+        result = await read_ranked_stats(self.context, arguments)
+        self.assertEqual(result["accounts"][0]["log_coverage"]["gaps"], [])
+        # Old and new: counts are never claimed complete, so the read still says partial.
+        self.assertEqual(result["history_coverage"]["reasons"], ["incomplete_ranked_counts"])

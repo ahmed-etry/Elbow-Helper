@@ -30,7 +30,7 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
             "clan_health", "rosters", "cwl", "support_tickets", "recruitment",
             "examination",
             "records", "achievements",
-            "event_stats", "member_lifecycle", "ranked_stats", "clan_reporting",
+            "event_stats", "member_lifecycle", "clan_reporting",
             "role_connections",
         ):
             self.assertLess(REQUIRED_EXTENSIONS.index(f"elbow_helper.features.{name}"), agent)
@@ -42,7 +42,7 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
             "Hibernate", "SupportActions", "Recruitment", "Examination",
             "Records", "Achievements",
             "EventStatsCog",
-            "MemberLifecycle", "RankedStats",
+            "MemberLifecycle",
             "ClanReporting",
             "RoleConnections",
         ):
@@ -61,7 +61,6 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
                     "Achievements": SimpleNamespace(queries=object()),
                     "EventStatsCog": SimpleNamespace(queries=object()),
                     "MemberLifecycle": SimpleNamespace(queries=object()),
-                    "RankedStats": SimpleNamespace(queries=object()),
                     "ClanReporting": SimpleNamespace(queries=object()),
                     "RoleConnections": SimpleNamespace(queries=object()),
                 }
@@ -81,7 +80,6 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
         achievement_queries = object()
         event_queries = object()
         member_lifecycle_queries = object()
-        ranked_queries = object()
         clan_reporting_queries = object()
         role_connection_queries = object()
         dependencies = {"AccountLinks": object(), "ClanHealth": object(),
@@ -98,7 +96,6 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
             queries=achievement_queries,
         )
         dependencies["EventStatsCog"] = SimpleNamespace(queries=event_queries)
-        dependencies["RankedStats"] = SimpleNamespace(queries=ranked_queries)
         dependencies["MemberLifecycle"] = SimpleNamespace(
             queries=member_lifecycle_queries,
         )
@@ -118,7 +115,7 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
               patch("elbow_helper.agent.ResearchJobRepository") as jobs,
               patch("elbow_helper.agent.AgentActionRepository") as actions):
             await setup(bot)
-        self.assertIs(factory.call_args.kwargs["ranked_queries"], ranked_queries)
+        self.assertNotIn("ranked_queries", factory.call_args.kwargs)
         inspect.signature(AgentCog).bind(*factory.call_args.args, **factory.call_args.kwargs)
         self.assertIs(factory.call_args.kwargs["transcript_archive"], archive.return_value)
         self.assertIs(factory.call_args.kwargs["persistence"].repository, repository.return_value)

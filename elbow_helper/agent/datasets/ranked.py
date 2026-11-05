@@ -1,22 +1,109 @@
-"""Agent access to stored ranked observations, matching live Clash access."""
+"""Agent access to the family record's ranked battles; gaps are reported, never filled live."""
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import sqlite3
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
+from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationError
 from ..access import require_evidence_access
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
 from ..research.history import search_date
 from ..capabilities.validation import invalid_arguments
-from .clash import read_clash
-from ..read_cache import stored_read
+from ..read_cache import source_revision
 from ..plan.input_rules import RULES
 
 SELECTORS = ["member_ids", "account_tags", "clan_tags"]
+SECOND = 1_000_000
+FAILURES = (OSError, sqlite3.Error, TimeoutError, SQLiteMigrationError, ValueError)
+LIMITATIONS = ["selection_rank_uses_last_stored_trophies_within_selected_accounts",
+               "attacks_used_counts_stored_ranked_and_legend_attacks_including_losses",
+               "log_coverage_gaps_can_hide_battles", "attack_quota_unavailable",
+               "daily_counts_use_battle_timestamp_UTC",
+               "owner_is_current_bot_link_and_clan_is_membership_at_battle_time"]
+
+
+@dataclass(frozen=True)
+class DailyBattles:
+    date: str
+    attacks_used: int
+    defenses: int
+
+
+@dataclass(frozen=True)
+class LogGap:
+    after: str
+    before: str
+    cause: str
+    reasons: dict | None
+
+
+@dataclass(frozen=True)
+class LogCoverage:
+    status: str
+    watched_from: str | None
+    last_read_at: str | None
+    gaps: list[LogGap]
+    failed_reads_in_window: int
+
+
+@dataclass(frozen=True)
+class RankedAccount:
+    """One account row as read_ranked_stats returns it."""
+    player_tag: str
+    member_id: int | None
+    player_name: str | None
+    clan_tag: str | None
+    status: str
+    selection_rank: int | None
+    ranking: dict
+    ranking_observed_at: str | None
+    attacks_used: int | None
+    defenses: int | None
+    attacks_available: int | None
+    daily: list[DailyBattles]
+    battle_records: int
+    counts_complete: bool
+    log_coverage: LogCoverage
+    first_observed_at: str | None
+    last_observed_at: str | None
+
+
+def ranked_reads(context):
+    return getattr(getattr(context, 'bot', None), 'ranked_reads', None)
+
+
+def iso(value):
+    return None if value is None else datetime.fromtimestamp(value / SECOND, timezone.utc).isoformat()
+
+
+def micros(value):
+    return round(value.timestamp() * SECOND)
+
+
+def coverage_view(coverage):
+    return {"status": coverage["status"], "watched_from": iso(coverage["watched_from"]),
+            "last_read_at": iso(coverage["last_read_at"]),
+            "gaps": [{**gap, "after": iso(gap["after"]), "before": iso(gap["before"])} for gap in coverage["gaps"]],
+            "failed_reads_in_window": coverage["failed_reads_in_window"]}
+
+
+def account_view(row):
+    coverage = row["log_coverage"]
+    result = {key: row[key] for key in (
+        "player_tag", "member_id", "player_name", "clan_tag", "status", "selection_rank", "ranking",
+        "attacks_used", "defenses", "daily", "battle_records", "counts_complete")}
+    result.update(ranking_observed_at=iso(row["ranking_observed_at"]), attacks_available=None,
+                  log_coverage=coverage_view(coverage),
+                  # The span the log was read in, so a short span shows as a shorter window.
+                  first_observed_at=iso(coverage["watched_from"]), last_observed_at=iso(coverage["last_read_at"]))
+    if "battles" in row:
+        result["battles"] = [{**battle, "battle_at": iso(battle["battle_at"])} for battle in row["battles"]]
+    return result
 
 
 def history_coverage(result, after, before):
@@ -26,22 +113,16 @@ def history_coverage(result, after, before):
         reasons.append("empty_ranked_history")
     if any(row.get("counts_complete") is False for row in accounts):
         reasons.append("incomplete_ranked_counts")
-    if any(row.get("failed_battle_log_polls", 0) for row in accounts):
-        reasons.append("failed_battle_log_polls")
+    if any(row.get("log_coverage", {}).get("failed_reads_in_window") for row in accounts):
+        reasons.append("failed_battle_log_reads")
+    causes = {gap["cause"] for row in accounts for gap in row.get("log_coverage", {}).get("gaps", [])}
+    reasons.extend("battle_log_" + cause for cause in sorted(causes))
     if result.get("coverage_complete") is False or result.get("complete") is False:
         reasons.append("incomplete_ranked_history")
     if result.get("unobserved_selections"):
         reasons.append("unobserved_selections")
     if result.get("next_offset") is not None:
         reasons.append("more_accounts_available")
-    try:
-        returned_after = search_date(result.get("after"))
-        returned_before = search_date(result.get("before"))
-        if ((returned_after is not None and returned_after > after)
-                or (returned_before is not None and returned_before < before)):
-            reasons.append("shorter_observation_window")
-    except (ValueError, TypeError):
-        reasons.append("shorter_observation_window")
     for row in accounts:
         try:
             first = search_date(row.get("first_observed_at"))
@@ -55,41 +136,21 @@ def history_coverage(result, after, before):
     return list(dict.fromkeys(reasons))
 
 
-async def _live_batch(context, kind, tags, max_age_seconds=30, *, full_detail=False):
-    items = []
-    observed_at = None
-    for start in range(0, len(tags), 20):
-        result = await read_clash(context, {"kind": kind, "tags": tags[start:start + 20], "limit": 50,
-                                            "max_age_seconds": max_age_seconds,
-                                            **({'detail':'full'} if full_detail else {})},
-                                  **({'complete_battle_log': True} if full_detail and kind == 'battle_log' else {}))
-        if "error" in result:
-            return result
-        items.extend(result["items"])
-        observed_at = min(observed_at, result["observed_at"]) if observed_at else result["observed_at"]
-    return {"source": "clash_api", "items": items, "observed_at": observed_at,
-            "truncated": any(item.get("truncated", False) for item in items)}
+async def read_window(context, selector, values, after, before, *, offset=0, limit=25, include_battles=False):
+    """The record's ranked window for a checked selection; raises on an unreadable record."""
+    reads = ranked_reads(context)
+    dependencies = getattr(context, 'read_dependencies', None)
+    if dependencies is not None:
+        revision = (await asyncio.to_thread(source_revision, reads)
+                    if getattr(context, 'read_cache', None) is not None else None)
+        dependencies.observe(context, reads, revision)
+    return await reads.window(selector, values, after=micros(after), before=micros(before),
+                              offset=offset, limit=limit, include_battles=include_battles)
 
 
-async def _live_history(context, selector, values, accounts, max_age_seconds=30, *, full_detail=False):
-    # Current rolling logs do not replace historical counts or ownership.
-    tags = {row["player_tag"] for row in accounts}
-    if selector == "account_tags":
-        tags.update(values)
-    elif selector == "member_ids" and context.account_links is not None:
-        links = await asyncio.to_thread(context.account_links.get_links_for_members, values)
-        tags.update(row["player_tag"] for rows in links.values() for row in rows)
-    tags = sorted({tag for value in tags if (tag := normalize_player_tag(value)) is not None})
-    if not tags:
-        return {"error": "No accounts are available for a live battle log read."}
-    result = await _live_batch(context, "battle_log", tags, max_age_seconds, full_detail=full_detail)
-    return result
-
-
-async def read_ranked_stats(context, arguments, *, maximum=25, include_battles=False,
-                            allow_live_only=False, selection_maximum=200):
+async def read_ranked_stats(context, arguments, *, maximum=25, include_battles=False, selection_maximum=200):
     await require_evidence_access(context)
-    if context.ranked_queries is None and not allow_live_only:
+    if ranked_reads(context) is None:
         return {"error": "Ranked observations are not available."}
     selectors = [key for key in ("member_ids", "account_tags", "clan_tags") if arguments.get(key)]
     if len(selectors) != 1:
@@ -122,44 +183,27 @@ async def read_ranked_stats(context, arguments, *, maximum=25, include_battles=F
         return invalid_arguments("Use ISO dates with the end after the start and a valid page.",
                                  "after", "before", "offset", "limit")
     try:
-        result = await stored_read(context, context.ranked_queries, 'window',
-            after=after.isoformat(timespec="microseconds"), before=before.isoformat(timespec="microseconds"), selector=selector,
-            values=tuple(dict.fromkeys(values)), offset=offset, limit=limit,
-            **({'include_battles': True} if include_battles else {})) if context.ranked_queries else {
-                'accounts': [], 'stored_battles': [], 'total_accounts': 0, 'next_offset': None,
-                'complete': False, 'coverage_complete': False,
-                'unobserved_selections': values, 'limitations': ['ranked_collection_unavailable']}
-    except (sqlite3.Error, ValueError):
+        stored = await read_window(context, selector, list(dict.fromkeys(values)), after, before,
+                                   offset=offset, limit=limit, include_battles=include_battles)
+    except FAILURES:
         return {"error": "Ranked observations could not be read."}
     await require_evidence_access(context)
+    result = {"after": after.isoformat(), "before": before.isoformat(),
+              "accounts": [account_view(row) for row in stored["accounts"]],
+              "total_accounts": stored["total_accounts"], "offset": stored["offset"],
+              "next_offset": stored["next_offset"], "unobserved_selections": stored["unobserved_selections"],
+              "complete": True, "coverage_complete": stored["coverage_complete"],
+              "source": "family_record", "bases": stored["bases"], "limitations": list(LIMITATIONS)}
     reasons = history_coverage(result, after, before)
-    if include_battles:
-        result = {**result,'after':after.isoformat(),'before':before.isoformat()}
     if reasons:
-        result = {**result, "complete": False,
-                  "history_coverage": {
-                      "status": "empty" if "empty_ranked_history" in reasons else "partial",
-                      "message": ("Stored ranked history is empty for this selection."
-                                  if "empty_ranked_history" in reasons else
-                                  "Stored ranked history is incomplete for the requested window."),
-                      "requested_after": after.isoformat(), "requested_before": before.isoformat(),
-                      "reasons": reasons,
-                  },
-                  "flags": {"status": "partial", "truncated": False, "limits": reasons}}
-        try:
-            # A whole clan would fan out to every member's log; those stay explicit live reads.
-            live = ({"skipped": "Live battle logs are read automatically only for specific accounts or members."}
-                    if selector == "clan_tags" else
-                    await _live_history(context, selector, values, result["accounts"],
-                                        arguments.get("max_age_seconds", 30),
-                                        **({'full_detail':True} if include_battles else {})))
-        except sqlite3.Error:
-            live = {"error": "Accounts could not be read for a live battle log read."}
-        result["live_battle_logs"] = {
-            "scope": "latest_rolling_log", "covers_requested_window": False,
-            "result": live,
-        }
-        await require_evidence_access(context)
+        result.update(complete=False, history_coverage={
+            "status": "empty" if "empty_ranked_history" in reasons else "partial",
+            "message": ("Stored ranked history is empty for this selection."
+                        if "empty_ranked_history" in reasons else
+                        "Stored ranked history is incomplete for the requested window."),
+            "requested_after": after.isoformat(), "requested_before": before.isoformat(),
+            "reasons": reasons,
+        }, flags={"status": "partial", "truncated": False, "limits": reasons})
     return result
 
 
@@ -178,12 +222,11 @@ def ranked_tools():
                 "before": {"type": "string", "maxLength": 40},
                 "offset": {"type": "integer", "minimum": 0, "default": 0},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 25, "default": 25},
-                "max_age_seconds": {"type": "integer", "minimum": 0, "maximum": 30,
-                                    "default": 30},
             }, "required": ["after"], "additionalProperties": False,
              RULES: [{"needs": SELECTORS, "error": "Choose members, accounts or clans."},
                      {"only_one": SELECTORS, "error": "Choose members, accounts or clans."}]},
-            usage_note="Choose one selector; long periods are read in windows. Attacks count stored ranked/Legend records, including losses; check coverage. Quotas null; dates UTC.",
+            usage_note="Choose one selector. Attacks count stored ranked/Legend battles, including losses; "
+                       "log_coverage gaps show unread logs. Dates UTC.",
         ), read_ranked_stats,
         contract=CapabilityContract(entity_fields=(("member_ids", "discord_member_set"),
             ("account_tags", "clash_account_set"), ("clan_tags", "clan_set"))),

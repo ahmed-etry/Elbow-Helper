@@ -72,9 +72,8 @@ def ranked_view(row):
     # A fixed schema lets the transport encode large selections once as a
     # column table, including accounts whose names or ranking are unknown.
     fields = ('player_tag', 'member_id', 'player_name', 'status', 'selection_rank',
-        'attacks_used', 'attacks_available', 'counts_complete', 'ranked_league', 'live_status',
-        'duplicate_copies_removed', 'conflicting_battles', 'unreadable_ranked_rows',
-        'historical_counts_complete')
+        'attacks_used', 'attacks_available', 'counts_complete', 'ranked_league', 'watch_status',
+        'watched_from', 'historical_counts_complete')
     result = {field: row.get(field) for field in fields}
     result.update(pick(row, ('observed_at', 'ranking_observed_at')))
     for field in ('observed_attacks', 'observed_defenses'):

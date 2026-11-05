@@ -35,15 +35,17 @@ from elbow_helper.agent.research.history_cache import HISTORY_PAGE_SECONDS
 from elbow_helper.agent.families import workflow_reads, identity_reads
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.cwl.bonus.config import BonusConfigRepository
-from elbow_helper.features.ranked_stats.queries import RankedQueries
-from elbow_helper.features.ranked_stats.store import RankedStore
+from elbow_helper.agent.conversation.findings import family_revisions
+from elbow_helper.agent.datasets.ranked import read_window
+from elbow_helper.agent.read_cache import ReadDependencies
+from elbow_helper.data.reads import RankedReads
+from elbow_helper.data.store import FamilyStore
 from elbow_helper.infrastructure.persistence.revisions import release_sqlite_revision, sqlite_revision
 from tests.features.cwl_record_stub import LeagueRecord, league_war, member
 from elbow_helper.agent.families import record_wars
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.record_stub import with_record
 from agent.test_compact_clash import read_context, synthetic_player, synthetic_clan
-from features.test_ranked_stats import battle, observation, save_log, stamp
 from elbow_helper.configuration.clans import CLANS
 
 # The record's regular wars when none are selected.
@@ -79,7 +81,7 @@ class ReadCacheTests(unittest.IsolatedAsyncioTestCase):
                 raise AssertionError('Synthetic shared read was not released')
             raise sqlite3.OperationalError('Synthetic stored query failure')
         source = SimpleNamespace(cache_revision=lambda: 'one', window=Mock(side_effect=broken))
-        local = replace(context(), ranked_queries=source, read_cache=JoinedCache())
+        local = replace(context(), read_cache=JoinedCache())
         first = asyncio.create_task(stored_read(local, source, 'window'))
         self.assertTrue(await asyncio.to_thread(started.wait, 5))
         second = asyncio.create_task(stored_read(local, source, 'window'))
@@ -313,28 +315,25 @@ class StoredCacheTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 release_sqlite_revision(record.path)
 
-    async def test_stored_ranked_window_is_invalidated_by_new_battles_and_backfill(self):
-        with TemporaryDirectory() as directory:
-            store = RankedStore(Path(directory) / 'ranked.db')
-            store.initialize()
+    async def test_ranked_reads_record_the_family_record_revision_and_any_write_retires_it(self):
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            store = FamilyStore(Path(directory) / 'family.sqlite3')
+            await store.initialize()
             try:
-                save_log(store, [battle()])
-                source = RankedQueries(store)
-                source.window = Mock(wraps=source.window)
-                local = replace(_context(), ranked_queries=source, read_cache=ReadCache())
-                args = dict(after=stamp(), before=stamp(4), selector='account_tags', values=('#P0',))
-                first = await stored_read(local, source, 'window', **args)
-                self.assertEqual(first['accounts'][0]['attacks_used'], 1)
-                self.assertEqual(await stored_read(local, source, 'window', **args), first)
-                source.window.assert_called_once()
-                save_log(store, [battle(minute=2)], observation(minute=5))
-                updated = await stored_read(local, source, 'window', **args)
-                self.assertEqual(updated['accounts'][0]['attacks_used'], 2)
-                save_log(store, [battle(stars=3)], observation(minute=6))
-                await stored_read(local, source, 'window', **args)
-                self.assertEqual(source.window.call_count, 3)
-                await stored_read(replace(local, fresh_reads=True), source, 'window', **args)
-                self.assertEqual(source.window.call_count, 4)
+                local = replace(_context(), bot=SimpleNamespace(ranked_reads=RankedReads(store)),
+                                read_cache=ReadCache(), read_dependencies=ReadDependencies())
+                start = datetime(2026, 10, 1, tzinfo=timezone.utc)
+                result = await read_window(local, 'account_tags', ['#P0'], start, start + timedelta(days=1))
+                self.assertIsNone(result['accounts'][0]['attacks_used'])
+                versions = local.read_dependencies.checked(local)
+                self.assertEqual(set(versions), {'ranked_reads'})
+                self.assertIsNotNone(versions['ranked_reads'])
+                self.assertEqual(family_revisions(local, 'read_ranked_activity'), versions)
+                def write(connection):
+                    connection.execute("INSERT INTO battle_strings(value) VALUES ('synthetic')")
+                    connection.commit()
+                await store.call(write)
+                self.assertIsNone(local.read_dependencies.checked(local))
             finally:
                 release_sqlite_revision(store.path)
 
@@ -561,6 +560,13 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
             delivery_complete=True)
         turn = ConversationTurn('{}', frozenset({4}), record=record)
         return local, tool, reader, encoded, turn, observed
+
+    async def test_stored_ranked_findings_are_not_live_figures_but_rosters_still_are(self):
+        for family, live in (('read_ranked_activity', False), ('read_clan_rosters', True)):
+            with self.subTest(family=family):
+                local, _, _, encoded, _, _ = await self.make_finding(family)
+                finding = json.loads(json.loads(retained_finding(local, encoded))['result'])
+                self.assertEqual((finding['live_values'], finding['dated_live_figures_required']), (live, live))
 
     async def test_followup_carries_plan_answer_handles_and_actual_as_of_times_without_full_rows(self):
         local, tool, reader, encoded, turn, observed = await self.make_finding()

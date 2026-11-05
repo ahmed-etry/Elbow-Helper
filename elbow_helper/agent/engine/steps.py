@@ -216,7 +216,7 @@ class PlanRunner:
             checked["tool"].effect is AgentCapabilityEffect.READ
             and checked["tool"].action_class is ActionClass.READ
             # These handlers recheck freshness and project request-scoped raw reads.
-            and step["capability"] not in ("read_clash", "read_ranked_stats", "read_current_war")
+            and step["capability"] not in ("read_clash", "read_current_war")
             and not arguments.get('fresh')
             and 'fresh' not in checked['tool'].definition.parameters.get('properties', {})
         ):

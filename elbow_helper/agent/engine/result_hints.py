@@ -12,7 +12,6 @@ from elbow_helper.features.examination.queries import ExaminationCaseStatus
 from elbow_helper.features.hibernation.queries import ActiveHibernationRecord
 from elbow_helper.features.help.discovery import ParameterInfo
 from elbow_helper.features.member_lifecycle.queries import MemberLifecycleRow, OverdueApplicant
-from elbow_helper.features.ranked_stats.queries import RankedAccount
 from elbow_helper.features.recruitment.queries import ActiveRecruitmentTrial
 from elbow_helper.features.role_connections.queries import RoleConnectionCondition
 from elbow_helper.features.support_tickets.queries import SupportTicketMetadata
@@ -25,6 +24,7 @@ from ..datasets.clash import (
     LEAGUE_FIELDS, RANKED_LEAGUE_FIELDS, PLAYER_CLAN_FIELDS, PLAYER_FIELDS, WAR_CLAN_FIELDS,
     WAR_FIELDS, WAR_LOG_FIELDS, WAR_MEMBER_FIELDS, WAR_SIDE_FIELDS,
 )
+from ..datasets.ranked import RankedAccount
 from ..plan.results import LIMIT_FIELDS
 from .result_fields import format_returns, names, result_fields
 

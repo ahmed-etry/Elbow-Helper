@@ -36,24 +36,56 @@ class WorkflowFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(row['finalized'])
         self.assertEqual(result['missing_sources'], [{'stage': 'lifecycle', 'cause': 'source_unavailable'}])
 
-    async def test_hibernation_batches_every_linked_battle_log_within_endpoint_limit(self):
-        context = _context()
-        context.guild.get_member = lambda identifier: SimpleNamespace(id=identifier, display_name='Synthetic', roles=[], joined_at=None)
+    async def test_hibernation_reads_stored_ranked_battles_of_every_linked_account_at_once(self):
+        start = 1577836800
+        second = 1_000_000
         alphabet = '0289PYLQGRJCUV'
         tags = ['#P' + alphabet[index // len(alphabet)] + alphabet[index % len(alphabet)] for index in range(21)]
-        context = replace(context, account_links=SimpleNamespace(get_links_for_members=lambda ids:
-            {41: [{'player_tag': tag} for tag in tags]}))
-        async def api(context, arguments):
-            self.assertLessEqual(len(arguments['tags']), 20)
-            return {'items': [{'tag': tag, 'status': 'ok', 'data': {'items': []}} for tag in arguments['tags']]}
+
+        def account(tag):
+            battles = [] if tag != tags[0] else [
+                {'battle_at': (start - 60) * second, 'payload': {'attack': True}},
+                {'battle_at': (start + 60) * second, 'payload': {'attack': True}},
+                {'battle_at': (start + 120) * second, 'payload': {'attack': False}}]
+            status = 'never_read' if tag == tags[-1] else 'partial'
+            gaps = ([{'after': (start - 3600) * second, 'before': (start + 30) * second, 'cause': 'before_first_read'}]
+                    if status == 'partial' else [{'after': start * second, 'before': (start + 999) * second, 'cause': 'never_read'}])
+            return {'player_tag': tag, 'battles': battles, 'log_coverage': {'status': status, 'gaps': gaps}}
+        window = AsyncMock(side_effect=lambda selector, values, **kw: {'accounts': [account(tag) for tag in values]})
+        context = _context()
+        context.guild.get_member = lambda identifier: SimpleNamespace(id=identifier, display_name='Synthetic', roles=[], joined_at=None)
+        context = replace(context, bot=SimpleNamespace(ranked_reads=SimpleNamespace(window=window)),
+            account_links=SimpleNamespace(get_links_for_members=lambda ids: {41: [{'player_tag': tag} for tag in tags]}))
+        source = {'rows': [{'member_id': 41, 'started_at': '2020-01-01T00:00:00+00:00',
+                            'started_ts': start, 'start_time_status': 'known'}]}
+        with patch.object(reads, 'complete_snapshot', AsyncMock(return_value=source)), \
+                patch('elbow_helper.agent.datasets.clash.read_clash', AsyncMock(side_effect=AssertionError('live'))):
+            result = await reads.hibernation(context, {'include_activity': True, 'activity_kinds': ['ranked']})
+        window.assert_awaited_once()
+        self.assertEqual(window.call_args.args, ('account_tags', sorted(tags)))
+        self.assertEqual(window.call_args.kwargs['after'], start * second)
+        accounts = {row['player_tag']: row for row in result['rows'][0]['accounts']}
+        self.assertEqual(len(accounts), 21)
+        first = accounts[tags[0]]
+        self.assertEqual(first['observed_ranked_attacks_since_start'], 1)
+        self.assertEqual(first['latest_observed_ranked_attack_at'], '2020-01-01T00:01:00+00:00')
+        self.assertEqual(first['ranked_log_gaps_since_start'], [{'after': '2020-01-01T00:00:00+00:00',
+            'before': '2020-01-01T00:00:30+00:00', 'cause': 'before_first_read'}])
+        self.assertEqual(accounts[tags[1]]['observed_ranked_attacks_since_start'], 0)
+        self.assertIsNone(accounts[tags[-1]]['observed_ranked_attacks_since_start'])
+        self.assertEqual(accounts[tags[-1]]['profile_status'], 'never_read')
+
+    async def test_hibernation_without_the_record_leaves_ranked_activity_unknown(self):
+        context = _context()
+        context.guild.get_member = lambda identifier: SimpleNamespace(id=identifier, display_name='Synthetic', roles=[], joined_at=None)
+        context = replace(context, account_links=SimpleNamespace(get_links_for_members=lambda ids: {41: [{'player_tag': '#P0'}]}))
         source = {'rows': [{'member_id': 41, 'started_at': '2020-01-01T00:00:00+00:00',
                             'started_ts': 1577836800, 'start_time_status': 'known'}]}
-        with patch.object(reads, 'complete_snapshot', AsyncMock(return_value=source)), \
-                patch.object(reads, 'read_clash', AsyncMock(side_effect=api)) as mocked:
+        with patch.object(reads, 'complete_snapshot', AsyncMock(return_value=source)):
             result = await reads.hibernation(context, {'include_activity': True, 'activity_kinds': ['ranked']})
-        self.assertEqual(mocked.await_count, 2)
-        self.assertEqual(len(result['rows'][0]['accounts']), 21)
-        self.assertTrue(all(row['profile_status'] == 'ok' for row in result['rows'][0]['accounts']))
+        account = result['rows'][0]['accounts'][0]
+        self.assertEqual(account['profile_status'], 'unavailable')
+        self.assertIsNone(account['observed_ranked_attacks_since_start'])
 
     async def test_active_trial_snapshot_covers_entries_beyond_the_visible_first_page(self):
         context = _context()
@@ -95,14 +127,15 @@ class WorkflowFamilyTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
         context.guild.get_member = lambda identifier: SimpleNamespace(id=identifier,display_name='Synthetic',roles=[],joined_at=None)
         context = replace(context, account_links=SimpleNamespace(get_links_for_members=lambda ids:{41:[{'player_tag':'#P0'}]}))
+        window = AsyncMock()
+        context = replace(context, bot=SimpleNamespace(ranked_reads=SimpleNamespace(window=window)))
         result = {'rows':[{'member_id':41,'started_at':None,'started_ts':None,'start_time_status':'unavailable'}]}
-        with patch.object(reads,'complete_snapshot',AsyncMock(return_value=result)), \
-             patch.object(reads,'read_clash',AsyncMock()) as api:
+        with patch.object(reads,'complete_snapshot',AsyncMock(return_value=result)):
             result = await reads.hibernation(context, {'include_activity':True})
         row = result['rows'][0]
         self.assertIsNone(row['joined_at'])
         self.assertIsNone(row['accounts'][0]['observed_ranked_attacks_since_start'])
-        api.assert_not_awaited()
+        window.assert_not_awaited()
 
     async def test_promotion_keeps_intake_routing_and_response_separate(self):
         from elbow_helper.features.examination.queries import ExaminationCaseSnapshot, ExaminationCaseStatus

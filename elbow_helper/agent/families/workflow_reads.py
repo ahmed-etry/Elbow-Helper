@@ -16,9 +16,21 @@ from ..capabilities.hibernation.reads import read_active_hibernation
 from ..capabilities.examination.promotion_route import read_promotion_review
 from ..capabilities.member_lifecycle.reads import read_member_lifecycle
 from ..datasets.query import query_context
-from ..datasets.clash import read_clash
-from ..datasets.battle_logs import battle_date
+from ..datasets.ranked import FAILURES as RANKED_FAILURES, SECOND, iso, ranked_reads, read_window
 from ..research.history import read_discord_channel_history
+
+
+async def stored_ranked(context, starts, before):
+    """Each account's stored ranked battles and log coverage from its earliest hibernation start."""
+    after = datetime.fromtimestamp(min(starts.values()), timezone.utc)
+    if ranked_reads(context) is None or after >= before:
+        return {}
+    try:
+        result = await read_window(context, 'account_tags', sorted(starts), after, before,
+                                   limit=10_000, include_battles=True)
+    except RANKED_FAILURES:
+        return {}
+    return {row['player_tag']: row for row in result['accounts']}
 
 
 async def complete_snapshot(context, reader, arguments, field, output_field=None):
@@ -286,24 +298,23 @@ async def hibernation(context, arguments):
             wars = await selected_wars(context, period, 'both')
             if 'error' not in wars:
                 war_rows = wars['rows']
-        tags = sorted(starts)
-        for start in range(0,len(tags) if 'ranked' in kinds else 0,20):
-            source = await read_clash(context, {'kind':'battle_log','tags':tags[start:start+20],
-                                                'detail':'full','limit':50})
-            if 'error' not in source:
-                logs.update({row['tag']:row for row in source['items']})
+        if starts and 'ranked' in kinds:
+            logs = await stored_ranked(context, starts, context.source_message.created_at)
         for row in rows:
             accounts = []
             for link in links.get(row['member_id'], []):
                 tag = link['player_tag']
-                item = logs.get(tag, {'status':'unavailable'})
-                attacks = [battle_date(battle) for battle in item.get('data',{}).get('items',[])
-                    if str(battle.get('battleType','')).upper() in ('RANKED','LEGEND')
-                    and battle.get('attack') is True and battle_date(battle) is not None
-                    and row['started_ts'] is not None and battle_date(battle).timestamp() >= row['started_ts']]
-                accounts.append({'player_tag':tag,'profile_status':item['status'],
-                    'observed_ranked_attacks_since_start':len(attacks) if item['status']=='ok' and row['started_ts'] is not None else None,
-                    'latest_observed_ranked_attack_at':max(attacks).isoformat() if attacks else None})
+                item = logs.get(tag)
+                status = item['log_coverage']['status'] if item else 'unavailable'
+                since = row['started_ts'] * SECOND if row['started_ts'] is not None else None
+                attacks = [battle['battle_at'] for battle in (item or {}).get('battles', [])
+                           if battle['payload']['attack'] and since is not None and battle['battle_at'] >= since]
+                known = item is not None and since is not None and (attacks or status != 'never_read')
+                accounts.append({'player_tag':tag,'profile_status':status,
+                    'observed_ranked_attacks_since_start':len(attacks) if known else None,
+                    'latest_observed_ranked_attack_at':iso(max(attacks)) if attacks else None,
+                    'ranked_log_gaps_since_start':[{**gap,'after':iso(max(gap['after'],since)),'before':iso(gap['before'])}
+                        for gap in item['log_coverage']['gaps'] if gap['before'] > since] if known else None})
                 account = accounts[-1]
                 for kind, war_type in [('regular_war', 'REG'), ('cwl', 'CWL')]:
                     if kind not in kinds:
@@ -331,7 +342,7 @@ async def hibernation(context, arguments):
                                  else 'latest_observed_cwl_war_end_at')
                     account[end_field] = (
                         datetime.fromtimestamp(latest, timezone.utc).isoformat() if latest is not None else None)
-            row.update(accounts=accounts, activity_coverage='Ranked activity uses latest rolling logs; absence does not establish inactivity.',
+            row.update(accounts=accounts, activity_coverage='Ranked activity uses stored battle logs; a gap in log reading or an absence does not establish inactivity.',
                        war_activity_coverage='Stored wars have no individual attack timestamps. Counts use wars starting at or after hibernation; overlapping or undated-start wars retain unknown attack timing. Latest war-end dates are not attack dates.',
                        ownership_basis='current bot links; historical ownership unknown')
     sort_field = 'started_at' if arguments.get('sort') == 'longest_hibernating' else 'joined_at'

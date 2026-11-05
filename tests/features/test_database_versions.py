@@ -21,8 +21,6 @@ from elbow_helper.features.achievements.cog import Achievements
 from elbow_helper.features.clan_health.cog import ClanHealth
 from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.clan_health.database import schema as health_schema
-from elbow_helper.features.ranked_stats import schema as ranked_schema
-from elbow_helper.features.ranked_stats.store import RankedStore
 from elbow_helper.features.records.database import RecordRepository
 from elbow_helper.features.records.database import schema as records_schema
 from elbow_helper.features import records
@@ -32,7 +30,7 @@ from elbow_helper.infrastructure.persistence.migrations import (
 from elbow_helper.infrastructure.persistence.versioned import validate_sqlite_shape
 
 
-SCHEMAS = (links_schema, ranked_schema, records_schema, achievements_schema, health_schema)
+SCHEMAS = (links_schema, records_schema, achievements_schema, health_schema)
 
 
 def quote(name):
@@ -194,7 +192,6 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_harmless_type_differences_adopt_without_rewriting_values(self):
         for schema, table, column in (
             (links_schema, "links", "player_name_last_seen"),
-            (ranked_schema, "snapshots", "player_name"),
             (records_schema, "leadership_records", "member_display"),
             (achievements_schema, "achievements", "name"),
             (health_schema, "player_snapshots", "player_name"),
@@ -208,7 +205,6 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_unused_defaults_adopt_without_rewriting_values(self):
         for schema, table, column, old in (
             (links_schema, "links", "last_seen_role", "TEXT DEFAULT ''"),
-            (ranked_schema, "snapshots", "player_name", "TEXT"),
             (records_schema, "leadership_records", "note", "TEXT NOT NULL DEFAULT ''"),
             (achievements_schema, "user_coins", "balance", "INTEGER NOT NULL DEFAULT 0"),
             (health_schema, "player_snapshots", "pet_sum", "INTEGER DEFAULT 0"),
@@ -224,7 +220,6 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_looser_nullability_adopts_without_rewriting_values(self):
         for schema, table, column, kind in (
             (links_schema, "links", "discord_user_id", "INTEGER"),
-            (ranked_schema, "snapshots", "status", "TEXT"),
             (records_schema, "leadership_records", "note", "TEXT"),
             (achievements_schema, "achievements", "name", "TEXT"),
             (health_schema, "player_snapshots", "player_name", "TEXT"),
@@ -237,7 +232,7 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_extra_columns_on_named_inserts_adopt_unchanged(self):
         for schema, table in (
-            (links_schema, "links"), (ranked_schema, "snapshots"),
+            (links_schema, "links"),
             (records_schema, "leadership_records"), (achievements_schema, "user_stats"),
             (health_schema, "player_snapshots"),
         ):
@@ -268,7 +263,7 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_named_inserts_accept_reordered_columns(self):
         for schema, table in (
-            (links_schema, "links"), (ranked_schema, "snapshots"),
+            (links_schema, "links"),
             (records_schema, "leadership_records"), (achievements_schema, "achievements"),
             (health_schema, "player_snapshots"),
         ):
@@ -287,7 +282,6 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_missing_identity_keys_are_refused_unchanged(self):
         for schema, table, old, new in (
             (links_schema, "links", "player_tag TEXT PRIMARY KEY", "player_tag TEXT"),
-            (ranked_schema, "snapshots", ",\n        PRIMARY KEY (player_tag, observed_at)", ""),
             (records_schema, "leadership_records", "id INTEGER PRIMARY KEY AUTOINCREMENT", "id INTEGER"),
             (achievements_schema, "user_stats", "user_id INTEGER PRIMARY KEY", "user_id INTEGER"),
             (health_schema, "player_directory", "player_tag TEXT PRIMARY KEY", "player_tag TEXT"),
@@ -312,14 +306,11 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_required_nullability_stays_strict_for_explicit_missing_values(self):
         for schema, nullable in (
-            (ranked_schema, ranked_schema._NULLABLE),
             (achievements_schema, {"coin_transactions": {"reason", "actor_id"}, "raffle_winners": {"reroll_of"}}),
             (health_schema, health_schema._NULLABLE),
         ):
             for table, columns in nullable.items():
                 for column in columns:
-                    if table == "ranked_battles" and column == "opponent_tag":
-                        continue  # The existing upgrade makes this column nullable.
                     with self.subTest(database=schema.DATABASE.name, table=table, column=column):
                         path = self.path(schema, table + column)
                         deployed_fixture(path, schema)
@@ -378,7 +369,6 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_equivalent_unique_keys_accept_a_different_primary_key_declaration(self):
         for schema, table, column, kind in (
             (links_schema, "links", "player_tag", "TEXT"),
-            (ranked_schema, "profile_health", "player_tag", "TEXT"),
             (achievements_schema, "user_stats", "user_id", "INTEGER"),
             (health_schema, "player_directory", "player_tag", "TEXT"),
         ):
@@ -387,24 +377,6 @@ class DatabaseVersionTests(unittest.TestCase):
                 deployed_fixture(path, schema)
                 rewrite_table(path, table, lambda sql: sql.replace(f"{column} {kind} PRIMARY KEY", f"{column} {kind} UNIQUE"))
                 self.assert_adopted_with_warnings(schema, path, [f"{table}.{column}: primary key declaration differs"])
-
-    def test_positional_inserts_refuse_reordered_and_extra_columns(self):
-        for table in ranked_schema._POSITIONAL_TABLES:
-            for extra in (False, True):
-                with self.subTest(table=table, extra=extra):
-                    path = self.path(ranked_schema, table + str(extra))
-                    deployed_fixture(path, ranked_schema)
-
-                    def change(sql):
-                        prefix, body = sql.split("(", 1)
-                        if extra:
-                            return prefix + "(older_field TEXT," + body
-                        parts = body.rsplit(")", 1)[0].split(",", 2)
-                        parts[0], parts[1] = parts[1], parts[0]
-                        return prefix + "(" + ",".join(parts) + ")"
-
-                    rewrite_table(path, table, change, extra_values={"older_field": "preserved"} if extra else None)
-                    self.assert_refused_unchanged(ranked_schema, path, UnversionedSQLiteSchemaError)
 
     def test_generated_ids_refuse_type_or_default_changes(self):
         for schema, table in (
@@ -422,7 +394,7 @@ class DatabaseVersionTests(unittest.TestCase):
                     self.assert_refused_unchanged(schema, path, UnversionedSQLiteSchemaError)
 
     def test_omitted_required_columns_without_defaults_are_refused(self):
-        for schema, table in ((links_schema, "links"), (ranked_schema, "snapshots"),
+        for schema, table in ((links_schema, "links"),
                               (records_schema, "leadership_records"), (achievements_schema, "achievements"),
                               (health_schema, "player_snapshots")):
             with self.subTest(database=schema.DATABASE.name):
@@ -444,7 +416,6 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_missing_required_columns_are_refused_unchanged(self):
         for schema, table, column in (
             (links_schema, "links", "last_seen_role"),
-            (ranked_schema, "snapshots", "fields_json"),
             (records_schema, "leadership_records", "note"),
             (achievements_schema, "user_stats", "meme_posts"),
             (health_schema, "report_players", "note"),
@@ -458,7 +429,7 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_missing_required_tables_are_refused_unchanged(self):
         for schema, table in (
-            (links_schema, "suggestions"), (ranked_schema, "snapshots"),
+            (links_schema, "suggestions"),
             (records_schema, "leadership_records"), (achievements_schema, "user_stats"),
             (health_schema, "player_directory"),
         ):
@@ -496,31 +467,6 @@ class DatabaseVersionTests(unittest.TestCase):
         links_schema.DATABASE.initialize(path)
         self.assertEqual(version(path), links_schema.SCHEMA_VERSION)
         self.assertEqual(saved_state(path), before)
-
-    def test_ranked_snapshot_only_and_nullable_opponent_upgrades(self):
-        for snapshot_only in (True, False):
-            with self.subTest(snapshot_only=snapshot_only):
-                path = self.path(ranked_schema, str(snapshot_only))
-                deployed_fixture(path, ranked_schema)
-                with closing(sqlite3.connect(path)) as connection, connection:
-                    snapshots = connection.execute("SELECT * FROM snapshots").fetchall()
-                    battles = connection.execute("SELECT * FROM ranked_battles").fetchall()
-                    if snapshot_only:
-                        for table in ("ranked_battles", "battle_log_polls", "profile_health"):
-                            connection.execute(f"DROP TABLE {table}")
-                    else:
-                        sql = connection.execute("SELECT sql FROM sqlite_master WHERE name='ranked_battles'").fetchone()[0]
-                        connection.execute("ALTER TABLE ranked_battles RENAME TO saved_battles")
-                        connection.execute(sql.replace("opponent_tag TEXT", "opponent_tag TEXT NOT NULL"))
-                        connection.execute("INSERT INTO ranked_battles SELECT * FROM saved_battles")
-                        connection.execute("DROP TABLE saved_battles")
-                ranked_schema.DATABASE.initialize(path)
-                self.assertEqual(version(path), ranked_schema.SCHEMA_VERSION)
-                with closing(sqlite3.connect(path)) as connection:
-                    self.assertEqual(connection.execute("SELECT * FROM snapshots").fetchall(), snapshots)
-                    self.assertEqual(connection.execute("SELECT * FROM ranked_battles").fetchall(), [] if snapshot_only else battles)
-                    self.assertEqual(next(row[3] for row in connection.execute("PRAGMA table_info(ranked_battles)")
-                                          if row[1] == "opponent_tag"), 0)
 
     def test_achievement_reward_ledger_is_backfilled_once(self):
         path = self.path(achievements_schema)
@@ -720,8 +666,6 @@ class DatabaseVersionTests(unittest.TestCase):
         if schema is links_schema:
             with patch("elbow_helper.features.account_links.database.DB_PATH", path):
                 AccountLinksDbMixin()._init_db()
-        elif schema is ranked_schema:
-            RankedStore(path).append([])
         elif schema is records_schema:
             RecordRepository(path).list()
         elif schema is health_schema:

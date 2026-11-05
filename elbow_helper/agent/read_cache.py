@@ -148,13 +148,13 @@ def source_revision(source):
     return value if isinstance(value, str) and value else None
 
 
-# Stored sources whose revisions follow reports; the record's war reads belong to the bot.
-TRACKED_SOURCES = ('cwl_queries', 'ranked_queries', 'war_reads')
+# Stored sources whose revisions follow reports; the record's war and ranked reads belong to the bot.
+TRACKED_SOURCES = ('cwl_queries', 'ranked_reads', 'war_reads')
 
 
 def named_source(context, name):
-    if name == 'war_reads':
-        return getattr(getattr(context, 'bot', None), 'war_reads', None)
+    if name in ('war_reads', 'ranked_reads'):
+        return getattr(getattr(context, 'bot', None), name, None)
     return getattr(context, name, None)
 
 

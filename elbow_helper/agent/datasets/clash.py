@@ -181,7 +181,7 @@ def summary(kind, payload):
     ]}
 
 
-async def read_clash(context, arguments, *, complete_battle_log=False):
+async def read_clash(context, arguments):
     cache = getattr(context, "clash_reads", None)
     try:
         await require_evidence_access(context)
@@ -291,7 +291,7 @@ async def read_clash(context, arguments, *, complete_battle_log=False):
                 if kind == "battle_log":
                     # The battle-log route has no verified server-side limit parameter.
                     payload, coverage = select_battles(
-                        payload, limit=max(1, len(payload.get('items', []))) if complete_battle_log else limit,
+                        payload, limit=limit,
                         offset=offset, order=order, after=after, before=before,
                     )
                 elif kind in ("war_log", "capital_raids"):
