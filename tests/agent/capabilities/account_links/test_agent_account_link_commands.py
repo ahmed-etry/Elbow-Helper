@@ -96,7 +96,8 @@ class AccountLinkRestoreTests(unittest.TestCase):
     def test_restore_replaces_new_and_reassigned_links_together(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch("elbow_helper.features.account_links.database.DB_PATH",
-                       Path(directory) / "links.db"):
+                       Path(directory) / "links.db"), patch(
+                           "elbow_helper.data.store.time.time_ns", return_value=1_800_000_000_000_000_000):
                 links = AccountLinksDbMixin()
                 links._init_db()
                 asyncio.run(attach_links(links))

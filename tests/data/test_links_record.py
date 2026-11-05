@@ -143,6 +143,77 @@ class RecordLinkTests(_PeopleFixture):
             await self.service.delete_link("#V0", operation_key="same", at=400)
         self.assertEqual(await self.dump(), before)
 
+    async def test_same_instant_link_unlink_transfer_and_restore_keep_strict_order(self):
+        before = await self.service.read_links()
+        with patch("elbow_helper.data.links.now_us", return_value=200):
+            await self.service.upsert_link(**row("#V0", 300), operation_key="link")
+            await self.service.delete_link("#V0", operation_key="unlink")
+            await self.service.upsert_link(**row("#V0", 400), operation_key="relink")
+            await self.service.upsert_link(**row(owner=300), operation_key="transfer")
+            # The ordering survives a new service and store, even while the clock is frozen.
+            self.service = LinkService(FamilyStore(self.store.path), self.legacy)
+            self.assertTrue((await self.service.startup())["ready"])
+            await self.service.restore_links({"#P0": before["#P0"], "#V0": None}, operation_key="restore")
+        self.assertEqual(await self.service.read_links(), before)
+        await self.assert_rollback_copy()
+        operations = await self.rows("SELECT o.operation_key,o.created_at,o.finished_at,i.committed_at "
+                                     "FROM link_operations o JOIN collection_items i ON i.id=o.source_item_id "
+                                     "ORDER BY o.created_at")
+        self.assertEqual([(r["operation_key"], r["created_at"], r["finished_at"], r["committed_at"])
+                          for r in operations],
+                         [(key, at, at, at) for key, at in zip(
+                             ("link", "unlink", "relink", "transfer", "restore"), range(201, 206))])
+        history = await self.rows("SELECT a.player_tag,m.discord_id,l.from_at,l.to_at "
+                                  "FROM account_links l JOIN accounts a ON a.id=l.account_id "
+                                  "JOIN members m ON m.id=l.member_id "
+                                  "WHERE a.player_tag IN ('#P0','#V0') ORDER BY a.player_tag,l.from_at")
+        self.assertEqual([(r["player_tag"], r["discord_id"], r["from_at"], r["to_at"]) for r in history],
+                         [("#P0", 100, 200, 204), ("#P0", 300, 204, 205), ("#P0", 100, 205, None),
+                          ("#V0", 300, 201, 202), ("#V0", 400, 203, 205)])
+        people = PeopleReads(self.store)
+        for at, owners in ((201, [100, 300]), (202, [100, None]), (203, [100, 400]),
+                           (204, [300, 400]), (205, [100, None])):
+            self.assertEqual([r["member_id"] for r in (await people.owners(["#P0", "#V0"], at))["rows"]], owners)
+
+    async def test_same_instant_failure_and_retry_do_not_consume_a_timestamp(self):
+        with patch("elbow_helper.data.links.now_us", return_value=300):
+            await self.service.upsert_link(**row(owner=300), operation_key="first")
+            await self.execute("CREATE TRIGGER refuse_write BEFORE INSERT ON link_operations "
+                               "BEGIN SELECT RAISE(ABORT,'synthetic refused write'); END")
+            before, legacy = await self.dump(), self.legacy.read_bytes()
+            with self.assertRaisesRegex(sqlite3.IntegrityError, "synthetic refused write"):
+                await self.service.upsert_link(**row(owner=400), operation_key="retry")
+            self.assertEqual(await self.dump(), before)
+            self.assertEqual(self.legacy.read_bytes(), legacy)
+            await self.execute("DROP TRIGGER refuse_write")
+            await self.service.upsert_link(**row(owner=400), operation_key="retry")
+            before = await self.dump()
+            await self.service.upsert_link(**row(owner=400), operation_key="retry")
+            self.assertEqual(await self.dump(), before)
+            await self.service.delete_link("#P0", operation_key="last")
+        self.assertEqual([r["created_at"] for r in await self.rows(
+            "SELECT created_at FROM link_operations ORDER BY created_at")], [300, 301, 302])
+        await self.assert_rollback_copy()
+
+    async def test_explicit_ties_refresh_and_advancing_clock_share_commit_time(self):
+        before = await self.dump()
+        with self.assertRaisesRegex(LinkConflict, "operation_precedes_import"):
+            await self.service.delete_link("#P0", at=199)
+        self.assertEqual(await self.dump(), before)
+        await self.service.upsert_link(**row("#V0", 300), at=300)
+        await self.service.update_link_last_seen(player_tag="#V0", player_name_last_seen="Fresh",
+            last_seen_clan_tag="", last_seen_clan_code="", last_seen_role="", at=300)
+        await self.service.upsert_link(**row("#V0", 400), at=300)
+        await self.service.delete_link("#V0", at=400)
+        self.assertEqual([r["created_at"] for r in await self.rows(
+            "SELECT created_at FROM link_operations ORDER BY created_at")], [300, 301, 302, 400])
+        history = await self.rows("SELECT l.from_at,l.last_observed_at,l.to_at,l.end_previous_good_at "
+                                  "FROM account_links l JOIN accounts a ON a.id=l.account_id "
+                                  "WHERE a.player_tag='#V0' ORDER BY l.from_at")
+        self.assertEqual(history, [dict(from_at=300, last_observed_at=301, to_at=302, end_previous_good_at=301),
+                                   dict(from_at=302, last_observed_at=302, to_at=400, end_previous_good_at=302)])
+        self.assertEqual((await self.rows("SELECT checked_at FROM imports"))[0]["checked_at"], 400)
+
     async def test_unavailable_record_never_reads_or_writes_legacy(self):
         before = self.legacy.read_bytes()
         with patch.object(self.store, "_connection", side_effect=OSError("unavailable")):
