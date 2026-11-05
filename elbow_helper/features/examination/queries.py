@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -27,9 +27,22 @@ WORKFLOW_STATUSES = frozenset({
 })
 
 
+STAGES = frozenset({
+    "started", "answered", "availability_given", "sent_for_review",
+    "followed_up", "reviewed", "route_changed",
+})
+
+
 @dataclass(frozen=True, slots=True)
 class ExaminationCaseRegistration:
     ticket_channel_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class ExaminationCaseStage:
+    """A recorded stage of the case and when it happened; never an outcome."""
+    stage: str
+    at: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +57,7 @@ class ExaminationCaseStatus:
     followup_stage: str
     response_status: str
     workflow_status: str
+    stages: tuple[ExaminationCaseStage, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,8 +76,10 @@ class ExaminationQueries:
         cases: Callable[[], Mapping[str, Any]],
         *,
         clock: Callable[[], datetime] | None = None,
+        history: Callable[[], Mapping[int, Iterable[tuple[str, int]]]] = dict,
     ) -> None:
         self._cases = cases
+        self._history = history
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def case_registrations(self) -> tuple[ExaminationCaseRegistration, ...]:
@@ -112,6 +128,9 @@ class ExaminationQueries:
             if channel_id in selected_entries:
                 raise ValueError("Duplicate examination case channel identity")
             selected_entries[channel_id] = value
+        history = self._history()
+        if not isinstance(history, Mapping):
+            raise ValueError("Invalid examination case history")
         rows = []
         skipped = 0
         for channel_id, value in selected_entries.items():
@@ -119,7 +138,7 @@ class ExaminationQueries:
             if row is None:
                 skipped += 1
                 continue
-            rows.append(row)
+            rows.append(replace(row, stages=_stages(history.get(channel_id, ()))))
         rows.sort(key=lambda row: (row.workflow_status, row.ticket_channel_id))
         return ExaminationCaseSnapshot(
             observed_at=observed.isoformat(),
@@ -240,6 +259,16 @@ def examination_workflow_status(
     return "awaiting_response"
 
 
+def _stages(rows: Iterable[tuple[str, int]]) -> tuple[ExaminationCaseStage, ...]:
+    stages = []
+    for kind, at in rows:
+        if kind not in STAGES or type(at) is not int:
+            continue
+        moment = datetime.fromtimestamp(at / 1_000_000, timezone.utc)
+        stages.append(ExaminationCaseStage(kind, moment.isoformat()))
+    return tuple(stages)
+
+
 def _positive_int(value: Any) -> int | None:
     if type(value) is int:
         return value if value > 0 else None
@@ -252,12 +281,14 @@ def _positive_int(value: Any) -> int | None:
 __all__ = [
     "CASE_TYPES",
     "ExaminationCaseRegistration",
+    "ExaminationCaseStage",
     "ExaminationCaseSnapshot",
     "ExaminationCaseStatus",
     "ExaminationQueries",
     "FOLLOWUP_STAGES",
     "INTAKE_STATUSES",
     "MAX_ACTIVE_EXAMINATION_CASES",
+    "STAGES",
     "WORKFLOW_STATUSES",
     "examination_workflow_status",
 ]

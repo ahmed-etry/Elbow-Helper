@@ -10,6 +10,7 @@ from elbow_helper.infrastructure.persistence.migrations import run_sqlite_migrat
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_connection, sqlite_transaction
 from elbow_helper.infrastructure.persistence.versioned import validate_sqlite_shape
 
+from .examination import load_cases, save_case, scrub_member
 from .records import Event, KINDS, now_us, record
 from .schema import MIGRATIONS, SCHEMA_VERSION, create_schema
 
@@ -137,6 +138,10 @@ class EventsStore:
                     for row in state["reminders"].values():
                         if row.get("resolved_by") == discord_id:
                             row["resolved_by"] = None
+                elif workflow == "examination":
+                    cases = load_cases(connection)
+                    for key in scrub_member(cases, state, discord_id):
+                        save_case(connection, int(key), cases.get(key))
                 elif workflow == "lifecycle":
                     # Weekly source counts are totals, not a member's data.
                     state["overdue_applicant_ids"] = [

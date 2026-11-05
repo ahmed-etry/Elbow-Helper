@@ -58,6 +58,13 @@ class ExaminationFollowupMixin:
             return latest_dt
         return baseline
 
+    @staticmethod
+    def _mark_responded(case: Dict[str, Any], message: discord.Message) -> None:
+        # Who replied and when date the reviewed stage in the case history.
+        case["responded"] = True
+        case["responded_by"] = message.author.id
+        case["responded_at"] = datetime.now(timezone.utc).isoformat()
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         # Kick off routing as soon as the TicketTool embed arrives.
@@ -84,7 +91,7 @@ class ExaminationFollowupMixin:
             case = self._get_case(message.channel.id)
             opener_id = case.get("opener_id") if case else None
             if case and opener_id and message.author.id != opener_id and not case.get("responded"):
-                case["responded"] = True
+                self._mark_responded(case, message)
                 updated = True
 
         if message.channel.id != EXAMINATION_ROOM:
@@ -114,11 +121,11 @@ class ExaminationFollowupMixin:
             routing_msg_id = case.get("routing_message_id")
             ticket_channel_id = case.get("ticket_channel_id")
             if reply_to_id and routing_msg_id == reply_to_id:
-                case["responded"] = True
+                self._mark_responded(case, message)
                 updated = True
                 continue
             if ticket_channel_id and ticket_channel_id in ticket_mentions:
-                case["responded"] = True
+                self._mark_responded(case, message)
                 updated = True
 
         if updated:

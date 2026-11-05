@@ -137,7 +137,7 @@ async def prepare_promotion_route(context: AgentRequestContext,
                 ticket_channel_id=ticket.id,
                 routing_message_id=int(case.get("routing_message_id") or 0),
                 from_clan=from_clan, to_clan=to_clan,
-                actor=context.member,
+                actor=context.member, via="agent",
             )
         except ValueError as error:
             raise ActionRefused(str(error)) from error

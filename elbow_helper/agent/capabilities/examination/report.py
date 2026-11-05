@@ -13,6 +13,7 @@ from elbow_helper.features.examination.queries import (
     FOLLOWUP_STAGES,
     INTAKE_STATUSES,
     MAX_ACTIVE_EXAMINATION_CASES,
+    STAGES,
     ExaminationCaseSnapshot,
     ExaminationCaseStatus,
     examination_workflow_status,
@@ -96,6 +97,7 @@ class ExaminationCaseReport:
                 "exam requirement",
                 "follow-up stage",
                 "response-recorded status",
+                "recorded stages and their times",
             ],
             "excluded_fields": [
                 "ticket and routing messages",
@@ -161,6 +163,10 @@ def _validate_case(row: ExaminationCaseStatus) -> None:
         or row.response_status not in _RESPONSE_STATUSES
     ):
         raise ValueError("Invalid examination case status")
+    for stage in row.stages:
+        if stage.stage not in STAGES:
+            raise ValueError("Invalid examination case stage")
+        _timestamp(stage.at)
     if row.applicant_status == "unidentified":
         applicant_valid = row.applicant_member_id is None
     elif row.applicant_status == "identified":

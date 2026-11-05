@@ -20,7 +20,7 @@ from elbow_helper.features.recruitment.queries import (
     ActiveRecruitmentTrial, ActiveRecruitmentTrialSnapshot,
 )
 from elbow_helper.features.examination.queries import (
-    ExaminationCaseSnapshot, ExaminationCaseStatus,
+    ExaminationCaseSnapshot, ExaminationCaseStage, ExaminationCaseStatus,
 )
 from ..tool_support.adapters.achievements.report import AchievementProgressReport
 from ..tool_support.adapters.events.report import EventScheduleReport
@@ -151,8 +151,9 @@ def decode_examination_case_status(row: dict[str, Any], guild_id: int) -> Any:
             skipped_invalid_selected_count=value[
                 "skipped_invalid_selected_count"
             ],
-            cases=tuple(ExaminationCaseStatus(**item)
-                        for item in value["cases"]),
+            cases=tuple(ExaminationCaseStatus(**{
+                **item, "stages": tuple(ExaminationCaseStage(**stage) for stage in item.get("stages", ())),
+            }) for item in value["cases"]),
         ),
     )
 

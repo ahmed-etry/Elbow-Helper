@@ -33,7 +33,7 @@ retain older feature names because existing deployments depend on them.
 | CWL | `data/cwl/cwl_bonus_config_audit.json` | Bonus-rule audit history |
 | CWL | `data/cwl/cwl_bonus_dashboard_state.json` | Bonus board message IDs, clan status, and reward recipients |
 | Events | `data/event_stats/event_stats.json` | Event definitions, order, and messages |
-| Examinations | `data/examination/examination_state.json` | Examiners, cases, availability, panel, and cleanup state |
+| Examinations | `data/events/events.sqlite3` | Examiners, cases and the dates of each stage, availability, panel and cleanup state |
 | Hibernation | `data/events/events.sqlite3` | Saved roles, hibernating members and their history |
 | Leadership news | `data/events/events.sqlite3` | Pending publish prompts and what was published |
 | Member lifecycle | `data/events/events.sqlite3` | Where each member came from when they joined and why they left, this week's join count per source, reports on applicants who have waited too long, and which ticket logs belong to whom |
