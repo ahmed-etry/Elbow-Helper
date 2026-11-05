@@ -5,7 +5,7 @@ import unittest
 import discord
 
 from elbow_helper.agent.discord_actions.roles import discord_role_tools
-from elbow_helper.agent.families.catalogue import discovery_tool
+from elbow_helper.agent.engine.catalogue import discovery_tool
 from elbow_helper.agent.models import AgentCapabilityEffect
 from agent.engine.test_agent_plan_flow import _context
 

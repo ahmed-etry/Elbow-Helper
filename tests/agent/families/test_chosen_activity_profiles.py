@@ -6,12 +6,12 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.agent.families import identity_reads as reads
-from elbow_helper.agent.families.core import family_tool
-from elbow_helper.agent.families.member_context import owner_context, PROFILE_ROLE_GROUPS
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.tool_support.core import family_tool
+from elbow_helper.agent.reads.member_context import owner_context, PROFILE_ROLE_GROUPS
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
 from elbow_helper.agent.engine.assessment import assessment_limits
-from elbow_helper.agent.families.projections import performance_projection
+from elbow_helper.agent.reads.projections import performance_projection
 from elbow_helper.configuration.roles import MEMBER_ROLE_ID, CO_LEADER_ROLE_ID, AGE_ROLE_IDS
 from agent.families.test_named_account_stats import lookup_context, named_member
 
@@ -92,7 +92,7 @@ class ChosenActivityProfileTests(unittest.IsolatedAsyncioTestCase):
         account_tool = family_tool('read_member_accounts', 'Synthetic accounts', {},
             AsyncMock(return_value={'rows': [{'player_tag': '#P0', 'member_id': 42}]}))
         accounts = await account_tool.handler(context, {})
-        with patch('elbow_helper.agent.families.projections.authorize_report', AsyncMock(return_value=False)):
+        with patch('elbow_helper.agent.reads.projections.authorize_report', AsyncMock(return_value=False)):
             result = await reads.member_cohort(context, {'basis': 'selected', 'cohort_ref': accounts['report_id']})
         self.assertEqual(result['cause'], 'report_unavailable')
 

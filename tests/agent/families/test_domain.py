@@ -5,8 +5,8 @@ import unittest
 from elbow_helper.configuration.clans import CLAN_ORDER
 from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.agent.access import has_access_requirements
-from elbow_helper.agent.families.domain_facts import clan_profile, domain_reference
-from elbow_helper.agent.families.reference_reads import community_reference
+from elbow_helper.agent.reads.domain_facts import clan_profile, domain_reference
+from elbow_helper.agent.reads.reference import community_reference
 from agent.engine.test_agent_plan_flow import _context
 
 

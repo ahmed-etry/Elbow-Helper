@@ -16,8 +16,8 @@ from elbow_helper.configuration.clans import CLANS
 from tests.data.legacy_health_schema import LegacyHealthFile as ClanHealthRepository
 from elbow_helper.features.cwl.config import CWL_CLAN_NAMES
 from elbow_helper.features.cwl.queries import CwlQueries
-from elbow_helper.agent.families import war_reads
-from elbow_helper.agent.families.war_reads import cwl_results
+from elbow_helper.agent.reads import war_tools as war_reads
+from elbow_helper.agent.reads.war_tools import cwl_results
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.record_stub import with_record
 from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
@@ -167,9 +167,9 @@ class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
     def test_sql_guide_and_joins_keep_both_sides_of_a_shared_war_distinct(self):
         """The old store's war tables stay readable as history."""
         from types import SimpleNamespace
-        from elbow_helper.agent.datasets.sources import DataSource
-        from elbow_helper.agent.datasets.guide import DataGuide
-        from elbow_helper.agent.datasets.query import run_query
+        from elbow_helper.agent.tool_support.sql.sources import DataSource
+        from elbow_helper.agent.tool_support.sql.guide import DataGuide
+        from elbow_helper.agent.tool_support.sql.query import run_query
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         repository = ClanHealthRepository(Path(temporary.name) / 'wars.db')

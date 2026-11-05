@@ -397,7 +397,7 @@ def bound_tool_result(content: str, limit: int) -> str:
     except ValueError:
         payload = None
     if isinstance(payload, dict):
-        from ..families.paging import bound_family_page
+        from ..tool_support.paging import bound_family_page
         family = bound_family_page(payload, limit)
         if family is not None:
             return family

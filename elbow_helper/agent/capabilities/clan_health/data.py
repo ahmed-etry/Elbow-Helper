@@ -2,7 +2,7 @@
 
 from elbow_helper.features.clan_health.config import DB_PATH
 
-from ...datasets.sources import DataSource
+from ...tool_support.sql.sources import DataSource
 
 
 SOURCES = (

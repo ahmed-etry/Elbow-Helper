@@ -16,7 +16,7 @@ from ..engine import budgets
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
 from ..research.history import search_date
-from ..capabilities.validation import invalid_arguments
+from ..tool_support.validation import invalid_arguments
 from ..plan.input_rules import RULES
 from .battle_logs import select_battles
 from .clash_cache import MAX_AGE_SECONDS

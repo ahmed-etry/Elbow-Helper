@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence, cohort_review_evidence
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.families.cohort_activity import activity_fields
-from elbow_helper.agent.families.core import family_tool
+from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.agent.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from agent.engine.test_agent_plan_flow import _context, _plan

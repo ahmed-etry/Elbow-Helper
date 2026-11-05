@@ -7,8 +7,9 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.families import account_activity, identity_reads, war_reads
-from elbow_helper.agent.families.war_reads import TOOLS
+from elbow_helper.agent.families import account_activity, identity_reads
+from elbow_helper.agent.reads import war_tools as war_reads
+from elbow_helper.agent.reads.war_tools import TOOLS
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
 from agent.cwl_helpers import ResultQueries
 from agent.engine.test_agent_plan_flow import _context

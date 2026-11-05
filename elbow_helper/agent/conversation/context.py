@@ -81,7 +81,7 @@ def requester_command_overview(context):
 
 def bot_read_overview(context):
     """Describe implemented family reads independently of slash-command help."""
-    from ..families import TOOLS
+    from ..reads.tools import TOOLS
     from ..access import has_access_requirements
     levels = context.state.scope.levels if context.state.scope else None
     reads = []

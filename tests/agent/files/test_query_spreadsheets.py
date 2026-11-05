@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 from openpyxl import load_workbook
 
 from agent.files.test_agent_spreadsheets import _context
-from elbow_helper.agent.datasets.sources import DataSource
+from elbow_helper.agent.tool_support.sql.sources import DataSource
 from elbow_helper.agent.files.spreadsheet_tools import prepare_spreadsheet
 
 
@@ -31,7 +31,7 @@ class QuerySpreadsheetTests(unittest.IsolatedAsyncioTestCase):
                 "accounts", Path("accounts.sqlite3"),
                 tables=(("accounts", "none", "Synthetic accounts"),),
             ),)
-            with patch("elbow_helper.agent.datasets.catalogue.SOURCES", sources):
+            with patch('elbow_helper.agent.tool_support.sql.catalogue.SOURCES', sources):
                 result = await prepare_spreadsheet(context, {"title": "Synthetic", "sheets": [
                     {
                         "name": "Evidence",

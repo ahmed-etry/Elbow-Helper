@@ -3,8 +3,8 @@
 from tempfile import TemporaryDirectory
 import unittest
 
-from elbow_helper.agent.datasets.catalogue import SOURCES
-from elbow_helper.agent.datasets.query import run_query
+from elbow_helper.agent.tool_support.sql.catalogue import SOURCES
+from elbow_helper.agent.tool_support.sql.query import run_query
 from agent.dataset_helpers import synthetic_datasets
 
 

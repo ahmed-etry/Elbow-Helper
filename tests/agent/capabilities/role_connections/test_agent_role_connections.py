@@ -7,7 +7,7 @@ from elbow_helper.configuration.roles import CORE, LEAD, CO_APPLICANT_ROLE_ID
 from elbow_helper.agent.access import AgentAccessLost, require_evidence_access
 from elbow_helper.agent.models import AgentRequestContext
 from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.capabilities.role_connections.reads import read_role_connections
+from elbow_helper.agent.tool_support.adapters.role_connections.reads import read_role_connections
 from elbow_helper.features.role_connections.queries import RoleConnectionQueries
 
 

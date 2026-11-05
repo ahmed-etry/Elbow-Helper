@@ -8,7 +8,7 @@ import discord
 
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.families.catalogue import FAMILY_INSTRUCTION
+from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
 from elbow_helper.agent.plan.format import plan_definition, system_instructions
 from elbow_helper.agent.plan.planning import read_request
 from agent.engine.test_agent_plan_flow import _context, _model_step, _Model, _Session

@@ -4,8 +4,8 @@ import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.families.core import family_tool
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.tool_support.core import family_tool
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.plan.results import model_result, model_view
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.test_family_paging_regressions import decode_rows
@@ -90,7 +90,7 @@ class NameResolutionViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(decode_rows(model_view(model_result(page))['rows'])), 14)
         self.assertIsNone(page['next_cursor'])
         self.assertLessEqual(view_size(page), 16_000)
-        with patch('elbow_helper.agent.families.model_view.name_resolution_view', side_effect=lambda r: r):
+        with patch('elbow_helper.agent.tool_support.model_view.name_resolution_view', side_effect=lambda r: r):
             before_size = view_size(page)
         self.assertLess(view_size(page), before_size)
         stored = json.loads(context.state.reports[page['report_id']].payload)

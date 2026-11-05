@@ -8,7 +8,7 @@ import unittest
 from elbow_helper.configuration.roles import LEAD
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.agent.engine.member_facts import read_topics
-from elbow_helper.agent.families.bot_workflows import bot_workflows
+from elbow_helper.agent.reads.bot_workflows import bot_workflows
 from elbow_helper.agent.plan.format import answer_instructions
 from elbow_helper.agent.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition

@@ -22,14 +22,14 @@ from elbow_helper.features.recruitment.queries import (
 from elbow_helper.features.examination.queries import (
     ExaminationCaseSnapshot, ExaminationCaseStatus,
 )
-from ..capabilities.achievements.report import AchievementProgressReport
-from ..capabilities.events.report import EventScheduleReport
+from ..tool_support.adapters.achievements.report import AchievementProgressReport
+from ..tool_support.adapters.events.report import EventScheduleReport
 from ..capabilities.member_lifecycle.report import MemberLifecycleReport
 from ..capabilities.examination.report import ExaminationCaseReport
-from ..capabilities.hibernation.report import HibernationReport
-from ..capabilities.recruitment.report import RecruitmentTrialReport
+from ..tool_support.adapters.hibernation.report import HibernationReport
+from ..tool_support.adapters.recruitment.report import RecruitmentTrialReport
 from ..research.report import DiscordResearchReport
-from ..capabilities.support_tickets.report import SupportTicketReport
+from ..tool_support.adapters.support_tickets.report import SupportTicketReport
 from .guild_boundary import require_guild
 
 

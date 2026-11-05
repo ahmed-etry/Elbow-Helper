@@ -2,8 +2,8 @@
 import json
 import unittest
 
-from elbow_helper.agent.families.core import family_tool
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.tool_support.core import family_tool
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.plan.results import model_result, model_view
 from agent.engine.test_agent_plan_flow import _context
 

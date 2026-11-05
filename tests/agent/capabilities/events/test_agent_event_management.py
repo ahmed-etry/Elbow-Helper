@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from elbow_helper.agent.access import ACCESS_LEAD
 from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.models import AgentTurnState
-from elbow_helper.agent.capabilities.events.management import event_management_tools
+from elbow_helper.agent.tool_support.adapters.events.management import event_management_tools
 
 
 class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
@@ -33,7 +33,7 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
         )
         tool = next(tool for tool in event_management_tools()
                     if tool.definition.name == "create_event_tracker")
-        with patch("elbow_helper.agent.capabilities.events.management.require_evidence_access",
+        with patch('elbow_helper.agent.tool_support.adapters.events.management.require_evidence_access',
                    new_callable=AsyncMock):
             result = await tool.handler(context, values)
         self.assertEqual(result["status"], "confirmation_required")
@@ -68,7 +68,7 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
         )
         tool = next(tool for tool in event_management_tools()
                     if tool.definition.name == "move_event")
-        with patch("elbow_helper.agent.capabilities.events.management.require_evidence_access",
+        with patch('elbow_helper.agent.tool_support.adapters.events.management.require_evidence_access',
                    new_callable=AsyncMock):
             result = await tool.handler(context, {"event": "Alpha", "edge": "top"})
         self.assertEqual(result["status"], "confirmation_required")

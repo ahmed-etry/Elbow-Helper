@@ -10,9 +10,9 @@ from elbow_helper.agent.engine.budgets import (
     RESEARCH_LIMITS, MAX_EVIDENCE_CHARACTERS, MAX_DISCUSSION_EVIDENCE_CHARACTERS,
 )
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.families.core import family_tool
-from elbow_helper.agent.families.reference_reads import conversation_evidence
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.tool_support.core import family_tool
+from elbow_helper.agent.reads.reference import conversation_evidence
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from agent.engine.test_agent_plan_flow import _context, _plan
 from agent.engine.test_answer_composition import client, provider_response, call, writer_payload
 from agent.research.test_agent_search import _context as history_context

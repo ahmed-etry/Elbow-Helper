@@ -12,7 +12,8 @@ from unittest.mock import AsyncMock, Mock, call, patch
 from elbow_helper.agent.reads import people as record_identity
 from elbow_helper.agent.reads.people import read_people_links as read_linked_accounts
 from elbow_helper.agent.datasets import membership as history_tool
-from elbow_helper.agent.families import identity_reads, account_names, model_view
+from elbow_helper.agent.families import identity_reads, account_names
+from elbow_helper.agent.tool_support import model_view
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.data.reads import PeopleReads, MembershipReads, StayReads
 from elbow_helper.data.store import FamilyStore

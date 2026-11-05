@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
-from elbow_helper.agent.families import reference_reads as reads
+from elbow_helper.agent.reads import reference as reads
 from elbow_helper.agent.knowledge.store import KnowledgeSection
 from elbow_helper.agent.models import EvidenceScope
 from elbow_helper.agent.engine.service import AgentService

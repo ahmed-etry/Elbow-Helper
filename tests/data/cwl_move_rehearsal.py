@@ -413,7 +413,7 @@ class Side:
 
     async def agent_tools(self):
         from dataclasses import replace
-        from elbow_helper.agent.families import war_reads
+        from elbow_helper.agent.reads import war_tools as war_reads
         from agent.engine.test_agent_plan_flow import _context
         links = SimpleNamespace(get_links_by_tags=lambda tags: {}, get_links_for_members=lambda ids: {},
                                 get_all_links=lambda: {})
@@ -427,7 +427,7 @@ class Side:
                  ("read_war_attendance", {"war_type": "CWL", "latest_completed": 10}),
                  ("read_war_attendance", {"war_type": "CWL", "clan_codes": list(GROUP_CLANS), "history_limit": 2})]
         result = {}
-        with patch("elbow_helper.agent.families.core.require_evidence_access", AsyncMock()):
+        with patch('elbow_helper.agent.tool_support.core.require_evidence_access', AsyncMock()):
             for index, (name, arguments) in enumerate(calls):
                 answer = await tools[name].handler(context, arguments)
                 result[f"{index} {name} {arguments.get('metric', arguments.get('war_type'))}"] = settled(answer)

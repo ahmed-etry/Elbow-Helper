@@ -23,11 +23,11 @@ from elbow_helper.agent.conversation.state import Conversation, ConversationReco
 from elbow_helper.agent.datasets.clash import read_clash
 from elbow_helper.agent.engine.tool_call import evidence_record
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
-from elbow_helper.agent.families.core import family_tool
-from elbow_helper.agent.families.war_reads import selected_wars
+from elbow_helper.agent.tool_support.core import family_tool
+from elbow_helper.agent.reads.war_tools import selected_wars
 from elbow_helper.agent.families.identity_reads import clan_rosters
 from elbow_helper.agent.families.cohort_activity import roster_cohort
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.read_cache import LIVE_READ_SECONDS, ReadCache, stored_read
 from elbow_helper.agent.research.history import read_discord_channel_history
 from elbow_helper.agent.research.history_cache import history_page
@@ -42,7 +42,7 @@ from elbow_helper.data.reads import RankedReads
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.infrastructure.persistence.revisions import release_sqlite_revision, sqlite_revision
 from tests.features.cwl_record_stub import LeagueRecord, league_war, member
-from elbow_helper.agent.families import record_wars
+from elbow_helper.agent.reads import record_wars
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.record_stub import with_record
 from agent.test_compact_clash import read_context, synthetic_player, synthetic_clan
@@ -204,7 +204,7 @@ class ReadCacheTests(unittest.IsolatedAsyncioTestCase):
                 raw = await read_clash(nested, args)
                 return {'rows': raw['items']}
             tool = family_tool('read_member_accounts', 'Synthetic nested profile', {}, reader)
-            with patch('elbow_helper.agent.families.core.require_evidence_access', AsyncMock()):
+            with patch('elbow_helper.agent.tool_support.core.require_evidence_access', AsyncMock()):
                 await tool.handler(local, {'fresh': True})
             self.assertTrue(local.bot.clash_client.get.await_args.kwargs['fresh'])
             self.assertEqual(local.bot.clash_client.get.await_count, 9)
@@ -485,7 +485,7 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
                         row['war_attendance'] = result['rows']
                     return {'coverage': 'Synthetic nested war read'}
                 tool = next(item for item in workflow_reads.TOOLS if item.definition.name == family)
-                with patch('elbow_helper.agent.families.core.require_evidence_access', AsyncMock()), \
+                with patch('elbow_helper.agent.tool_support.core.require_evidence_access', AsyncMock()), \
                      patch.object(workflow_reads, 'has_lookup_access', return_value=True), \
                      patch.object(workflow_reads, 'active_trial_rows', AsyncMock(return_value={'rows': [{'applicant_member_id': 2}]})), \
                      patch.object(workflow_reads, 'complete_snapshot', AsyncMock(return_value={'rows': [{'member_id': 2, 'started_ts': 1}]})), \
@@ -522,7 +522,7 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
                   'count_complete': True, 'clans': []}
         tool = next(item for item in identity_reads.TOOLS if item.definition.name == 'read_member_cohort')
         selection = {'basis': 'clan_rosters', 'include_activity': True, 'after': '2025-12-01T00:00:00+00:00'}
-        with patch('elbow_helper.agent.families.core.require_evidence_access', AsyncMock()), \
+        with patch('elbow_helper.agent.tool_support.core.require_evidence_access', AsyncMock()), \
              patch.object(identity_reads, 'clan_rosters', AsyncMock(return_value=roster)) as rosters:
             first = await tool.handler(local, selection)
             retained = local.state.reports[first['report_id']].payload
@@ -546,7 +546,7 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
              'source_detail': 'synthetic unique retained detail ' + str(index) + 'x' * 300}
             for index in range(450)]})
         tool = family_tool(family, 'Synthetic roster', {}, reader)
-        with patch('elbow_helper.agent.families.core.require_evidence_access', AsyncMock()):
+        with patch('elbow_helper.agent.tool_support.core.require_evidence_access', AsyncMock()):
             result = await tool.handler(local, {'view': 'count'})
         full = local.state.reports[result['report_id']].page(limit=450)
         plan = {'goal': 'Assess synthetic roster', 'effort': 'high', 'output': 'text',
@@ -582,8 +582,8 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('say "as of <time>"', FINDINGS_INSTRUCTION)
         self.assertIn(observed.isoformat(), compiled.answer_context)
         self.assertLess(estimate_tokens(json.dumps(prior)), estimate_tokens(encoded) * .05)
-        with patch('elbow_helper.agent.families.core.require_evidence_access', AsyncMock()), \
-             patch('elbow_helper.agent.families.core.authorize_report', AsyncMock(return_value=True)):
+        with patch('elbow_helper.agent.tool_support.core.require_evidence_access', AsyncMock()), \
+             patch('elbow_helper.agent.tool_support.core.authorize_report', AsyncMock(return_value=True)):
             exported = await tool.handler(local, {**finding['read_arguments'], 'view': 'count', 'delivery': 'csv'})
         self.assertEqual(exported['artifact']['total_rows'], 450)
         with patch('elbow_helper.agent.engine.cohort_evidence.authorize_report', AsyncMock(return_value=True)):

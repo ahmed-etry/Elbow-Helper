@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.models import AgentTurnState
-from elbow_helper.agent.capabilities.rosters.signups import (
+from elbow_helper.agent.tool_support.adapters.rosters.signups import (
     prepare_roster_signup, prepare_roster_row_removal,
 )
 from elbow_helper.features.rosters.models import LinkedAccount, RosterMember
@@ -34,7 +34,7 @@ class RosterAccountManagementTests(unittest.IsolatedAsyncioTestCase):
             member=owner, state=AgentTurnState(),
         )
         context = register_requester(context)
-        with patch("elbow_helper.agent.capabilities.rosters.signups.require_evidence_access",
+        with patch('elbow_helper.agent.tool_support.adapters.rosters.signups.require_evidence_access',
                    new_callable=AsyncMock):
             result = await prepare_roster_row_removal(
                 context, {"roster_id": 17, "accounts": ["Player"]})
@@ -69,9 +69,9 @@ class RosterAccountManagementTests(unittest.IsolatedAsyncioTestCase):
             member=member, state=AgentTurnState(),
         )
         context = register_requester(context)
-        with (patch("elbow_helper.agent.capabilities.rosters.signups.require_evidence_access",
+        with (patch('elbow_helper.agent.tool_support.adapters.rosters.signups.require_evidence_access',
                     new_callable=AsyncMock),
-              patch("elbow_helper.agent.capabilities.rosters.signups.resolve_member",
+              patch('elbow_helper.agent.tool_support.adapters.rosters.signups.resolve_member',
                     new_callable=AsyncMock, return_value=member)):
             result = await prepare_roster_signup(
                 context, {"roster_id": 17, "accounts": ["Player"]})

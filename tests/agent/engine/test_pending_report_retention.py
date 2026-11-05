@@ -6,8 +6,8 @@ from unittest.mock import patch
 from elbow_helper.agent.engine.budgets import ContextBudget
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.steps import PlanRunner
-from elbow_helper.agent.families.core import family_tool
-from elbow_helper.agent.families.projections import COHORT_REF, cohort_selection
+from elbow_helper.agent.tool_support.core import family_tool
+from elbow_helper.agent.reads.projections import COHORT_REF, cohort_selection
 from elbow_helper.agent.plan.executor import referenced_report_ids
 from agent.engine.test_agent_plan_flow import _context
 

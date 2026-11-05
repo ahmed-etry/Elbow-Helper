@@ -11,7 +11,7 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationError
 from ..access import require_evidence_access
 from ..research.history import search_date
-from ..capabilities.validation import invalid_arguments
+from ..tool_support.validation import invalid_arguments
 from ..read_cache import source_revision
 from .ranked_measures import METRICS, MODES, account_measures, cohort_measure
 
@@ -94,7 +94,7 @@ async def read_ranked(context, arguments, *, selection_maximum=200, starts=None)
         report = context.state.reports.get(arguments['cohort_ref'])
         if report is not None and getattr(report, 'guild_id', None) != context.guild.id:
             return {'error': 'That cohort is no longer available here. Read it again.', 'cause': 'report_unavailable'}
-        from ..families.projections import cohort_selection
+        from .projections import cohort_selection
         selection = await cohort_selection(context, arguments['cohort_ref'], 'account_tags')
         if 'error' in selection:
             return selection

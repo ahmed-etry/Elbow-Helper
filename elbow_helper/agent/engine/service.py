@@ -34,7 +34,7 @@ from ..discord_actions.meme_usage import recent_meme_context
 from ..disclosure import can_disclose_provenance, request_scope, log_scope
 from .registry import build_agent_tools
 from .self_knowledge import capability_context
-from ..families.catalogue import discovery_tool, FAMILY_INSTRUCTION
+from .catalogue import discovery_tool, FAMILY_INSTRUCTION
 from .usage import RequestUsage
 from .member_usage import MemberUsageLimit, MemberUsageLimiter
 from .budgets import ContextBudget
@@ -46,7 +46,7 @@ from .social_reply import social_reply_definition, SOCIAL_REPLY_INSTRUCTION
 from ..reports.tools import filter_fields
 from ..plan.format import plan_definition, system_instructions
 from ..plan.planning import PlanNotSettled
-from ..capabilities import enabled_adapters
+from .adapters import enabled_adapters
 from ..commands.bridge import build_command_tools
 from ..prompts import RESEARCH_RULES, VOICE_RULES, GAME_ADVICE_RULES
 from ..actions.preview import is_preview_reply, preview_text

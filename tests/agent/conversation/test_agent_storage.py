@@ -9,14 +9,14 @@ from unittest.mock import patch
 
 from elbow_helper.agent.conversation.state import Conversation, ConversationRecord, ConversationTurn
 from agent.report_helpers import make_event_report
-from elbow_helper.agent.capabilities.events.report import EventScheduleReport
+from elbow_helper.agent.tool_support.adapters.events.report import EventScheduleReport
 from elbow_helper.agent.capabilities.member_lifecycle.report import MemberLifecycleReport
-from elbow_helper.agent.capabilities.clan_reporting.report import MissingElderReport
-from elbow_helper.agent.capabilities.cwl.report import CwlPerformanceReport
-from elbow_helper.agent.capabilities.clan_transfers.report import TransferQueueReport
-from elbow_helper.agent.capabilities.hibernation.report import HibernationReport
-from elbow_helper.agent.capabilities.support_tickets.report import SupportTicketReport
-from elbow_helper.agent.capabilities.recruitment.report import RecruitmentTrialReport
+from elbow_helper.agent.tool_support.adapters.clan_reporting.report import MissingElderReport
+from elbow_helper.agent.tool_support.adapters.cwl.report import CwlPerformanceReport
+from elbow_helper.agent.tool_support.adapters.clan_transfers.report import TransferQueueReport
+from elbow_helper.agent.tool_support.adapters.hibernation.report import HibernationReport
+from elbow_helper.agent.tool_support.adapters.support_tickets.report import SupportTicketReport
+from elbow_helper.agent.tool_support.adapters.recruitment.report import RecruitmentTrialReport
 from elbow_helper.agent.capabilities.examination.report import ExaminationCaseReport
 from elbow_helper.configuration.channels import HIBERNATION_LOG
 from elbow_helper.features.clan_transfers.config import CLAN_TRANSFER_QUEUES

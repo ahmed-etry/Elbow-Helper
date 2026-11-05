@@ -3,7 +3,7 @@
 import asyncio
 import sqlite3
 
-from .model_view import pick, ranked_view
+from ..tool_support.model_view import pick, ranked_view
 from ..reads.wars import attendance, period
 
 

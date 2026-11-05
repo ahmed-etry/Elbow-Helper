@@ -52,7 +52,7 @@ def model_view(
     """Omit an unchanged retained page summary already included in this request."""
     data = dict(payload)
     if data.get('kind') == 'family':
-        from ..families.model_view import family_model_view
+        from ..tool_support.model_view import family_model_view
         data = family_model_view(data)
     if data.get("kind") == "active_hibernation" and isinstance(data.get("records"), list):
         # The ISO timestamp and status repeat started_ts (null means unavailable).

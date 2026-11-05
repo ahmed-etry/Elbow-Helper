@@ -238,7 +238,7 @@ class GroundingFlowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(GROUNDING_GAPS["source"], answer)
 
     async def test_delivered_answer_links_a_message_the_model_saw_without_a_source_url(self):
-        from elbow_helper.agent.families.model_view import family_model_view
+        from elbow_helper.agent.tool_support.model_view import family_model_view
         context = _context()
         row = {**MESSAGE, "channel_id": 91, "channel": "synthetic", "content_complete": True}
         view = family_model_view({"family": "read_conversation_evidence", "mode": "search",

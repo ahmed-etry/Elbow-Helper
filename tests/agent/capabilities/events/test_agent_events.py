@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.models import AgentRequestContext
-from elbow_helper.agent.capabilities.events.reads import (
+from elbow_helper.agent.tool_support.adapters.events.reads import (
     read_event_schedule, read_event_schedule_report,
 )
 from elbow_helper.features.event_stats.queries import (

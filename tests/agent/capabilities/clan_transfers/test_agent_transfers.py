@@ -7,11 +7,11 @@ from elbow_helper.configuration.roles import CORE
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.models import AgentRequestContext
 from agent.report_helpers import make_event_report
-from elbow_helper.agent.capabilities.clan_transfers.reads import (
+from elbow_helper.agent.tool_support.adapters.clan_transfers.reads import (
     read_pending_transfer_report,
     read_pending_transfer_requests,
 )
-from elbow_helper.agent.capabilities.clan_transfers.report import TransferQueueReport
+from elbow_helper.agent.tool_support.adapters.clan_transfers.report import TransferQueueReport
 from elbow_helper.features.clan_transfers.config import CLAN_TRANSFER_QUEUES
 from elbow_helper.features.clan_transfers.queries import (
     PendingTransferRequest,

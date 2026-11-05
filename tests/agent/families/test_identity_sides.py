@@ -7,8 +7,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.families import account_names, identity_reads, war_reads, workflow_reads
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.families import account_names, identity_reads, workflow_reads
+from elbow_helper.agent.reads import war_tools as war_reads
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.engine.result_hints import RESULT_FIELDS
 from elbow_helper.agent.plan.executor import execute_plan, resolve_arguments
 from elbow_helper.configuration.clans import CLANS

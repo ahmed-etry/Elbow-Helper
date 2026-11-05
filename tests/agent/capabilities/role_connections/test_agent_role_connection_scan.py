@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.models import AgentTurnState
 from agent.discord_actions.helpers import register_requester
-from elbow_helper.agent.capabilities.role_connections.scan import (
+from elbow_helper.agent.tool_support.adapters.role_connections.scan import (
     prepare_role_connection_scan, prepare_role_connection_scan_undo,
 )
 
@@ -37,7 +37,7 @@ class RoleConnectionScanTests(unittest.IsolatedAsyncioTestCase):
             state=AgentTurnState(), member=SimpleNamespace(id=7),
         )
         context = register_requester(context)
-        with patch("elbow_helper.agent.capabilities.role_connections.scan.require_evidence_access",
+        with patch('elbow_helper.agent.tool_support.adapters.role_connections.scan.require_evidence_access',
                    new_callable=AsyncMock):
             result = await prepare_role_connection_scan(context, {})
         self.assertEqual(result["status"], "confirmation_required")
@@ -45,7 +45,7 @@ class RoleConnectionScanTests(unittest.IsolatedAsyncioTestCase):
         action = context.state.proposed_changes[0]
         self.assertIn("<@4>", action.preview.lines[0])
         workflow.apply_role_connection_change.assert_not_awaited()
-        with patch("elbow_helper.agent.capabilities.role_connections.scan.resolve_member",
+        with patch('elbow_helper.agent.tool_support.adapters.role_connections.scan.resolve_member',
                    new_callable=AsyncMock, return_value=member):
             self.assertTrue(await action.preview.recheck())
             outcome = await action.run()
@@ -74,7 +74,7 @@ class RoleConnectionScanTests(unittest.IsolatedAsyncioTestCase):
             state=AgentTurnState(), member=SimpleNamespace(id=7),
         )
         context = register_requester(context)
-        with patch("elbow_helper.agent.capabilities.role_connections.scan.require_evidence_access",
+        with patch('elbow_helper.agent.tool_support.adapters.role_connections.scan.require_evidence_access',
                    new_callable=AsyncMock):
             result = await prepare_role_connection_scan(context, {})
             self.assertEqual(result["status"], "confirmation_required")

@@ -12,8 +12,8 @@ from elbow_helper.agent.engine.tool_call import (
     clone_tool_state, execute_tool, merge_tool_state, tool_state_snapshot,
 )
 from elbow_helper.agent.families import account_names, cohort_activity, identity_reads
-from elbow_helper.agent.families.catalogue import FAMILY_INSTRUCTION
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.plan.executor import execute_plan
 from agent.families.test_named_account_stats import lookup_context, named_member, rosters
 

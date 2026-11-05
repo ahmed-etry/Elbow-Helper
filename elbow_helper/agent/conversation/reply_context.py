@@ -102,7 +102,7 @@ async def prepare_reply_context(context):
                             "delivered_answer": record.delivered_answer,
                             "delivery_complete": record.delivery_complete,
                             "report_ids": [key for key in record.report_ids if key in context.state.reports]}
-            from ..families.core import FamilyReport
+            from ..tool_support.core import FamilyReport
             from ..reports.tools import authorize_report
             inputs, entities, authorized = [], [], []
             for identifier in conversation['report_ids']:

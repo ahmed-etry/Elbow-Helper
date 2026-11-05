@@ -6,9 +6,11 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.families import access_reads, cohort_activity, identity_reads
-from elbow_helper.agent.families import recruitment_history, reference_reads, war_reads, workflow_reads
-from elbow_helper.agent.families.core import family_tool
+from elbow_helper.agent.reads import access as access_reads
+from elbow_helper.agent.families import cohort_activity, identity_reads
+from elbow_helper.agent.families import recruitment_history, workflow_reads
+from elbow_helper.agent.reads import reference as reference_reads, war_tools as war_reads
+from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan
 

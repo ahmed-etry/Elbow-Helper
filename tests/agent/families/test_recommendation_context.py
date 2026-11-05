@@ -12,9 +12,9 @@ from elbow_helper.configuration.roles import (
 )
 from elbow_helper.agent.access import has_access_requirements
 from elbow_helper.agent.families import identity_reads
-from elbow_helper.agent.families.domain_facts import clan_profile
-from elbow_helper.agent.families.member_context import owner_context
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.reads.domain_facts import clan_profile
+from elbow_helper.agent.reads.member_context import owner_context
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from agent.engine.test_agent_plan_flow import _context
 
@@ -22,7 +22,7 @@ from agent.engine.test_agent_plan_flow import _context
 class RecommendationContextTests(unittest.IsolatedAsyncioTestCase):
     async def test_evicted_current_request_snapshot_remains_complete_and_authorized(self):
         from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
-        from elbow_helper.agent.families.core import FamilyReport
+        from elbow_helper.agent.tool_support.core import FamilyReport
         context = _context()
         rows = [{'player_tag': '#P0', 'townHallLevel': 12},
                 {'player_tag': '#Q0', 'townHallLevel': 13}]
@@ -68,7 +68,7 @@ class RecommendationContextTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_activity_enrichment_supersedes_only_the_same_account_population(self):
         from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
-        from elbow_helper.agent.families.core import FamilyReport
+        from elbow_helper.agent.tool_support.core import FamilyReport
         context = _context()
         snapshots, evidence = {}, {}
         for identity, tag, activity in [('basic', '#P0', False), ('enriched', '#P0', True),

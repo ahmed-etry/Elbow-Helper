@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from dataclasses import replace
 from tests.data.legacy_health_schema import LegacyHealthFile as ClanHealthRepository
 from elbow_helper.features.clan_health.attendance import aggregate_attendance
-from elbow_helper.agent.families import record_wars, war_reads
+from elbow_helper.agent.reads import record_wars, war_tools as war_reads
 from elbow_helper.configuration.clans import CLANS
 from agent.cwl_helpers import ResultQueries
 from agent.engine.test_agent_plan_flow import _context

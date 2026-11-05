@@ -11,10 +11,10 @@ import discord
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.agent.actions.contracts import ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.preview import ConfirmationView, preview_text
-from elbow_helper.agent.capabilities.account_links.commands import account_link_adapters
-from elbow_helper.agent.capabilities.hibernation.commands import hibernation_adapters
-from elbow_helper.agent.capabilities.recruitment.commands import recruitment_adapters
-from elbow_helper.agent.capabilities.rosters.signups import roster_account_management_tools
+from elbow_helper.agent.tool_support.adapters.account_links.commands import account_link_adapters
+from elbow_helper.agent.tool_support.adapters.hibernation.commands import hibernation_adapters
+from elbow_helper.agent.tool_support.adapters.recruitment.commands import recruitment_adapters
+from elbow_helper.agent.tool_support.adapters.rosters.signups import roster_account_management_tools
 from elbow_helper.agent.commands.bridge import build_command_tools
 from elbow_helper.agent.discord_actions.roles import discord_role_tools
 from elbow_helper.agent.discord_actions.timeouts import timeout_tools

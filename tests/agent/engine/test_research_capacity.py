@@ -8,7 +8,7 @@ from elbow_helper.agent.conversation.context import estimate_tokens
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.answer_inputs import serialized_answer_evidence
 from elbow_helper.agent.engine.budgets import ASSESSMENT_LIMITS
-from elbow_helper.agent.families.core import family_tool
+from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from agent.engine.test_agent_plan_flow import _context, _model_step, _plan, _Session

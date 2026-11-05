@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import discord
 
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.agent.capabilities.diagnostics.commands import diagnostic_adapters, run_api
+from elbow_helper.agent.tool_support.adapters.diagnostics.commands import diagnostic_adapters, run_api
 from elbow_helper.agent.commands.bridge import build_command_tools
 from elbow_helper.agent.datasets.clash import read_clash
 from elbow_helper.agent.engine.registry import build_agent_tools

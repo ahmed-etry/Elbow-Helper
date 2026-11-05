@@ -14,9 +14,10 @@ from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.delivery import AgentDeliveryMixin
 from elbow_helper.agent.models import AgentDelivery
-from elbow_helper.agent.families import identity_reads, war_reads
-from elbow_helper.agent.families.access_reads import TOOLS as ACCESS_TOOLS
-from elbow_helper.agent.families.core import family_tool
+from elbow_helper.agent.families import identity_reads
+from elbow_helper.agent.reads import war_tools as war_reads
+from elbow_helper.agent.reads.access import TOOLS as ACCESS_TOOLS
+from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from agent.cwl_helpers import ResultQueries
 from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan
@@ -199,7 +200,7 @@ class PlannerFix2EvidenceTests(unittest.IsolatedAsyncioTestCase):
                     steps = [{'id': 'sample', 'capability': name,
                               'arguments': {'delivery': 'xlsx'}, 'depends_on': []}]
                     if failed:
-                        with patch('elbow_helper.agent.families.core.export_report',
+                        with patch('elbow_helper.agent.tool_support.core.export_report',
                                    side_effect=ValueError('Synthetic export failure')):
                             flow, evidence = await self.writer(_context(), {name: tool}, steps)
                     else:

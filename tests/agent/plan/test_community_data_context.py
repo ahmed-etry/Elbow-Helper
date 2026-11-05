@@ -2,7 +2,7 @@
 from pathlib import Path
 import unittest
 
-from elbow_helper.agent.families import TOOLS
+from elbow_helper.agent.reads.tools import TOOLS
 from elbow_helper.agent.community_data import COMMUNITY_DATA_CONTEXT
 from elbow_helper.agent.families.identity_reads import member_fields
 from elbow_helper.agent.plan.format import system_instructions, answer_instructions
@@ -39,11 +39,19 @@ class CommunityDataContextTests(unittest.TestCase):
 
     def test_cited_implementation_exists(self):
         root = Path(__file__).resolve().parents[3] / 'elbow_helper'
+        # Approved prompt text keeps its original citations during this mechanical
+        # move. Check those sources at their new homes without changing the text.
+        relocated = {
+            'agent/families/domain_facts.py': 'agent/reads/domain_facts.py',
+            'agent/families/war_reads.py': 'agent/reads/war_tools.py',
+            'agent/families/reference_reads.py': 'agent/reads/reference.py',
+            'agent/families/access_reads.py': 'agent/reads/access.py',
+        }
         for source in ('features/recruitment/commands.py', 'features/recruitment/trials.py', 'features/account_links/cog.py',
                        'agent/families/identity_reads.py', 'agent/families/domain_facts.py',
                        'agent/families/workflow_reads.py', 'agent/families/recruitment_history.py',
                        'agent/families/war_reads.py', 'agent/reads/ranked.py',
                        'agent/families/reference_reads.py', 'agent/families/access_reads.py'):
-            self.assertTrue((root / source).is_file(), source)
+            self.assertTrue((root / relocated.get(source, source)).is_file(), source)
         self.assertIn('deleted when tracking ends', COMMUNITY_DATA_CONTEXT)
         self.assertIn('links alone do not', COMMUNITY_DATA_CONTEXT)

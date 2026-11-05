@@ -1,6 +1,6 @@
 """Registration of the single ranked agent read."""
-from ..families.core import family_tool, IDS, TAGS, DATE
-from ..families.projections import COHORT_REF
+from ..tool_support.core import family_tool, IDS, TAGS, DATE
+from .projections import COHORT_REF
 from .ranked import read_ranked, SELECTOR_ERROR
 from .ranked_measures import METRICS, MODES
 

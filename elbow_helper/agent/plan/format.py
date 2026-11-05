@@ -280,7 +280,7 @@ def output_forms(registry: Mapping[str, RegisteredAgentTool]) -> tuple[str, ...]
 def capability_list(registry: Mapping[str, RegisteredAgentTool], *, include_returns: bool = True,
                     descriptions: bool = True) -> str:
     """Return the same compact catalogue for every request."""
-    from ..families.core import COMMON
+    from ..tool_support.core import COMMON
 
     entries = []
     common_used = False

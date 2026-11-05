@@ -9,7 +9,7 @@ from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.families.identity_reads import member_cohort
 from elbow_helper.agent.research.members import find_discord_roles
 from elbow_helper.agent.plan.checker import check_plan
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID
 from agent.engine.test_agent_plan_flow import _context

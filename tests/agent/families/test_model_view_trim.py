@@ -2,7 +2,7 @@
 import json
 import unittest
 
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.tool_support.model_view import family_model_view
 
 
 def _payload(family, accounts, wars=60):

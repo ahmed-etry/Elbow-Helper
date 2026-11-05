@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.families import identity_reads
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.plan.results import model_result, model_view
 from elbow_helper.configuration.clans import CLANS
 from agent.families.test_named_account_stats import lookup_context, named_member
@@ -140,7 +140,7 @@ class ProfileOnRequestTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cohort_selection_from_a_default_lookup_still_sees_every_fact(self):
         context, page = await self.lookup({})
-        from elbow_helper.agent.families.projections import cohort_selection
+        from elbow_helper.agent.reads.projections import cohort_selection
         self.assertEqual(await cohort_selection(context, page['report_id'], 'account_tags'),
                          {'account_tags': [f'#A{index}' for index in range(10)]})
         retained = json.loads(context.state.reports[page['report_id']].payload)['rows']

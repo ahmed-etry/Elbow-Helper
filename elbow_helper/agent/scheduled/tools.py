@@ -37,7 +37,7 @@ from ..wording import (
 from ..discord_actions.safety import check_post_access, resolve_channel
 from ..discord_actions.messages import content_options, post_mentions
 from ..discord_actions.direct_messages import dm_recipients
-from ..capabilities import enabled_adapters
+from ..engine.adapters import enabled_adapters
 from ..commands.bridge import build_command_tools
 from ..plan.checker import valid_arguments
 

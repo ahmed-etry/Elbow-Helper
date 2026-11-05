@@ -5,11 +5,11 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from agent.dataset_helpers import synthetic_datasets, seed_record_links
-from elbow_helper.agent.datasets.catalogue import SOURCES
-from elbow_helper.agent.datasets.guide import DataGuide
-from elbow_helper.agent.datasets.query import run_query
+from elbow_helper.agent.tool_support.sql.catalogue import SOURCES
+from elbow_helper.agent.tool_support.sql.guide import DataGuide
+from elbow_helper.agent.tool_support.sql.query import run_query
 from elbow_helper.agent.access import KNOWN_ACCESS_REQUIREMENTS
-from elbow_helper.agent.families.catalogue import FAMILY_INSTRUCTION
+from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
 
 # Clan health's own tables: its settings and their change log. Its activity facts are in the family record.
 HEALTH_TABLES = ("clan_player_health_config", "clan_health_config_audit")

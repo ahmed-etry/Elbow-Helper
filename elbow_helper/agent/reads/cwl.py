@@ -10,7 +10,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..reports.base import ArtifactCapacityError, retain_report
-from ..capabilities.cwl.report import CwlPerformanceReport
+from ..tool_support.adapters.cwl.report import CwlPerformanceReport
 from ..models import AgentRequestContext, RegisteredAgentTool
 from ..read_cache import stored_read
 

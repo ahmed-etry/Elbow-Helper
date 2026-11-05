@@ -9,7 +9,7 @@ from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from ..access import require_evidence_access
 from ..actions.contracts import ActionClass
 from ..conversation.context import estimate_tokens
-from ..families.model_view import record_rows
+from ..tool_support.model_view import record_rows
 from ..models import AgentCapabilityEffect
 from ..plan.checker import step_dependencies, valid_arguments
 from ..plan.executor import resolve_arguments, UnresolvedReferenceError

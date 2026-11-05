@@ -3,7 +3,7 @@ import unittest
 
 from elbow_helper.agent.engine.routing import RouteDecision
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.families.catalogue import FAMILY_INSTRUCTION
+from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
 from elbow_helper.agent.prompts import FACT_RULES, RESEARCH_RULES
 from agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 

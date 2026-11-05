@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.capabilities.wars.statements import (
+from elbow_helper.agent.tool_support.adapters.wars.statements import (
     war_statement_adapters,
 )
 from elbow_helper.features.wars.commands import WarStatements

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.agent.capabilities.cwl.bonus_export import run_cwl_bonus
+from elbow_helper.agent.tool_support.adapters.cwl.bonus_export import run_cwl_bonus
 from elbow_helper.features.cwl.bonus.service import BonusReportError
 
 

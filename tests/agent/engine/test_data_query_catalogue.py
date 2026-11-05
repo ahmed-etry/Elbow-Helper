@@ -38,7 +38,7 @@ class DataQueryCatalogueTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
         flow, _ = AgentService(_Model(session))._start_flow(question='Synthetic request', local_context='',
                                                           context=context, conversation_history='')
-        with patch('elbow_helper.agent.families.catalogue.has_lookup_access', return_value=False):
+        with patch('elbow_helper.agent.engine.catalogue.has_lookup_access', return_value=False):
             result = await flow.registry['open_capability_group'].handler(
                 context, {'group': 'records', 'intent': 'inspect'})
         self.assertNotIn('query_bot_data', flow.registry)

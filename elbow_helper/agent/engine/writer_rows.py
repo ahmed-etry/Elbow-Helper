@@ -9,7 +9,7 @@ rows; this is composition only.
 
 from collections.abc import Mapping
 
-from ..families.model_view import record_rows
+from ..tool_support.model_view import record_rows
 
 WRITER_ROW_FAMILIES = frozenset({
     'read_war_attendance', 'read_member_cohort', 'read_member_accounts', 'read_recruitment_pipeline',

@@ -36,7 +36,7 @@ def read_topics(overview):
 
 
 def _rows(payload):
-    from ..families.model_view import record_rows
+    from ..tool_support.model_view import record_rows
     return record_rows(payload.get('rows', []))
 
 

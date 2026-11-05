@@ -5,8 +5,8 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.access import AgentAccessLost
-from elbow_helper.agent.datasets.catalogue import SOURCES
-from elbow_helper.agent.datasets.guide import DataGuide
+from elbow_helper.agent.tool_support.sql.catalogue import SOURCES
+from elbow_helper.agent.tool_support.sql.guide import DataGuide
 from elbow_helper.agent.families import workflow_reads
 from elbow_helper.agent.models import AgentTurnState
 from elbow_helper.features.recruitment.queries import (

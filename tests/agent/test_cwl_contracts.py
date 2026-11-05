@@ -10,11 +10,11 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from agent.engine.test_agent_plan_flow import _context
-from elbow_helper.agent.capabilities.cwl.reads import (
+from elbow_helper.agent.tool_support.adapters.cwl.reads import (
     read_cwl_performance, read_cwl_performance_report,
 )
 from elbow_helper.agent.reads.cwl import cwl_ass_scores, cwl_bonus_scores
-from elbow_helper.agent.families.war_reads import cwl_results
+from elbow_helper.agent.reads.war_tools import cwl_results
 from elbow_helper.agent.families.identity_reads import seasonal_tags
 from elbow_helper.agent.datasets.clash import read_clash
 from elbow_helper.agent.read_cache import ReadCache

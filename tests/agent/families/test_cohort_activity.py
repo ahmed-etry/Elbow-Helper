@@ -14,7 +14,7 @@ from elbow_helper.agent.families.cohort_activity import roster_cohort
 from elbow_helper.agent.families.cohort_activity import discord_activity_projection
 from elbow_helper.agent.families.cohort_activity import war_measures
 from elbow_helper.features.clan_health.attendance import aggregate_attendance
-from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.features.achievements.queries import AchievementQueries
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.plan.checker import check_plan

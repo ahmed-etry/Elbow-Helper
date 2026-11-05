@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from elbow_helper.configuration.channels import HIBERNATION_LOG
 from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.agent.access import AgentAccessLost
-from elbow_helper.agent.capabilities.hibernation.report import HibernationReport
+from elbow_helper.agent.tool_support.adapters.hibernation.report import HibernationReport
 from elbow_helper.agent.models import AgentRequestContext
 from agent.report_helpers import make_event_report
-from elbow_helper.agent.capabilities.hibernation.reads import (
+from elbow_helper.agent.tool_support.adapters.hibernation.reads import (
     read_active_hibernation,
     read_active_hibernation_report,
 )

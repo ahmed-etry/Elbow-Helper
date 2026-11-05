@@ -12,7 +12,8 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.conversation.findings import report_is_current
-from elbow_helper.agent.families import cohort_activity, projections, record_wars, war_reads
+from elbow_helper.agent.families import cohort_activity
+from elbow_helper.agent.reads import projections, record_wars, war_tools as war_reads
 from elbow_helper.agent.families.workflow_reads import TOOLS as WORKFLOW_TOOLS
 from elbow_helper.agent.read_cache import ReadCache
 from elbow_helper.configuration.channels import HIBERNATION_LOG
@@ -263,7 +264,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         context = replace(self.context, read_cache=ReadCache())
         self.addCleanup(release_sqlite_revision, self.path)
         tool = TOOLS["read_war_attendance"]
-        with patch("elbow_helper.agent.families.core.require_evidence_access", AsyncMock()):
+        with patch('elbow_helper.agent.tool_support.core.require_evidence_access', AsyncMock()):
             result = await tool.handler(context, {"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})
         self.assertEqual(set(result["source_versions"]), {"cwl_queries", "war_reads"})
         self.assertIsNotNone(result["source_versions"]["war_reads"])
