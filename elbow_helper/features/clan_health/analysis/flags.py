@@ -132,8 +132,8 @@ class ClanHealthFlagMixin:
                 allowed_miss_rate_percent=allowed_miss_rate_percent,
                 joined=int(row.get("cwl_events_joined") or 0),
                 available=cwl_available,
-                expected=int(row.get("cwl_hits_expected") or 0),
-                used=int(row.get("cwl_hits_used") or 0),
+                expected=int(row.get("cwl_hits_final_expected", row.get("cwl_hits_expected")) or 0),
+                used=int(row.get("cwl_hits_final_used", row.get("cwl_hits_used")) or 0),
             )
 
             weekends_joined = int(row.get("raid_weekends_joined") or 0)

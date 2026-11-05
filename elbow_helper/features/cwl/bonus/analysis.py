@@ -114,6 +114,12 @@ class BonusAnalysisService:
         """Score exactly these wars together using the configured bonus calculation."""
         warnings: List[str] = []
         errors: List[str] = []
+        from ..evidence import require_scoring_evidence
+        try:
+            for war in wars:
+                require_scoring_evidence([war], war.get("roster", []), war.get("attacks", []))
+        except ValueError:
+            return [], [], [], [], [f"{clan_code}: CWL data couldn't be loaded."]
         clan_name = CLAN_NAMES.get(clan_code, clan_code)
 
         profile = (config.get("clans") or {}).get(clan_code, {})

@@ -55,6 +55,8 @@ def build_ass_season_metrics(
     profiles_by_clan: dict[str, AssProfile],
     combined_season: str | None = None,
 ) -> list[AssSeasonMetric]:
+    from ..evidence import require_scoring_evidence
+    require_scoring_evidence(wars, roster, attacks)
     wars_by_key = {
         (str(war.get("war_id") or ""), str(war.get("clan_code") or "")): war
         for war in wars

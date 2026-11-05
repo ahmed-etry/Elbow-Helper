@@ -9,7 +9,7 @@ from elbow_helper.infrastructure.persistence.revisions import sqlite_revision
 from ..store.api_fields import unpack
 from .core import MAX_SELECTORS, RecordReads, placeholders, tags, timestamp
 from .coverage import envelope, war_side_coverage, war_signal
-from .wars import clan_tags, member_rows, war_view
+from .wars import clan_tags, cwl_round_known, member_rows, war_view
 
 LEAGUE_PATH = "/warLeague/name"
 STATES = ("preparation", "inWar", "warEnded")
@@ -45,11 +45,9 @@ class CwlReads(RecordReads):
 
     def __init__(self, store, clans=None):
         super().__init__(store)
-        # A finished week's league never changes; it is looked up once per process.
-        self.leagues = {}
 
     def cache_revision(self):
-        """The record's commit revision; any write, a league check included, changes it."""
+        """The record's commit revision; any write changes it."""
         path = getattr(self.store, "path", None)
         return sqlite_revision(path) if path is not None else None
 
@@ -91,7 +89,7 @@ class CwlReads(RecordReads):
                 label, league = legacy.get("season_label") or key, first["league_name"]
             else:
                 label = key
-                league = first["league_name"] or self._league(connection, season_id, clan, rows, at)
+                league = first["league_name"] or self._league(connection, clan, rows)
             if seasons is not None and key not in seasons:
                 continue
             kept = [row for row in rows if (not ended or row["state"] == "warEnded")
@@ -111,7 +109,7 @@ class CwlReads(RecordReads):
         signals = [war_signal(connection, "cwl_group", clan, at) for clan in clans]
         missing = []
         for ref in connection.execute(
-                "SELECT s.season_key,src.clan_tag,r.round_no,r.war_tag,w.id AS war_id,w.first_seen_at,"
+                "SELECT s.id AS season_id,s.season_key,src.clan_tag,r.round_no,r.war_tag,w.id AS war_id,w.first_seen_at,"
                 "o.war_id AS own_war_id "
                 "FROM cwl_season_sources src JOIN cwl_seasons s ON s.id=src.season_id "
                 "JOIN cwl_rounds r ON r.season_id=s.id LEFT JOIN wars w ON w.war_tag=r.war_tag "
@@ -119,9 +117,14 @@ class CwlReads(RecordReads):
                 f"WHERE src.clan_tag IN ({placeholders(clans)})", clans):
             if seasons is not None and ref["season_key"] not in seasons or selected is not None and ref["war_tag"] not in selected:
                 continue
+            source = war_signal(connection, "cwl_war", ref["war_tag"], at)
+            if source["observed"].get("unrelated"):
+                continue
             if ref["war_id"] is not None and ref["first_seen_at"] <= at and ref["own_war_id"] is None:
                 continue
-            signals.append(war_signal(connection, "cwl_war", ref["war_tag"], at))
+            if ref["own_war_id"] is None and cwl_round_known(connection, ref["season_id"], ref["round_no"], ref["clan_tag"], at):
+                continue
+            signals.append(source)
             if ref["war_id"] is None or ref["first_seen_at"] > at:
                 missing.append({"clan_tag": ref["clan_tag"], "round": ref["round_no"], "war_tag": ref["war_tag"]})
         coverage = envelope(signals, at=at)
@@ -134,17 +137,10 @@ class CwlReads(RecordReads):
         coverage["complete"] &= not (missing or coverage["incomplete_wars"])
         return {"weeks": result, "coverage": coverage}
 
-    def _league(self, connection, season_id, clan, rows, at):
-        # Before the week's last war ends the league is the one being played.
-        ended = all(row["state"] == "warEnded" for row in rows)
-        moment = min(at, max(row["end_at"] for row in rows)) if ended else at
-        cached = self.leagues.get((season_id, clan))
-        if cached is not None:
-            return cached
-        league = profile_league(connection, clan, moment)
-        if ended and league:
-            self.leagues[season_id, clan] = league
-        return league
+    @staticmethod
+    def _league(connection, clan, rows):
+        """The clan's saved profile league at the season's earliest war start; None if unknown."""
+        return profile_league(connection, clan, min(row["start_at"] for row in rows))
 
     @staticmethod
     def _details(connection, wars, clan):
@@ -216,8 +212,7 @@ class CwlReads(RecordReads):
         """
         return await self._read(self._group, clan_tags([clan])[0], timestamp(as_of))
 
-    @staticmethod
-    def _group(connection, clan, at):
+    def _group(self, connection, clan, at):
         signal = war_signal(connection, "cwl_group", clan, at)
         observed = signal["observed"]
         season = None
@@ -230,14 +225,19 @@ class CwlReads(RecordReads):
         metadata = json.loads(season["group_metadata_json"])
         result.update(season_id=season["id"], season_key=season["season_key"], league=season["league_name"],
                       round_count=metadata.get("round_count") or 0)
-        missing, signals = [], [signal]
+        missing, missing_rounds, signals = [], set(), [signal]
         for ref in connection.execute("SELECT round_no,war_tag FROM cwl_rounds WHERE season_id=? ORDER BY round_no,war_tag",
                                       (season["id"],)):
             source = war_signal(connection, "cwl_war", ref["war_tag"], at)
+            if source["observed"].get("unrelated"):
+                continue
             row = connection.execute("SELECT * FROM wars WHERE war_tag=? AND first_seen_at<=?", (ref["war_tag"], at)).fetchone()
             if row is None or row["state"] not in STATES:
+                if cwl_round_known(connection, season["id"], ref["round_no"], clan, at):
+                    continue
                 signals.append(source)
                 missing.append(ref["war_tag"])
+                missing_rounds.add(ref["round_no"])
                 continue
             if not connection.execute("SELECT 1 FROM war_sides WHERE war_id=? AND clan_tag=?", (row["id"], clan)).fetchone():
                 continue
@@ -247,7 +247,10 @@ class CwlReads(RecordReads):
                                    "signal": source})
         result["coverage"] = envelope(signals, at=at)
         result["coverage"]["missing_wars"] = missing
+        result["coverage"]["missing_rounds"] = sorted(missing_rounds)
         result["coverage"]["complete"] &= not missing
+        if not result["league"] and result["wars"]:
+            result["league"] = self._league(connection, clan, [item["war"] for item in result["wars"]])
         return result
 
     # Names --------------------------------------------------------------------------------------

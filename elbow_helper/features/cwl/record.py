@@ -74,7 +74,7 @@ def league_wars(group: dict[str, Any]) -> list[dict[str, Any]]:
         state = war.get("state")
         war.update(_warTag=item["war_tag"], _round=item["round"], _state=state,
                    _start_dt=coc_time_to_dt(war.get("startTime")), _total_rounds=total,
-                   _season_label=season, _season=season,
+                   _season_label=season, _season=season, _league=group.get("league"),
                    _coverage=item["war"]["coverage"],
                    # An ended war is final; a running one is stale once its checks stop.
                    _snapshot_stale=state != "warEnded" and not war_fresh(item["signal"]))
@@ -123,9 +123,13 @@ class CwlGroups:
         if not group["wars"] and not group["round_count"]:
             return [], [f"{clan_code}: no league wars found."]
         wars = league_wars(group)
-        usable = [war for war in wars if not war["_snapshot_stale"]]
+        usable = [war for war in wars if not war["_snapshot_stale"] and (
+            war["state"] != "warEnded" or (
+                war["_coverage"]["own"]["lineup_complete"] and war["_coverage"]["own"]["attacks_complete"]
+                and all(war.get(side, {}).get(field) is not None for side in ("clan", "opponent")
+                        for field in ("stars", "destructionPercentage"))))]
         warnings = []
-        failed = len(wars) - len(usable)
+        failed = len(wars) - len(usable) + len(group["coverage"].get("missing_rounds", []))
         if failed == 1:
             warnings.append(f"{clan_code}: 1 CWL war couldn't be loaded.")
         elif failed:

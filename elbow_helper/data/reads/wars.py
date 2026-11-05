@@ -7,6 +7,7 @@ an incomplete lineup or attack list never becomes a zero.
 """
 
 import json
+from datetime import datetime, timezone
 
 from elbow_helper.infrastructure.persistence.revisions import sqlite_revision
 
@@ -224,9 +225,40 @@ def select_wars(connection, clans, after, before, types, at, time_field="end_at"
                   key=lambda item: (-item[2], -item[0]["id"], item[1]))
 
 
+def cwl_round_known(connection, season, round_no, clan, at):
+    """One known pairing resolves the clan's only war in that round."""
+    return connection.execute(
+        "SELECT 1 FROM cwl_rounds r JOIN wars w ON w.war_tag=r.war_tag "
+        "JOIN war_sides s ON s.war_id=w.id AND s.clan_tag=? "
+        "WHERE r.season_id=? AND r.round_no=? AND w.first_seen_at<=? LIMIT 1",
+        (clan, season, round_no, at)).fetchone() is not None
+
+
 def window_coverage(connection, clans, types, after, before, at, wars, truncated):
-    signals = [war_signal(connection, kind, clan, at) for clan in clans for kind in
-               ("current_war", "war_log", *(("cwl_group",) if "CWL" in types else ()))]
+    kinds = (("current_war", "war_log") if any(kind != "CWL" for kind in types) else ())
+    kinds += ("cwl_group",) if "CWL" in types else ()
+    signals = [war_signal(connection, kind, clan, at) for clan in clans for kind in kinds]
+    signals.extend(war_signal(connection, "cwl_war", tag, at)
+                   for tag in sorted({war["war_tag"] for war, _, _ in wars if war["type"] == "CWL"}))
+    missing, pending = [], []
+    if "CWL" in types and after is not None and before is not None:
+        months = [datetime.fromtimestamp(value / 1_000_000, timezone.utc).strftime("%Y-%m")
+                  for value in (after, before - 1, at)]
+        for season in connection.execute(
+                "SELECT s.*,src.clan_tag FROM cwl_seasons s JOIN cwl_season_sources src ON src.season_id=s.id "
+                f"WHERE src.clan_tag IN ({placeholders(clans)}) AND SUBSTR(s.season_key,1,7) BETWEEN ? AND ? "
+                "AND s.first_seen_at<=?", (*clans, *months[:2], at)):
+            if season["season_key"][:7] < months[2]:
+                pending.extend({"clan_tag": season["clan_tag"], "round": number}
+                               for number in json.loads(season["group_metadata_json"]).get("placeholder_rounds", []))
+            for ref in connection.execute(
+                    "SELECT r.round_no,r.war_tag,w.id FROM cwl_rounds r "
+                    "LEFT JOIN wars w ON w.war_tag=r.war_tag AND w.first_seen_at<=? "
+                    "WHERE r.season_id=?", (at, season["id"])):
+                if (ref["id"] is not None or cwl_round_known(connection, season["id"], ref["round_no"], season["clan_tag"], at)
+                        or war_signal(connection, "cwl_war", ref["war_tag"], at)["observed"].get("unrelated")):
+                    continue
+                missing.append({"clan_tag": season["clan_tag"], "round": ref["round_no"], "war_tag": ref["war_tag"]})
     result = envelope(signals, after=after, before=before, at=at, truncated=truncated)
     incomplete = []
     for war, clan, coverage in wars:
@@ -236,8 +268,11 @@ def window_coverage(connection, clans, types, after, before, at, wars, truncated
         if causes:
             incomplete.append({"war_id": war["id"], "clan_tag": clan, "causes": causes})
     result.update(types=list(types), wars_selected=len(wars), incomplete_wars=incomplete[:200])
+    if "CWL" in types:
+        result.update(missing_wars=missing[:200], pending_rounds=pending[:200])
+    result["truncated"] |= len(missing) > 200 or len(pending) > 200
     result["truncated"] |= len(incomplete) > 200
-    result["complete"] = result["complete"] and not incomplete
+    result["complete"] = result["complete"] and not (incomplete or missing or pending)
     return result
 
 
@@ -540,6 +575,11 @@ class WarReads(RecordReads):
                     "player_tag": row["player_tag"], "wars": 0, "wars_without_counts": 0, "attacks_expected": 0,
                     "attacks_used": 0, "stars": 0, "triples": 0, "destruction": 0, "attacks_measured": 0})
                 total["wars"] += 1
+                if "CWL" in types:
+                    total["missed_confirmed"] = total.get("missed_confirmed", 0) + (row["missed"] or 0)
+                    for field in ("attacks_expected", "attacks_used"):
+                        total[field + "_final"] = total.get(field + "_final", 0) + (
+                            row[field] if row["missed"] is not None else 0)
                 if row["attacks_expected"] is None or row["attacks_used"] is None:
                     total["wars_without_counts"] += 1
                 else:

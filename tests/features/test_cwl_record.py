@@ -130,25 +130,67 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         with now(NOV + 60 * DAY):
             self.assertEqual({war["_season"] for war in await self.groups.wars("ONE")}, {"2026-11"})
 
-    async def test_league_name_is_the_clans_war_league_while_the_week_ran(self):
+    async def assert_league(self, league, at):
+        weeks = await self.reads.weeks(["#PY"], ended=False, as_of=at)
+        self.assertEqual([week["league_name"] for week in weeks["weeks"]], [league])
+        current = await self.reads.group("#PY", as_of=at)
+        self.assertEqual(current["league"], league)
+        wars = await self.call(self.history.bonus_wars, "ONE", "2026-11", at=at)
+        self.assertEqual({war["cwl_league"] for war in wars}, {league or ""})
+        with now(at):
+            self.assertEqual({war["_league"] for war in await self.groups.wars("ONE")}, {league})
+
+    async def finish_november(self):
+        for round_no, tag in ((2, "#R8"), (3, "#RC")):
+            await self.record(league_war("warEnded", round_no), kind="cwl_war", scope=tag,
+                              at=end_of(3) + SECOND)
+
+    async def test_running_season_uses_the_latest_profile_at_the_earliest_war_start(self):
+        await self.league_on_profile("Crystal League II", NOV - 3 * DAY)
+        await self.league_on_profile("Crystal League I", NOV)
+        await self.november()
+        await self.assert_league("Crystal League I", end_of(2) - 3600 * SECOND)
+        # Selecting a later round still uses the season's first start, not the selection's.
+        await self.league_on_profile("Master League III", NOV + DAY)
+        selected = await self.reads.weeks(["#PY"], war_tags=["#R8"], ended=False, as_of=end_of(3))
+        self.assertEqual(selected["weeks"][0]["league_name"], "Crystal League I")
+        await self.assert_league("Crystal League I", end_of(3))
+
+    async def test_ended_season_keeps_its_starting_league(self):
         await self.league_on_profile("Crystal League I", NOV - 3 * DAY)
         await self.november()
-        week = lambda: self.call(self.history.bonus_wars, "ONE", "2026-11", at=end_of(3) + DAY)
-        self.assertEqual((await week())[0]["cwl_league"], "Crystal League I")
-        # A promotion after the week ended does not rename it; while it runs, the current league counts.
-        await self.league_on_profile("Master League III", end_of(3) + 12 * 3600 * SECOND)
-        self.assertEqual((await week())[0]["cwl_league"], "Master League III")
-        for tag in ("#R8", "#RC"):
-            await self.record(league_war("warEnded", 2 if tag == "#R8" else 3), kind="cwl_war", scope=tag,
-                              at=end_of(3) + 13 * 3600 * SECOND)
-        fresh = CwlHistory(CwlReads(self.store, CLANS), None, CLANS)
-        wars = await self.call(fresh.bonus_wars, "ONE", "2026-11", at=end_of(3) + DAY)
-        self.assertEqual({w["cwl_league"] for w in wars}, {"Crystal League I"})
-        # Without any profile observation the league stays unknown, as old weeks without one were.
-        await self.execute("DELETE FROM api_field_changes")
-        await self.execute("DELETE FROM api_records")
-        other = CwlHistory(CwlReads(self.store, CLANS), None, CLANS)
-        self.assertEqual({w["cwl_league"] for w in await self.call(other.bonus_wars, "ONE", "2026-11")}, {""})
+        await self.finish_november()
+        await self.assert_league("Crystal League I", end_of(3) + DAY)
+
+    async def test_promotion_after_the_season_does_not_rename_it_even_without_final_captures(self):
+        await self.league_on_profile("Crystal League I", NOV - 3 * DAY)
+        await self.november()
+        await self.assert_league("Crystal League I", end_of(3))
+        await self.league_on_profile("Master League III", end_of(3) + SECOND)
+        await self.assert_league("Crystal League I", end_of(3) + DAY)
+        await self.finish_november()
+        await self.assert_league("Crystal League I", end_of(3) + DAY)
+        fresh = CwlReads(self.store, CLANS)
+        weeks = await fresh.weeks(["#PY"], as_of=end_of(3) + DAY)
+        self.assertEqual(weeks["weeks"][0]["league_name"], "Crystal League I")
+        self.assertEqual((await fresh.group("#PY", as_of=end_of(3) + DAY))["league"], "Crystal League I")
+
+    async def test_no_profile_before_the_season_leaves_the_league_unknown(self):
+        await self.november()
+        await self.assert_league(None, end_of(3))
+        # A profile first saved during the season cannot establish its starting league.
+        await self.league_on_profile("Crystal League I", NOV + SECOND)
+        await self.assert_league(None, end_of(3))
+        await self.finish_november()
+        await self.assert_league(None, end_of(3) + DAY)
+
+    async def test_starting_league_is_reread_when_profile_history_is_corrected(self):
+        await self.league_on_profile("Crystal League II", NOV - 3 * DAY)
+        await self.november()
+        await self.finish_november()
+        await self.assert_league("Crystal League II", end_of(3) + DAY)
+        await self.league_on_profile("Crystal League I", NOV - DAY)
+        await self.assert_league("Crystal League I", end_of(3) + DAY)
 
     async def test_copied_weeks_keep_their_old_key_league_positions_and_final_lineup(self):
         await self.week(season="2026-06-catchup", label="2026-06-16", positions=(30, 40), defender_positions=(31, 41))

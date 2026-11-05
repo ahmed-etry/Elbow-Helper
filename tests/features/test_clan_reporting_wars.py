@@ -31,6 +31,7 @@ class _LogCounts:
     def __init__(self):
         self.status, self.counts = {}, {}
         self.log_entries = AsyncMock(side_effect=self.read)
+        self.completed = AsyncMock(return_value={"rows": [], "next_offset": None, "coverage": {"complete": True}})
 
     async def read(self, tag, *, as_of=None, offset=0):
         wins, losses, ties = self.counts.get(tag, (0, 0, 0))
@@ -319,16 +320,17 @@ class RecordedMonthlyWarSummaryTests(SummaryHarness, WarFixture, unittest.Isolat
     def description(self, clan):
         return self.threads[clan].send.call_args.kwargs["embed"].description
 
-    async def test_counts_the_month_of_the_log_with_its_edges_and_one_league_week(self):
+    async def test_counts_regular_log_entries_and_each_league_round_in_the_month(self):
         await self.record_log(september_log())
-        # A league round is never a log entry; the week counts once through its summary.
-        await self.record(war("warEnded", clans=("#PY", "#CU"), end="20260920T080000.000Z"), kind="cwl_war",
-                          scope="#R0", at=READ_TIME)
+        # A league round is absent from the log; its final result counts once, not its week summary.
+        league = war("warEnded", clans=("#PY", "#CU"), end="20260920T080000.000Z")
+        league.update(attacksPerMember=1, preparationStartTime="20260918T080000.000Z", startTime="20260919T080000.000Z")
+        await self.record(league, kind="cwl_war", scope="#R0", at=READ_TIME)
 
         await self.run_loop()
 
-        # In September: the tie at 23:59:59, the league week, the mid-month win and the loss at 00:00.
-        self.chart.assert_called_once_with(*CHART_ARGS, 2, 1, 1)
+        # In September: the regular tie, the league round's tie, the regular win and loss.
+        self.chart.assert_called_once_with(*CHART_ARGS, 1, 1, 2)
         self.threads["BEH"].send.assert_awaited_once_with(file=self.chart.return_value)
 
     async def test_unavailable_private_and_empty_months_stay_apart(self):
@@ -372,7 +374,7 @@ class RecordedMonthlyWarSummaryTests(SummaryHarness, WarFixture, unittest.Isolat
 
         await self.run_loop()
 
-        self.chart.assert_called_once_with(*CHART_ARGS, 2, 1, 1)
+        self.chart.assert_called_once_with(*CHART_ARGS, 1, 1, 1)
         self.assertEqual(self.manager.state["last_summary_month_by_clan"]["BEH"], "2026-09")
 
     async def test_a_failed_record_read_retries_only_that_clan(self):
