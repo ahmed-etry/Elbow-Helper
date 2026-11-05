@@ -325,13 +325,19 @@ async def clan_rosters(context, arguments):
                            observed_at=min((value for value in (found[tag].get('observed_at'),
                                cohort_observed_at) if value), default=None)) for tag in tags]
         original_count = len(roster)
-        if (arguments.get('include_war_stars') or arguments.get('ranked_tier_ids') or arguments.get('ranked_tier_prefix')) and source_basis=='current_in_game':
+        if arguments.get('include_war_stars') and source_basis=='current_in_game':
             found = await profiles(context,[row['tag'] for row in roster])
             roster = [dict(row,warStars=found.get(row['tag'],{}).get('data',{}).get('warStars'),
-                ranked_league=found.get(row['tag'],{}).get('data',{}).get('leagueTier'),
                 observed_at=min((value for value in (row.get('observed_at'),
                     found.get(row['tag'], {}).get('observed_at')) if value), default=None)) for row in roster]
-        roster = [dict(row,ranked_league=row.get('ranked_league',row.get('leagueTier'))) for row in roster]
+        roster = [dict(row,ranked_league=row.get('leagueTier')) for row in roster]
+        if arguments.get('ranked_tier_ids') or arguments.get('ranked_tier_prefix'):
+            # Tier filters use the stored profile; an unreadable record leaves every tier unknown.
+            stored = await record_identity.stored_profiles(context, [row['tag'] for row in roster if row.get('tag')]) or {}
+            roster = [dict(row, ranked_league=stored.get(row.get('tag'), {}).get('ranked_league'),
+                           ranked_league_observed_at=record_identity.observed(
+                               stored.get(row.get('tag'), {}).get('field_observed_at', {}).get('leagueTier')))
+                      for row in roster]
         leadership_tags.update(row['tag'] for row in roster
                                if row.get('role') in ('leader', 'coLeader'))
         unknown_filters = sum(unknown_account_filter(row,arguments) for row in roster)

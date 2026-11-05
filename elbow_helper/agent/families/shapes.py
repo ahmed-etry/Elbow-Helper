@@ -4,7 +4,7 @@ from ..engine.result_fields import names
 COMMON = {**names('schema_version,report_id,total_rows,returned_rows,next_offset,next_cursor,complete_snapshot,count,coverage,missing_sources,resolved_inputs,artifact_status'),
           'artifact': names('report_id,filename,total_rows')}
 RESULT_FIELDS = {
-    'read_ranked_activity': {**COMMON, 'rows': [{**names('player_tag,member_id,player_name,status,selection_rank,ranked_league,attacks_used,attacks_available,live_status,counts_complete,conflicting_battles'), 'observed_attacks':names('battles,average_stars,average_destruction_percent,triple_rate_percent'), 'observed_defenses':names('battles,average_stars,average_destruction_percent,triple_rate_percent')}]},
+    'read_ranked_activity': {**COMMON, 'rows': [{**names('player_tag,member_id,player_name,status,selection_rank,ranked_league,attacks_used,attacks_available,watch_status,watched_from,counts_complete'), 'observed_attacks':names('battles,average_stars,average_destruction_percent,triple_rate_percent'), 'observed_defenses':names('battles,average_stars,average_destruction_percent,triple_rate_percent')}]},
     'read_war_attendance': {**COMMON, 'rows': [names('member_id,member_name,player_tag,player_name,account_tags,war_ids,attacks_used,attacks_expected,missed,miss_rate,unconfirmed_opportunities,unit,missing_link')]},
     'read_cwl_results': {**COMMON, 'rows': [names('player_tag,player_name,clan_code,season,league,rank,rank_total,ass_score,score,attacks,attacks_expected,multi_season_score,multi_season_rank')]},
     'read_current_war': {**COMMON, 'rows': [{**names('clan_code,status,state,start_at,end_at,team_size,opponent'), 'members': [names('player_tag,player_name,attacks_used,unused_attacks,missed')]}]},

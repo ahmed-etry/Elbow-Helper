@@ -47,6 +47,16 @@ def unpack(items):
     return [dict(zip(items["columns"], row)) for row in items["rows"]] if isinstance(items, dict) else items
 
 
+def stored_leagues(tier):
+    """The record's people reads, holding each account's stored ranked tier."""
+    async def summary(tags, as_of=None):
+        return {"rows": [{"player_tag": tag, "ranked_league": {"id": 105000034, "name": tier(tag)},
+                          "legacy_league": {"name": "Silver III"}, "fields": {"trophies": 0, "bestTrophies": 6000},
+                          "field_observed_at": {"leagueTier": 1_790_000_000_000_000},
+                          "coverage": {"status": "observed"}} for tag in tags]}
+    return SimpleNamespace(account_summary=AsyncMock(side_effect=summary))
+
+
 class RepairConversationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
     def context(self, fetch):
         context = _context()
@@ -130,11 +140,8 @@ class RepairConversationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
         self.assertIn("Electro League 33", compiled.prompt)
 
     async def test_cohort_leagues_count_members_across_accounts_and_page_without_extra_candidates(self):
-        def fetch(path, **options):
-            name = "Legend III" if path.endswith(("%23P0", "%23Q0")) else "Dragon League 30"
-            return SimpleNamespace(ok=True, status=200, payload={"leagueTier": {"id": 105000034, "name": name},
-                                   "league": {"name": "Silver III"}, "trophies": 0, "bestTrophies": 6000})
-        context = self.context(fetch)
+        context = self.context(lambda *_a, **_kw: None)
+        context.bot.people_reads = stored_leagues(lambda tag: "Legend III" if tag in ("#P0", "#Q0") else "Dragon League 30")
         links = {101: [{"player_tag": "#P0"}, {"player_tag": "#P2"}], 102: [{"player_tag": "#Q0"}],
                  103: [{"player_tag": "#Q2"}]}  # 103 is an established member, outside the trial cohort.
         context = replace(context, account_links=SimpleNamespace(get_links_for_members=Mock(
@@ -164,13 +171,18 @@ class RepairConversationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
         self.assertIsNone(second["next_offset"])
         self.assertIsNone(second["next_page_arguments"])
         self.assertEqual(second["remaining_account_count"], 0)
-        self.assertEqual(context.bot.clash_client.get.await_count, 3)
+        self.assertEqual(first["accounts"][0]["best_trophies"], 6000)
+        self.assertEqual(first["accounts"][0]["legacy_league"], "Silver III")
         self.assertNotIn(103, context.account_links.get_links_for_members.call_args.args[0])
         complete = await tool.handler(context, {"cohort_report_id": "cohort", "league": "Legend League"})
         self.assertTrue(complete["complete"])
         self.assertEqual(complete["matching_members_in_page"], 2)
         self.assertEqual(complete["matching_accounts_in_page"], 2)
-        self.assertEqual(context.bot.clash_client.get.await_count, 3)
+        self.assertEqual(context.bot.people_reads.account_summary.await_count, 3)
+        context.bot.clash_client.get.assert_not_awaited()
+        context.bot.people_reads = None
+        missing = await tool.handler(context, {"cohort_report_id": "cohort", "league": "Legend League"})
+        self.assertEqual(missing["cause"], "source_unavailable")
 
     async def test_optional_failed_reaction_still_delivers_planned_text_in_one_round(self):
         events = []
@@ -192,8 +204,8 @@ class RepairConversationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
         self.assertEqual(json.loads(result)["cause"], "permission_denied")
 
     async def test_join_cohort_filters_discord_join_dates_before_resolving_accounts(self):
-        context = self.context(lambda *_a, **_kw: SimpleNamespace(ok=True, status=200, payload={
-            "name": "Example", "leagueTier": {"name": "Legend III"}, "trophies": 0, "bestTrophies": 0}))
+        context = self.context(lambda *_a, **_kw: None)
+        context.bot.people_reads = stored_leagues(lambda tag: "Legend III")
         links = SimpleNamespace(get_links_for_members=Mock(side_effect=lambda ids: {
             value: [{"player_tag": "#P0" if value == 101 else "#Q0"}] for value in ids}))
         context = replace(context, account_links=links)
@@ -215,11 +227,9 @@ class RepairConversationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
         links.get_links_for_members.assert_called_once_with([101, 102])
 
     async def test_planned_trial_report_and_leagues_cover_members_beyond_the_first_report_page(self):
-        def fetch(path, **options):
-            tier = "Legend III" if path.endswith(("%23P0", "%23P2", "%23Q0", "%23Q2")) else "Dragon League 30"
-            return SimpleNamespace(ok=True, status=200, payload={"leagueTier": {"name": tier},
-                                   "league": {"name": "Silver III"}, "trophies": 0})
-        context = self.context(fetch)
+        context = self.context(lambda *_a, **_kw: None)
+        context.bot.people_reads = stored_leagues(
+            lambda tag: "Legend III" if tag in ("#P0", "#P2", "#Q0", "#Q2") else "Dragon League 30")
         members = list(range(101, 132))
         links = {member: [{"player_tag": "#L" + str(member).replace("1", "Y").replace("3", "L").replace("4", "Q").replace("5", "V").replace("6", "G").replace("7", "R")}]
                  for member in members}
@@ -253,7 +263,8 @@ class RepairConversationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
         self.assertTrue(results["leagues"]["complete"])
         self.assertEqual(results["leagues"]["matching_members_in_page"], 3)
         self.assertEqual(results["leagues"]["matching_accounts_in_page"], 4)
-        self.assertEqual(context.bot.clash_client.get.await_count, 32)
+        self.assertEqual(context.bot.people_reads.account_summary.await_count, 1)
+        context.bot.clash_client.get.assert_not_awaited()
         self.assertEqual(len(session.calls), 2)
         delivery = AgentDeliveryMixin()
         delivery.bot = context.bot

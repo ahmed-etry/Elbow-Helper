@@ -24,9 +24,9 @@ from elbow_helper.data.store.projections import canonical_json
 from elbow_helper.data.store.ranked_import import snapshot_ranked, timestamp
 from elbow_helper.data.store.schema import MIGRATIONS, SCHEMA_VERSION
 from elbow_helper.data.store.sources import record_source
-from elbow_helper.features.ranked_stats.schema import create_schema
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration, SQLiteMigrationError, run_sqlite_migrations
 
+from .legacy_ranked_schema import create_schema
 from .test_family_store import link, response
 from .test_wars_import import CLANS, ImportFixture, old_id, old_lineup, old_war, END_S
 

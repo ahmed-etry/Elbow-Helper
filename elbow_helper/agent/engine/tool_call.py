@@ -516,10 +516,9 @@ def _clash_size_limit(content: str, limit: int) -> str | None:
         return None
     if not isinstance(payload, dict):
         return None
-    live = payload if payload.get("source") == "clash_api" else payload.get(
-        "live_battle_logs", {}).get("result", {})
-    if not isinstance(live, dict) or live.get("source") != "clash_api":
+    if payload.get("source") != "clash_api":
         return None
+    live = payload
     from copy import deepcopy
     from ..datasets.clash import summary, collection_counts, omitted_fields, select_fields
     from ..plan.results import compact_result
@@ -531,9 +530,8 @@ def _clash_size_limit(content: str, limit: int) -> str | None:
             return {key: records(item) for key, item in value.items()}
         return [records(item) for item in value] if isinstance(value, list) else value
 
-    # Preserve the wrapper (ranked reads may contain both stored and live data).
     bounded = records(deepcopy(payload))
-    target = bounded if live is payload else bounded["live_battle_logs"]["result"]
+    target = bounded
     items = target.get("items", [])
     totals = [{"tag": item["tag"], "status": item["status"], "collections": {
         path: {"returned_rows": 0, "total_rows": count["total_rows"]}
@@ -621,8 +619,6 @@ def _clash_size_limit(content: str, limit: int) -> str | None:
         "next_tags": [item["tag"] for item in items], "returned_rows": 0, "total_rows": total_rows,
         "omitted_fields": ["/items/*/data"], "omitted_collection_counts": combined_counts,
     }
-    if live is not payload:
-        minimal["omitted_fields"] = ["/" + key for key in payload]
     encoded = json.dumps(minimal, ensure_ascii=False, separators=(",", ":"))
     if len(encoded) <= limit:
         return encoded

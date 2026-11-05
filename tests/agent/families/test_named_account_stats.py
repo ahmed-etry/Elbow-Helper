@@ -415,11 +415,11 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual({row['player_tag'] for row in await asyncio.to_thread(cwl.account_names)},
                              {'#P0', '#Q0'})
             cwl.attendance = Mock(wraps=cwl.attendance)
-            ranked = Mock(return_value={'accounts': [], 'stored_battles': [], 'total_accounts': 0,
-                'next_offset': None, 'complete': True, 'coverage_complete': False,
-                'unobserved_selections': ['#P0'], 'limitations': []})
+            ranked = AsyncMock(return_value={'accounts': [], 'total_accounts': 0, 'offset': 0,
+                'next_offset': None, 'coverage_complete': False, 'unobserved_selections': ['#P0'], 'bases': {}})
             context = with_record(replace(context_with_names(linked=[('#P0', 'Amber Comet'), ('#Q0', 'Other Beacon')]),
-                cwl_queries=cwl, ranked_queries=SimpleNamespace(window=ranked)))
+                cwl_queries=cwl))
+            context.bot.ranked_reads = SimpleNamespace(window=ranked)
             regular = self.enterContext(regular_wars_from(selected, earlier))
             tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
             arguments = {'look_in': 'game', 'account_names': ['ambercomet'], 'after': '2025-11-02T00:00:00+00:00',
@@ -430,11 +430,9 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
                 'arguments': arguments, 'depends_on': []}]}
             self.assertTrue(check_plan(plan, registry).ok)
             self.assertIn('account_names', capability_list(registry))
-            live_logs = {'items': [{'tag': '#P0', 'status': 'ok', 'data': {'items': []}}]}
             with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())), \
                  patch.object(identity_reads, 'profiles', AsyncMock(return_value={
-                     '#P0': {'status': 'ok', 'data': {'name': 'Amber Comet', 'warStars': 9876}}})), \
-                 patch('elbow_helper.agent.datasets.ranked._live_batch', AsyncMock(return_value=live_logs)):
+                     '#P0': {'status': 'ok', 'data': {'name': 'Amber Comet', 'warStars': 9876}}})):
                 result = await tool.handler(context, arguments)
                 projected = await cohort_writer_evidence(context, {'stats': result})
             self.assertEqual([row['player_tag'] for row in result['rows']], ['#P0'])
@@ -449,8 +447,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(set(call.kwargs['clan_codes']), set(CLANS))
                 self.assertEqual(call.kwargs['after_ts'], int(datetime(2025, 11, 2, tzinfo=timezone.utc).timestamp()))
             regular.assert_awaited_once()
-            self.assertEqual(ranked.call_args.kwargs['values'], ('#P0',))
-            self.assertEqual(ranked.call_args.kwargs['selector'], 'account_tags')
+            self.assertEqual(ranked.call_args.args, ('account_tags', ['#P0']))
             self.assertEqual(set(result['history_reads']), set(account_activity.HISTORY_KINDS))
             self.assertEqual(projected['stats']['rows'][0]['activity'], activity)
             self.assertEqual(await cohort_selection(context, result['report_id'], 'account_tags'),

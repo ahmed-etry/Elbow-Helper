@@ -69,7 +69,6 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
         achievement_queries=None,
         event_queries=None,
         member_lifecycle_queries=None,
-        ranked_queries=None,
         clan_reporting_queries=None,
         role_connection_queries=None,
         knowledge_store=None,
@@ -98,7 +97,6 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
         self.achievement_queries = achievement_queries
         self.event_queries = event_queries
         self.member_lifecycle_queries = member_lifecycle_queries
-        self.ranked_queries = ranked_queries
         self.clan_reporting_queries = clan_reporting_queries
         self.role_connection_queries = role_connection_queries
         self.knowledge_store = knowledge_store

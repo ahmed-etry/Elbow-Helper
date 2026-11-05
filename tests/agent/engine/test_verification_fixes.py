@@ -7,7 +7,7 @@ import json
 from types import SimpleNamespace
 from elbow_helper.agent.wording import AGENT_ANSWER_UNFINISHED
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.conversation.context import compile_context
@@ -101,11 +101,10 @@ class VerificationFixTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCas
                     context = self.context(lambda *_a, **_kw: SimpleNamespace(ok=True, status=200,
                         payload={"name": "Example", "leagueTier": {"name": "Dragon League 30"}}))
                     context.member.name = "Example"
-                    window = Mock(return_value={"complete": True, "accounts": [{
-                        "player_tag": "#P0", "battle_records": 2, "counts_complete": True,
-                        "first_observed_at": "2026-10-01", "last_observed_at": "2026-10-04",
-                    }]})
-                    context = replace(context, ranked_queries=SimpleNamespace(window=window))
+                    window = AsyncMock(return_value={"accounts": [], "total_accounts": 0, "offset": 0,
+                        "next_offset": None, "unobserved_selections": ["#P0"], "coverage_complete": False,
+                        "bases": {}})
+                    context.bot.ranked_reads = SimpleNamespace(window=window)
                     first = repairs._plan([
                         {"id": "kept", "capability": "read_clash", "arguments": {"kind": "player", "tags": ["#P0"]}, "depends_on": []},
                         {"id": "fix", "capability": capability, "arguments": invalid, "depends_on": []},

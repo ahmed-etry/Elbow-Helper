@@ -1,5 +1,6 @@
 """Dated identity facts beside answers from the existing current-state sources."""
 
+from datetime import datetime, timezone
 import sqlite3
 
 from elbow_helper.data.store.legacy_links import LinkConflict
@@ -33,6 +34,21 @@ async def account_histories(context, tags):
             histories.update((row['player_tag'], row['record_history']) for row in batch['rows']
                              if row['record_history'] is not None)
     return histories
+
+
+async def stored_profiles(context, tags):
+    """Each account's latest stored profile summary; None when the record cannot be read."""
+    profiles = {}
+    for start in range(0, len(tags), 200):
+        batch = await record(context, 'people_reads', 'account_summary', tags[start:start + 200])
+        if batch is None:
+            return None
+        profiles.update((row['player_tag'], row) for row in batch['rows'])
+    return profiles
+
+
+def observed(value):
+    return None if value is None else datetime.fromtimestamp(value / 1_000_000, timezone.utc).isoformat()
 
 
 async def aliases(context, queries):

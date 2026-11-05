@@ -30,7 +30,7 @@ def family_revisions(context, family):
     if family in ('read_war_attendance', 'read_member_accounts', 'read_member_cohort'):
         sources['war_reads'] = source_revision(named_source(context, 'war_reads')) if observed else None
     if family in ('read_ranked_activity', 'read_member_accounts', 'read_member_cohort'):
-        sources['ranked_queries'] = source_revision(getattr(context, 'ranked_queries', None)) if observed else None
+        sources['ranked_reads'] = source_revision(named_source(context, 'ranked_reads')) if observed else None
     return {name: version for name, version in sources.items()
             if named_source(context, name) is not None}
 
@@ -88,7 +88,7 @@ def retained_finding(context, encoded):
         older = [instant for instant in times if
                  (asked - datetime.fromisoformat(instant)).total_seconds() > LIVE_FIGURE_GRACE_SECONDS]
         live = result.get('family') in ('read_member_accounts', 'read_member_cohort',
-            'read_clan_rosters', 'read_ranked_activity', 'read_current_war', 'read_discord_access') or (
+            'read_clan_rosters', 'read_current_war', 'read_discord_access') or (
             result.get('family') == 'read_cwl_results'
             and result.get('selection', {}).get('metric') in ('league', 'signup_pool', 'assigned_rosters'))
         finding = {'family': result.get('family'), 'selection': result.get('selection', {}),
