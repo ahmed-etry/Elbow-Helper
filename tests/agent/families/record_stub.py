@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.families import record_wars
 from elbow_helper.configuration.clans import CLANS
+from elbow_helper.data.reads.war_selection import compact_member, regular_aliases
 
 SECOND = 1_000_000
 WAR_IDS = count(1)
@@ -30,7 +31,7 @@ def regular_war(clan_code, end_ts, lineup, *, opponent="#Q2", start_ts=None, att
     """
     tag = CLANS[clan_code].tag
     view = {"war_id": next(WAR_IDS), "clan_tag": tag, "state": "warEnded",
-            "type_basis": type_basis, "start_at": None if start_ts is None else start_ts * SECOND,
+            "type": "REG", "type_basis": type_basis, "start_at": None if start_ts is None else start_ts * SECOND,
             "end_at": end_ts * SECOND, "legacy_ids": [], "opponent": {"clan_tag": opponent},
             "coverage": {"own": {"members": len(lineup), "team_size": len(lineup), "lineup_complete": True,
                                  "attacks_complete": True}}}
@@ -50,18 +51,22 @@ def regular_id(war):
 def regular_wars_from(*wars):
     """Serve the record's regular wars from these synthetic wars, selected as the record selects them."""
     async def serve(context, *, clan_codes, after_ts=None, before_ts=None, war_ids=(), latest_completed=None):
-        selection = SimpleNamespace(wars={}, rows={}, coverage=[], friendly=0, at=record_wars.read_core.now_us())
+        selected = []
         tags = {CLANS[code].tag for code in clan_codes}
         for view, rows in wars:
-            end = view["end_at"]
-            if view["clan_tag"] not in tags or after_ts is not None and end < after_ts * SECOND or (
+            end = view['end_at']
+            if view['clan_tag'] not in tags or after_ts is not None and end < after_ts * SECOND or (
                     before_ts is not None and end >= before_ts * SECOND):
                 continue
-            selection.wars[view["war_id"], view["clan_tag"]] = view
-            selection.rows[view["war_id"], view["clan_tag"]] = rows
-        if war_ids:
-            return record_wars.snapshot(selection, requested=set(war_ids))
+            aliases = regular_aliases(view)
+            if war_ids and not set(war_ids).intersection(aliases):
+                continue
+            selected.append(({**view, 'aliases': aliases, 'selection_id': regular_id((view, rows))}, rows))
+        selected.sort(key=lambda item: (-item[0]['end_at'], item[0]['clan_tag']))
         if latest_completed:
-            return record_wars.snapshot(selection, latest=latest_completed)
-        return record_wars.snapshot(selection, window=True)
+            selected = selected[:latest_completed]
+        return record_wars.snapshot({'wars': [view for view, _ in selected],
+            'rows': [compact_member(row, view) for view, rows in selected for row in rows],
+            'coverage': {'signals': []}, 'as_of': record_wars.read_core.now_us(),
+            'friendly_wars_not_counted': None if war_ids or latest_completed else 0})
     return patch.object(record_wars, "regular_wars", AsyncMock(side_effect=serve))

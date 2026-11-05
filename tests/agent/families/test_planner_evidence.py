@@ -33,7 +33,7 @@ class PlannerEvidenceTests(unittest.IsolatedAsyncioTestCase):
             return Snapshot((Score('#P0', 1), Score('#Q0', 2)))
 
         context = replace(_context(), cwl_queries=SimpleNamespace(ass_wars=score))
-        with patch.object(war_reads, 'selected_wars', AsyncMock(return_value={'war_ids': ['war']})):
+        with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'war_ids': ['war']})):
             result = await war_reads.cwl_results(context, {'metric': 'ass', 'clan_codes': ['BEH', 'BEM'],
                 'season': '2026-09', 'account_tags': ['#Q0']})
         self.assertEqual(result['ranked_population'], 2)
@@ -90,7 +90,7 @@ class PlannerEvidenceTests(unittest.IsolatedAsyncioTestCase):
 
         context = replace(_context(), cwl_queries=SimpleNamespace(ass_wars=score))
         tool = next(t for t in war_reads.TOOLS if t.definition.name == 'read_cwl_results')
-        with patch.object(war_reads, 'selected_wars', AsyncMock(return_value={'war_ids': ['war']})):
+        with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'war_ids': ['war']})):
             result = await tool.handler(context, {'clan_codes': ['BEH', 'BEM'], 'metric': 'ass',
                 'season': '2026-09', 'delivery': 'xlsx', 'sheet_by': 'clan_code', 'limit': 1})
         self.assertEqual(result['total_rows'], 4)

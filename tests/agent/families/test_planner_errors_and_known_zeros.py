@@ -46,7 +46,7 @@ class ConflictingOptionsTests(unittest.IsolatedAsyncioTestCase):
     async def test_gaps_that_are_not_argument_mistakes_stay_per_clan(self):
         codes = list(CWL_CLAN_CODES[:2])
         unavailable = {'error': 'Stored war evidence is unavailable.', 'cause': 'source_unavailable'}
-        with patch.object(war_reads, 'selected_wars', AsyncMock(return_value=unavailable)):
+        with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value=unavailable)):
             result = await war_reads.cwl_results(self.context(), {'metric': 'ass', 'clan_codes': codes,
                 'season': '2025-04'})
         self.assertNotIn('error', result)

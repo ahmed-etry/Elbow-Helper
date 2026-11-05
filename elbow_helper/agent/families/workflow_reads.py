@@ -290,7 +290,7 @@ async def hibernation(context, arguments):
         kinds = arguments.get('activity_kinds', ['ranked', 'regular_war', 'cwl'])
         war_rows = None
         if starts and set(kinds).intersection(('regular_war', 'cwl')):
-            from .war_reads import selected_wars
+            from ..reads.wars import selected_wars
             period = {'after': datetime.fromtimestamp(min(starts.values()), timezone.utc).isoformat(),
                       'before': context.source_message.created_at.isoformat()}
             wars = await selected_wars(context, period, 'both')

@@ -22,7 +22,7 @@ class ParticipationCountsTests(unittest.IsolatedAsyncioTestCase):
         context = replace(context, account_links=SimpleNamespace(
             get_links_by_tags=lambda _: {tag: {'discord_user_id': owner}
                 for tag, owner in (('#P0', 1), ('#Q0', 1), ('#P2', 2), ('#Q2', 3))}))
-        with patch.object(war_reads, 'selected_wars', AsyncMock(return_value={'rows': rows, 'war_ids': ['one']})):
+        with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'rows': rows, 'war_ids': ['one']})):
             result = await war_reads.attendance(context, {'war_type': 'REG', 'unit': 'member',
                 'clan_codes': ['BE1', 'BEE', 'BE4'], 'top_n': 1})
         visible = answer_evidence({'wars': result})['wars']

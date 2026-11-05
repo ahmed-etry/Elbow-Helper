@@ -76,6 +76,8 @@ class DataGuide:
                 "player (compact profile), current_war/cwl_war (scores and compact rosters), "
                 "cwl_group (season, clans, rounds.warTags), "
                 "war_log (items with results, stars, destruction), "
+                "current_war and war_log only cover clans the family record does not collect; "
+                "use read_current_war/read_war_attendance for family clans. "
                 "battle_log (latest player attacks/defenses), "
                 "capital_raids (items without attackLog/defenseLog). "
                 "Defaults omit heroes, troops and other bulk fields. fields replaces defaults with "

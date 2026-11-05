@@ -217,7 +217,7 @@ class CompactClashTests(unittest.IsolatedAsyncioTestCase):
         catalogue = capability_list({tool.definition.name: tool for tool in clash_tools()})
         self.assertIn("fields:[str(length>=1)]", catalogue)
         self.assertIn("fields overrides detail", catalogue)
-        self.assertIn("CWL-only clans need a seasonal CWL cohort first", catalogue)
+        self.assertIn("CWL-only clans need a CWL cohort first", catalogue)
 
     async def test_nine_clan_count_survives_actual_one_round_evidence_path(self):
         clans = [synthetic_clan(index) for index in range(9)]

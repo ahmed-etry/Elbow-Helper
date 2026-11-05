@@ -20,7 +20,7 @@ def recorded(context=None):
 
 def current_checks(response):
     """The record's latest current-war checks, in the shape the current-war tool reads."""
-    return patch.object(record_wars, 'current_wars', AsyncMock(return_value=response))
+    return patch('elbow_helper.agent.reads.wars.current_wars', AsyncMock(return_value=response))
 
 
 class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
@@ -59,7 +59,7 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
         rows = [{'player_tag': tag, 'player_name': tag, 'clan_code': 'BEH', 'war_id': tag,
                  'attacks_expected': expected, 'attacks_used': expected - missed, 'missed': missed}
                 for tag, expected, missed in [('#P0', 10, 5), ('#Q0', 1, 1)]]
-        with patch.object(war_reads, 'selected_wars', AsyncMock(return_value={'rows': rows, 'war_ids': ['one']})):
+        with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'rows': rows, 'war_ids': ['one']})):
             result = await war_reads.attendance(_context(), {'war_type': 'REG', 'sort': 'miss_rate', 'top_n': 1})
         self.assertEqual(result['rows'][0]['player_tag'], '#Q0')
         self.assertEqual(result['ranked_population'], 2)
@@ -164,7 +164,7 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
         query = SimpleNamespace(ass_wars=lambda **selection: Snapshot(tuple(
             Row('#P'+str(index),index+1,float(30-index)) for index in range(30))))
         context = replace(_context(), cwl_queries=query)
-        with patch.object(war_reads,'selected_wars',AsyncMock(return_value={'war_ids':['war']})):
+        with patch('elbow_helper.agent.reads.wars.selected_wars',AsyncMock(return_value={'war_ids':['war']})):
             result = await war_reads.cwl_results(context, {'metric':'ass','clan_codes':['BEH'],'war_ids':['war'],
                                                           'account_tags':['#P29']})
         self.assertEqual(result['ranked_population'], 30)
