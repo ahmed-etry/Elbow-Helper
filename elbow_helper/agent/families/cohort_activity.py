@@ -2,6 +2,7 @@
 import asyncio
 from elbow_helper.features.clan_health.attendance import aggregate_attendance
 from ..reads.wars import selected_wars, period
+from ..reads.people import PeopleAdapter, PeopleSelection
 
 
 async def roster_cohort(context, arguments):
@@ -12,7 +13,10 @@ async def roster_cohort(context, arguments):
     if 'error' in roster:
         return roster
     tags = sorted({row['player_tag'] for row in roster['rows'] if row.get('player_tag')})
-    links = await asyncio.to_thread(context.account_links.get_links_by_tags, tags) if context.account_links else {}
+    selected_links = await PeopleAdapter(context).links(PeopleSelection('accounts', tuple(tags)))
+    if selected_links.status == 'source_unavailable':
+        return {'error': 'Account links are not available.', 'cause': 'source_unavailable'}
+    links = selected_links.by_tag
     groups = {}
     for account in roster['rows']:
         tag = account.get('player_tag')

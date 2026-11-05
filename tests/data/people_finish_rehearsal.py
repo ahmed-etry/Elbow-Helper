@@ -27,7 +27,7 @@ from elbow_helper.data.store.legacy_links import FIELDS, legacy_shape
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.rosters.services.accounts import RosterAccountDirectory
 from elbow_helper.agent.capabilities.account_links.data import SOURCES
-from elbow_helper.agent.capabilities.account_links.reads import read_linked_accounts
+from elbow_helper.agent.reads.people import read_people_links as read_linked_accounts
 from elbow_helper.agent.datasets.query import run_query
 from elbow_helper.agent.families import account_names, identity_reads
 from elbow_helper.infrastructure.clash import ClashResponse
@@ -149,7 +149,7 @@ async def rehearse():
     async def clash(_context, arguments):
         return {'items': [{'tag': tag, 'status': 'ok', 'data': rosters.get(tag, {'tag': tag, 'name': tag}),
                            'observed_at': at} for tag in arguments['tags']]}
-    with (patch('elbow_helper.agent.capabilities.account_links.reads.require_evidence_access', AsyncMock()),
+    with (patch('elbow_helper.agent.reads.people.require_evidence_access', AsyncMock()),
           patch.object(identity_reads, 'require_evidence_access', AsyncMock()),
           patch.object(account_names, 'require_evidence_access', AsyncMock()),
           patch.object(identity_reads, 'read_clash', clash), patch.object(account_names, 'read_clash', clash)):

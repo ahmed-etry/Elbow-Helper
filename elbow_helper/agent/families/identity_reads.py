@@ -1,7 +1,5 @@
 """Complete member/account joins, clan rosters and distinct Discord cohorts."""
-import asyncio
 import json
-import sqlite3
 from collections import Counter
 from datetime import datetime
 from dataclasses import replace
@@ -19,8 +17,8 @@ from ..research.members import _complete_members, _joined_at
 from ..engine.capability_contract import CapabilityContract
 from ..engine.budgets import TOOL_TIMEOUT_SECONDS
 from .member_context import owner_context, account_owner_profiles, configured_member_roles, PROFILE_ROLE_GROUPS
-from ..read_cache import stored_read
-from .. import record_identity
+from ..reads import people as record_identity
+from ..reads.people import PeopleAdapter, PeopleSelection, seasonal_tags
 
 CLAN_ROLES = {'leadership': 'leadership_role_id', 'member': 'member_role_id',
               'war': 'war_role_id', 'cwl': 'cwl_role_id', 'cwl_helper': 'cwl_helper_role_id'}
@@ -148,16 +146,15 @@ async def member_accounts(context, arguments):
                    if (tag := normalize_player_tag(value)) is not None})
     if arguments.get('account_tags') and len(tags) != len(set(arguments['account_tags'])):
         return {'error': 'Choose valid, distinct account tags.', 'cause': 'invalid_arguments'}
-    links = {}
+    selected_links = await PeopleAdapter(context).links(PeopleSelection(
+        'members' if identifiers else 'accounts', tuple(identifiers or tags)))
+    if selected_links.status == 'source_unavailable':
+        return {'error': 'Account links are not available.', 'cause': 'source_unavailable'}
+    links = selected_links.by_member
     if context.account_links:
         if identifiers:
-            links = await asyncio.to_thread(context.account_links.get_links_for_members, identifiers)
             tags = sorted({row['player_tag'] for rows in links.values() for row in rows})
         else:
-            reverse = await asyncio.to_thread(context.account_links.get_links_by_tags, tags)
-            for tag, row in reverse.items():
-                if row:
-                    links.setdefault(row['discord_user_id'], []).append(row)
             identifiers = sorted(links)
     identifiers = sorted(set(identifiers) | set(name_identifiers))
     current = await profiles(context, tags)
@@ -209,7 +206,8 @@ async def member_accounts(context, arguments):
         if not links.get(identifier):
             result.append({'member_id': identifier, 'member_name': member.display_name if member else None,
                            'player_tag': None,
-                           'profile_status': 'unlinked' if context.account_links else 'links_unavailable',
+                           'profile_status': ('unlinked' if members_by_id[identifier]['account_links_status'] == 'available'
+                                              else 'links_unavailable'),
                            **({'candidate_for': members_by_id[identifier]['candidate_for']}
                               if members_by_id[identifier].get('candidate_for') else {})})
     await require_evidence_access(context)
@@ -262,38 +260,20 @@ async def member_accounts(context, arguments):
 async def account_members(context, identifiers, *, links=None, include_roles=False):
     """Keep each linked owner's Discord facts once, separate from game rows."""
     identifiers = sorted(set(identifiers) - {None})
+    links_available = context.account_links is not None
     if links is None:
-        links = (await asyncio.to_thread(context.account_links.get_links_for_members, identifiers)
-                 if identifiers and context.account_links else {})
+        selected = await PeopleAdapter(context).links(PeopleSelection('members', tuple(identifiers)))
+        links, links_available = selected.by_member, selected.status == 'available'
     await require_evidence_access(context)
     result = []
     for identifier in identifiers:
         member = context.guild.get_member(identifier)
         result.append({**member_fields(member, identifier, include_roles=include_roles),
             'membership_status': 'present' if member else 'not_in_guild',
-            'has_elbow_helper_links': bool(links.get(identifier)) if context.account_links else None,
+            'has_elbow_helper_links': bool(links.get(identifier)) if links_available else None,
             'account_tags': sorted({row['player_tag'] for row in links.get(identifier, [])}),
-            'account_links_status': 'available' if context.account_links else 'links_unavailable'})
+            'account_links_status': 'available' if links_available else 'links_unavailable'})
     return result
-
-
-async def seasonal_tags(context, code, season):
-    if context.cwl_queries:
-        if callable(getattr(context.cwl_queries, 'seasonal_cohort', None)):
-            try:
-                source = await stored_read(context, context.cwl_queries, 'seasonal_cohort',
-                                           clan_code=code, season=season)
-            except (OSError, RuntimeError, sqlite3.Error):
-                source = None
-            if source is not None:
-                return (source['player_tags'], source['season'], 'league_group_cohort', source['observed_at'])
-        snapshot = await stored_read(context, context.cwl_queries, 'performance', history_limit=1,
-                                            season=season, clan_code=code)
-        if not snapshot.rows and not snapshot.seasons:
-            return [], season, 'season_cohort_unavailable'
-        return sorted({row.player_tag for row in snapshot.rows}), \
-               season or (snapshot.seasons[0] if snapshot.seasons else None), 'stored_completed_cwl_participants'
-    return [], season, 'season_cohort_unavailable'
 
 
 async def clan_rosters(context, arguments):
@@ -314,13 +294,13 @@ async def clan_rosters(context, arguments):
         clan = CLANS[code]
         item = by_tag.get(clan.tag, {'status': 'unavailable'})
         data = item.get('data', {})
-        selected_season, source_basis = arguments.get('season'), 'current_in_game'
-        cohort_observed_at = item.get('observed_at')
+        population = await PeopleAdapter(context).population(
+            code, basis, arguments.get('season'), item, seasonal_reader=seasonal_tags)
+        selected_season, source_basis = population.season, population.basis
+        cohort_observed_at = population.observed_at
         roster = [dict(row, observed_at=item.get('observed_at')) for row in data.get('memberList', [])]
-        if basis == 'seasonal_cwl' or clan.cwl_only and basis == 'community':
-            seasonal = await seasonal_tags(context, code, selected_season)
-            tags, selected_season, source_basis = seasonal[:3]
-            cohort_observed_at = seasonal[3] if len(seasonal) > 3 else None
+        if population.seasonal:
+            tags = population.player_tags
             found = await profiles(context, tags)
             roster = [dict(found[tag].get('data', {}), tag=tag, profile_status=found[tag]['status'],
                            observed_at=min((value for value in (found[tag].get('observed_at'),
@@ -375,8 +355,10 @@ async def clan_rosters(context, arguments):
     tags = sorted({row['player_tag'] for row in result if row.get('player_tag')})
     if arguments.get('exclude_leadership'):
         tags = sorted(set(tags) | leadership_tags)
-    links = (await asyncio.to_thread(context.account_links.get_links_by_tags, tags)
-             if context.account_links and tags else {})
+    selected_links = await PeopleAdapter(context).links(PeopleSelection('accounts', tuple(tags)))
+    if selected_links.status == 'source_unavailable':
+        return {'error': 'Account links are not available.', 'cause': 'source_unavailable'}
+    links = selected_links.by_tag
     for row in result:
         identifier = (links.get(row.get('player_tag')) or {}).get('discord_user_id')
         member = context.guild.get_member(identifier) if identifier else None

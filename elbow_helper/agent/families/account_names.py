@@ -1,7 +1,5 @@
 """Resolve names on the planner's chosen side, then join through account links."""
 
-import asyncio
-import sqlite3
 from dataclasses import replace
 
 from elbow_helper.configuration.clans import CLANS
@@ -13,7 +11,8 @@ from elbow_helper.domain.identity import (matching_accounts, normalized_name, ed
 from ..access import require_evidence_access
 from ..datasets.clash import read_clash
 from ..research.member_identity import matching_members, matches_discord_identity
-from .. import record_identity
+from ..reads import people as record_identity
+from ..reads.people import PeopleAdapter, PeopleSelection
 
 
 async def resolve_account_names(context, queries):
@@ -33,22 +32,18 @@ async def resolve_account_names(context, queries):
         if source == 'current_family_roster':
             account['player_name'] = name
 
-    async def stored(source, reader):
-        if reader is None:
-            missing.append({'source': source, 'cause': 'missing_setup'})
-            return
-        try:
-            rows = await asyncio.to_thread(reader)
-        except (OSError, sqlite3.Error, TimeoutError):
-            missing.append({'source': source, 'cause': 'source_unavailable'})
-            return
-        if isinstance(rows, dict):
-            rows = rows.values()
-        for row in rows:
-            add(row.get('player_tag'), row.get('player_name_last_seen') or row.get('player_name'), source)
-
-    await stored('bot_account_links', context.account_links.get_all_links if context.account_links else None)
-    await stored('stored_account_directory', context.cwl_queries.account_names if context.cwl_queries else None)
+    current_links = await PeopleAdapter(context).links(PeopleSelection('all'))
+    if current_links.status != 'available':
+        missing.append({'source': 'bot_account_links', 'cause': current_links.status})
+    for row in current_links.by_tag.values():
+        if row:
+            add(row.get('player_tag'), row.get('player_name_last_seen'), 'bot_account_links')
+    directory = await PeopleAdapter(context).directory_names()
+    if directory is None:
+        missing.append({'source': 'stored_account_directory', 'cause':
+                        'missing_setup' if context.cwl_queries is None else 'source_unavailable'})
+    for row in directory or ():
+        add(row.get('player_tag'), row.get('player_name'), 'stored_account_directory')
     for tag, names in (await record_identity.aliases(context, queries)).items():
         for name in names:
             add(tag, name, 'family_record')
@@ -69,15 +64,19 @@ async def resolve_account_names(context, queries):
     # one owner. Unowned candidates must still require clarification.
     candidates = {row['player_tag']: row for resolution in resolutions
                   for row in resolution['candidates']}
-    links = (await asyncio.to_thread(context.account_links.get_links_by_tags, sorted(candidates))
-             if candidates and context.account_links else {})
+    selected_links = await PeopleAdapter(context).links(PeopleSelection('accounts', tuple(sorted(candidates))))
+    links = selected_links.by_tag
+    if selected_links.status != 'available':
+        source = {'source': 'bot_account_links', 'cause': selected_links.status}
+        if source not in missing:
+            missing.append(source)
     await require_evidence_access(context)
     for tag, candidate in candidates.items():
         link = links.get(tag)
         identifier = link['discord_user_id'] if link else None
         member = context.guild.get_member(identifier) if identifier else None
         candidate.update(member_id=identifier, member_name=member.display_name if member else None,
-                         membership_status=('links_unavailable' if context.account_links is None else
+                         membership_status=('links_unavailable' if selected_links.status != 'available' else
                              'unlinked' if identifier is None else 'present' if member else 'not_in_guild'))
     selected = {}
     for resolution in resolutions:
@@ -139,8 +138,12 @@ async def resolve_names(context, queries, look_in=None):
         for index in unknown:
             if resolutions[index]['status'] == 'not_found':
                 resolutions[index]['status'] = 'unknown'
-    links = (await asyncio.to_thread(context.account_links.get_links_for_members, sorted(members))
-             if members and context.account_links else {})
+    selected_links = await PeopleAdapter(context).links(PeopleSelection('members', tuple(sorted(members))))
+    links = selected_links.by_member
+    if members and selected_links.status != 'available':
+        source = {'source': 'bot_account_links', 'cause': selected_links.status}
+        if source not in missing:
+            missing.append(source)
     await require_evidence_access(context)
     selected, selected_members, resolved_members = {}, set(), set()
     for resolution in resolutions:
@@ -151,7 +154,7 @@ async def resolve_names(context, queries, look_in=None):
             member['accounts'] = [{'player_tag': row['player_tag'],
                                    'player_name': row.get('player_name_last_seen')}
                                   for row in links.get(identifier, [])]
-            member['account_links_status'] = ('links_unavailable' if context.account_links is None
+            member['account_links_status'] = ('links_unavailable' if selected_links.status != 'available'
                 else 'available' if member['accounts'] else 'no_linked_accounts')
         chosen = []
         if resolution['found_in'] is not None:

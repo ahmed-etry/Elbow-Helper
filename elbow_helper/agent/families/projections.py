@@ -1,10 +1,10 @@
 """Typed account projections and authorized cohort references shared by family reads."""
-import asyncio
 import json
 
 from .core import FamilyReport, UNKEPT_REPORT
 from ..reports.tools import authorize_report
 from ..reads.wars import performance_projection
+from ..reads.people import PeopleAdapter, PeopleSelection
 
 __all__ = ['performance_projection', 'cohort_selection', 'ACCOUNT_FILTERS', 'COHORT_REF', 'PERFORMANCE',
            'account_matches', 'unknown_account_filter', 'unknown_account_data']
@@ -78,7 +78,10 @@ async def cohort_selection(context, identifier, selector):
     selected_accounts = any('accounts' in row or 'player_tag' in row for row in rows)
     if (selector=='account_tags' and not selected_accounts and members
             and context.account_links):
-        links = await asyncio.to_thread(context.account_links.get_links_for_members,members)
+        selected = await PeopleAdapter(context).links(PeopleSelection('members', tuple(members)))
+        if selected.status != 'available':
+            return {'error': 'Account links are not available.', 'cause': selected.status}
+        links = selected.by_member
         tags = {row['player_tag'] for values in links.values() for row in values}
     values = members if selector=='member_ids' else sorted(tags)
     if selector == 'member_ids' and tags and report.family in ('read_cwl_results', 'read_clan_rosters', 'read_member_accounts'):

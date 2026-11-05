@@ -79,6 +79,8 @@ class PeopleReads(RecordReads):
 
     async def current_links(self, as_of=None):
         """Current local ownership rows with readiness and transaction coverage."""
+        if self.link_service is not None:
+            return await self.link_service.read_people(self._snapshot, self._current_links, (timestamp(as_of),))
         return await self._read(self._current_links, timestamp(as_of))
 
     @staticmethod
@@ -168,6 +170,27 @@ class PeopleReads(RecordReads):
 
     async def account_summary(self, player_tags, as_of=None):
         return await self._read(self._summaries, tags(player_tags), timestamp(as_of))
+
+    async def directory_names(self, as_of=None):
+        """Family stay and war-lineup names, including departed accounts.
+
+        This is the union formerly assembled by CwlRecordHistory.account_names;
+        opponent names and current ownership are deliberately separate facts.
+        """
+        return await self._read(self._directory_names, timestamp(as_of))
+
+    def _directory_names(self, connection, at):
+        from .stays import names
+        from .cwl import CwlReads
+        found = {(row['player_tag'], row['player_name']) for row in names(connection, at)['rows']}
+        found.update((row['player_tag'], row['player_name']) for row in
+                     CwlReads._account_names(connection, self.clan_tags, at)['rows'])
+        if self.alias_reader is not None:
+            aliases = self.alias_reader()
+            aliases = aliases.values() if isinstance(aliases, dict) else aliases
+            found.update((row['player_tag'], row['player_name']) for row in aliases
+                         if row.get('player_name') is not None)
+        return {'rows': [{'player_tag': tag, 'player_name': name} for tag, name in sorted(found)]}
 
     @staticmethod
     def _summaries(connection, selected, at):

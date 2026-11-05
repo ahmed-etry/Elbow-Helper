@@ -9,8 +9,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, call, patch
 
-from elbow_helper.agent import record_identity
-from elbow_helper.agent.capabilities.account_links.reads import read_linked_accounts
+from elbow_helper.agent.reads import people as record_identity
+from elbow_helper.agent.reads.people import read_people_links as read_linked_accounts
 from elbow_helper.agent.datasets import membership as history_tool
 from elbow_helper.agent.families import identity_reads, account_names, model_view
 from elbow_helper.configuration.clans import CLANS

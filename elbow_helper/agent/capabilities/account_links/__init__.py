@@ -2,7 +2,7 @@
 
 from .suggestions import account_suggestion_tools
 from .commands import account_link_adapters
-from .reads import account_read_tools
+from ...reads.people_tools import account_read_tools
 from ...actions.undo import merge_undo_handlers
 from .commands import UNDO_HANDLERS as COMMANDS_UNDO_HANDLERS
 

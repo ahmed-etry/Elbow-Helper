@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.record_identity import account_histories
+from elbow_helper.agent.reads.people import account_histories
 from elbow_helper.data.reads import PeopleReads
 
 from .test_people_import import _PeopleFixture, row
@@ -12,7 +12,7 @@ from .test_people_import import _PeopleFixture, row
 class PeopleConsumerGateTests(_PeopleFixture):
     async def asyncSetUp(self):
         await super().asyncSetUp()
-        access = patch('elbow_helper.agent.record_identity.require_evidence_access', AsyncMock())
+        access = patch('elbow_helper.agent.reads.people.require_evidence_access', AsyncMock())
         access.start()
         self.addCleanup(access.stop)
 

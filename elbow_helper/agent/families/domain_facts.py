@@ -61,7 +61,7 @@ def workflow_meanings():
     return [
         {'event':'account_linked','establishes':'account identity link',
          'does_not_establish':['submitted application','recruitment acceptance'],
-         'source':'elbow_helper/agent/capabilities/account_links/reads.py'},
+            'source':'elbow_helper/agent/reads/people.py'},
         {'event':'accept','establishes':'trial started',
          'does_not_establish':['permanent membership','historical absence when no active trial'],
          'source':'elbow_helper/features/recruitment/trials.py'},
