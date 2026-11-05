@@ -52,6 +52,25 @@ class AttackPlanProfileTests(unittest.IsolatedAsyncioTestCase):
         client.get.assert_not_awaited()
         self.assertEqual(Planning._player_fetch_error_text(None), "Clash data isn't available right now. Try again later.")
 
+    async def test_a_failed_lookup_gets_the_commands_own_reply(self):
+        unavailable = "Clash data isn't available right now. Try again later."
+        cases = (
+            ("network failure", ClashResponse(None, None, {}, 3, None, ConnectionError("down")), unavailable),
+            ("timeout", ClashResponse(None, None, {}, 3, None, TimeoutError()), unavailable),
+            ("unreadable reply", ClashResponse(200, None, {}, 3, 5, ValueError("not json")), unavailable),
+            ("not found", ClashResponse(404, {"reason": "notFound"}, {}, 1, 5), "That player couldn't be found."),
+            ("maintenance", ClashResponse(503, {"reason": "maintenance"}, {}, 3, 5), unavailable),
+        )
+        image = SimpleNamespace(content_type="image/png")
+        for name, reply, text in cases:
+            with self.subTest(name):
+                planning = object.__new__(Planning)
+                planning.profiles, _ = self.profiles(reply)
+                planning.plan_emojis = SimpleNamespace(get=AsyncMock())
+                prepared = await planning.prepare_attack_plan("#2PP", "plan", image, image)
+                self.assertEqual(prepared, {"issue": text, "player_tag": "#2PP"})
+                planning.plan_emojis.get.assert_not_awaited()
+
     async def test_missing_clash_access_is_reported_before_asking(self):
         planning = object.__new__(Planning)
         planning.profiles, client = self.profiles(configured=False)
