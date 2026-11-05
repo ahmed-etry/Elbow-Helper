@@ -132,7 +132,10 @@ class Planning(commands.Cog):
         if issue:
             return {"issue": issue, "player_tag": player_tag}
         player_data = await fetch_player(player_tag, self.profiles)
-        if not player_data or player_data.get("_http_status", 500) >= 400:
+        status = player_data.get("_http_status") if player_data else None
+        # No status means no reply at all (network failure, timeout); a failed read has no usable profile.
+        if (not player_data or player_data.get("_error")
+                or not isinstance(status, int) or status >= 400):
             return {"issue": self._player_fetch_error_text(player_data),
                     "player_tag": player_tag}
         emoji_set = await self.plan_emojis.get((
