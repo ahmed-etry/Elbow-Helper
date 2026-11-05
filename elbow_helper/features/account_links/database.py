@@ -7,7 +7,7 @@ import sqlite3
 from typing import Any, Iterable, Iterator, Mapping
 
 from elbow_helper.data.link_facade import LinkFacade
-from elbow_helper.data.store.legacy_links import LinkConflict
+from elbow_helper.data.store.link_state import LinkConflict
 
 from .config import DB_PATH
 from .schema import DATABASE
@@ -16,9 +16,7 @@ from .schema import DATABASE
 class AccountLinksDbMixin:
     @contextmanager
     def _db_connect(self) -> Iterator[sqlite3.Connection]:
-        service = getattr(self, "link_service", None)
-        conn = (sqlite3.connect(service.legacy_path.resolve().as_uri() + "?mode=rw", uri=True)
-                if service is not None else DATABASE.connect(DB_PATH))
+        conn = DATABASE.connect(DB_PATH)
         try:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA foreign_keys=ON")

@@ -51,6 +51,9 @@ class DataGuideTests(unittest.TestCase):
             from contextlib import closing
             for source in SOURCES:
                 for table, _, _ in source.tables:
+                    if source.snapshot is not None:
+                        self.assertIn(source.alias + "." + table + " [", guide)
+                        continue
                     with closing(sqlite3.connect(source.resolve(paths))) as connection:
                         exists = connection.execute(f'PRAGMA table_info("{table}")').fetchall()
                     if exists:

@@ -10,7 +10,7 @@ from typing import Any, Literal
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.configuration.clans import CLANS
 
-from elbow_helper.data.store.legacy_links import LinkConflict
+from elbow_helper.data.store.link_state import LinkConflict
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationError
 from ..access import require_evidence_access
 from ..read_cache import stored_read
@@ -344,5 +344,3 @@ async def read_membership_history(context, arguments):
                         "before_record_hourly_observations": True},
         "flags": {"status": "partial", "truncated": False, "limits": ["bounded_membership_observations"]},
     }
-
-

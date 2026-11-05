@@ -11,10 +11,10 @@ from elbow_helper.agent.reads.people import (
 from elbow_helper.data.reads import PeopleReads
 from elbow_helper.infrastructure.persistence.migrations import UnsupportedSQLiteVersionError
 from agent.engine.test_agent_plan_flow import _context
-from .test_people_import import _PeopleFixture, row
+from .record_fixtures import PeopleFixture, row
 
 
-class PeopleAgentReadTests(_PeopleFixture):
+class PeopleAgentReadTests(PeopleFixture):
     def context(self):
         forbidden = Mock(side_effect=AssertionError('Unexpected question-time I/O'))
         self.reader = PeopleReads(self.store, link_service=self.service)
@@ -26,7 +26,6 @@ class PeopleAgentReadTests(_PeopleFixture):
         return context, forbidden
 
     async def test_shared_current_selection_matches_projection_after_local_operation(self):
-        await self.service.startup(at=200)
         await self.service.upsert_link(**row('#V0', 100, 'Added alt'), at=300)
         await self.service.upsert_link(**row('#P0', 300, 'New owner'), at=400)
         context, forbidden = self.context()
@@ -43,11 +42,8 @@ class PeopleAgentReadTests(_PeopleFixture):
         self.assertFalse(history['#P0']['first_observed_is_first_ever'])
         forbidden.assert_not_called()
 
-    async def test_unready_and_recovery_conflicts_never_fall_back_to_other_sources(self):
+    async def test_recovery_conflicts_never_fall_back_to_other_sources(self):
         context, forbidden = self.context()
-        result = await read_people_links(context, {'member_ids': [100]})
-        self.assertEqual(result['cause'], 'source_unavailable')
-        await self.service.startup(at=200)
         await self.execute("INSERT INTO link_operations(operation_key,requested_json,before_json,after_json,"
                            "before_digest,after_digest,created_at,status) "
                            "VALUES ('pending','{}','{}','{}','before','after',250,'pending')")
@@ -55,7 +51,6 @@ class PeopleAgentReadTests(_PeopleFixture):
         forbidden.assert_not_called()
 
     async def test_record_failures_stay_unknown_and_access_is_checked_after_reads(self):
-        await self.service.startup(at=200)
         context, forbidden = self.context()
         for error in (OSError('disk'), sqlite3.OperationalError('locked'), TimeoutError(),
                       UnsupportedSQLiteVersionError('future schema')):
@@ -72,7 +67,6 @@ class PeopleAgentReadTests(_PeopleFixture):
         forbidden.assert_not_called()
 
     async def test_directory_union_matches_feature_names_without_calling_feature(self):
-        await self.service.startup(at=200)
         from elbow_helper.data.reads import CwlReads, StayReads
         from .link_fixtures import CLANS
         from .test_wars import war, END

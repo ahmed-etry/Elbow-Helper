@@ -1,7 +1,7 @@
 """League history and league groups read from synthetic family-record weeks.
 
-Collector weeks are saved with the collector's own functions; copied weeks go
-through the startup copy of a synthetic old store.
+Collector weeks use the collector's own functions; historical weeks are
+seeded directly in the record.
 """
 
 import asyncio
@@ -24,7 +24,7 @@ from elbow_helper.infrastructure.persistence.revisions import release_sqlite_rev
 from elbow_helper.features.wars.rendering import build_war_board_embed
 
 from tests.data.test_wars import SECOND, group, war
-from tests.data.test_wars_import_cwl import CwlFixture
+from tests.data.record_fixtures import CwlFixture
 
 DAY = 86400 * SECOND
 CLANS = {"ONE": SimpleNamespace(tag="#PY"), "TWO": SimpleNamespace(tag="#LQ")}
@@ -152,7 +152,6 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_copied_weeks_keep_their_old_key_league_positions_and_final_lineup(self):
         await self.week(season="2026-06-catchup", label="2026-06-16", positions=(30, 40), defender_positions=(31, 41))
-        await self.run_cwl()
         self.assertEqual(await self.call(self.history.bonus_seasons, None), ["2026-06-catchup"])
         wars = await self.call(self.history.bonus_wars, "ONE", "2026-06-catchup")
         self.assertEqual([w["war_id"] for w in wars], ["CWL:#RR0", "CWL:#RR2", "CWL:#RR8"])
@@ -177,7 +176,6 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         await self.week(season="2026-09", first_end=1788700000, prefix="#JJ", opponents=("#U0", "#U2", "#U8"))
         await self.week(code="TWO", tag="#LQ", season="2026-09", first_end=1788700000, prefix="#CC",
                         opponents=("#V0", "#V2", "#V8"), lineup=("#Q8", "#Q9"))
-        await self.run_cwl()
         with patch("elbow_helper.features.cwl.record.SEASON_WARS", 3):
             latest = await self.call(self.history.roster_history, 1)
             scoped = await self.call(self.history.roster_history, 3, season="2026-08", clan_code="ONE")
@@ -190,7 +188,6 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
     async def test_chosen_wars_are_exactly_the_clans_ended_wars_and_others_are_refused_with_why(self):
         await self.november()
         await self.week(code="TWO", tag="#LQ", prefix="#CC", opponents=("#V0", "#V2", "#V8"), lineup=("#Q8", "#Q9"))
-        await self.run_cwl()
         chosen = await self.call(self.history.scoring_wars, "ONE", ["#R0"])
         self.assertEqual([w["war_id"] for w in chosen], ["CWL:#R0"])
         self.assertEqual(len(chosen[0]["roster"]), 2)
@@ -205,7 +202,6 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
     async def test_attendance_counts_final_lineups_and_selects_like_the_old_snapshot(self):
         await self.week()
         await self.november()
-        await self.run_cwl()
         result = await self.call(self.history.attendance, clan_codes=["ONE"], war_type="CWL", season="2026-10")
         self.assertEqual(result["war_ids"], ["CWL:#RR0", "CWL:#RR2", "CWL:#RR8"])
         self.assertEqual(sorted((r["war_id"], r["player_tag"], r["missed"]) for r in result["rows"])[:4],
@@ -455,7 +451,6 @@ class HealthLeagueTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
     async def test_a_copied_base_keeps_its_old_position_in_the_attack_sheet(self):
         from elbow_helper.features.clan_health.record_wars import RegularWars
         await self.week(positions=(30, 40), defender_positions=(31, 41))
-        await self.run_cwl()
         league = RegularWars(WarReads(self.store), CLANS, types=("CWL",))
         rows = await asyncio.to_thread(league.attacks, player_tag="#P2", cycle_start_ts=0, cycle_end_ts=NOV // SECOND)
         self.assertEqual([(row["defender_map_position"], row["defender_townhall"]) for row in rows], [(41, 17), (41, 17)])

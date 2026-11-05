@@ -33,7 +33,7 @@ class DataGuide:
         self.variants = {}
         for source in sources:
             path = source.resolve(paths)
-            if not path.is_file():
+            if source.snapshot is None and not path.is_file():
                 continue
             if source.state_name:
                 self.entries.append((
@@ -43,8 +43,13 @@ class DataGuide:
                 continue
             try:
                 with closing(sqlite3.connect(
-                    path.resolve().as_uri() + "?mode=ro", uri=True,
+                    ":memory:" if source.snapshot else path.resolve().as_uri() + "?mode=ro", uri=True,
                 )) as connection:
+                    if source.snapshot:
+                        tables = source.snapshot(paths, path, {table: level for table, level, _ in source.tables})
+                        for table, (columns, _) in tables.items():
+                            definition = ",".join(f'"{name}" {kind}' for name, kind in columns)
+                            connection.execute(f'CREATE TABLE "{table}" ({definition})')
                     for table, level, note in source.tables:
                         columns = connection.execute(f"PRAGMA table_info(\"{table}\")").fetchall()
                         if columns:

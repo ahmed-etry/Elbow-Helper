@@ -4,7 +4,7 @@ import asyncio
 from contextlib import closing
 import sqlite3
 
-from .store.legacy_links import TOPIC, FIELDS, LinkConflict
+from .store.link_state import FIELDS, LinkConflict
 from .reads.core import RecordReads
 
 
@@ -26,8 +26,6 @@ def query_links(path):
 
 
 def require_links(connection):
-    if connection.execute("SELECT 1 FROM imports WHERE topic=?", (TOPIC,)).fetchone() is None:
-        raise LinkConflict("people_import_not_started")
     if connection.execute("SELECT 1 FROM link_operations WHERE status='pending'").fetchone():
         raise LinkConflict("link_recovery_required")
 

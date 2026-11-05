@@ -3,6 +3,9 @@
 import sqlite3
 
 
+TOTALS = ("hero_sum", "pet_sum", "equipment_sum", "troop_sum", "spell_sum", "games_total")
+
+
 def create_profile_history_schema(connection):
     # An account known only from an old file has never been seen by the collector.
     # Preserve every existing first-observed date; NULL lasts until a real observation.

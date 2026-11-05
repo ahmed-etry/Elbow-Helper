@@ -1,18 +1,14 @@
 """Clan-facing war reads over synthetic record wars, including partial and private paths."""
 
-from contextlib import closing
-import sqlite3
 import unittest
 
 from elbow_helper.data.reads import WarReads
 from elbow_helper.features.clan_reporting.record_wars import monthly_results
 from elbow_helper.data.store.war_projection import HOUR, api_time
-from tests.data.legacy_health_schema import create_schema
 
 from . import test_family_store as fixtures
 from .test_family_store import link
 from .test_wars import END, SECOND, START, WarFixture, war
-from .war_parity import compare_frozen_wars
 
 
 DAY = 24 * HOUR
@@ -327,32 +323,6 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         # Attack 2 could then have been on attack 3's defender.
         await self.execute("UPDATE war_attacks SET defender_member_id=NULL WHERE attack_order=2")
         self.assertEqual(await self.fresh_by_order(), {1: True, 3: None})
-
-    async def test_parity_rehearsal_matches_old_wars_and_explains_differences(self):
-        await self.record(war("warEnded"), at=END + 90 * SECOND)
-        path = self.path.parent / "clan_health.db"
-        end = END // SECOND
-        with closing(sqlite3.connect(path)) as old:
-            create_schema(old)
-            for war_id, opponent in (("REG:#PY:a:#GR", "#GR"), ("REG:#PY:b:#CU", "#CU")):
-                old.execute("INSERT INTO wars(war_id,war_type,clan_code,clan_tag,opponent_tag,team_size,attacks_per_member,"
-                            "state,end_ts,last_seen_ts) VALUES (?,'REG','ONE','#PY',?,2,2,'warEnded',?,?)",
-                            (war_id, opponent, end if opponent == "#GR" else end - 3 * 86400, end))
-            for order, tag, defender, used in ((1, "#P0", "#Q0", 1), (3, "#P2", "#Q2", 2)):
-                old.execute("INSERT INTO war_roster_members(war_id,clan_code,player_tag,player_name,attacks_expected,"
-                            "attacks_used,roster_state,captured_ts) VALUES ('REG:#PY:a:#GR','ONE',?,'Old',2,?,'warEnded',?)",
-                            (tag, used, end))
-                old.execute("INSERT INTO war_attacks(war_id,war_type,clan_code,clan_tag,end_ts,war_state,player_tag,"
-                            "player_name,attack_order,defender_tag,stars) VALUES ('REG:#PY:a:#GR','REG','ONE','#PY',?,"
-                            "'warEnded',?,'Old',?,?,3)", (end, tag, order, defender))
-            old.commit()
-        result = await compare_frozen_wars(self.reads, path, {"ONE": "#PY"}, as_of=END + DAY)
-        self.assertEqual([row["old_war_id"] for row in result["matched"]], ["REG:#PY:a:#GR"])
-        self.assertEqual([(row["old_war_id"], row["reason"]) for row in result["only_old"]],
-                         [("REG:#PY:b:#CU", "not in record")])
-        self.assertEqual([(d["field"], d["old"], d["new"], d["reason"]) for d in result["differences"]],
-                         [("clan_attacks_used", 3, 2, "unexplained"), ("#P2/attacks_used", 2, 1, "unexplained")])
-        self.assertEqual(result["only_record"], [])
 
     async def test_arguments_are_bounded_and_explicit(self):
         for call in (lambda: self.reads.completed(["#PY"], None, END),

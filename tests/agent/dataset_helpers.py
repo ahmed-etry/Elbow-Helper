@@ -42,7 +42,7 @@ def seed_record_links(paths, rows):
     """Populate synthetic ownership in the sole record, never the old table."""
     from elbow_helper.configuration.files import FAMILY_DATABASE
     from elbow_helper.data.store.link_state import apply_rows, display_rows, receipt
-    from elbow_helper.data.store.legacy_links import TOPIC, FIELDS, digest
+    from elbow_helper.data.store.link_state import TOPIC, FIELDS, digest
     from elbow_helper.data.store.projections import canonical_json
     with closing(sqlite3.connect(paths.data_root / FAMILY_DATABASE)) as connection, connection:
         connection.row_factory = sqlite3.Row

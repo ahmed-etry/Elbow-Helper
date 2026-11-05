@@ -3,6 +3,7 @@ from contextlib import closing
 import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from agent.dataset_helpers import synthetic_datasets, seed_record_links
 from elbow_helper.agent.tool_support.sql.catalogue import SOURCES
@@ -66,6 +67,24 @@ class TableNoteTests(unittest.TestCase):
         self.assertIn("open group records with intent inspect", FAMILY_INSTRUCTION)
         self.assertIn("links.links", FAMILY_INSTRUCTION)
         self.assertIn("Family reads stay first", FAMILY_INSTRUCTION)
+
+    def test_link_guide_uses_record_without_a_review_file(self):
+        with TemporaryDirectory() as directory:
+            paths = synthetic_datasets(directory)
+            source = next(source for source in SOURCES if source.alias == "links")
+            source.resolve(paths).unlink()
+            guide = DataGuide(paths).for_levels(KNOWN_ACCESS_REQUIREMENTS)
+        self.assertIn("links.links [none]: ", guide)
+        self.assertIn("player_tag TEXT PK1,discord_user_id INT", guide)
+        self.assertNotIn("links.suggestions [", guide)
+
+    def test_link_guide_skips_an_unavailable_record(self):
+        with TemporaryDirectory() as directory:
+            paths = synthetic_datasets(directory)
+            with patch("elbow_helper.agent.tool_support.adapters.account_links.data.query_links",
+                       side_effect=sqlite3.OperationalError("synthetic unavailable record")):
+                guide = DataGuide(paths).for_levels(KNOWN_ACCESS_REQUIREMENTS)
+        self.assertNotIn("links.links [none]: ", guide)
 
 
 class MemberJoinTests(unittest.TestCase):

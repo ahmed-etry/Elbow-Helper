@@ -19,6 +19,7 @@ from elbow_helper.features.clan_health.record import HealthRecord
 
 from tests.data.legacy_health_schema import LegacyHealthFile
 
+
 RULES = {"_profile_name": "casual", "war": {"wars_to_join": 0, "missed_attack_rate_percent": 0},
          "raids": {"minimum_capital_gold_per_event": 0}, "clan_games": {"minimum_points_per_event": 0}}
 NOW = datetime(2026, 10, 30, 12, tzinfo=UTC)
@@ -208,7 +209,6 @@ class RecordAdapterTests(unittest.TestCase):
         self.assertEqual((totals, weekends, seen["raids"]),
                          ({"#pp29l": {"attacks": 6, "loot": 10, "raid_weekends_participated": 1}}, 1,
                           (1_000_000, 21_000_000)))
-
 
     def test_a_copied_stay_and_its_record_continuation_show_as_one_clan_stay_inside_the_window(self):
         def stay(clan, from_at, to_at, last, basis):

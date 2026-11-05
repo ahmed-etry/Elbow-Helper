@@ -1,6 +1,6 @@
 """Compatibility adapter for the existing link table contract."""
 
-from .store.legacy_links import LinkConflict
+from .store.link_state import LinkConflict
 
 
 class LinkFacade:

@@ -86,7 +86,7 @@ class PeopleReads(RecordReads):
     @staticmethod
     def _current_links(connection, at):
         from ..link_projection import require_links
-        from ..store.legacy_links import LinkConflict
+        from ..store.link_state import LinkConflict
         source = signal(connection, "account_links", "current", at)
         try:
             require_links(connection)
@@ -98,9 +98,9 @@ class PeopleReads(RecordReads):
         # This projection has no past versions; an older as_of cannot describe its rows.
         imported = connection.execute("SELECT frozen_at FROM imports WHERE topic='people_membership'").fetchone()
         changed = connection.execute("SELECT MAX(created_at) FROM link_operations WHERE status='complete'").fetchone()[0]
-        current_at = max(imported[0], changed or 0) if imported else None
+        current_at = max(imported[0] if imported else 0, changed or 0)
         coverage = envelope([source], at=at)
-        if current_at is None or at < current_at:
+        if at < current_at:
             coverage.update(complete=False, unavailable="current_projection_only")
             rows = []
         return {"rows": rows, "coverage": coverage}

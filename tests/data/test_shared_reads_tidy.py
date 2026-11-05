@@ -12,7 +12,7 @@ from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationEr
 from tests.data import test_family_store as family
 from tests.data import test_people_reads as people_fixtures
 from tests.data.test_wars import END, SECOND, START, WarFixture, group, war
-from tests.data.test_wars_import_cwl import CwlFixture, FROZEN
+from tests.data.record_fixtures import CwlFixture, FROZEN
 
 
 class NeutralWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
@@ -72,7 +72,6 @@ class LeagueEvidenceTests(CwlFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_completeness_upgrade_rolls_back_and_retries(self):
         await self.week()
-        await self.run_cwl()
         first = (await self.rows("SELECT id FROM wars ORDER BY id"))[0]["id"]
         evidence = await self.store.call(war_side_coverage, first, "#PY")
         await self.execute("UPDATE wars SET roster_complete=1,attacks_complete=1")
@@ -91,7 +90,6 @@ class LeagueEvidenceTests(CwlFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_import_flags_and_upgrade_describe_both_sides_without_inventing_counts(self):
         await self.week(positions=(30, 40), defender_positions=(31, 41))
-        await self.run_cwl()
         wars = await self.rows("SELECT * FROM wars WHERE type='CWL'")
         self.assertTrue(all((row["roster_complete"], row["attacks_complete"]) == (0, 0) for row in wars))
         sides = await self.store.call(war_side_coverage, wars[0]["id"], "#PY")
@@ -113,7 +111,6 @@ class LeagueEvidenceTests(CwlFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_native_league_rows_keep_positions_times_and_per_war_evidence(self):
         await self.week(positions=(30, 40), defender_positions=(31, 41))
-        await self.run_cwl()
         reads = CwlReads(self.store)
         result = await reads.weeks(["#PY"], as_of=FROZEN)
         row = result["weeks"][0]["wars"][0]
@@ -170,8 +167,7 @@ class PeopleEvidenceTests(unittest.IsolatedAsyncioTestCase):
         empty = await MembershipReads(self.store, clans=()).generations(0, 1)
         self.assertFalse(empty["coverage"]["complete"])
 
-    async def test_current_links_without_import_return_unavailable_coverage(self):
+    async def test_current_links_without_old_files_are_empty_and_ready(self):
         result = await self.people.current_links(100)
         self.assertEqual(result["rows"], [])
-        self.assertFalse(result["coverage"]["complete"])
-        self.assertEqual(result["coverage"]["unavailable"], "people_import_not_started")
+        self.assertTrue(result["coverage"]["complete"])

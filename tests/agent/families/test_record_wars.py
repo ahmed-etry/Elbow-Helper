@@ -18,7 +18,7 @@ from elbow_helper.agent.families.workflow_reads import TOOLS as WORKFLOW_TOOLS
 from elbow_helper.agent.read_cache import ReadCache
 from elbow_helper.configuration.channels import HIBERNATION_LOG
 from elbow_helper.data.reads import CwlReads, WarReads
-from elbow_helper.data.store.legacy_wars import map_legacy_war
+from tests.data.record_fixtures import seed_war_alias
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.cwl.record import CwlHistory
 from elbow_helper.features.hibernation.queries import HibernationQueries
@@ -195,7 +195,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         # An old capture saw the end a second earlier; its ID stays an alias.
         earlier = first.replace("180000.000Z", "175959.000Z")
         war_id = (await self.rows("SELECT war_id FROM war_sides WHERE clan_tag='#GR'"))[0]["war_id"]
-        await self.store.call(lambda c: (map_legacy_war(c, "clan_health", earlier, "BEH", war_id, at=self.now), c.commit()))
+        await self.store.call(lambda c: (seed_war_alias(c, "clan_health", earlier, "BEH", war_id, at=self.now), c.commit()))
         for selected in ([first], [earlier], ["CWL:#R0", earlier], ["not an id"]):
             with self.subTest(selected=selected):
                 result = await self.attendance({"war_type": "REG", "clan_codes": ["BEH"], "war_ids": selected})
