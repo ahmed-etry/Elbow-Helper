@@ -38,6 +38,7 @@ from .statements import CHECKUP_TEMPLATE
 from .statements import DECLINE_TEMPLATE
 from .statements import FINALIZE_TEMPLATE
 from .statements import RARE_STATEMENTS
+from .state import decision_event
 from .trials import TrialStartResult
 from .views import AcceptConfirmationView
 
@@ -53,6 +54,15 @@ RARE_STATEMENT_CHOICES = [
 
 
 class RecruitmentCommandMixin:
+    async def record_decision(self, kind: str, channel_id: int, applicant_id: int, *,
+                              actor_id: int | None, via: str, detail: dict | None = None) -> None:
+        """Keep the decision's history once its message is out; a failed save never undoes it."""
+        try:
+            await self.recruitment_state.record_event(decision_event(
+                kind, channel_id, applicant_id, actor_id=actor_id, via=via, detail=detail))
+        except (OSError, sqlite3.Error, TypeError, ValueError):
+            self.logger.exception("Recruitment %s history was not saved for ticket %s", kind, channel_id)
+
     def prepare_finalize(self, applicant: discord.Member,
                          channel: discord.TextChannel | None,
                          guild: discord.Guild,
@@ -78,7 +88,8 @@ class RecruitmentCommandMixin:
                 "remove_roles": remove_roles, "add_roles": add_roles,
                 "message": message}
 
-    async def post_finalize(self, prepared: dict[str, object]) -> str:
+    async def post_finalize(self, prepared: dict[str, object], *, actor_id: int | None = None,
+                            via: str = "command") -> str:
         applicant = prepared["applicant"]
         channel = prepared["channel"]
         new_name = prepared["new_name"]
@@ -102,6 +113,7 @@ class RecruitmentCommandMixin:
         except discord.Forbidden:
             role_update_failed = True
         await channel.send(prepared["message"])
+        await self.record_decision("finalized", channel.id, applicant.id, actor_id=actor_id, via=via)
         lines = [f"Completed {applicant.display_name}'s trial."]
         if name_changed:
             lines.append(f"Renamed the channel to {new_name}.")
@@ -127,7 +139,8 @@ class RecruitmentCommandMixin:
         return {"issue": None, "applicant": applicant, "channel": channel,
                 "message": message, "rename_candidate": rename_candidate}
 
-    async def post_decline(self, prepared: dict[str, object]) -> str:
+    async def post_decline(self, prepared: dict[str, object], *, actor_id: int | None = None,
+                           via: str = "command") -> str:
         applicant = prepared["applicant"]
         channel = prepared["channel"]
         candidate = prepared["rename_candidate"]
@@ -143,6 +156,7 @@ class RecruitmentCommandMixin:
             else:
                 rename_failed = True
         await channel.send(prepared["message"])
+        await self.record_decision("declined", channel.id, applicant.id, actor_id=actor_id, via=via)
         lines = [f"Declined {applicant.display_name}. Message sent to {channel.mention}."]
         if rename_failed:
             lines.append("Couldn't rename the channel — check permissions.")
@@ -190,10 +204,13 @@ class RecruitmentCommandMixin:
             f"Age and region roles selected: {'Yes' if has_required_self_roles else 'No'}"
         )
         return {"issue": None, "channel": channel, "message": message,
-                "confirmation": confirmation}
+                "confirmation": confirmation, "applicant_id": applicant.id}
 
-    async def post_checkup(self, prepared: dict[str, object]) -> str:
+    async def post_checkup(self, prepared: dict[str, object], *, actor_id: int | None = None,
+                           via: str = "command") -> str:
         await prepared["channel"].send(prepared["message"])
+        await self.record_decision("checkup_sent", prepared["channel"].id, prepared["applicant_id"],
+                                   actor_id=actor_id, via=via)
         return str(prepared["confirmation"])
 
     def prepare_recstatement(self, template_key: str,
@@ -401,6 +418,7 @@ class RecruitmentCommandMixin:
         nickname: str, days: int, target_channel: discord.TextChannel,
         additional_notes: str | None, player_tags: list[str],
         player_rows: list[dict[str, str]] | None = None,
+        actor_id: int | None = None, via: str = "button",
     ) -> dict[str, object]:
         if days < 1:
             return {"issue": "Enter a trial length of at least 1 day.", "failures": ()}
@@ -551,12 +569,15 @@ class RecruitmentCommandMixin:
                 target_channel,
                 days,
                 user.id,
+                actor_id=actor_id,
+                via=via,
             )
         except (
             discord.Forbidden,
             discord.HTTPException,
             OSError,
             RuntimeError,
+            sqlite3.Error,
         ):
             self.logger.exception(
                 "Trial start failed during /accept for user_id=%s channel_id=%s",
@@ -586,6 +607,9 @@ class RecruitmentCommandMixin:
                 user.id,
             )
 
+        await self.record_decision("accepted", target_channel.id, user.id, actor_id=actor_id, via=via,
+                                   detail={"clans": list(valid_clans), "trial_days": days})
+
         if failures:
             lines = [
                 f"Acceptance is incomplete for {user.mention}:",
@@ -613,6 +637,7 @@ class RecruitmentCommandMixin:
                 user=user, valid_clans=valid_clans, nickname=nickname,
                 days=days, target_channel=target_channel,
                 additional_notes=additional_notes, player_tags=player_tags,
+                actor_id=interaction.user.id, via="button",
             )
             if result["issue"]:
                 await warn(interaction, result["issue"])
@@ -832,7 +857,7 @@ class RecruitmentCommandMixin:
             if prepared["issue"]:
                 await interaction.followup.send(prepared["issue"], ephemeral=True)
                 return
-            confirmation = await self.post_decline(prepared)
+            confirmation = await self.post_decline(prepared, actor_id=interaction.user.id)
             await interaction.followup.send(confirmation, ephemeral=True)
 
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
@@ -878,7 +903,7 @@ class RecruitmentCommandMixin:
             if prepared["issue"]:
                 await interaction.followup.send(prepared["issue"], ephemeral=True)
                 return
-            confirmation_msg = await self.post_checkup(prepared)
+            confirmation_msg = await self.post_checkup(prepared, actor_id=interaction.user.id)
             await interaction.followup.send(confirmation_msg, ephemeral=True)
             
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
@@ -922,7 +947,7 @@ class RecruitmentCommandMixin:
             if prepared["issue"]:
                 await interaction.followup.send(prepared["issue"], ephemeral=True)
                 return
-            confirmation = await self.post_finalize(prepared)
+            confirmation = await self.post_finalize(prepared, actor_id=interaction.user.id)
             await interaction.followup.send(confirmation, ephemeral=True)
 
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):

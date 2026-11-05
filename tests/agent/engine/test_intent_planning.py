@@ -33,9 +33,10 @@ class IntentPlanningTests(unittest.IsolatedAsyncioTestCase):
         for text in (public, recruitment):
             self.assertIn("For clans configured for seasonal cohort lookups, resolve the season's assigned roster", text)
             self.assertIn("Read player.warStars for cumulative stars", text)
-        self.assertIn("Recruitment: state.recruitment_trials", recruitment)
+        self.assertIn("Recruitment: read_recruitment_pipeline", recruitment)
         self.assertIn("not a new accept/decline stage", recruitment)
-        self.assertNotIn("Recruitment: state.recruitment_trials", public)
+        self.assertNotIn("Recruitment: read_recruitment_pipeline", public)
+        self.assertNotIn("state.recruitment", recruitment)
 
     def cwl_flow(self, *, available):
         clan = CLANS["BE4"]

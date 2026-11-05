@@ -130,6 +130,13 @@ class EventsStore:
                             progress = info.get(marker, {})
                             if progress.get("actor_discord_id") == discord_id:
                                 progress["actor_discord_id"] = None
+                elif workflow == "recruitment":
+                    for part in ("trials", "reminders"):
+                        state[part] = {key: row for key, row in state[part].items()
+                                       if str(row.get("applicant_id")) != str(discord_id)}
+                    for row in state["reminders"].values():
+                        if row.get("resolved_by") == discord_id:
+                            row["resolved_by"] = None
                 else:
                     state["prompts"] = {key: row for key, row in state["prompts"].items()
                                         if row.get("subject_discord_id") != discord_id}

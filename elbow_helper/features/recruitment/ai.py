@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import discord
@@ -187,9 +188,14 @@ Applicant identity: {applicant_identity}
                 "channel_id": channel_id,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
-            self.state_store.save_applicant_ai_messages(
-                self.applicant_ai_messages
-            )
+            await self._save_applicant_ai_messages()
+
+    async def _save_applicant_ai_messages(self) -> None:
+        # As before, a failed save only delays the cleanup of these messages.
+        try:
+            await self.recruitment_state.save_ai_messages(self.applicant_ai_messages)
+        except (OSError, sqlite3.Error, TypeError, ValueError) as error:
+            self.logger.exception("Failed saving applicant AI messages: %s", error)
 
     async def _cleanup_applicant_ai_messages(self) -> None:
         # Remove AI summary messages that have exceeded retention.
@@ -251,9 +257,7 @@ Applicant identity: {applicant_identity}
             async with self._applicant_ai_lock:
                 for msg_id_str in messages_to_remove:
                     self.applicant_ai_messages.pop(msg_id_str, None)
-                self.state_store.save_applicant_ai_messages(
-                    self.applicant_ai_messages
-                )
+                await self._save_applicant_ai_messages()
 
     @tasks.loop(hours=6)
     async def cleanup_applicant_ai(self):

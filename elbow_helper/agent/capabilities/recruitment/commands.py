@@ -145,7 +145,7 @@ async def prepare_checkup(context: Any,
                 and current["message"] == prepared["message"])
 
     async def run() -> ActionOutcome:
-        confirmation = await workflow.post_checkup(prepared)
+        confirmation = await workflow.post_checkup(prepared, actor_id=context.member.id, via="agent")
         return ActionOutcome(
             "complete", "private", text=confirmation,
             result={"channel_id": channel.id},
@@ -206,7 +206,7 @@ async def prepare_decline(context: Any,
                 and live["rename_candidate"] == candidate)
 
     async def run() -> ActionOutcome:
-        message = await workflow.post_decline(prepared)
+        message = await workflow.post_decline(prepared, actor_id=context.member.id, via="agent")
         return ActionOutcome("complete", "private", text=message,
                               result={"channel_id": channel.id},
                               after={"channel_id": channel.id,
@@ -286,7 +286,7 @@ async def prepare_finalize(context: Any,
         )
 
     async def run() -> ActionOutcome:
-        confirmation = await workflow.post_finalize(prepared)
+        confirmation = await workflow.post_finalize(prepared, actor_id=context.member.id, via="agent")
         return ActionOutcome(
             "complete", "private", text=confirmation,
             result={"channel_id": channel.id, "member_id": member.id},
@@ -403,6 +403,7 @@ async def prepare_accept(context: Any,
             additional_notes=prepared["additional_notes"],
             player_tags=list(prepared["player_tags"]),
             player_rows=list(prepared["player_rows"]),
+            actor_id=context.member.id, via="agent",
         )
         if result["issue"]:
             raise ActionRefused(result["issue"])

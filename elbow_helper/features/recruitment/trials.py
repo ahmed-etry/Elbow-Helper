@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import sqlite3
 from typing import Any, Dict, Optional
 
 import discord
@@ -24,6 +25,11 @@ from .config import TRIAL_TICKET_PREFIXES_END
 from .config import TRIAL_TICKET_PREFIXES_START
 from .helpers import can_rename
 from .helpers import rename_ticket_channel
+from .state import recruitment_event
+from .state import reminder_case
+from .state import trial_event
+from .state import trial_events
+from .state import trial_started_at
 from .views import PersistentEndNowView
 from .views import PersistentEndTrialView
 
@@ -57,7 +63,7 @@ class TrialMixin:
     async def trial_end_snapshot(self, ticket_channel_id: int) -> dict[str, Any]:
         """Read the ticket, tracking post and reminder before ending a trial."""
         channel = self.bot.get_channel(ticket_channel_id)
-        trial = self.state_store.load_trial_data().get(str(ticket_channel_id))
+        trial = self.recruitment_state.trials().get(str(ticket_channel_id))
         reminder = await self._get_trial_reminder_entry(ticket_channel_id)
         return {"channel_id": ticket_channel_id,
                 "channel_name": getattr(channel, "name", None),
@@ -175,8 +181,7 @@ class TrialMixin:
     async def _get_trial_reminder_entry(self, ticket_channel_id: int) -> Optional[Dict[str, Any]]:
         """Load one trial reminder entry under lock."""
         async with self._reminder_lock:
-            reminders = self.state_store.load_trial_reminders()
-            entry = reminders.get(str(ticket_channel_id))
+            entry = self.recruitment_state.reminders().get(str(ticket_channel_id))
             return dict(entry) if isinstance(entry, dict) else None
 
 
@@ -187,20 +192,23 @@ class TrialMixin:
         applicant_id: int,
         resolver_id: int,
         message: Optional[discord.Message] = None,
+        via: str = "button",
     ) -> None:
         """Mark a trial reminder as resolved and keep the updated embed visible for 12 hours."""
         resolved_at_ts = int(datetime.now(timezone.utc).timestamp())
         async with self._reminder_lock:
-            reminders = self.state_store.load_trial_reminders()
-            reminder = reminders.get(str(ticket_channel_id))
-            if not isinstance(reminder, dict):
+            def edit(state):
+                reminder = state["reminders"].get(str(ticket_channel_id))
+                if not isinstance(reminder, dict) or reminder.get("resolved_at"):
+                    return None
+                reminder["resolved_at"] = resolved_at_ts
+                reminder["resolved_by"] = resolver_id
+                return (recruitment_event(
+                    "trial_followup_resolved", ticket_channel_id, reminder_case(reminder),
+                    applicant_id=reminder.get("applicant_id") or applicant_id,
+                    actor_id=resolver_id, via=via),)
+            if not await self.recruitment_state.change(edit):
                 return
-            if reminder.get("resolved_at"):
-                return
-            reminder["resolved_at"] = resolved_at_ts
-            reminder["resolved_by"] = resolver_id
-            reminders[str(ticket_channel_id)] = reminder
-            self.state_store.save_trial_reminders(reminders)
 
         if not message:
             return
@@ -289,9 +297,9 @@ class TrialMixin:
     async def _delete_reminder_entry(self, ticket_channel_id: int) -> None:
         """Delete stored reminder entry for a ticket, if present."""
         async with self._reminder_lock:
-            reminders = self.state_store.load_trial_reminders()
-            if reminders.pop(str(ticket_channel_id), None) is not None:
-                self.state_store.save_trial_reminders(reminders)
+            def edit(state):
+                return None if state["reminders"].pop(str(ticket_channel_id), None) is None else ()
+            await self.recruitment_state.change(edit)
 
 
     async def _delete_reminder_message(self, ticket_channel_id: int, reminder_info: Dict[str, Any]) -> None:
@@ -324,11 +332,13 @@ class TrialMixin:
         channel: discord.TextChannel,
         days: int,
         applicant_id: int,
+        *,
+        actor_id: int | None = None,
+        via: str = "command",
     ) -> TrialStartResult:
         """Start a trial using the same behavior as /trial, but driven by /accept."""
         async with self._trial_lock:
-            trials = self.state_store.load_trial_data()
-            existing = trials.get(str(channel.id))
+            existing = self.recruitment_state.trials().get(str(channel.id))
             if isinstance(existing, dict):
                 try:
                     existing_applicant_id = int(existing.get("applicant_id"))
@@ -374,10 +384,13 @@ class TrialMixin:
                 "tracking_msg_id": tracking_msg.id,
                 "tracking_channel_id": tracking_channel.id,
             }
-            trials[str(channel.id)] = trial_entry
+            def edit(state):
+                state["trials"][str(channel.id)] = trial_entry
+                return (trial_event("trial_started", channel.id, trial_entry, actor_id=actor_id, via=via,
+                                    at=trial_started_at(trial_entry), detail={"days": days}),)
             try:
-                self.state_store.save_trial_data(trials)
-            except (OSError, TypeError, ValueError):
+                await self.recruitment_state.change(edit)
+            except (OSError, sqlite3.Error, TypeError, ValueError):
                 try:
                     await tracking_msg.delete()
                 except discord.NotFound:
@@ -417,6 +430,7 @@ class TrialMixin:
             allow_missing=allow_missing, resolve_reminder=resolve_reminder,
             reminder_message=(interaction.message if resolve_reminder
                               and isinstance(interaction.message, discord.Message) else None),
+            via="button",
         )
         if not result.ended:
             if result.error:
@@ -435,14 +449,14 @@ class TrialMixin:
         actor: discord.Member, *, allow_missing: bool = False,
         resolve_reminder: bool = False,
         reminder_message: discord.Message | None = None,
+        via: str = "button",
     ) -> TrialEndResult:
         """End the trial and send its follow-up for the panel and agent."""
         if not self.can_end_trial(actor):
             return TrialEndResult(False, "You don't have permission to use this.")
         async with self._trial_lock:
             trial_key = str(ticket_channel_id)
-            trials = self.state_store.load_trial_data()
-            trial_info = trials.get(trial_key)
+            trial_info = self.recruitment_state.trials().get(trial_key)
             if not trial_info and not allow_missing:
                 return TrialEndResult(False, "This ticket no longer has an active trial.")
 
@@ -508,8 +522,13 @@ class TrialMixin:
                 )
 
             if trial_info:
-                trials.pop(trial_key, None)
-                self.state_store.save_trial_data(trials)
+                def edit(state):
+                    current = state["trials"].pop(trial_key, None)
+                    if current is None:
+                        return None
+                    return trial_events("trial_ended", ticket_channel_id, current, actor_id=actor.id,
+                                        via=via, detail={"how": "early"})
+                await self.recruitment_state.change(edit)
             if resolve_reminder:
                 if reminder_message is None:
                     reminder = await self._get_trial_reminder_entry(ticket_channel_id)
@@ -525,6 +544,7 @@ class TrialMixin:
                     applicant_id=applicant_id,
                     resolver_id=actor.id,
                     message=reminder_message,
+                    via=via,
                 )
             return TrialEndResult(True, notices=tuple(
                 notice for notice in (rename_notice, feedback_notice) if notice))
@@ -534,7 +554,7 @@ class TrialMixin:
     async def on_member_remove(self, member: discord.Member):
         """Remove active-trial tracking when its applicant leaves."""
         async with self._trial_lock:
-            trials = self.state_store.load_trial_data()
+            trials = self.recruitment_state.trials()
             matching: list[tuple[str, Dict[str, Any]]] = []
             for ticket_id, info in trials.items():
                 if not isinstance(info, dict):
@@ -573,15 +593,16 @@ class TrialMixin:
             return
 
         async with self._trial_lock:
-            trials = self.state_store.load_trial_data()
-            changed = False
-            for ticket_id, original in cleaned:
-                current = trials.get(ticket_id)
-                if current == original:
-                    trials.pop(ticket_id, None)
-                    changed = True
-            if changed:
-                self.state_store.save_trial_data(trials)
+            def edit(state):
+                events, changed = [], False
+                for ticket_id, original in cleaned:
+                    if state["trials"].get(ticket_id) == original:
+                        state["trials"].pop(ticket_id)
+                        changed = True
+                        events.extend(trial_events("trial_ended", ticket_id, original,
+                                                   detail={"how": "applicant_left"}))
+                return events if changed else None
+            await self.recruitment_state.change(edit)
 
 
     @tasks.loop(minutes=60)
@@ -594,7 +615,7 @@ class TrialMixin:
 
         expired: list[tuple[int, Dict[str, Any]]] = []
         async with self._trial_lock:
-            trials = self.state_store.load_trial_data()
+            trials = self.recruitment_state.trials()
             for ticket_id, info in list(trials.items()):
                 try:
                     start_dt = datetime.fromisoformat(info["start"]).replace(tzinfo=timezone.utc)
@@ -608,8 +629,7 @@ class TrialMixin:
         for ticket_id, info in expired:
             async with self._trial_lock:
                 trial_key = str(ticket_id)
-                trials = self.state_store.load_trial_data()
-                if trials.get(trial_key) != info:
+                if self.recruitment_state.trials().get(trial_key) != info:
                     continue
 
                 ticket_channel = self.bot.get_channel(ticket_id)
@@ -622,8 +642,7 @@ class TrialMixin:
 
                 applicant_id = info.get("applicant_id", 0)
                 async with self._reminder_lock:
-                    reminders = self.state_store.load_trial_reminders()
-                    reminder_entry = reminders.get(trial_key)
+                    reminder_entry = self.recruitment_state.reminders().get(trial_key)
                     if not isinstance(reminder_entry, dict):
                         mentions = " ".join(f"<@&{rid}>" for rid in RECRUITERS)
                         mention_prefix = f"{mentions} " if mentions else ""
@@ -636,17 +655,22 @@ class TrialMixin:
                             embed=reminder_embed,
                             view=PersistentEndTrialView(ticket_id, applicant_id),
                         )
-                        reminders[trial_key] = {
+                        entry = {
                             "channel_id": reminder_channel.id,
                             "message_id": reminder_msg.id,
                             "applicant_id": applicant_id,
                             "created_at": int(datetime.now(timezone.utc).timestamp()),
                             "resolved_at": None,
                             "resolved_by": None,
+                            # The follow-up belongs to the trial's case.
+                            "_case_started_at": trial_started_at(info),
                         }
+                        def add_reminder(state):
+                            state["reminders"][trial_key] = entry
+                            return ()
                         try:
-                            self.state_store.save_trial_reminders(reminders)
-                        except (OSError, TypeError, ValueError):
+                            await self.recruitment_state.change(add_reminder)
+                        except (OSError, sqlite3.Error, TypeError, ValueError):
                             try:
                                 await reminder_msg.delete()
                             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
@@ -668,8 +692,12 @@ class TrialMixin:
                     )
                     continue
 
-                trials.pop(trial_key, None)
-                self.state_store.save_trial_data(trials)
+                def end_trial(state):
+                    if state["trials"].get(trial_key) != info:
+                        return None
+                    state["trials"].pop(trial_key)
+                    return trial_events("trial_ended", ticket_id, info, detail={"how": "expired"})
+                await self.recruitment_state.change(end_trial)
 
 
     @check_expired_trials.before_loop
@@ -682,7 +710,7 @@ class TrialMixin:
         """Delete resolved reminders after retention; keep unresolved reminders visible."""
         now_ts = int(datetime.now(timezone.utc).timestamp())
         async with self._reminder_lock:
-            reminders = self.state_store.load_trial_reminders()
+            reminders = self.recruitment_state.reminders()
         if not reminders:
             return
         to_delete = []

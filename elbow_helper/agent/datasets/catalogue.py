@@ -8,11 +8,10 @@ from ..capabilities.cwl.data import SOURCES as CWL
 from ..capabilities.events.data import SOURCES as EVENTS
 from ..capabilities.role_connections.data import SOURCES as ROLE_CONNECTIONS
 from ..capabilities.wars.data import SOURCES as WARS
-from ..capabilities.recruitment.data import SOURCES as RECRUITMENT
 from .family import SOURCES as FAMILY
 
 
 SOURCES = (
     *ACCOUNT_LINKS, *CLAN_HEALTH, *ROSTERS, *ACHIEVEMENTS, *CWL, *EVENTS,
-    *ROLE_CONNECTIONS, *WARS, *RECRUITMENT, *FAMILY,
+    *ROLE_CONNECTIONS, *WARS, *FAMILY,
 )

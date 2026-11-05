@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -14,16 +15,31 @@ import discord
 
 from tests.data.link_fixtures import attach_links
 from tests.features.profile_source import profile_demand
+from elbow_helper.data.events.testing import MemoryEventsStore
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.recruitment import commands
 from elbow_helper.features.recruitment import trials
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
+from elbow_helper.features.recruitment.state import LEGACY_FILES, RecruitmentState
 from elbow_helper.features.recruitment.trials import TrialMixin
 from elbow_helper.features.recruitment.trials import TrialStartResult
 from elbow_helper.infrastructure.clash import ClashResponse
 
 
 class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
+    async def _state(self, trials=None, reminders=None):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        paths = {part: Path(directory.name) / f"{part}.json" for part in LEGACY_FILES}
+        for part, data in (("trials", trials), ("reminders", reminders)):
+            if data is not None:
+                paths[part].write_text(json.dumps(data), encoding="utf-8")
+        events = MemoryEventsStore()
+        self.addCleanup(events.close)
+        state = RecruitmentState(events, paths)
+        await state.startup()
+        return state
+
     @staticmethod
     def _flow():
         applicant_role = SimpleNamespace(id=10)
@@ -74,6 +90,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         )
         owner.achievement_rewards = MagicMock()
         owner.achievement_rewards.award_achievement = AsyncMock()
+        owner.recruitment_state = SimpleNamespace(record_event=AsyncMock())
 
         return (
             owner,
@@ -138,12 +155,19 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             target_channel,
             7,
             user.id,
+            actor_id=99,
+            via="button",
         )
         owner.achievement_rewards.award_achievement.assert_awaited_once_with(
             user.id,
             "fresh_recruit",
         )
         interaction.followup.send.assert_not_awaited()
+        event = owner.recruitment_state.record_event.await_args.args[0]
+        self.assertEqual((event.kind, event.subject_discord_id, event.actor_discord_id, event.via),
+                         ("accepted", 42, 99, "button"))
+        self.assertEqual(event.detail, {"clans": ["BEH"], "trial_days": 7})
+        self.assertEqual(event.source_channel_id, 200)
 
     async def test_accept_rejects_404_and_saves_temporary_failures_and_named_players(self) -> None:
         for prepared in (False, True):
@@ -329,20 +353,21 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         tracking_channel.send = AsyncMock(return_value=tracking_message)
         owner.bot = MagicMock()
         owner.bot.get_channel.return_value = tracking_channel
-        owner.state_store = MagicMock()
-        owner.state_store.load_trial_data.return_value = {}
-        owner.state_store.save_trial_data.side_effect = OSError("disk full")
+        owner.recruitment_state = await self._state()
+        owner.recruitment_state.events.fail_next_write = True
         owner._build_trial_tracking_embed = MagicMock(return_value=MagicMock())
         channel = MagicMock()
         channel.id = 200
         channel.guild.id = 1
         channel.edit = AsyncMock()
 
-        with self.assertRaises(OSError):
+        with self.assertRaises(sqlite3.OperationalError):
             await owner.start_trial_for_accept(channel, 7, 42)
 
         tracking_message.delete.assert_awaited_once_with()
         channel.edit.assert_not_awaited()
+        self.assertEqual(owner.recruitment_state.trials(), {})
+        self.assertEqual(await owner.recruitment_state.events.read(), [])
 
     async def test_trial_start_reports_when_the_ticket_cannot_be_renamed(self) -> None:
         owner = TrialMixin()
@@ -355,8 +380,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         tracking_channel.send = AsyncMock(return_value=tracking_message)
         owner.bot = MagicMock()
         owner.bot.get_channel.return_value = tracking_channel
-        owner.state_store = MagicMock()
-        owner.state_store.load_trial_data.return_value = {}
+        owner.recruitment_state = await self._state()
         owner._build_trial_tracking_embed = MagicMock(return_value=MagicMock())
         channel = MagicMock()
         channel.id = 200
@@ -373,7 +397,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             result,
             TrialStartResult(started=True, ticket_renamed=False),
         )
-        owner.state_store.save_trial_data.assert_called_once()
+        self.assertEqual(set(owner.recruitment_state.trials()), {"200"})
         channel.edit.assert_not_awaited()
 
     async def test_existing_trial_state_is_reused_without_another_message(self) -> None:
@@ -384,10 +408,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         tracking_channel.send = AsyncMock()
         owner.bot = MagicMock()
         owner.bot.get_channel.return_value = tracking_channel
-        owner.state_store = MagicMock()
-        owner.state_store.load_trial_data.return_value = {
-            "200": {"applicant_id": 42}
-        }
+        owner.recruitment_state = await self._state({"200": {"applicant_id": 42}})
         channel = MagicMock()
         channel.id = 200
         channel.guild.id = 1
@@ -412,11 +433,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             "tracking_msg_id": 500,
             "tracking_channel_id": 600,
         }
-        owner.state_store = MagicMock()
-        owner.state_store.load_trial_data.side_effect = [
-            {"200": dict(trial_info)},
-            {"200": dict(trial_info)},
-        ]
+        owner.recruitment_state = await self._state({"200": dict(trial_info)})
         owner._delete_tracking_message = AsyncMock(return_value=True)
         member = SimpleNamespace(id=42)
 
@@ -426,7 +443,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             trial_info,
             ticket_channel_id=200,
         )
-        owner.state_store.save_trial_data.assert_called_once_with({})
+        self.assertEqual(owner.recruitment_state.trials(), {})
 
     async def test_departed_trial_member_keeps_state_when_cleanup_fails(self) -> None:
         owner = TrialMixin()
@@ -437,16 +454,13 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             "tracking_msg_id": 500,
             "tracking_channel_id": 600,
         }
-        owner.state_store = MagicMock()
-        owner.state_store.load_trial_data.return_value = {
-            "200": dict(trial_info)
-        }
+        owner.recruitment_state = await self._state({"200": dict(trial_info)})
         owner._delete_tracking_message = AsyncMock(return_value=False)
         member = SimpleNamespace(id=42)
 
         await owner.on_member_remove(member)
 
-        owner.state_store.save_trial_data.assert_not_called()
+        self.assertEqual(owner.recruitment_state.trials(), {"200": trial_info})
         owner.logger.warning.assert_called_once()
 
     async def test_end_trial_keeps_state_when_the_ticket_is_unavailable(self) -> None:
@@ -454,10 +468,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         owner._trial_lock = asyncio.Lock()
         owner.bot = MagicMock()
         owner.bot.get_channel.return_value = None
-        owner.state_store = MagicMock()
-        owner.state_store.load_trial_data.return_value = {
-            "200": {"applicant_id": 42}
-        }
+        owner.recruitment_state = await self._state({"200": {"applicant_id": 42}})
         interaction = SimpleNamespace(
             user=SimpleNamespace(roles=[SimpleNamespace(id=1)]),
             response=SimpleNamespace(
@@ -471,7 +482,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             ended = await owner.end_trial_now(interaction, 200, 42)
 
         self.assertFalse(ended)
-        owner.state_store.save_trial_data.assert_not_called()
+        self.assertEqual(owner.recruitment_state.trials(), {"200": {"applicant_id": 42}})
 
     async def test_expired_trial_remains_active_when_reminder_state_fails(self) -> None:
         owner = TrialMixin()
@@ -485,12 +496,8 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             "tracking_msg_id": 500,
             "tracking_channel_id": 600,
         }
-        owner.state_store = MagicMock()
-        owner.state_store.load_trial_data.return_value = {
-            "200": dict(trial_info)
-        }
-        owner.state_store.load_trial_reminders.return_value = {}
-        owner.state_store.save_trial_reminders.side_effect = OSError("disk full")
+        owner.recruitment_state = await self._state({"200": dict(trial_info)})
+        owner.recruitment_state.events.fail_next_write = True
         owner._delete_tracking_message = AsyncMock(return_value=True)
         owner._build_trial_reminder_embed = MagicMock(return_value=MagicMock())
 
@@ -502,10 +509,11 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             reminder_channel if channel_id == trials.REC_ROOM else ticket_channel
         )
 
-        with self.assertRaisesRegex(OSError, "disk full"):
+        with self.assertRaises(sqlite3.OperationalError):
             await TrialMixin.check_expired_trials.coro(owner)
 
-        owner.state_store.save_trial_data.assert_not_called()
+        self.assertEqual(owner.recruitment_state.trials(), {"200": trial_info})
+        self.assertEqual(owner.recruitment_state.reminders(), {})
         owner._delete_tracking_message.assert_not_awaited()
         reminder_message.delete.assert_awaited_once_with()
 

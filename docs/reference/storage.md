@@ -38,9 +38,7 @@ retain older feature names because existing deployments depend on them.
 | Leadership news | `data/events/events.sqlite3` | Pending publish prompts and what was published |
 | Member lifecycle | `data/snapshot_intel/snapshot_intel.json` | Invites, ticket index, departures, and reports |
 | Old records | `data/records/records.sqlite3` | Leadership records, kept while that feature is rethought |
-| Recruitment | `data/recruitment/trial_data.json` | Active trials |
-| Recruitment | `data/recruitment/trial_reminders.json` | Trial reminders |
-| Recruitment | `data/recruitment/ticket_last_activity.json` | Recruitment ticket activity |
+| Recruitment | `data/events/events.sqlite3` | Active trials, reminders, ticket activity and decisions |
 | Recruitment | `data/recruitment/applicant_messages.json` | Application-summary message IDs, channels, and timestamps |
 | Role connections | `data/role_connections/role_connections.json` | Role rules and board state |
 | Rosters | `data/rosters/rosters.sqlite3` | Rosters, signups, posts, and schedules |

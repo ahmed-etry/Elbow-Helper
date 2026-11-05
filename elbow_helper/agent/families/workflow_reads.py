@@ -11,11 +11,11 @@ from .core import family_tool, IDS
 from .identity_reads import member_fields
 from .projections import PERFORMANCE, performance_projection
 from .workflow_events import workflow_events, event_order, group_pipeline
-from ..access import accessible_message_channel, has_lookup_access, ACCESS_RECRUITMENT, ACCESS_PROMOTION
+from ..access import (accessible_message_channel, can_access_message_channel, has_lookup_access,
+                      require_evidence_access, ACCESS_RECRUITMENT, ACCESS_PROMOTION)
 from ..capabilities.hibernation.reads import read_active_hibernation
 from ..capabilities.examination.promotion_route import read_promotion_review
 from ..capabilities.member_lifecycle.reads import read_member_lifecycle
-from ..datasets.query import query_context
 from ..reads.ranked import read_ranked
 from ..research.history import read_discord_channel_history
 
@@ -79,21 +79,7 @@ async def recruitment(context, arguments):
     elif stage == 'lifecycle':
         result = await complete_snapshot(context, read_member_lifecycle, {}, 'rows', 'members')
     elif stage in ('trial_followups','ticket_reminders'):
-        if stage == 'trial_followups':
-            sql = '''SELECT CAST(e.key AS INTEGER) AS ticket_channel_id,
-                json_extract(e.value,'$.applicant_id') AS applicant_member_id,
-                json_extract(e.value,'$.created_at') AS created_at,
-                json_extract(e.value,'$.resolved_at') AS trial_ended_at,
-                json_extract(e.value,'$.message_id') AS message_id
-                FROM state.recruitment_trial_reminders s, json_each(s.doc) e
-                ORDER BY ticket_channel_id'''
-        else:
-            sql = '''SELECT CAST(e.key AS INTEGER) AS ticket_channel_id,
-                json_extract(e.value,'$.last_reminder_at') AS last_reminder_at,
-                json_extract(e.value,'$.last_applicant_message_id') AS last_applicant_message_id
-                FROM state.recruitment_ticket_activity s, json_each(s.doc) e
-                ORDER BY ticket_channel_id'''
-        result = await query_context(context, sql, max_rows=None)
+        result = await ticket_records(context, stage)
         if 'error' not in result:
             for row in result['rows']:
                 row['workflow_status'] = ('trial_ended_followup_recorded' if row.get('trial_ended_at') is not None
@@ -253,6 +239,27 @@ async def requester_tickets(context, arguments):
             'ownership_complete': not missing, 'unresolved_ticket_count': len(missing),
             'available_privately': private_available,
             'coverage': 'Current readable recruitment tickets owned by the requester; deleted and archived tickets are not reconstructed.'}
+
+
+async def ticket_records(context, stage):
+    """Trial-end reminders or reply reminders of the tickets this asker can open, from live state."""
+    await require_evidence_access(context)
+    if context.recruitment_queries is None:
+        return {'error': 'Recruitment trial status is not available.', 'cause': 'missing_setup'}
+    read = (context.recruitment_queries.trial_followups if stage == 'trial_followups'
+            else context.recruitment_queries.ticket_reminders)
+    try:
+        records = read()
+    except ValueError:
+        return {'error': 'Recruitment workflow records are unavailable right now.'}
+    visible = set()
+    for channel in (*context.guild.channels, *context.guild.threads):
+        if await can_access_message_channel(context, channel, relevant=False):
+            visible.add(channel.id)
+    rows = [asdict(row) for row in records if row.ticket_channel_id in visible]
+    context.state.source_channels.update(row['ticket_channel_id'] for row in rows)
+    await require_evidence_access(context)
+    return {'rows': rows}
 
 
 async def active_trial_rows(context, ticket=None):
