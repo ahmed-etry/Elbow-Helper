@@ -32,7 +32,7 @@ class ClanRosterPayloadTests(unittest.TestCase):
         members, declared, complete = _validated_clan_members(
             {
                 "members": 50,
-                "memberList": [_member("#A"), _member("#B")],
+                "memberList": [_member("#P0Y"), _member("#Q2L")],
             }
         )
 
@@ -44,13 +44,37 @@ class ClanRosterPayloadTests(unittest.TestCase):
         members, declared, complete = _validated_clan_members(
             {
                 "members": 2,
-                "memberList": [_member("#A"), _member("#B")],
+                "memberList": [_member("#P0Y"), _member("#Q2L")],
             }
         )
 
         self.assertEqual(len(members), 2)
         self.assertEqual(declared, 2)
         self.assertTrue(complete)
+
+    def test_member_tags_are_canonical(self) -> None:
+        members, _, complete = _validated_clan_members(
+            {"members": 2, "memberList": [_member(" #p0y "), _member("Q2L")]}
+        )
+
+        self.assertEqual([member["tag"] for member in members], ["#P0Y", "#Q2L"])
+        self.assertTrue(complete)
+
+    def test_letter_o_reads_as_zero_so_it_is_the_same_member(self) -> None:
+        members, _, complete = _validated_clan_members(
+            {"members": 2, "memberList": [_member("#P0Y"), _member("#POY")]}
+        )
+
+        self.assertEqual(len(members), 2)
+        self.assertFalse(complete)
+
+    def test_member_with_an_invalid_tag_is_not_counted(self) -> None:
+        members, _, complete = _validated_clan_members(
+            {"members": 2, "memberList": [_member("#P0Y"), _member("#ZZZ"), {"name": "no tag"}]}
+        )
+
+        self.assertEqual([member["tag"] for member in members], ["#P0Y"])
+        self.assertFalse(complete)
 
 
 class _SnapshotHarness(ClanHealthSnapshotMixin):
