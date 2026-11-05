@@ -5,8 +5,8 @@ from .cog import Planning
 
 async def setup(bot: ElbowHelperBot) -> None:
     clan_health = bot.get_cog("ClanHealth")
-    repository = getattr(clan_health, "repository", None)
-    if repository is None:
+    directory = getattr(clan_health, "directory", None)
+    if directory is None:
         raise RuntimeError(
             "Attack Plans requires Clan Health history"
         )
@@ -14,5 +14,5 @@ async def setup(bot: ElbowHelperBot) -> None:
     if profiles is None:
         raise RuntimeError("Attack Plans requires the collectors' profiles")
     await bot.add_cog(
-        Planning(bot, profiles, repository)
+        Planning(bot, profiles, directory)
     )

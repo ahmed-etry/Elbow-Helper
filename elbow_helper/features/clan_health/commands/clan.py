@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -22,6 +21,22 @@ from ..config import CLAN_EXPORT_ORDER, UTC
 from ..export import HealthWorkbookError, PreparedHealthExport
 
 LOGGER = logging.getLogger(__name__)
+
+
+def roster_row(clan_code: str, member: Dict[str, Any]) -> Dict[str, Any]:
+    """A roster member before analysis: activity starts empty and progress unknown until the overlays fill it."""
+    tag = str(member["player_tag"])
+    return {
+        "clan_code": clan_code, "player_tag": tag, "player_name": str(member.get("player_name") or tag),
+        "townhall": None, "hero_sum": None, "pet_sum": None, "equipment_sum": None, "troop_sum": None,
+        "spell_sum": None, "games_total": None, "capital_contrib": None, "war_stars": None, "attack_wins": None,
+        "war_hits_used": 0, "war_hits_expected": 0, "war_missed": 0, "war_stars_total": 0.0,
+        "war_destruction_total": 0.0, "war_attack_count": 0, "raid_attacks": 0, "raid_expected": 0,
+        "raid_loot": 0, "raid_expected_estimated": False, "donations": 0, "donations_received": 0,
+        "hero_delta": None, "pet_delta": None, "equipment_delta": None, "troop_delta": None,
+        "spell_delta": None, "capital_delta": None, "th_delta": None, "games_delta": None,
+        "flags": [], "status": "Good", "note": "",
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,13 +66,6 @@ class ClanHealthClanCommandMixin:
             date_from=date_from, date_to=date_to,
             on_valid=lambda: interaction.response.defer(thinking=True),
         )
-        if result.status == "not_configured":
-            LOGGER.error("Command blocked /health clan reason=missing_coc_api_key")
-            await interaction.response.send_message(
-                result.issue,
-                ephemeral=True,
-            )
-            return
         if result.status == "invalid_window":
             await warn(interaction, result.issue)
             return
@@ -93,12 +101,6 @@ class ClanHealthClanCommandMixin:
         date_from: str | None = None, date_to: str | None = None,
         on_valid: Callable[[], Awaitable[Any]] | None = None,
     ) -> ClanHealthCommandResult:
-        if not self.clash_client.configured:
-            return ClanHealthCommandResult(
-                "not_configured",
-                "Clash data isn't available because the connection hasn't been set up.",
-            )
-
         now = datetime.now(UTC)
         window_mode = mode
         if window_mode == "last_7d":
@@ -154,30 +156,22 @@ class ClanHealthClanCommandMixin:
             await on_valid()
 
         warnings: List[str] = []
-        clan_entries: List[Dict[str, Any]] = []
-        run_meta, stored = await asyncio.to_thread(
-            self.repository.latest_report_before,
-            cycle_end_ts=int(cycle_end.timestamp()),
-            selected_clans=selected_clans,
+        # Each clan's members at the end of the period, from the family record; verdicts are worked out below.
+        roster_ts, rosters = await asyncio.to_thread(
+            self.record.roster, selected_clans, at_ts=int(cycle_end.timestamp()),
         )
-        if not stored:
+        if not all(rosters.get(code) for code in selected_clans):
             return ClanHealthCommandResult(
                 "empty",
                 "No clan roster is available near the end of that period. Try a wider date range, or wait until more history is available.",
             )
-        # Clan health is DB-first: decode stored rows and build export from cache.
-        grouped = {code: {"clan_code": code, "clan_name": CLAN_NAMES[code], "players": []} for code in selected_clans}
-        for row in stored:
-            flags = []
-            try:
-                flags = json.loads(row.get("flags_json") or "[]")
-            except (json.JSONDecodeError, TypeError, ValueError):
-                flags = []
-            row["flags"] = flags
-            grouped[row["clan_code"]]["players"].append(row)
-        clan_entries = [grouped[code] for code in selected_clans]
-        if run_meta and run_meta.get("created_ts"):
-            snapshot_dt = datetime.fromtimestamp(int(run_meta["created_ts"]), tz=UTC)
+        clan_entries: List[Dict[str, Any]] = [
+            {"clan_code": code, "clan_name": CLAN_NAMES[code],
+             "players": [roster_row(code, member) for member in rosters[code]]}
+            for code in selected_clans
+        ]
+        if roster_ts:
+            snapshot_dt = datetime.fromtimestamp(int(roster_ts), tz=UTC)
             warnings.append(f"Roster from {snapshot_dt.strftime('%Y-%m-%d %H:%M UTC')}.")
         else:
             warnings.append("Using the latest available roster.")

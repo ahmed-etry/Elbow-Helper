@@ -82,14 +82,14 @@ class RecordQueryTests(unittest.TestCase):
 
     def test_frozen_tables_are_neither_offered_nor_readable(self):
         guide = DataGuide(self.paths).for_levels(set())
-        for name in ('wars', 'war_attacks', 'war_roster_members', 'war_activity'):
+        for name in ('wars', 'war_attacks', 'war_roster_members', 'war_activity', 'player_snapshots', 'report_players',
+                     'raid_member_activity', 'player_directory'):
             with self.subTest(table=name):
                 self.assertNotIn('health.' + name, guide)
                 self.assertIn('error', self.query('SELECT * FROM health.' + name))
         for table, _, note in self.sources['family'].tables:
             self.assertIn('family.' + table + ' [none]: ' + note, guide)
         self.assertIn('end_at INT (Unix us UTC)', guide)
-        self.assertIn('captured_ts INT PK1 (Unix s UTC)', guide)
 
     def test_record_is_read_only_and_schema_failures_return_its_actual_columns(self):
         for sql in ("DELETE FROM family.wars", "UPDATE family.accounts SET current_name='changed'",

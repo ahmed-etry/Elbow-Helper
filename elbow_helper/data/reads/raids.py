@@ -63,8 +63,54 @@ def window(connection, clans, after, before, at, offset, limit):
         "privacy_redacted": False}
 
 
+def ended(connection, after, before, selected):
+    """Weekends with member lines that ended in [after, before), the copied old-only ones included.
+
+    A weekend runs three days, so only starts up to that far before the window
+    can end inside it; the end itself comes from the weekend's payload, or from
+    the old file for a weekend the record never saw.
+    """
+    lines = "SELECT player_tag,attacks,attack_limit,bonus_attack_limit,capital_loot FROM raid_member_lines " \
+            "WHERE clan_tag=? AND weekend_start=?"
+    weekends = []
+    for row in connection.execute(
+            "SELECT e.scope_id AS clan_tag,e.source_at AS start_at,e.record_scope,o.end_at AS old_end "
+            "FROM family_api_entities e LEFT JOIN old_raid_weekends o ON o.clan_tag=e.scope_id "
+            "AND o.weekend_start=e.source_at WHERE e.source_kind='capital_raids' AND e.source_at>=? AND e.source_at<? "
+            "UNION ALL SELECT o.clan_tag,o.weekend_start,NULL,o.end_at FROM old_raid_weekends o "
+            "WHERE o.weekend_start>=? AND o.weekend_start<? AND NOT EXISTS (SELECT 1 FROM family_api_entities e "
+            "WHERE e.source_kind='capital_raids' AND e.scope_id=o.clan_tag AND e.source_at=o.weekend_start) "
+            "ORDER BY 2,1", (after - LONGEST, before, after - LONGEST, before)):
+        end = row["old_end"] if row["record_scope"] is None else api_time(
+            read_fields(connection, "capital_raids", row["record_scope"]).get("/endTime"))
+        if end is None or not after <= end < before:
+            continue
+        members = [dict(line) for line in connection.execute(lines, (row["clan_tag"], row["start_at"]))]
+        if not members:
+            continue
+        weekends.append({"clan_tag": row["clan_tag"], "start_at": row["start_at"], "end_at": end,
+                         "origin": "record" if row["record_scope"] is not None else "legacy_health",
+                         "members": [line for line in members if selected is None or line["player_tag"] in selected]})
+    return {"after": after, "before": before, "weekends": weekends,
+            "weekend_ends": sorted({weekend["end_at"] for weekend in weekends})}
+
+
+# A capital raid weekend lasts three days; a longer window still finds every weekend ending inside it.
+LONGEST = 4 * 86400 * 1_000_000
+
+
 class RaidReads(RecordReads):
     """Raid weekends and member lines from the family record."""
+
+    async def ended(self, *, after, before, player_tags=None):
+        """Weekends with member lines that ended in [after, before) and those lines, optionally for some accounts.
+
+        ``weekend_ends`` counts every weekend with lines, whoever is selected.
+        """
+        after, before = timestamp(after), timestamp(before)
+        if before <= after:
+            raise ValueError("Expected a window that ends after it starts")
+        return await self._read(ended, after, before, None if player_tags is None else set(tags(player_tags)))
 
     async def window(self, clan_tags, *, after, before, as_of=None, offset=0, limit=MAX_PAGE):
         clans = tags(clan_tags)

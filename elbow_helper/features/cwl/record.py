@@ -23,7 +23,6 @@ from typing import Any, Iterable
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.cwl import is_cwl_window
 from elbow_helper.features.wars.record import board_payload
-from elbow_helper.infrastructure.persistence.revisions import sqlite_revision
 
 from .helpers import coc_time_to_dt
 from .record_rows import feature_week
@@ -157,8 +156,8 @@ class CwlGroups:
 class CwlHistory:
     """Stored league history in the old shapes, read on the calling worker thread.
 
-    ``directory`` is clan health storage, whose player directory still names
-    accounts the bot saw in family clans.
+    ``directory`` is clan health's account directory, which names accounts the
+    bot saw in family clans, former members included; it reads the same record.
     """
 
     def __init__(self, reads, directory=None, clans=CLANS):
@@ -185,13 +184,8 @@ class CwlHistory:
         return [war for week in self._weeks(clan_codes, **selection) for war in week["wars"]]
 
     def cache_revision(self) -> str | None:
-        """The record's revision, with clan health's for the names its player directory adds."""
-        record = self.reads.cache_revision()
-        path = getattr(self.directory, "path", None)
-        if path is None:
-            return record
-        directory = sqlite_revision(path)
-        return f"{record}:{directory}" if record and directory else None
+        """The record's revision; the directory's names come from the same record."""
+        return self.reads.cache_revision()
 
     def account_names(self) -> list[dict[str, str]]:
         """Names of accounts seen in family clans and in their war lineups, former members included."""

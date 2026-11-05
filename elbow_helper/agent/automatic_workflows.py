@@ -2,7 +2,6 @@
 
 from elbow_helper.features.account_links.config import POLL_INTERVAL_MINUTES
 from elbow_helper.features.achievements.config import RAFFLE_HUB_UPDATE_HOURS
-from elbow_helper.features.clan_health.config import SNAPSHOT_LOG_MINUTES
 from elbow_helper.features.clan_transfers.config import REQUEST_TTL_HOURS
 from elbow_helper.features.member_lifecycle.config import APPLICANT_LINGER_DAYS, WEEKLY_REPORT_INTERVAL_DAYS
 from elbow_helper.features.recruitment.config import (
@@ -80,10 +79,8 @@ def automatic_workflows():
          'keeps': ['Current examination tickets and current routing']},
         {'workflow': 'clan_data_refresh',
          'sources': ['elbow_helper/features/account_links/cog.py:_poll_clans_loop',
-                     'elbow_helper/features/clan_health/snapshots.py:_snapshot_log_loop',
                      'elbow_helper/data/collectors/sources.py:collect_sources'],
-         'schedule': {'account_link_poll_minutes': POLL_INTERVAL_MINUTES,
-                      'clan_snapshot_minutes': SNAPSHOT_LOG_MINUTES, 'battle_log_minutes': 60},
+         'schedule': {'account_link_poll_minutes': POLL_INTERVAL_MINUTES, 'battle_log_minutes': 60},
          'effects': ['Refresh account/clan observations and collect war and ranked snapshots'],
          'keeps': ['Stored observations subject to each collector retention; a poll is not complete history']},
         {'workflow': 'monthly_war_reporting',

@@ -9,32 +9,23 @@ from elbow_helper.core.lifecycle import ElbowHelperBot
 from elbow_helper.configuration.guild import GUILD_ID
 
 from .analysis import ClanHealthAnalyzer
-from .api import ClanHealthCollector
-from .database import ClanHealthRepository
 from .cog import ClanHealth
-from .queries import ClanHealthQueries
+from .record import HealthRecord
 from .record_wars import RegularWars
 
 
 async def setup(bot: ElbowHelperBot) -> None:
-    repository = ClanHealthRepository()
-    analyzer = ClanHealthAnalyzer(repository, RegularWars(bot.war_reads), RegularWars(bot.war_reads, types=("CWL",)))
-    collector = ClanHealthCollector(
-        bot.clash_client,
-        repository,
-        analyzer,
-    )
+    record = HealthRecord(bot.activity_reads, bot.raid_reads, bot.stay_reads)
+    analyzer = ClanHealthAnalyzer(record, RegularWars(bot.war_reads), RegularWars(bot.war_reads, types=("CWL",)))
     cog = ClanHealth(
         bot,
-        bot.clash_client,
         bot.google_publisher,
         bot.local_exports,
-        repository,
+        record,
         analyzer,
-        collector,
     )
     guild = discord.Object(id=GUILD_ID)
     await bot.add_cog(cog, guild=guild)
 
 
-__all__ = ["ClanHealth", "ClanHealthQueries", "setup"]
+__all__ = ["ClanHealth", "setup"]

@@ -219,7 +219,7 @@ RESULT_FIELDS = {
         **names("source,matching_rows,next_offset,truncated"), "coverage": "{observation bounds}",
         "events": [names("player_tag,player_name,clan_code,kind,observed_at,previous_observation_at,"
                          "previous_clan_code,prior_membership_observed_at,arrival_time_known,"
-                         "first_ever_membership_known,snapshot_gap")],
+                         "first_ever_membership_known,sighting_gap")],
     },
     "read_bot_command_help": {
         **names("matching_count?,next_offset?,source,visibility?,path?,summary?,details?,category?,"

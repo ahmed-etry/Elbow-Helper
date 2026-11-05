@@ -12,7 +12,7 @@ Shared packages have narrower jobs:
 - `infrastructure.discord`: interaction helpers, views, pagination, embeds, and shared command
   registration;
 - `domain`: shared player-tag handling, timezone input, and CWL date checks;
-- `data`: family-record collectors, storage, ownership changes, and shared
+- `data`: family database collectors, storage, ownership changes, and shared
   reads for features and the agent;
 - `infrastructure`: shared clients and utilities for the Clash API, AI text
   generation, spreadsheets, time, and storage.
@@ -26,7 +26,7 @@ inactivity. Each feature's own files are read only through that feature.
 Important current dependencies include:
 
 ```text
-Family record -> Account Links, Wars, CWL, Clan Health, Clan Reporting, Agent
+Family database -> Account Links, Wars, CWL, Clan Health, Clan Reporting, Agent
 Account Links -> Recruitment, Rosters, CWL, Wars, Clan Reporting
 Achievements -> Recruitment, Hibernation, CWL
 Clan Health -> Attack Plans, CWL
@@ -43,13 +43,13 @@ All Clash requests use the application-owned
 `elbow_helper.infrastructure.clash.ClashClient`. Player-tag normalization and
 URL encoding use `elbow_helper.domain.player_tags`.
 
-Only the family collectors ask the Clash API for data the family record holds. War and CWL features make no Clash API
+Only the family collectors ask the Clash API for data the family database holds. War and CWL features make no Clash API
 calls for wars or league groups; their boards, roles, reports and scoring read
-the record. Ranked history also comes from the record, without asking the Clash API for
-missing battles. Clan health still fetches its report profiles and raids, and the agent's
-live Clash lookup still asks the Clash API itself, through the same shared client.
+the family database. Ranked history also comes from there, without asking the Clash API for
+missing battles. Health reports read the family database as well. Only the agent's
+live Clash API lookup asks the Clash API itself, through the same shared client.
 
-Family-record database and startup file work runs on background threads through
+Family database work runs on background threads through
 `FamilyStore.call` or `asyncio.to_thread`.
 
 Spreadsheet features share the application-owned `GoogleSheetsPublisher`,

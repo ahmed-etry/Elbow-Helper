@@ -1,226 +1,33 @@
-"""Version-one schema and connection boundary."""
+"""Clan health's own small file: each clan's expectation settings and their change log.
+
+Facts live in the family record. The settings and change log came from the old
+clan health file once, at startup, with a receipt; after that the old file is
+never opened by clan health. It stays on disk, untouched, for a later update to
+delete.
+"""
 
 from __future__ import annotations
 
+from contextlib import closing
+from datetime import datetime, timezone
+from hashlib import sha256
+import json
+import logging
+from pathlib import Path
 import sqlite3
 
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration
-from elbow_helper.infrastructure.persistence.versioned import (
-    VersionedSQLiteDatabase, validate_sqlite_shape,
-)
+from elbow_helper.infrastructure.persistence.versioned import VersionedSQLiteDatabase
 
-from .migrations import deduplicate_regular_wars, key_stored_cwl_seasons
+LOGGER = logging.getLogger(__name__)
+
+SETTINGS_COLUMNS = ("clan_code", "seed_template", "seeded_at_utc", "updated_at_utc", "payload_json")
+AUDIT_COLUMNS = ("id", "ts_utc", "clan_code", "layer", "block", "key", "old_value", "new_value",
+                 "actor_discord_id", "actor_display")
 
 
 def create_schema(conn: sqlite3.Connection) -> None:
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS player_snapshots (
-            captured_ts INTEGER NOT NULL,
-            clan_code TEXT NOT NULL,
-            player_tag TEXT NOT NULL,
-            player_name TEXT NOT NULL,
-            townhall INTEGER,
-            donations INTEGER,
-            donations_received INTEGER,
-            trophies INTEGER,
-            war_stars INTEGER,
-            attack_wins INTEGER,
-            capital_contrib INTEGER,
-            hero_sum INTEGER,
-            pet_sum INTEGER DEFAULT 0,
-            equipment_sum INTEGER DEFAULT 0,
-            troop_sum INTEGER DEFAULT 0,
-            spell_sum INTEGER DEFAULT 0,
-            games_total INTEGER,
-            PRIMARY KEY (captured_ts, clan_code, player_tag)
-        )
-        """
-    )
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS report_runs (
-            run_id TEXT PRIMARY KEY,
-            created_ts INTEGER NOT NULL,
-            season_key TEXT NOT NULL,
-            scope TEXT NOT NULL,
-            partial INTEGER NOT NULL,
-            cycle_start_ts INTEGER NOT NULL,
-            cycle_end_ts INTEGER NOT NULL
-        )
-        """
-    )
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS report_players (
-            run_id TEXT NOT NULL,
-            season_key TEXT NOT NULL,
-            clan_code TEXT NOT NULL,
-            player_tag TEXT NOT NULL,
-            player_name TEXT NOT NULL,
-            status TEXT NOT NULL,
-            flags_json TEXT NOT NULL,
-            note TEXT NOT NULL,
-            war_hits_used INTEGER DEFAULT 0,
-            war_hits_expected INTEGER DEFAULT 0,
-            war_missed INTEGER DEFAULT 0,
-            war_stars_total REAL DEFAULT 0,
-            war_destruction_total REAL DEFAULT 0,
-            war_attack_count INTEGER DEFAULT 0,
-            raid_attacks INTEGER DEFAULT 0,
-            raid_expected INTEGER DEFAULT 0,
-            raid_loot INTEGER DEFAULT 0,
-            raid_expected_estimated INTEGER DEFAULT 0,
-            donations INTEGER DEFAULT 0,
-            donations_received INTEGER DEFAULT 0,
-            trophies INTEGER DEFAULT 0,
-            war_stars INTEGER DEFAULT 0,
-            attack_wins INTEGER DEFAULT 0,
-            capital_contrib INTEGER DEFAULT 0,
-            townhall INTEGER DEFAULT 0,
-            hero_sum INTEGER DEFAULT 0,
-            pet_sum INTEGER DEFAULT 0,
-            equipment_sum INTEGER DEFAULT 0,
-            troop_sum INTEGER DEFAULT 0,
-            spell_sum INTEGER DEFAULT 0,
-            games_total INTEGER DEFAULT 0,
-            hero_delta INTEGER,
-            pet_delta INTEGER,
-            equipment_delta INTEGER,
-            troop_delta INTEGER,
-            spell_delta INTEGER,
-            capital_delta INTEGER,
-            th_delta INTEGER,
-            games_delta INTEGER,
-            PRIMARY KEY (run_id, clan_code, player_tag),
-            FOREIGN KEY (run_id) REFERENCES report_runs(run_id) ON DELETE CASCADE
-        )
-        """
-    )
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS war_activity (
-            war_id TEXT NOT NULL,
-            war_type TEXT NOT NULL,
-            clan_code TEXT NOT NULL,
-            clan_tag TEXT NOT NULL,
-            end_ts INTEGER NOT NULL,
-            player_tag TEXT NOT NULL,
-            player_name TEXT NOT NULL,
-            attacks_expected INTEGER DEFAULT 0,
-            attacks_used INTEGER DEFAULT 0,
-            stars REAL DEFAULT 0,
-            destruction REAL DEFAULT 0,
-            attack_count INTEGER DEFAULT 0,
-            source TEXT NOT NULL DEFAULT '',
-            PRIMARY KEY (war_id, clan_code, player_tag)
-        )
-        """
-    )
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS player_directory (
-            player_tag TEXT PRIMARY KEY,
-            player_name TEXT NOT NULL,
-            clan_code TEXT NOT NULL,
-            townhall INTEGER DEFAULT 0,
-            player_name_search TEXT NOT NULL,
-            player_tag_search TEXT NOT NULL,
-            clan_code_search TEXT NOT NULL,
-            first_seen_ts INTEGER NOT NULL,
-            last_seen_ts INTEGER NOT NULL
-        )
-        """
-    )
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS wars (
-            war_id TEXT NOT NULL,
-            war_type TEXT NOT NULL,
-            clan_code TEXT NOT NULL,
-            clan_tag TEXT NOT NULL,
-            opponent_tag TEXT NOT NULL DEFAULT '',
-            opponent_name TEXT NOT NULL DEFAULT '',
-            cwl_season TEXT NOT NULL DEFAULT '',
-            cwl_season_label TEXT NOT NULL DEFAULT '',
-            cwl_league TEXT NOT NULL DEFAULT '',
-            cwl_round INTEGER DEFAULT 0,
-            team_size INTEGER DEFAULT 0,
-            attacks_per_member INTEGER DEFAULT 0,
-            state TEXT NOT NULL DEFAULT '',
-            preparation_start_ts INTEGER DEFAULT 0,
-            start_ts INTEGER DEFAULT 0,
-            end_ts INTEGER DEFAULT 0,
-            last_seen_ts INTEGER NOT NULL,
-            source TEXT NOT NULL DEFAULT '',
-            PRIMARY KEY (war_id, clan_code)
-        )
-        """
-    )
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS war_roster_members (
-            war_id TEXT NOT NULL,
-            clan_code TEXT NOT NULL,
-            player_tag TEXT NOT NULL,
-            player_name TEXT NOT NULL,
-            townhall INTEGER DEFAULT 0,
-            map_position INTEGER DEFAULT 0,
-            attacks_expected INTEGER DEFAULT 0,
-            attacks_used INTEGER DEFAULT 0,
-            roster_state TEXT NOT NULL,
-            captured_ts INTEGER NOT NULL,
-            source TEXT NOT NULL DEFAULT '',
-            PRIMARY KEY (war_id, clan_code, player_tag)
-        )
-        """
-    )
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS war_attacks (
-            war_id TEXT NOT NULL,
-            war_type TEXT NOT NULL,
-            clan_code TEXT NOT NULL,
-            clan_tag TEXT NOT NULL,
-            end_ts INTEGER NOT NULL,
-            war_state TEXT NOT NULL,
-            player_tag TEXT NOT NULL,
-            player_name TEXT NOT NULL,
-            attack_order INTEGER NOT NULL,
-            defender_tag TEXT DEFAULT '',
-            defender_name TEXT DEFAULT '',
-            defender_map_position INTEGER DEFAULT 0,
-            defender_townhall INTEGER DEFAULT 0,
-            stars INTEGER DEFAULT 0,
-            destruction REAL DEFAULT 0,
-            fresh_attack INTEGER DEFAULT 0,
-            duration INTEGER DEFAULT 0,
-            source TEXT NOT NULL DEFAULT '',
-            PRIMARY KEY (war_id, clan_code, player_tag, attack_order, defender_tag)
-        )
-        """
-    )
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS raid_member_activity (
-            weekend_id TEXT NOT NULL,
-            clan_code TEXT NOT NULL,
-            clan_tag TEXT NOT NULL,
-            end_ts INTEGER NOT NULL,
-            player_tag TEXT NOT NULL,
-            player_name TEXT NOT NULL,
-            attacks INTEGER DEFAULT 0,
-            attack_limit INTEGER DEFAULT 0,
-            bonus_attack_limit INTEGER DEFAULT 0,
-            attacks_expected INTEGER DEFAULT 0,
-            loot INTEGER DEFAULT 0,
-            source TEXT NOT NULL DEFAULT '',
-            PRIMARY KEY (weekend_id, clan_code, player_tag)
-        )
-        """
-    )
-    cursor.execute(
+    conn.execute(
         """
         CREATE TABLE IF NOT EXISTS clan_player_health_config (
             clan_code TEXT PRIMARY KEY,
@@ -231,7 +38,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
         )
         """
     )
-    cursor.execute(
+    conn.execute(
         """
         CREATE TABLE IF NOT EXISTS clan_health_config_audit (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -247,110 +54,75 @@ def create_schema(conn: sqlite3.Connection) -> None:
         )
         """
     )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_player_snapshots_tag_ts ON player_snapshots(player_tag, captured_ts)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_player_directory_name ON player_directory(player_name_search)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_player_directory_tag ON player_directory(player_tag_search)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_player_directory_clan ON player_directory(clan_code_search)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_player_directory_recent ON player_directory(last_seen_ts DESC)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_report_players_season_tag ON report_players(season_key, player_tag)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_report_runs_membership "
-        "ON report_runs(scope, partial, created_ts DESC, run_id DESC)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_war_activity_player_ts ON war_activity(player_tag, end_ts)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_war_activity_clan_ts ON war_activity(clan_code, end_ts)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_war_activity_end_ts ON war_activity(end_ts)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_wars_clan_end_ts ON wars(clan_code, end_ts)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_wars_cwl_season ON wars(cwl_season, clan_code, cwl_round)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_war_roster_player ON war_roster_members(player_tag, war_id)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_war_attacks_player_ts ON war_attacks(player_tag, end_ts)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_war_attacks_war ON war_attacks(war_id, clan_code)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_raid_member_player_ts ON raid_member_activity(player_tag, end_ts)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_raid_member_weekend ON raid_member_activity(weekend_id, clan_code)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_chca_clan_ts ON clan_health_config_audit(clan_code, ts_utc DESC)"
-    )
-    key_stored_cwl_seasons(conn)
-
-
-_NULLABLE = {
-    "player_snapshots": {"townhall", "war_stars", "attack_wins", "capital_contrib", "hero_sum",
-                         "pet_sum", "equipment_sum", "troop_sum", "spell_sum", "games_total"},
-    "report_players": {"townhall", "war_stars", "attack_wins", "capital_contrib", "hero_sum",
-                       "pet_sum", "equipment_sum", "troop_sum", "spell_sum", "games_total",
-                       "hero_delta", "pet_delta", "equipment_delta", "troop_delta", "spell_delta",
-                       "capital_delta", "th_delta", "games_delta"},
-    "clan_health_config_audit": {"old_value"},
-}
-
-
-def validate_schema(conn: sqlite3.Connection, *, warn: bool = True, legacy: bool = False) -> None:
-    # Every INSERT names all fact/config columns (audit alone omits id); SELECT *
-    # becomes a dict. FK cascades are not used: connections leave foreign_keys OFF.
-    # Legacy war rosters are frozen startup-copy sources; audit IDs are never read.
-    # Neither table needs its key for current writes or row identity lookups.
-    validate_sqlite_shape(
-        conn, create_schema,
-        missing_columns={"wars": {"cwl_season_label"}} if legacy else None,
-        required_nullable=_NULLABLE,
-        optional_keys=frozenset({"war_roster_members", "clan_health_config_audit"}),
-        omitted_columns={"clan_health_config_audit": {"id"}}, warn=warn,
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_chca_clan_ts ON clan_health_config_audit(clan_code, ts_utc DESC)")
+    # One row: the once-only copy from the old clan health file.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS old_file_copy (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            copied_at_utc TEXT NOT NULL,
+            outcome TEXT NOT NULL CHECK (outcome IN ('copied', 'no_old_file')),
+            settings_rows INTEGER NOT NULL,
+            audit_rows INTEGER NOT NULL,
+            source_digest TEXT
+        )
+        """
     )
 
 
-def adopt_schema(conn: sqlite3.Connection) -> None:
-    validate_schema(conn, warn=False, legacy=True)
-    key_stored_cwl_seasons(conn)
-    validate_schema(conn, warn=False)
+SCHEMA_VERSION = 1
 
-
-SCHEMA_VERSION = 2
-
+# A new file only: an unversioned file with tables is refused, never adopted.
 DATABASE = VersionedSQLiteDatabase(
-    "clan health", create_schema, adopt_schema,
-    migrations=(
-        SQLiteMigration(1, "clan health baseline", create_schema),
-        SQLiteMigration(2, "deduplicate delayed regular wars", deduplicate_regular_wars),
-    ),
-    target_version=SCHEMA_VERSION, validate=validate_schema,
+    "clan health settings", create_schema, None,
+    migrations=(SQLiteMigration(1, "clan health settings and change log", create_schema),),
+    target_version=SCHEMA_VERSION,
 )
 
 
-class ClanHealthSchema:
-    def _init_db(self) -> None:
-        DATABASE.initialize(self.path)
+def _old_rows(old_path: Path) -> tuple[list[tuple], list[tuple]]:
+    """Both tables of the old file, read-only; a table the old file never had has no rows."""
+    with closing(sqlite3.connect(old_path.resolve().as_uri() + "?mode=ro", uri=True, timeout=30)) as source:
+        source.execute("PRAGMA query_only=ON")
+        source.execute("BEGIN")
+        tables = {row[0] for row in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        settings = [tuple(row) for row in source.execute(
+            f"SELECT {','.join(SETTINGS_COLUMNS)} FROM clan_player_health_config ORDER BY clan_code")] if (
+            "clan_player_health_config" in tables) else []
+        audit = [tuple(row) for row in source.execute(
+            f"SELECT {','.join(AUDIT_COLUMNS)} FROM clan_health_config_audit ORDER BY id")] if (
+            "clan_health_config_audit" in tables) else []
+    return settings, audit
 
-    def _db_connect(self, **kwargs) -> sqlite3.Connection:
-        return DATABASE.connect(self.path, **kwargs)
+
+def copy_old_settings(path: Path, old_path: Path) -> dict | None:
+    """Copy the settings and change log from the old file once; None when an earlier start already did.
+
+    All or nothing: rows and receipt are written in one transaction, and the
+    copied rows are read back and counted before it commits.
+    """
+    DATABASE.initialize(path)
+    with closing(DATABASE.connect(path, timeout=30)) as conn:
+        if conn.execute("SELECT 1 FROM old_file_copy").fetchone():
+            return None
+        if Path(old_path).is_file():
+            settings, audit = _old_rows(Path(old_path))
+            outcome = "copied"
+            digest = sha256(json.dumps([settings, audit], default=str).encode()).hexdigest()
+        else:
+            settings, audit, outcome, digest = [], [], "no_old_file", None
+        with conn:
+            conn.executemany(f"INSERT INTO clan_player_health_config ({','.join(SETTINGS_COLUMNS)}) "
+                             f"VALUES ({','.join('?' for _ in SETTINGS_COLUMNS)})", settings)
+            conn.executemany(f"INSERT INTO clan_health_config_audit ({','.join(AUDIT_COLUMNS)}) "
+                             f"VALUES ({','.join('?' for _ in AUDIT_COLUMNS)})", audit)
+            copied = (conn.execute("SELECT COUNT(*) FROM clan_player_health_config").fetchone()[0],
+                      conn.execute("SELECT COUNT(*) FROM clan_health_config_audit").fetchone()[0])
+            if copied != (len(settings), len(audit)):
+                raise sqlite3.IntegrityError("clan_health_settings_copy_mismatch")
+            conn.execute("INSERT INTO old_file_copy VALUES (1,?,?,?,?,?)", (
+                datetime.now(timezone.utc).replace(microsecond=0).isoformat(), outcome, len(settings), len(audit),
+                digest))
+    LOGGER.info("Clan health settings copied from the old file: outcome=%s settings=%s changes=%s",
+                outcome, len(settings), len(audit))
+    return {"outcome": outcome, "settings": len(settings), "audit": len(audit), "source_digest": digest}

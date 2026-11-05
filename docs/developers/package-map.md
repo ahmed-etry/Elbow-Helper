@@ -24,10 +24,10 @@
 
 | Package | Responsibility |
 |---|---|
-| `account_links` | Link commands, suggestions and boards, reading the family record |
+| `account_links` | Link commands, suggestions and boards, reading the family database |
 | `achievements` | Achievements, coins, inventory, rewards, and raffle |
 | `attack_plans` | Attack-planning requests |
-| `clan_health` | Health analysis, settings, report snapshots and raid activity; wars read from the family record |
+| `clan_health` | Health analysis and settings; activity, raids, wars and clan history read from the family database |
 | `clan_reporting` | Monthly war and missing-Elder reports |
 | `clan_transfers` | Family-clan transfer queues |
 | `cwl` | CWL threads, rosters, transfers, boards, and bonuses reading saved league and war data |

@@ -17,7 +17,7 @@ from elbow_helper.data.store import wars_import
 from elbow_helper.data.store.legacy_links import ImportMismatch
 from elbow_helper.data.store.wars_import import copy_at_startup, import_wars, snapshot_wars
 from elbow_helper.data.store.war_projection import HOUR
-from elbow_helper.features.clan_health.database.schema import create_schema
+from tests.data.legacy_health_schema import create_schema
 
 from .test_wars import END, SECOND, START, WarFixture, war, war_log
 

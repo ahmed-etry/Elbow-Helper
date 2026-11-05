@@ -519,7 +519,7 @@ Resolve a clan's membership basis from its community clan profile before selecti
 its players, including follow-ups. For a CWL-only clan, use the relevant \
 season's CWL roster or participants, then read those players' profiles for cumulative stats \
 such as war stars. Between seasons its players may live in other family clans; parked accounts \
-in the current in-game memberList or clan-filtered health snapshots are not its CWL cohort. \
+in the current in-game memberList or clan-filtered stored rosters are not its CWL cohort. \
 Use released roster assignments, league-group members or stored CWL participants with an \
 explicit season and source. If no CWL cohort is available, state that gap; never substitute \
 the placeholder roster. A current in-game roster is appropriate when explicitly requested.

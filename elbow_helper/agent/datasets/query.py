@@ -12,7 +12,7 @@ import time
 
 from ..access import can_access_message_channel, has_reader_access_requirements, require_evidence_access
 
-QUERY_SECONDS = 20.0  # a full pass over player_snapshots takes ~10s; tool timeout is 30s
+QUERY_SECONDS = 20.0  # a full pass over the largest table takes ~10s; tool timeout is 30s
 DEFAULT_QUERY_ROWS = 1000
 MAX_QUERY_VALUE_BYTES = 8 * 1024 * 1024
 MAX_QUERY_RESULT_BYTES = 16 * 1024 * 1024

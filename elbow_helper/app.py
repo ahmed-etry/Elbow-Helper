@@ -23,7 +23,9 @@ from elbow_helper.configuration.files import (
 from elbow_helper.data.collectors import FamilyCollectors
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.links import LinkService
-from elbow_helper.data.reads import CwlReads, PeopleReads, MembershipReads, RankedReads, WarReads
+from elbow_helper.data.reads import (
+    ActivityReads, CwlReads, PeopleReads, MembershipReads, RaidReads, RankedReads, StayReads, WarReads,
+)
 
 from .core.errors import install_asyncio_exception_handler
 from .core.backups import DatabaseBackupJob
@@ -109,6 +111,9 @@ def create_bot(
     bot.war_reads = WarReads(store)
     bot.cwl_reads = CwlReads(store)
     bot.ranked_reads = RankedReads(store)
+    bot.activity_reads = ActivityReads(store)
+    bot.raid_reads = RaidReads(store)
+    bot.stay_reads = StayReads(store)
     bot.family_collectors = FamilyCollectors(
         bot, store, clash_client, CLANS.values(),
         old_wars=(paths.data_root / CLAN_HEALTH_DATABASE, paths.data_root / WAR_CACHE_FILE,

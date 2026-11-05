@@ -2,7 +2,7 @@
 
 `elbow_helper.agent` handles questions and action requests sent by
 mentioning the bot or replying to an agent conversation. It calls other
-features through their query and command interfaces. Shared data comes from the family record through `data/reads`, which says what data is missing; features own their remaining state.
+features through their query and command interfaces. Shared data comes from the family database through `data/reads`, which says what data is missing; features keep the rest of their own data.
 Shared infrastructure handles Clash and AI requests.
 
 ## Request handling

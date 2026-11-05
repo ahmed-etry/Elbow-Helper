@@ -18,7 +18,7 @@ from elbow_helper.data.store.link_state import receipt
 from elbow_helper.data.store.people import account, account_name
 from elbow_helper.data.store.schema import MIGRATIONS
 from elbow_helper.data.store.war_projection import api_time
-from elbow_helper.features.clan_health.database.schema import create_schema as health_schema
+from tests.data.legacy_health_schema import create_schema as health_schema
 from elbow_helper.infrastructure.persistence.migrations import run_sqlite_migrations
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 

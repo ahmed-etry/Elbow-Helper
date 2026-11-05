@@ -14,7 +14,7 @@ from elbow_helper.agent.capabilities.account_links.reads import read_linked_acco
 from elbow_helper.agent.datasets import membership as history_tool
 from elbow_helper.agent.families import identity_reads, account_names, model_view
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.data.reads import PeopleReads, MembershipReads
+from elbow_helper.data.reads import PeopleReads, MembershipReads, StayReads
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.clans import collect_clans
 from elbow_helper.data.store.people import mirror_links, observe_discord
@@ -64,7 +64,9 @@ class RecordConsumerTests(unittest.IsolatedAsyncioTestCase):
             get_links_by_tags=Mock(side_effect=lambda tags: {t: deepcopy(self.links.get(t)) for t in tags}))
         self.people = PeopleReads(self.store, alias_reader=lambda: [{'player_tag': '#Q0', 'player_name': 'Old Synthetic Alias'}])
         self.membership = MembershipReads(self.store)
-        self.bot = SimpleNamespace(people_reads=self.people, membership_reads=self.membership, paths=None)
+        self.stays = StayReads(self.store)
+        self.bot = SimpleNamespace(people_reads=self.people, membership_reads=self.membership,
+                                   stay_reads=self.stays, paths=None)
         self.context = replace(self.context, bot=self.bot, account_links=self.legacy,
             cwl_queries=SimpleNamespace(account_names=self.people.alias_reader))
         self.live_clans = {}
@@ -123,42 +125,26 @@ class RecordConsumerTests(unittest.IsolatedAsyncioTestCase):
     def without_record(self):
         return replace(self.context, bot=SimpleNamespace())
 
-    async def test_membership_history_parity_transfers_returns_and_pagination(self):
+    async def test_membership_history_reads_record_stays_transfers_returns_and_pagination(self):
         first = self.at
-        snapshots = [(first, {self.codes[0]: [player(name='Synthetic Main')]})]
         for roster in ({}, {self.codes[1]: [player(name='Synthetic Main', role='admin')]},
                        {self.codes[0]: [player(name='Synthetic Main')]}):
             self.at += 900_000_000
             await self.observe_clans(roster or {self.codes[0]: []})
-            snapshots.append((self.at, roster))
-        after, before = iso(first + 1), iso(self.at + 10)
-        arguments = {'after': after, 'before': before, 'history_after': iso(first), 'limit': 1}
-        runs = [{'run_id': i, 'created_ts': at / 1_000_000} for i, (at, _) in enumerate(snapshots)]
-        rows = [{'run_id': i, 'clan_code': code, 'player_tag': p['tag'], 'player_name': p['name']}
-                for i, (_, roster) in enumerate(snapshots) for code, players in roster.items() for p in players]
-        # The initial fixture also contains a visitor in the second clan.
-        rows.append({'run_id': 0, 'clan_code': self.codes[1], 'player_tag': '#R0', 'player_name': 'Synthetic Visitor'})
-        legacy = AsyncMock(return_value=(runs, rows, False))
-        with patch.object(history_tool, 'read_observations', Mock(return_value=(runs, rows, False))), \
-             patch.object(history_tool, 'SOURCES', [SimpleNamespace(alias='health', resolve=lambda _: Path('unused'))]):
-            legacy_context = replace(self.without_record(), bot=SimpleNamespace(paths=None))
-            before_result = await history_tool.read_membership_history(legacy_context, arguments)
-        with patch.object(history_tool, 'read_observations', legacy):
-            after_result = await history_tool.read_membership_history(self.context, arguments)
-        legacy.assert_not_called()
-        self.assertEqual(after_result, before_result)
-        self.assertIsNotNone(after_result['next_offset'])
-        self.assertEqual(after_result['events'][0]['kind'], 'family_transfer')
+        arguments = {'after': iso(first + 1), 'before': iso(self.at + 10), 'history_after': iso(first), 'limit': 1}
+        result = await history_tool.read_membership_history(self.context, arguments)
+        self.assertEqual(result['source'], 'family_clan_stays')
+        self.assertIsNotNone(result['next_offset'])
+        # The latest arrival came straight from the other clan; the one before followed an absence.
+        self.assertEqual(result['events'][0]['kind'], 'family_transfer')
+        later = await history_tool.read_membership_history(self.context, {**arguments, 'offset': 1})
+        self.assertEqual(later['events'][0]['kind'], 'returning_observation')
 
-    async def test_history_before_record_started_uses_existing_snapshots(self):
-        arguments = {'after': iso(self.at - 1_000_000),
-                     'before': iso(self.at + 10), 'history_after': iso(self.at - 2_000_000)}
-        fallback = Mock(return_value=([], [], False))
-        with patch.object(history_tool, 'read_observations', fallback), \
-             patch.object(history_tool, 'SOURCES', [SimpleNamespace(alias='health', resolve=lambda _: Path('unused'))]):
-            result = await history_tool.read_membership_history(self.context, arguments)
-        fallback.assert_called_once()
-        self.assertEqual(result['events'], [])
+    async def test_history_before_any_stay_is_empty_without_another_source(self):
+        arguments = {'after': iso(self.at - 2_000_000),
+                     'before': iso(self.at - 1_000_000), 'history_after': iso(self.at - 3_000_000)}
+        result = await history_tool.read_membership_history(self.context, arguments)
+        self.assertEqual((result['events'], result['coverage']['stay_count']), ([], 0))
 
     async def test_record_alias_remains_searchable_with_live_current_name(self):
         self.at += 86_400_000_000
@@ -313,12 +299,8 @@ class RecordConsumerTests(unittest.IsolatedAsyncioTestCase):
                         await operation(self.context, arguments)
                 self.assertEqual(source.await_count, denied_call - 1)
 
-    async def test_history_record_outage_uses_existing_membership_snapshots(self):
+    async def test_history_record_outage_is_reported_without_another_source(self):
         arguments = {'after': iso(self.at + 1), 'before': iso(self.at + 10), 'history_after': iso(self.at)}
-        fallback = Mock(return_value=([], [], False))
-        with patch.object(self.membership, 'generations', AsyncMock(side_effect=OSError('synthetic outage'))), \
-             patch.object(history_tool, 'read_observations', fallback), \
-             patch.object(history_tool, 'SOURCES', [SimpleNamespace(alias='health', resolve=lambda _: Path('unused'))]):
+        with patch.object(self.stays, 'movements', AsyncMock(side_effect=OSError('synthetic outage'))):
             result = await history_tool.read_membership_history(self.context, arguments)
-        fallback.assert_called_once()
-        self.assertEqual(result['events'], [])
+        self.assertEqual(result['cause'], 'source_unavailable')
