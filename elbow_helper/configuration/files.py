@@ -22,6 +22,7 @@ RANKED_DATABASE = Path("ranked_stats/ranked.sqlite3")
 RECORDS_DATABASE = Path("records/records.sqlite3")
 ROSTERS_DATABASE = Path("rosters/rosters.sqlite3")
 FAMILY_DATABASE = Path("family/family.sqlite3")
+EVENTS_DATABASE = Path("events/events.sqlite3")
 # The war board's cache (the wars feature's CACHE_FILE); its war history is copied once into the family record.
 WAR_CACHE_FILE = Path("war/war_cache.json")
 
@@ -38,4 +39,5 @@ SQLITE_DATABASES = (
     RECORDS_DATABASE,
     ROSTERS_DATABASE,
     FAMILY_DATABASE,
+    EVENTS_DATABASE,
 )

@@ -91,7 +91,8 @@ class ForwardView(BaseTimeoutView):
                 return
             await cog.publish_public_news(
                 source_message, target_channel,
-                prompts=(interaction.message,) if interaction.message else ())
+                prompts=(interaction.message,) if interaction.message else (),
+                actor_kind="member", actor_discord_id=interaction.user.id, via="button")
             await interaction.response.send_message(f"Published to <#{PUBLIC_NEWS}>", ephemeral=True)
         except (discord.Forbidden, discord.HTTPException):
             LOGGER.exception("Failed publishing message %s", self.source_message_id)

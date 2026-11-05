@@ -18,11 +18,12 @@ from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.files import (
-    ACCOUNT_LINKS_DATABASE, CLAN_HEALTH_DATABASE, FAMILY_DATABASE, RANKED_DATABASE, WAR_CACHE_FILE,
+    ACCOUNT_LINKS_DATABASE, CLAN_HEALTH_DATABASE, EVENTS_DATABASE, FAMILY_DATABASE, RANKED_DATABASE, WAR_CACHE_FILE,
 )
 from elbow_helper.data.collectors import FamilyCollectors
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.links import LinkService
+from elbow_helper.data.events import EventsStore
 from elbow_helper.data.reads import (
     ActivityReads, CwlReads, PeopleReads, MembershipReads, RaidReads, RankedReads, StayReads, WarReads,
 )
@@ -104,6 +105,7 @@ def create_bot(
     )
     bot.tree.error(handle_app_command_error)
     store = FamilyStore(paths.data_root / FAMILY_DATABASE)
+    bot.workflow_events = EventsStore(paths.data_root / EVENTS_DATABASE)
     bot.link_service = LinkService(store, paths.data_root / ACCOUNT_LINKS_DATABASE)
 
     bot.people_reads = PeopleReads(store, link_service=bot.link_service)

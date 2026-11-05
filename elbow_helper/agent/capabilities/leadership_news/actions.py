@@ -141,7 +141,7 @@ async def prepare_lead_news(context: AgentRequestContext,
         current_prompts = await workflow.find_public_news_prompts(current)
         sent = await workflow.publish_public_news(
             current, target, prepared=workflow.public_news_preview(current),
-            prompts=current_prompts)
+            prompts=current_prompts, actor_kind="agent", actor_discord_id=context.member.id, via="agent")
         return ActionOutcome("complete", "private",
                               text=ACTION_NEWS_PUBLISH_DONE.format(url=sent.jump_url))
 
