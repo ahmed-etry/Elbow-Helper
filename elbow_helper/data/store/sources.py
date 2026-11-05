@@ -13,6 +13,7 @@ from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 from .api_fields import collect_fields
 from .battles import identity as battle_key, save_battle
 from .projections import canonical_json, nonnegative_int
+from .raids import save_member_lines
 from . import LOG_UNAVAILABLE, source_state
 from .war_projection import api_time
 
@@ -158,6 +159,8 @@ def _save_list(connection, kind, scope, raw, checkpoint, run, at):
         seen[key] = item
         overlap |= (save_battle(connection, scope, item, run, at) if kind == "battle_log" else
                     _entity(connection, kind, scope, key, item, run, at, source_at=source_at, final=final))
+        if kind == "capital_raids":
+            save_member_lines(connection, scope, source_at, item.get("members"), run, at)
     # Keep all envelope fields, including empty lists and future metadata, but
     # never store a rolling window as a per-poll copy of its historical rows.
     collect_fields(connection, kind + "_envelope", scope, {**raw, "items": []}, run, at)

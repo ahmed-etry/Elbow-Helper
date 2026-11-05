@@ -10,10 +10,11 @@ from .source_schema import create_source_schema
 from .link_schema import create_link_schema, create_current_link_schema
 from .battle_coverage import create_watch_schema
 from .profile_schema import create_profile_history_schema
+from .raids import create_raid_schema
 
 
 # Later subjects add migrations; they must not rewrite this baseline.
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 STATEMENTS = (
     """CREATE TABLE collection_runs (
         id INTEGER PRIMARY KEY, collector TEXT NOT NULL, scope_kind TEXT NOT NULL,
@@ -263,6 +264,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
     create_watch_schema(connection)
     create_profile_history_schema(connection)
     create_current_link_schema(connection)
+    create_raid_schema(connection)
 
 
 MIGRATIONS = (
@@ -279,4 +281,5 @@ MIGRATIONS = (
     SQLiteMigration(11, "battle log watching and old battle provenance", create_watch_schema),
     SQLiteMigration(12, "old profile history and separate coverage", create_profile_history_schema),
     SQLiteMigration(13, "current account link presentation", create_current_link_schema),
+    SQLiteMigration(14, "capital raid member lines", create_raid_schema),
 )
