@@ -6,7 +6,7 @@ from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.capabilities.support_tickets.commands import (
     prepare_support_close,
 )
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from elbow_helper.configuration.channels import SUPPORT_TICKET_CATEGORY
 from elbow_helper.agent.capabilities.support_tickets.commands import (
     prepare_support_open, support_ticket_adapters,
@@ -120,28 +120,25 @@ class SupportOpenCommandTests(unittest.IsolatedAsyncioTestCase):
         context = register_requester(context)
         saved = {}
 
-        def save(value):
-            saved.clear()
-            saved.update(value)
+        async def register(channel_id, info, **kwargs):
+            saved[str(channel_id)] = info
 
-        with (
-            patch("elbow_helper.features.support_tickets.commands.load_tickets",
-                  side_effect=lambda: dict(saved)),
-            patch("elbow_helper.features.support_tickets.commands.save_tickets",
-                  side_effect=save),
-        ):
-            prepared = await prepare_support_open(
-                context, {"user": 7, "topic": "War discussion"},
-            )
-            self.assertTrue(await prepared.preview.recheck())
-            self.assertIn("Welcome to this ticket.", prepared.preview.details)
-            guild.create_text_channel.assert_not_awaited()
-            self.assertIs(support_ticket_adapters()[0].classification,
-                          ActionClass.CHANGE)
-            result = await prepared.run()
-            self.assertEqual(result.result["channel_id"], 9)
-            self.assertEqual(saved["9"]["owner"], 7)
-            self.assertIn("Welcome to this ticket.",
-                          channel.send.await_args.kwargs["content"])
-            workflow.welcome_messages.create.assert_awaited_once()
-            channel.delete.assert_not_awaited()
+        workflow.ticket_state = SimpleNamespace(
+            register=register, registration=lambda channel_id: saved.get(str(channel_id)),
+        )
+
+        prepared = await prepare_support_open(
+            context, {"user": 7, "topic": "War discussion"},
+        )
+        self.assertTrue(await prepared.preview.recheck())
+        self.assertIn("Welcome to this ticket.", prepared.preview.details)
+        guild.create_text_channel.assert_not_awaited()
+        self.assertIs(support_ticket_adapters()[0].classification,
+                      ActionClass.CHANGE)
+        result = await prepared.run()
+        self.assertEqual(result.result["channel_id"], 9)
+        self.assertEqual(saved["9"]["owner"], 7)
+        self.assertIn("Welcome to this ticket.",
+                      channel.send.await_args.kwargs["content"])
+        workflow.welcome_messages.create.assert_awaited_once()
+        channel.delete.assert_not_awaited()

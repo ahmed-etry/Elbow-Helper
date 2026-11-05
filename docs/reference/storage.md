@@ -44,7 +44,7 @@ retain older feature names because existing deployments depend on them.
 | Recruitment | `data/recruitment/applicant_messages.json` | Application-summary message IDs, channels, and timestamps |
 | Role connections | `data/role_connections/role_connections.json` | Role rules and board state |
 | Rosters | `data/rosters/rosters.sqlite3` | Rosters, signups, posts, and schedules |
-| Support and hibernation | `data/support/created_tickets.json` | Bot-created support and reactivation tickets |
+| Support and hibernation | `data/events/events.sqlite3` | Bot-created support and reactivation tickets and their history |
 | Wars | `data/war/war_cache.json` | Processed wars, board and summary message IDs, and war-role lineups |
 
 Features read shared data from the family database. Health reports read their

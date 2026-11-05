@@ -92,7 +92,7 @@ async def prepare_reactivation_reopen(context: AgentRequestContext,
 
     async def run() -> ActionOutcome:
         _, restored = await workflow.reopen_reactivation_ticket(context.guild, channel,
-                                                                 context.member)
+                                                                 context.member, via="agent")
         if not restored:
             raise ActionRefused("That ticket couldn't be reopened.")
         return ActionOutcome("complete", "private", text=ACTION_TICKET_REOPEN_LABEL)
@@ -146,7 +146,7 @@ async def prepare_reactivation_close(context: AgentRequestContext,
 
     async def run() -> ActionOutcome:
         ok, issue = await workflow.close_reactivation_ticket(
-            context.guild, channel, context.member)
+            context.guild, channel, context.member, via="agent")
         if not ok:
             raise ActionRefused(issue or "That reactivation ticket couldn't be closed.")
         return ActionOutcome("complete", "private", text=ACTION_TICKET_CLOSE_LABEL)

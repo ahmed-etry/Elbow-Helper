@@ -18,7 +18,6 @@ from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import LEAD, RECRUITERS
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 
-from .state import load_tickets, save_tickets
 from .queries import parse_support_owner_id
 from .views import SupportTicketCloseView
 
@@ -33,12 +32,12 @@ class SupportCommandMixin:
     def support_reopen_state(self, guild: discord.Guild,
                              channel: discord.TextChannel) -> discord.Member | None:
         """Resolve the ticket owner for the panel and the agent."""
-        ticket_info = load_tickets().get(str(channel.id), {})
+        ticket_info = self.ticket_state.registration(channel.id) or {}
         return self._resolve_support_ticket_owner(guild, channel, ticket_info)
 
     async def reopen_support_ticket(self, guild: discord.Guild,
                                     channel: discord.TextChannel,
-                                    actor: discord.Member) -> tuple[discord.Member | None, bool]:
+                                    actor: discord.Member, *, via="button") -> tuple[discord.Member | None, bool]:
         """Restore a ticket owner's messaging access."""
         owner = self.support_reopen_state(guild, channel)
         if owner is None:
@@ -52,6 +51,7 @@ class SupportCommandMixin:
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             LOGGER.warning("Could not unlock support ticket %s for owner %s", channel.id, owner.id)
             return owner, False
+        await self.ticket_state.transition(channel.id, "open", actor_id=actor.id, via=via)
         return owner, True
 
     def prepare_support_close(self, guild: discord.Guild | None,
@@ -59,7 +59,7 @@ class SupportCommandMixin:
                               actor: discord.Member) -> dict[str, object]:
         if guild is None or not isinstance(channel, discord.TextChannel):
             return {"issue": "Use this command inside a support ticket."}
-        ticket_info = load_tickets().get(str(channel.id))
+        ticket_info = self.ticket_state.registration(channel.id)
         if ticket_info is None:
             return {"issue": "This channel is not a ticket created by Elbow Helper."}
         owner = self._resolve_support_ticket_owner(guild, channel, ticket_info)
@@ -148,13 +148,11 @@ class SupportCommandMixin:
                 content=f"{user.mention}\n{prepared['welcome']}\n",
                 embed=prepared["embed"], view=SupportTicketCloseView(self),
             )
-            tickets = load_tickets()
-            tickets[str(ticket_channel.id)] = {
+            await self.ticket_state.register(ticket_channel.id, {
                 "owner": user.id, "topic": prepared["topic"],
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "source": "open",
-            }
-            save_tickets(tickets)
+            }, actor_id=prepared["actor"].id, via=prepared.get("via", "command"))
             ticket_saved = True
             return ticket_channel, f"Ticket created for {user.mention}: {ticket_channel.mention}"
         except Exception:
@@ -171,7 +169,7 @@ class SupportCommandMixin:
             raise
 
     def support_ticket_registration(self, channel_id: int):
-        return load_tickets().get(str(channel_id))
+        return self.ticket_state.registration(channel_id)
 
     @staticmethod
     def _build_transcript_link_view() -> discord.ui.View:
@@ -231,6 +229,7 @@ class SupportCommandMixin:
         prepared = self.prepare_support_close(
             interaction.guild, interaction.channel, interaction.user,
         )
+        prepared["via"] = "button" if getattr(interaction, "command", None) is None else "command"
         if prepared["issue"]:
             await warn(interaction, prepared["issue"])
             return
@@ -272,6 +271,9 @@ class SupportCommandMixin:
                         owner_member,
                         send_messages=False,
                         reason=f"Support ticket closed by {actor}",
+                    )
+                    await self.ticket_state.transition(
+                        channel.id, "closed", actor_id=actor.id, via=prepared.get("via", "command"),
                     )
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     LOGGER.warning("Could not lock support ticket %s for owner %s", channel.id, owner_member.id)
@@ -407,6 +409,9 @@ class SupportCommandMixin:
                     "Transcript saved, but ticket controls could not be restored for support ticket %s",
                     channel.id,
                 )
+            await self.ticket_state.transition(
+                channel.id, "closed", actor_id=actor.id, via=prepared.get("via", "command"),
+            )
             return {"status": "complete", "log_channel_id": log_channel_id,
                     "log_message_id": getattr(log_message, "id", None),
                     "transcript_uploaded": transcript_file is not None}

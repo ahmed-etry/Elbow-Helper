@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.features.support_tickets.ai import SupportWelcomeService
 from elbow_helper.features.support_tickets.commands import SupportCommandMixin
-from elbow_helper.features.support_tickets.state import save_tickets
 from elbow_helper.infrastructure.ai import GenerationTier
 
 
@@ -45,6 +44,7 @@ class SupportTicketCloseTests(unittest.IsolatedAsyncioTestCase):
             channel=channel,
             user=SimpleNamespace(
                 roles=[SimpleNamespace(id=1)],
+                id=7,
                 mention="<@7>",
             ),
             response=SimpleNamespace(
@@ -72,6 +72,10 @@ class SupportTicketCloseTests(unittest.IsolatedAsyncioTestCase):
         )
         interaction = self._interaction(channel, guild)
         commands = SupportCommandMixin()
+        commands.ticket_state = SimpleNamespace(
+            registration=MagicMock(return_value={"source": "open"}),
+            register=AsyncMock(side_effect=OSError("disk full")), transition=AsyncMock(),
+        )
         commands.build_confirm_view = MagicMock(return_value=SimpleNamespace())
 
         with (
@@ -79,10 +83,6 @@ class SupportTicketCloseTests(unittest.IsolatedAsyncioTestCase):
             patch("elbow_helper.features.support_tickets.commands.RECRUITERS", set()),
             patch("elbow_helper.features.support_tickets.commands.SUPPORT_TRANSCRIPTS", 456),
             patch("elbow_helper.features.support_tickets.commands.discord.TextChannel", _FakeTextChannel),
-            patch(
-                "elbow_helper.features.support_tickets.commands.load_tickets",
-                return_value={"123": {"source": "open"}},
-            ),
             patch(
                 "elbow_helper.features.support_tickets.commands.chat_exporter.export",
                 new=AsyncMock(return_value="<html>transcript</html>"),
@@ -160,7 +160,7 @@ class SupportTicketCreationTests(unittest.IsolatedAsyncioTestCase):
         )
         interaction = SimpleNamespace(
             user=SimpleNamespace(
-                roles=[SimpleNamespace(id=1)],
+                id=7, roles=[SimpleNamespace(id=1)],
                 display_name="Lead",
                 display_avatar=SimpleNamespace(url="https://example.com/avatar.png"),
             ),
@@ -174,6 +174,10 @@ class SupportTicketCreationTests(unittest.IsolatedAsyncioTestCase):
         member.display_name = "Member"
         member.name = "member"
         commands = SupportCommandMixin()
+        commands.ticket_state = SimpleNamespace(
+            registration=MagicMock(return_value={"source": "open"}),
+            register=AsyncMock(side_effect=OSError("disk full")), transition=AsyncMock(),
+        )
         commands.bot = SimpleNamespace(user=SimpleNamespace(id=99))
         commands.welcome_messages = SimpleNamespace(
             create=AsyncMock(return_value="Welcome"),
@@ -181,14 +185,6 @@ class SupportTicketCreationTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("elbow_helper.features.support_tickets.commands.LEAD", {1}),
-            patch(
-                "elbow_helper.features.support_tickets.commands.load_tickets",
-                return_value={},
-            ),
-            patch(
-                "elbow_helper.features.support_tickets.commands.save_tickets",
-                side_effect=OSError("disk full"),
-            ),
             patch(
                 "elbow_helper.features.support_tickets.commands.fail",
                 new=AsyncMock(),
@@ -208,21 +204,6 @@ class SupportTicketCreationTests(unittest.IsolatedAsyncioTestCase):
         ticket_channel.delete.assert_awaited_once_with()
         send_failure.assert_awaited_once_with(interaction)
 
-
-class SupportTicketStateTests(unittest.TestCase):
-    def test_save_failure_reaches_the_calling_workflow(self) -> None:
-        with (
-            patch(
-                "elbow_helper.features.support_tickets.state.write_json_atomic",
-                side_effect=OSError("disk full"),
-            ),
-            self.assertLogs(
-                "elbow_helper.features.support_tickets.state",
-                level="ERROR",
-            ),
-            self.assertRaisesRegex(OSError, "disk full"),
-        ):
-            save_tickets({"123": {"owner": 42}})
 
 
 if __name__ == "__main__":

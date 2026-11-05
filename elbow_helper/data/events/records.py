@@ -11,12 +11,15 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 KINDS = {
     "leadership_news": frozenset({"news_published", "voided"}),
     "transfers": frozenset({"transfer_requested", "transfer_cancelled", "transfer_expired", "queue_cleared", "voided"}),
+    "support": frozenset({"ticket_opened", "ticket_closed", "ticket_reopened", "ticket_deleted", "voided"}),
 }
 DETAILS = {
     "news_published": frozenset({"channel_id", "message_id", "guild_id"}),
     "transfer_requested": frozenset(), "transfer_cancelled": frozenset(),
     "transfer_expired": frozenset({"after_hours"}), "queue_cleared": frozenset({"count"}),
     "voided": frozenset({"voids"}),
+    **{kind: frozenset({"source"}) for kind in
+       ("ticket_opened", "ticket_closed", "ticket_reopened", "ticket_deleted")},
 }
 
 
@@ -39,10 +42,12 @@ class Event:
     detail: dict = field(default_factory=dict)
     source_channel_id: int | None = None
     source_message_id: int | None = None
+    sequence: int = 0
 
     @property
     def idem_key(self):
-        return f"{self.workflow}:{self.case_key}:{self.kind}"
+        suffix = f":{self.sequence}" if self.sequence else ""
+        return f"{self.workflow}:{self.case_key}:{self.kind}{suffix}"
 
 
 def _positive(value):
@@ -72,7 +77,7 @@ def validate(event):
         raise ValueError("Invalid event player tag")
     # Case keys contain only numeric identities and a configured clan code.
     parts = event.case_key.split(":")
-    expected = 1 if event.workflow == "leadership_news" else 3
+    expected = 3 if event.workflow == "transfers" else 1
     if len(parts) != expected:
         raise ValueError("Invalid event case")
     for index, part in enumerate(parts):
@@ -86,7 +91,14 @@ def validate(event):
         raise ValueError("Transfer case must match its subject and clan")
     if set(event.detail) != DETAILS[event.kind]:
         raise ValueError("Invalid event details")
+    if (type(event.sequence) is not int or not 0 <= event.sequence < 2**63
+            or (event.sequence and event.workflow != "support")):
+        raise ValueError("Invalid event sequence")
     for key, value in event.detail.items():
+        if key == "source":
+            if value not in {"open", "reactivation"}:
+                raise ValueError("Invalid ticket source")
+            continue
         if type(value) is not int or value < (0 if key == "count" else 1) or value >= 2**63:
             raise ValueError("Invalid event detail value")
     if event.kind == "transfer_expired" and event.detail["after_hours"] != 12:
@@ -99,6 +111,7 @@ def record(connection, event):
         raise RuntimeError("Events require a state transaction")
     validate(event)
     values = asdict(event)
+    values.pop("sequence")
     values["detail_json"] = json.dumps(values.pop("detail"), sort_keys=True, separators=(",", ":"))
     values.update(recorded_at=now_us(), idem_key=event.idem_key)
     columns = tuple(values)
