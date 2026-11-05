@@ -28,12 +28,6 @@ async def setup(bot: ElbowHelperBot) -> None:
         raise RuntimeError(
             "CWL management requires Clan Health history"
         )
-    records = bot.get_cog("Records")
-    record_reader = getattr(records, "reader", None)
-    if record_reader is None:
-        raise RuntimeError(
-            "CWL management requires the Records reader"
-        )
     account_links = bot.get_cog("AccountLinks")
     if account_links is None:
         raise RuntimeError(
@@ -56,7 +50,6 @@ async def setup(bot: ElbowHelperBot) -> None:
         bot.workbook_writer,
         achievement_rewards,
         clan_health_repository,
-        record_reader,
         account_links,
         rosters.queries,
         rosters.automation,

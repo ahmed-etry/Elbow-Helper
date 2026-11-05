@@ -1,4 +1,4 @@
-# Wars, health reports, and records
+# Wars and health reports
 
 ## Wars
 
@@ -26,12 +26,6 @@ used to evaluate future reports.
 
 Reports depend on history collected during the selected dates. The default
 period is 30 days, and the command also accepts custom dates.
-
-## Leadership records
-
-`/record add`, `/record edit`, and `/record remove` maintain private incident
-history for a Discord member. `/record export` downloads all records or one
-member's records.
 
 ## War summaries and Elder reminders
 

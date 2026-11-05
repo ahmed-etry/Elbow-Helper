@@ -24,8 +24,7 @@ class CwlRosterCommandTests(unittest.IsolatedAsyncioTestCase):
         })
         workflow._build_roster_candidates = AsyncMock(return_value={
             "signed_account_count": 2, "signed_member_count": 1,
-            "candidates": (), "signed_tags": (), "records": (),
-            "links_by_user": {},
+            "candidates": (), "signed_tags": (),
         })
         workflow._build_roster_workbook = MagicMock(return_value=("sheet",))
         workflow.build_cwl_roster_attachment = AsyncMock(

@@ -92,10 +92,6 @@ channel permissions also apply.
 
 | Command | What it does | [Access](#access-groups) |
 |---|---|---|
-| `/record add` | Document an incident involving a member. | Lead Plus |
-| `/record export` | Download all leadership records or one member's records. | Lead Plus |
-| `/record edit` | Update the category, type, or details of a member's record. | Lead Plus |
-| `/record remove` | Delete one of a member's incident records. | Lead Plus |
 | `/health player` | Export a health report for a Clash account. | Lead Plus |
 | `/health clan` | Export a clan or family health report. | Lead Plus |
 | `/health settings` | Set the activity expectations used in a clan's health reports. | Lead Plus |

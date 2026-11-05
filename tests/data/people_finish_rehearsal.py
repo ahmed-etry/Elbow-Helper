@@ -25,7 +25,6 @@ from elbow_helper.data.store import now_us
 from elbow_helper.data.store.clans import collect_clans
 from elbow_helper.data.store.legacy_links import FIELDS, legacy_shape
 from elbow_helper.features.account_links.cog import AccountLinks
-from elbow_helper.features.records.service import RecordService
 from elbow_helper.features.rosters.services.accounts import RosterAccountDirectory
 from elbow_helper.agent.capabilities.account_links.data import SOURCES
 from elbow_helper.agent.capabilities.account_links.reads import read_linked_accounts
@@ -143,11 +142,6 @@ async def rehearse():
         compare('missing_elder/' + clan.code, await asyncio.to_thread(baseline.get_missing_elder_rows, clan.code),
                 await asyncio.to_thread(new.get_missing_elder_rows, clan.code))
         compare('roster/' + clan.code, baseline._clan_members[clan.code], new._clan_members[clan.code])
-    before_records, after_records = object.__new__(RecordService), object.__new__(RecordService)
-    before_records._account_links, after_records._account_links = old, new
-    records = [{'member_id': value} for value in ids]
-    compare('records/export', await asyncio.to_thread(before_records.links_for, records),
-            await asyncio.to_thread(after_records.links_for, records))
     def context(source):
         return SimpleNamespace(account_links=source, guild=guild,
             cwl_queries=SimpleNamespace(account_names=lambda: []),

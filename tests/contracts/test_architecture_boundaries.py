@@ -17,7 +17,6 @@ from elbow_helper.features.clan_transfers.cog import ClanTransfers
 from elbow_helper.features.cwl.cog import CwlManagement
 from elbow_helper.features.diagnostics.cog import DebugCog
 from elbow_helper.features.help.catalog import HELP_INDEX
-from elbow_helper.features.records.cog import Records
 from elbow_helper.features.rosters.cog import Rosters
 
 
@@ -35,7 +34,6 @@ class _RegistryBot:
             "CwlManagement": object.__new__(CwlManagement),
             "Rosters": object.__new__(Rosters),
             "ClanTransfers": object.__new__(ClanTransfers),
-            "Records": object.__new__(Records),
         }
 
     def get_cog(self, name: str):
@@ -61,7 +59,6 @@ class CommandRegistryTests(unittest.IsolatedAsyncioTestCase):
                 "announcement",
             ],
             "transfer": ["request", "cancel", "reminder"],
-            "record": ["add", "export", "edit", "remove"],
         }
 
         for _ in range(2):
@@ -204,14 +201,12 @@ class DependencyBoundaryTests(unittest.TestCase):
                 "elbow_helper.features.support_tickets",
                 "elbow_helper.features.recruitment",
                 "elbow_helper.features.examination",
-                "elbow_helper.features.records",
                 "elbow_helper.features.member_lifecycle",
                 "elbow_helper.features.clan_reporting",
                 "elbow_helper.features.account_links",
                 "elbow_helper.features.clan_health",
             ),
             "elbow_helper.features.attack_plans": ("elbow_helper.features.clan_health",),
-            "elbow_helper.features.records": ("elbow_helper.features.account_links",),
             "elbow_helper.features.rosters": (
                 "elbow_helper.features.account_links",
                 "elbow_helper.features.wars",
@@ -220,14 +215,12 @@ class DependencyBoundaryTests(unittest.TestCase):
                 "elbow_helper.features.achievements",
                 "elbow_helper.features.clan_health",
                 "elbow_helper.features.account_links",
-                "elbow_helper.features.records",
                 "elbow_helper.features.rosters",
             ),
             "elbow_helper.features.clan_reporting": ("elbow_helper.features.account_links",),
             "elbow_helper.infrastructure.discord.command_registry": (
                 "elbow_helper.features.clan_transfers",
                 "elbow_helper.features.cwl",
-                "elbow_helper.features.records",
                 "elbow_helper.features.rosters",
             ),
         }

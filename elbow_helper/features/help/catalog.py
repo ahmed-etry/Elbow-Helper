@@ -600,8 +600,8 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
         path="/cwl roster",
         summary="Build a workbook to help assign CWL signups to clans.",
         details=(
-            "Builds a roster-planning workbook from current signups, linked Clash accounts, completed CWL performance, "
-            "and leadership records. Choose how many completed seasons to include."
+            "Builds a roster-planning workbook from current signups, linked Clash accounts, "
+            "and completed CWL performance. Choose how many completed seasons to include."
         ),
         category=CAT_CWL,
         visible_to=LEAD_PLUS,
@@ -626,49 +626,6 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
         category=CAT_CWL,
         visible_to=CORE,
         examples=("/cwl register clan:Hellbow thread_id:1234567890",),
-    ),
-    HelpEntry(
-        path="/record add",
-        summary="Document an incident involving a member.",
-        details=(
-            "Creates a leadership record for the selected member, including the incident category and type, "
-            "what happened, and any context leadership should know."
-        ),
-        category=CAT_REPORTS,
-        visible_to=LEAD_PLUS,
-        examples=(
-            "/record add user:@User category:CWL type:Missed Attack note:Missed the final attack after confirming availability",
-        ),
-    ),
-    HelpEntry(
-        path="/record export",
-        summary="Download all leadership records or one member's records.",
-        details=(
-            "Creates a downloadable spreadsheet containing every leadership record, "
-            "or only the selected member's records."
-        ),
-        category=CAT_REPORTS,
-        visible_to=LEAD_PLUS,
-        examples=("/record export", "/record export user:@User"),
-    ),
-    HelpEntry(
-        path="/record edit",
-        summary="Update the category, type, or details of a member's record.",
-        details=(
-            "Opens controls for choosing one of the member's recent records and changing "
-            "its category, incident type, or details."
-        ),
-        category=CAT_REPORTS,
-        visible_to=LEAD_PLUS,
-        examples=("/record edit user:@User",),
-    ),
-    HelpEntry(
-        path="/record remove",
-        summary="Delete one of a member's incident records.",
-        details="Removes the selected incident record from the member's leadership records.",
-        category=CAT_REPORTS,
-        visible_to=LEAD_PLUS,
-        examples=("/record remove user:@User record:#12",),
     ),
     HelpEntry(
         path="/health player",

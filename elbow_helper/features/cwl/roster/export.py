@@ -17,8 +17,6 @@ from xml.etree import ElementTree
 
 import discord
 
-from elbow_helper.features.records.domain.types import category_label
-from elbow_helper.features.records.domain.types import incident_type_label
 from elbow_helper.infrastructure.exports import ExportColumn
 from elbow_helper.infrastructure.exports import ExportSheet
 from elbow_helper.infrastructure.exports import xlsx_column_name
@@ -33,16 +31,8 @@ UTC = dt_timezone.utc
 ROSTER_TAB_COLORS = {
     "Roster Planner": "3B5B92",
     "Season History": "3E83AE",
-    "Leadership Records": "64748B",
     "Guide": "64748B",
 }
-
-
-def _format_date(value: Any) -> str:
-    try:
-        return datetime.fromtimestamp(int(value), tz=UTC).strftime("%Y-%m-%d")
-    except (TypeError, ValueError, OSError):
-        return "-"
 
 
 def _rounded(value: float | None) -> float | str:
@@ -56,8 +46,6 @@ class CwlRosterExportMixin:
         candidates: Sequence[dict[str, Any]],
         signed_tags: set[str],
         season_metrics: Sequence[AssSeasonMetric],
-        records: Sequence[dict[str, Any]],
-        links_by_user: dict[int, list[dict[str, Any]]],
         seasons: Sequence[dict[str, Any]],
         profiles: dict[str, Any],
         latest_leagues: dict[str, str],
@@ -78,7 +66,6 @@ class CwlRosterExportMixin:
             ExportColumn("Same-Clan ASS", 95, "right"),
             ExportColumn("Same-Clan Rank", 95, "center"),
             ExportColumn("Same-Clan Sample", 125),
-            ExportColumn("CWL Records", 90, "right"),
             ExportColumn("Assigned Clan", 110),
         )
         planner_rows: list[tuple[Any, ...]] = []
@@ -112,7 +99,6 @@ class CwlRosterExportMixin:
                         if mega
                         else "-"
                     ),
-                    int(row.get("cwl_records") or 0),
                     "",
                 )
             )
@@ -168,44 +154,6 @@ class CwlRosterExportMixin:
                     _rounded(row.difficulty_adjustment),
                 )
             )
-
-        context_columns = (
-            ExportColumn("Recorded Date", 105),
-            ExportColumn("Discord Member", 150),
-            ExportColumn("Linked Accounts", 250),
-            ExportColumn("Category", 105),
-            ExportColumn("Type", 190),
-            ExportColumn("Details", 420),
-            ExportColumn("Recorded By", 150),
-            ExportColumn("Last Updated", 105),
-        )
-        context_rows: list[tuple[Any, ...]] = []
-        for record in records:
-            member_id = int(record.get("member_id") or 0)
-            account_labels: list[str] = []
-            for link in links_by_user.get(member_id, []):
-                name = str(
-                    link.get("player_name_last_seen")
-                    or link.get("player_tag")
-                    or "Unknown"
-                )
-                account_labels.append(name)
-            context_rows.append(
-                (
-                    _format_date(record.get("created_ts")),
-                    str(record.get("member_display") or member_id),
-                    "\n".join(account_labels) if account_labels else "-",
-                    category_label(str(record.get("category_key") or "")),
-                    incident_type_label(
-                        str(record.get("incident_type_key") or "")
-                    ),
-                    str(record.get("note") or ""),
-                    str(record.get("recorder_display") or "-"),
-                    _format_date(record.get("updated_ts")),
-                )
-            )
-        if not context_rows:
-            context_rows.append(("-", "No active records", "-", "-", "-", "-", "-", "-"))
 
         profile_lines = []
         for clan_code in CLAN_ORDER:
@@ -317,12 +265,6 @@ class CwlRosterExportMixin:
                 columns=history_columns,
                 rows=tuple(history_rows),
                 tab_color=ROSTER_TAB_COLORS["Season History"],
-            ),
-            ExportSheet(
-                title="Leadership Records",
-                columns=context_columns,
-                rows=tuple(context_rows),
-                tab_color=ROSTER_TAB_COLORS["Leadership Records"],
             ),
             ExportSheet(
                 title="Guide",

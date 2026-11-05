@@ -37,7 +37,6 @@ if TYPE_CHECKING:
     from elbow_helper.features.examination.queries import ExaminationQueries
     from elbow_helper.features.event_stats.queries import EventStatsQueries
     from elbow_helper.features.member_lifecycle.queries import MemberLifecycleQueries
-    from elbow_helper.features.records.queries import LeadershipRecordQueries
     from elbow_helper.features.role_connections.queries import RoleConnectionQueries
     from elbow_helper.features.cwl.queries import CwlQueries
     from elbow_helper.features.rosters.services.queries import RosterQueries
@@ -232,7 +231,6 @@ class AgentRequestContext:
     support_queries: SupportTicketQueries | None = None
     recruitment_queries: RecruitmentQueries | None = None
     examination_queries: ExaminationQueries | None = None
-    record_queries: LeadershipRecordQueries | None = None
     achievement_queries: AchievementQueries | None = None
     event_queries: EventStatsQueries | None = None
     member_lifecycle_queries: MemberLifecycleQueries | None = None

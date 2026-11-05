@@ -29,7 +29,7 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
             "wars", "hibernation", "clan_transfers", "account_links",
             "clan_health", "rosters", "cwl", "support_tickets", "recruitment",
             "examination",
-            "records", "achievements",
+            "achievements",
             "event_stats", "member_lifecycle", "clan_reporting",
             "role_connections",
         ):
@@ -40,7 +40,7 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
             "AccountLinks", "ClanHealth", "WarManager", "Rosters",
             "CwlManagement", "ClanTransfers",
             "Hibernate", "SupportActions", "Recruitment", "Examination",
-            "Records", "Achievements",
+            "Achievements",
             "EventStatsCog",
             "MemberLifecycle",
             "ClanReporting",
@@ -57,7 +57,6 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
                     "SupportActions": SimpleNamespace(queries=object()),
                     "Recruitment": SimpleNamespace(queries=object()),
                     "Examination": SimpleNamespace(queries=object()),
-                    "Records": SimpleNamespace(queries=object()),
                     "Achievements": SimpleNamespace(queries=object()),
                     "EventStatsCog": SimpleNamespace(queries=object()),
                     "MemberLifecycle": SimpleNamespace(queries=object()),
@@ -76,7 +75,6 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
         support_queries = object()
         recruitment_queries = object()
         examination_queries = object()
-        record_queries = object()
         achievement_queries = object()
         event_queries = object()
         member_lifecycle_queries = object()
@@ -91,7 +89,6 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
         dependencies["SupportActions"] = SimpleNamespace(queries=support_queries)
         dependencies["Recruitment"] = SimpleNamespace(queries=recruitment_queries)
         dependencies["Examination"] = SimpleNamespace(queries=examination_queries)
-        dependencies["Records"] = SimpleNamespace(queries=record_queries)
         dependencies["Achievements"] = SimpleNamespace(
             queries=achievement_queries,
         )
@@ -139,7 +136,8 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(factory.call_args.kwargs["support_queries"], support_queries)
         self.assertIs(factory.call_args.kwargs["recruitment_queries"], recruitment_queries)
         self.assertIs(factory.call_args.kwargs["examination_queries"], examination_queries)
-        self.assertIs(factory.call_args.kwargs["record_queries"], record_queries)
+        self.assertNotIn("record_queries", factory.call_args.kwargs)
+        self.assertNotIn("Records", dependencies)
         self.assertIs(
             factory.call_args.kwargs["achievement_queries"],
             achievement_queries,
@@ -170,7 +168,6 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(dependencies["SupportActions"], factory.call_args.kwargs.values())
         self.assertNotIn(dependencies["Recruitment"], factory.call_args.kwargs.values())
         self.assertNotIn(dependencies["Examination"], factory.call_args.kwargs.values())
-        self.assertNotIn(dependencies["Records"], factory.call_args.kwargs.values())
         self.assertNotIn(
             dependencies["Achievements"], factory.call_args.kwargs.values(),
         )

@@ -483,10 +483,6 @@ class CandidateTests(unittest.IsolatedAsyncioTestCase):
             CwlRosterAnalysisMixin,
             "_load_directory_players",
             return_value={},
-        ), patch.object(
-            CwlRosterAnalysisMixin,
-            "_load_active_roster_records",
-            return_value=[],
         ):
             result = await _AnalysisHarness()._build_roster_candidates(
                 guild=_Guild([member]),
@@ -494,6 +490,9 @@ class CandidateTests(unittest.IsolatedAsyncioTestCase):
                 mega_metrics=[],
             )
 
+        self.assertNotIn("records", result)
+        self.assertNotIn("links_by_user", result)
+        self.assertTrue(all("cwl_records" not in row for row in result["candidates"]))
         self.assertEqual(result["signed_member_count"], 1)
         self.assertEqual(result["signed_account_count"], 2)
         self.assertEqual(
@@ -527,7 +526,6 @@ class WorkbookTests(unittest.TestCase):
             }],
             signed_tags={top.player_tag},
             season_metrics=metrics,
-            records=[], links_by_user={},
             seasons=[{"key": "2026-06"}],
             profiles={"BE4": ASS_PROFILE_HIGH},
             latest_leagues={"BE4": "Master League I"},
@@ -619,13 +617,10 @@ class WorkbookTests(unittest.TestCase):
                     "current_clan": "BE4",
                     "latest": signed_metric,
                     "mega": mega,
-                    "cwl_records": 1,
                 }
             ],
             signed_tags={"#A"},
             season_metrics=[signed_metric, non_signup_metric],
-            records=[],
-            links_by_user={},
             seasons=[{"key": "2026-06"}],
             profiles={"BES": ASS_PROFILE_HIGH},
             latest_leagues={"BES": "Master League I"},
@@ -634,9 +629,15 @@ class WorkbookTests(unittest.TestCase):
 
         self.assertEqual(
             [sheet.title for sheet in sheets],
-            ["Roster Planner", "Season History", "Leadership Records", "Guide"],
+            ["Roster Planner", "Season History", "Guide"],
         )
         planner = next(sheet for sheet in sheets if sheet.title == "Roster Planner")
+        self.assertEqual(
+            [column.name for column in planner.columns[-3:]],
+            ["Same-Clan Rank", "Same-Clan Sample", "Assigned Clan"],
+        )
+        self.assertNotIn("CWL Records", [column.name for column in planner.columns])
+        self.assertEqual(len(planner.rows[0]), len(planner.columns))
         self.assertEqual(
             [column.name for column in planner.columns[:4]],
             ["Discord Member", "Account", "Player Tag", "TH"],

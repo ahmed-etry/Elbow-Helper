@@ -516,30 +516,6 @@
       ],
       "reason": "One interaction response or cancellation; preserve the interaction deadline."
     },
-    "elbow_helper/features/records/commands/records.py:RecordCommandMixin._send_record_export": {
-      "operations": [
-        "message.edit"
-      ],
-      "reason": "One export/report followup, attaching its delivery controls or failure result."
-    },
-    "elbow_helper/features/records/ui/edit_record.py:CancelButton.callback": {
-      "operations": [
-        "interaction.response.edit_message"
-      ],
-      "reason": "One interaction response or cancellation; preserve the interaction deadline."
-    },
-    "elbow_helper/features/records/ui/edit_record.py:RecordEditView.refresh": {
-      "operations": [
-        "interaction.response.edit_message"
-      ],
-      "reason": "One interaction response or cancellation; preserve the interaction deadline."
-    },
-    "elbow_helper/features/records/ui/edit_record.py:SaveButton.callback": {
-      "operations": [
-        "interaction.response.edit_message"
-      ],
-      "reason": "One interaction response or cancellation; preserve the interaction deadline."
-    },
     "elbow_helper/features/recruitment/commands.py:RecruitmentCommandMixin.perform_accept": {
       "operations": [
         "user.edit"
