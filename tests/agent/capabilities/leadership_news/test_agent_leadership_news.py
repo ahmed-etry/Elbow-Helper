@@ -44,7 +44,7 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         )
         context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
-            guild=SimpleNamespace(me=object()), member=object(), state=AgentTurnState(),
+            guild=SimpleNamespace(me=object()), member=SimpleNamespace(id=42), state=AgentTurnState(),
         )
         with (patch("elbow_helper.agent.capabilities.leadership_news.actions.require_evidence_access",
                     new_callable=AsyncMock),
@@ -75,6 +75,9 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("posted-url", outcome.text)
         workflow.publish_public_news.assert_awaited_once()
         self.assertEqual(workflow.publish_public_news.await_args.kwargs["prompts"], (prompt,))
+        self.assertEqual(workflow.publish_public_news.await_args.kwargs["actor_kind"], "agent")
+        self.assertEqual(workflow.publish_public_news.await_args.kwargs["actor_discord_id"], 42)
+        self.assertEqual(workflow.publish_public_news.await_args.kwargs["via"], "agent")
         source.fetch_message.side_effect = RuntimeError("Synthetic source failure")
         with (patch("elbow_helper.agent.capabilities.leadership_news.actions.check_view_access"),
               patch("elbow_helper.agent.capabilities.leadership_news.actions.check_post_access"),

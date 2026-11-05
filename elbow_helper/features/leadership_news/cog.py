@@ -10,9 +10,10 @@ import discord
 from discord.ext import commands
 
 from elbow_helper.configuration.channels import LEAD_NEWS, PUBLIC_NEWS
-from elbow_helper.infrastructure.persistence import read_json, write_json_atomic
+from elbow_helper.data.events import finish_on_cancel, now_us
 
 from .views import ForwardView
+from . import state
 
 LOGGER = logging.getLogger(__name__)
 STATE_FILE = Path("data/leadership_news/state.json")
@@ -23,19 +24,26 @@ class LeadNews(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        try:
-            self._state = read_json(STATE_FILE)
-        except FileNotFoundError:
-            self._state = {"published": {}, "prompts": {}}
+        self.events = bot.workflow_events
+        self._state = {"published": {}, "prompts": {}}
+        self._state_lock = asyncio.Lock()
+        self._loaded = False
+        self._uncommitted_publications = {}
         self._publish_locks: dict[int, asyncio.Lock] = {}
         self._cleanup_tasks: dict[int, asyncio.Task] = {}
         self._prompt_views: dict[int, ForwardView] = {}
 
     async def cog_load(self) -> None:
+        if self._loaded:
+            return
+        self._state = await self.events.call(state.import_state, STATE_FILE)
+        self._loaded = True
+        self.events.register_member_deletion(state.WORKFLOW, self._refresh_after_deletion)
         for prompt_id in self._state["prompts"]:
             self._register_prompt(int(prompt_id))
 
     def cog_unload(self):
+        self.events.unregister_member_deletion(state.WORKFLOW)
         for task in self._cleanup_tasks.values():
             if not task.done():
                 task.cancel()
@@ -53,9 +61,29 @@ class LeadNews(commands.Cog):
         task = asyncio.create_task(self._cleanup_prompt(prompt_id))
         self._cleanup_tasks[prompt_id] = task
 
-    def _forget_prompt(self, prompt_id: int) -> None:
-        if self._state["prompts"].pop(str(prompt_id), None) is not None:
-            write_json_atomic(STATE_FILE, self._state)
+    async def _change(self, edit) -> None:
+        async with self._state_lock:
+            async def complete():
+                self._state = await self.events.call(state.change, edit)
+            await finish_on_cancel(complete())
+
+    async def _refresh_after_deletion(self, discord_id=None) -> None:
+        async with self._state_lock:
+            self._state = await self.events.call(state.snapshot)
+            if discord_id is not None:
+                self._uncommitted_publications = {
+                    key: pending for key, pending in self._uncommitted_publications.items()
+                    if getattr(pending["source"].author, "id", None) != discord_id
+                    and pending["actor_discord_id"] != discord_id}
+            for prompt_id in tuple(self._prompt_views):
+                if str(prompt_id) not in self._state["prompts"]:
+                    self._stop_prompt(prompt_id)
+
+    async def _forget_prompt(self, prompt_id: int) -> None:
+        await self._change(lambda connection, pending: pending["prompts"].pop(str(prompt_id), None))
+        self._stop_prompt(prompt_id)
+
+    def _stop_prompt(self, prompt_id: int) -> None:
         view = self._prompt_views.pop(prompt_id, None)
         if view is not None:
             view.stop()
@@ -79,7 +107,7 @@ class LeadNews(commands.Cog):
                 LOGGER.debug("Failed auto-deleting prompt %s", prompt_id)
                 await asyncio.sleep(60)
                 continue
-            self._forget_prompt(prompt_id)
+            await self._forget_prompt(prompt_id)
 
     def public_news_prompt_source(self, prompt: discord.Message) -> int | None:
         """Identify one live publication prompt from this feature."""
@@ -101,7 +129,7 @@ class LeadNews(commands.Cog):
             pass
         except discord.HTTPException:
             return False
-        self._forget_prompt(prompt.id)
+        await self._forget_prompt(prompt.id)
         return True
 
     async def find_public_news_prompts(self, source_message: discord.Message) -> tuple[discord.Message, ...]:
@@ -122,37 +150,48 @@ class LeadNews(commands.Cog):
     async def publish_public_news(self, source_message: discord.Message,
                                   target_channel: discord.TextChannel,
                                   *, prepared: dict[str, object] | None = None,
-                                  prompts: tuple[discord.Message, ...] = ()) -> discord.Message | discord.PartialMessage:
+                                  prompts: tuple[discord.Message, ...] = (),
+                                  actor_kind: str = "automatic", actor_discord_id: int | None = None,
+                                  via: str = "schedule") -> discord.Message | discord.PartialMessage:
         """Forward one update for its panel button and the agent."""
         lock = self._publish_locks.setdefault(source_message.id, asyncio.Lock())
         async with lock:
+            await self._refresh_after_deletion()
             published = self._state["published"].get(str(source_message.id))
             if published is not None:
+                self._uncommitted_publications.pop(source_message.id, None)
                 channel = self.bot.get_partial_messageable(
                     published["channel_id"], guild_id=published["guild_id"],
                 )
                 sent = channel.get_partial_message(published["message_id"])
             else:
-                prepared = prepared or self.public_news_preview(source_message)
-                files = []
-                for attachment in prepared["attachments"]:
-                    try:
-                        files.append(await attachment.to_file())
-                    except discord.HTTPException:
-                        LOGGER.debug("Failed converting attachment %s", attachment.id)
-                sent = await target_channel.send(
-                    content=prepared["content"] or None,
-                    files=files or None,
-                    allowed_mentions=discord.AllowedMentions(
-                        everyone=False, roles=False, users=True,
-                    ),
-                )
-                self._state["published"][str(source_message.id)] = {
-                    "channel_id": target_channel.id, "message_id": sent.id,
-                    "guild_id": target_channel.guild.id,
-                }
+                pending = self._uncommitted_publications.get(source_message.id)
+                if pending is None:
+                    prepared = prepared or self.public_news_preview(source_message)
+                    files = []
+                    for attachment in prepared["attachments"]:
+                        try:
+                            files.append(await attachment.to_file())
+                        except discord.HTTPException:
+                            LOGGER.debug("Failed converting attachment %s", attachment.id)
+                    sent = await target_channel.send(
+                        content=prepared["content"] or None,
+                        files=files or None,
+                        allowed_mentions=discord.AllowedMentions(
+                            everyone=False, roles=False, users=True,
+                        ),
+                    )
+                    pending = {"source": source_message, "target": target_channel, "sent": sent,
+                               "occurred_at": now_us(),
+                               "actor_kind": actor_kind, "actor_discord_id": actor_discord_id, "via": via}
+                    self._uncommitted_publications[source_message.id] = pending
+                sent = pending["sent"]
+                try:
+                    await self._change(lambda connection, saved: state.published(connection, **pending))
+                finally:
+                    if str(source_message.id) in self._state["published"]:
+                        self._uncommitted_publications.pop(source_message.id, None)
             # Persist the receipt before any prompt cleanup can fail or be cancelled.
-            write_json_atomic(STATE_FILE, self._state)
             for prompt in prompts:
                 await self.dismiss_public_news_prompt(prompt)
             return sent
@@ -180,10 +219,12 @@ class LeadNews(commands.Cog):
             return
 
         view.prompt_message_id = prompt.id
-        self._state["prompts"][str(prompt.id)] = {
+        pending = {
             "source_message_id": message.id,
             "channel_id": prompt.channel.id,
             "expires_at": time.time() + 86400,
         }
-        write_json_atomic(STATE_FILE, self._state)
+        if getattr(message.author, "id", None) is not None:
+            pending["subject_discord_id"] = message.author.id
+        await self._change(lambda connection, saved: saved["prompts"].__setitem__(str(prompt.id), pending))
         self._register_prompt(prompt.id, view)

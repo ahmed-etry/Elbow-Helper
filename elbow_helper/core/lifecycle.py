@@ -249,6 +249,9 @@ class ElbowHelperBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         self._boot_started_at = time.perf_counter()
+        workflow_events = getattr(self, "workflow_events", None)
+        if workflow_events is not None:
+            await workflow_events.initialize()
         self.extension_report = await load_extensions(
             self,
             required=self.required_extensions,

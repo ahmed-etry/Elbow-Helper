@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
+import sqlite3
+import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -13,7 +16,9 @@ from discord.ext import commands
 from elbow_helper.configuration.channels import LEAD_NEWS, PUBLIC_NEWS
 from elbow_helper.configuration.roles import LEAD
 from elbow_helper.features.leadership_news.cog import LeadNews
-from elbow_helper.infrastructure.persistence import read_json, write_json_atomic
+from elbow_helper.infrastructure.persistence import write_json_atomic
+from elbow_helper.data.events import EventsStore
+from elbow_helper.features.leadership_news import state as news_state
 
 
 class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
@@ -27,6 +32,7 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
         state_patch.start()
         self.addCleanup(state_patch.stop)
         self.bot = commands.Bot(command_prefix="!", intents=discord.Intents.none())
+        self.bot.workflow_events = EventsStore(Path(self.directory.name) / "events.sqlite3")
         self.bot._connection.user = SimpleNamespace(id=900, bot=True)
         self.guild = SimpleNamespace(id=100)
         self.bot._connection._guilds[self.guild.id] = self.guild
@@ -54,13 +60,13 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
         self.source = SimpleNamespace(
             id=7, channel=self.lead_channel, guild=self.guild,
             content="A synthetic update", attachments=[],
-            author=SimpleNamespace(bot=False),
+            author=SimpleNamespace(id=41, bot=False),
             reply=AsyncMock(return_value=self.prompt),
         )
         self.lead_channel.fetch_message = AsyncMock(return_value=self.source)
         self.lead_channel.get_partial_message.return_value = self.prompt
         self.cogs = []
-        self.cog = self.new_cog()
+        self.cog = await self.new_cog()
         self.bot.get_cog = MagicMock(side_effect=lambda _: self.cogs[-1])
 
     async def asyncTearDown(self) -> None:
@@ -68,10 +74,14 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
             await self.stop_cog(cog)
         await self.bot.close()
 
-    def new_cog(self) -> LeadNews:
+    async def new_cog(self) -> LeadNews:
         cog = LeadNews(self.bot)
         self.cogs.append(cog)
+        await cog.cog_load()
         return cog
+
+    async def saved_state(self):
+        return await self.bot.workflow_events.call(news_state.snapshot)
 
     @staticmethod
     async def stop_cog(cog: LeadNews) -> None:
@@ -81,7 +91,7 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
 
     def interaction(self) -> SimpleNamespace:
         return SimpleNamespace(
-            user=SimpleNamespace(roles=[SimpleNamespace(id=next(iter(LEAD)))]),
+            user=SimpleNamespace(id=42, roles=[SimpleNamespace(id=next(iter(LEAD)))]),
             channel=self.lead_channel, client=self.bot, message=self.prompt,
             response=SimpleNamespace(send_message=AsyncMock()),
         )
@@ -116,8 +126,8 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.gather(first, second)
 
         self.target.send.assert_awaited_once()
-        self.assertEqual(read_json(self.state_file)["published"]["7"]["message_id"], 101)
-        self.assertEqual(read_json(self.state_file)["prompts"], {})
+        self.assertEqual((await self.saved_state())["published"]["7"]["message_id"], 101)
+        self.assertEqual((await self.saved_state())["prompts"], {})
         for interaction in interactions:
             interaction.response.send_message.assert_awaited_once_with(
                 f"Published to <#{PUBLIC_NEWS}>", ephemeral=True,
@@ -125,7 +135,7 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_published_source_remains_idempotent_after_restart(self) -> None:
         await self.cog.publish_public_news(self.source, self.target)
-        restarted = self.new_cog()
+        restarted = await self.new_cog()
 
         repeated = await restarted.publish_public_news(self.source, self.target)
 
@@ -145,7 +155,7 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
         await self.cog.publish_public_news(self.source, self.target)
 
         self.assertEqual(self.target.send.await_count, 2)
-        self.assertEqual(read_json(self.state_file)["published"]["7"]["message_id"], 101)
+        self.assertEqual((await self.saved_state())["published"]["7"]["message_id"], 101)
 
     async def test_different_sources_can_publish_concurrently(self) -> None:
         started = asyncio.Event()
@@ -160,39 +170,40 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
         self.target.send.side_effect = send
         first = asyncio.create_task(self.cog.publish_public_news(self.source, self.target))
         await asyncio.wait_for(started.wait(), timeout=1)
-        other = SimpleNamespace(id=9, content="Another synthetic update", attachments=[])
+        other = SimpleNamespace(id=9, content="Another synthetic update", attachments=[],
+                                author=SimpleNamespace(id=41), channel=self.lead_channel)
         try:
             await asyncio.wait_for(self.cog.publish_public_news(other, self.target), timeout=1)
         finally:
             release.set()
             await first
 
-        self.assertEqual(set(read_json(self.state_file)["published"]), {"7", "9"})
+        self.assertEqual(set((await self.saved_state())["published"]), {"7", "9"})
 
     async def test_receipt_is_saved_before_prompt_cleanup_and_survives_its_failure(self) -> None:
         async def failed_cleanup():
-            self.assertEqual(read_json(self.state_file)["published"]["7"]["message_id"], 101)
+            self.assertEqual((await self.saved_state())["published"]["7"]["message_id"], 101)
             raise self.http_error(503)
 
         await self.cog.on_message(self.source)
         self.prompt.delete.side_effect = failed_cleanup
         await self.cog.publish_public_news(self.source, self.target, prompts=(self.prompt,))
-        self.assertIn("8", read_json(self.state_file)["prompts"])
+        self.assertIn("8", (await self.saved_state())["prompts"])
         await self.stop_cog(self.cog)
-        restarted = self.new_cog()
+        restarted = await self.new_cog()
         self.prompt.delete.side_effect = None
 
         await restarted.publish_public_news(self.source, self.target, prompts=(self.prompt,))
 
         self.target.send.assert_awaited_once()
-        self.assertEqual(read_json(self.state_file)["prompts"], {})
+        self.assertEqual((await self.saved_state())["prompts"], {})
 
     async def test_cancelled_cleanup_does_not_lose_publication_receipt(self) -> None:
         self.prompt.delete.side_effect = asyncio.CancelledError
         with self.assertRaises(asyncio.CancelledError):
             await self.cog.publish_public_news(self.source, self.target, prompts=(self.prompt,))
 
-        restarted = self.new_cog()
+        restarted = await self.new_cog()
         await restarted.publish_public_news(self.source, self.target)
 
         self.target.send.assert_awaited_once()
@@ -200,13 +211,13 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
     async def test_prompt_view_and_original_expiry_are_restored(self) -> None:
         with patch("elbow_helper.features.leadership_news.cog.time.time", return_value=1000):
             await self.cog.on_message(self.source)
-        stored = read_json(self.state_file)
-        self.assertEqual(stored["prompts"]["8"], {
-            "source_message_id": 7, "channel_id": LEAD_NEWS, "expires_at": 87400,
-        })
-        self.assertIs(self.source.reply.await_args.kwargs["view"], self.cog._prompt_views[8])
-        await self.stop_cog(self.cog)
-        restarted = self.new_cog()
+            stored = (await self.saved_state())
+            self.assertEqual(stored["prompts"]["8"], {
+                "source_message_id": 7, "channel_id": LEAD_NEWS, "expires_at": 87400,
+                "subject_discord_id": 41,
+            })
+            self.assertIs(self.source.reply.await_args.kwargs["view"], self.cog._prompt_views[8])
+            await self.stop_cog(self.cog)
         sleeping = asyncio.Event()
         delays = []
 
@@ -219,7 +230,7 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
             patch("elbow_helper.features.leadership_news.cog.time.time", return_value=82000),
             patch("elbow_helper.features.leadership_news.cog.asyncio.sleep", side_effect=sleep),
         ):
-            await restarted.cog_load()
+            restarted = await self.new_cog()
             await asyncio.wait_for(sleeping.wait(), timeout=1)
             self.assertEqual(delays, [5400])
             view = restarted._prompt_views[8]
@@ -231,19 +242,19 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
             await view.publish_btn.callback(self.interaction())
 
         self.target.send.assert_awaited_once()
-        self.assertEqual(read_json(self.state_file)["prompts"], {})
+        self.assertEqual((await self.saved_state())["prompts"], {})
 
     async def test_expired_prompt_is_cleaned_up_after_restart(self) -> None:
         with patch("elbow_helper.features.leadership_news.cog.time.time", return_value=0):
             await self.cog.on_message(self.source)
         await self.stop_cog(self.cog)
-        restarted = self.new_cog()
+        restarted = await self.new_cog()
 
         await restarted.cog_load()
         await asyncio.wait_for(asyncio.gather(*restarted._cleanup_tasks.values()), timeout=1)
 
         self.prompt.delete.assert_awaited_once()
-        self.assertEqual(read_json(self.state_file)["prompts"], {})
+        self.assertEqual((await self.saved_state())["prompts"], {})
         self.assertFalse(restarted._prompt_views)
         self.target.send.assert_not_awaited()
 
@@ -251,7 +262,7 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.features.leadership_news.cog.time.time", return_value=0):
             await self.cog.on_message(self.source)
         await self.stop_cog(self.cog)
-        restarted = self.new_cog()
+        restarted = await self.new_cog()
         self.prompt.delete.side_effect = [self.http_error(503), None]
 
         with patch("elbow_helper.features.leadership_news.cog.asyncio.sleep", new_callable=AsyncMock) as sleep:
@@ -260,7 +271,7 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.prompt.delete.await_count, 2)
         self.assertEqual(sleep.await_args_list[1].args, (60,))
-        self.assertEqual(read_json(self.state_file)["prompts"], {})
+        self.assertEqual((await self.saved_state())["prompts"], {})
 
     async def test_dismissed_or_missing_prompts_are_not_restored(self) -> None:
         for missing in (False, True):
@@ -270,10 +281,10 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertTrue(await self.cog.dismiss_public_news_prompt(self.prompt))
 
-                restarted = self.new_cog()
+                restarted = await self.new_cog()
                 await restarted.cog_load()
                 self.assertFalse(restarted._prompt_views)
-                self.assertEqual(read_json(self.state_file)["prompts"], {})
+                self.assertEqual((await self.saved_state())["prompts"], {})
 
     async def test_unload_cancels_cleanup_and_unregisters_view_without_losing_prompt(self) -> None:
         await self.cog.on_message(self.source)
@@ -284,13 +295,14 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(task.cancelled())
         self.assertNotIn(view, self.bot.persistent_views)
-        self.assertIn("8", read_json(self.state_file)["prompts"])
+        self.assertIn("8", (await self.saved_state())["prompts"])
 
     async def test_corrupt_state_does_not_silently_allow_duplicate_publication(self) -> None:
         self.state_file.write_text("{", encoding="utf-8")
+        self.bot.workflow_events = EventsStore(Path(self.directory.name) / "corrupt-import.sqlite3")
 
         with self.assertRaises(ValueError):
-            self.new_cog()
+            await self.new_cog()
 
         self.target.send.assert_not_awaited()
 
@@ -300,13 +312,88 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
                 "8": {"source_message_id": 7, "channel_id": LEAD_NEWS, "expires_at": 0},
             },
         })
-        restarted = self.new_cog()
+        self.bot.workflow_events = EventsStore(Path(self.directory.name) / "expired-import.sqlite3")
+        restarted = await self.new_cog()
         self.prompt.delete.side_effect = self.http_error(404)
 
         await restarted.cog_load()
         await asyncio.wait_for(asyncio.gather(*restarted._cleanup_tasks.values()), timeout=1)
 
-        self.assertEqual(read_json(self.state_file)["prompts"], {})
+        self.assertEqual((await self.saved_state())["prompts"], {})
+
+    async def test_imports_open_prompts_once_without_backfilling_old_receipts(self):
+        old = {"published": {"7": {"channel_id": PUBLIC_NEWS, "message_id": 101, "guild_id": 100}},
+               "prompts": {"8": {"source_message_id": 7, "channel_id": LEAD_NEWS, "expires_at": 4000000000}}}
+        write_json_atomic(self.state_file, old)
+        original = self.state_file.read_bytes()
+        self.bot.workflow_events = EventsStore(Path(self.directory.name) / "import.sqlite3")
+        restarted = await self.new_cog()
+        self.assertTrue(restarted._state["prompts"]["8"]["imported"])
+        self.assertEqual(await self.bot.workflow_events.read(), [])
+        await restarted.publish_public_news(self.source, self.target)
+        self.target.send.assert_not_awaited()
+        await restarted.dismiss_public_news_prompt(self.prompt)
+        again = await self.new_cog()
+        self.assertEqual(again._state["prompts"], {})
+        self.assertEqual(self.state_file.read_bytes(), original)
+
+    async def test_failed_import_leaves_no_marker_or_partial_state(self):
+        self.bot.workflow_events = EventsStore(Path(self.directory.name) / "failed-import.sqlite3")
+        with patch.object(news_state, "save_state", side_effect=sqlite3.OperationalError("failed")):
+            with self.assertRaises(sqlite3.OperationalError):
+                await self.new_cog()
+        from elbow_helper.data.events import load_state
+        self.assertIsNone(await self.bot.workflow_events.call(load_state, "leadership_news"))
+        restarted = await self.new_cog()
+        self.assertEqual(restarted._state, {"published": {}, "prompts": {}})
+
+    async def test_failed_write_after_receipt_insert_rolls_back_state_and_event(self):
+        await self.cog.on_message(self.source)
+        before = deepcopy(await self.saved_state())
+        save = news_state.save_state
+        def fail_after_save(*args):
+            save(*args)
+            raise sqlite3.OperationalError("failed after state and event")
+        with patch.object(news_state, "save_state", side_effect=fail_after_save):
+            with self.assertRaises(sqlite3.OperationalError):
+                await self.cog.publish_public_news(self.source, self.target)
+        self.assertEqual(await self.saved_state(), before)
+        self.assertEqual(self.cog._state, before)
+        self.assertEqual(await self.bot.workflow_events.read(), [])
+        await self.cog.publish_public_news(self.source, self.target)
+        self.target.send.assert_awaited_once()
+        self.assertEqual(len(await self.bot.workflow_events.read()), 1)
+
+    async def test_cancel_during_save_finishes_receipt_before_propagating(self):
+        started, release = threading.Event(), threading.Event()
+        original = news_state.published
+        def slow(*args, **kwargs):
+            original(*args, **kwargs)
+            started.set()
+            release.wait(3)
+        with patch.object(news_state, "published", side_effect=slow):
+            task = asyncio.create_task(self.cog.publish_public_news(self.source, self.target))
+            try:
+                while not started.is_set():
+                    await asyncio.sleep(0.001)
+                task.cancel()
+                await asyncio.sleep(0)
+                task.cancel()
+            finally:
+                release.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+        await self.cog.publish_public_news(self.source, self.target)
+        self.target.send.assert_awaited_once()
+        self.assertEqual(len(await self.bot.workflow_events.read()), 1)
+
+    async def test_member_deletion_refreshes_prompts_and_cannot_restore_them(self):
+        await self.cog.on_message(self.source)
+        await self.cog.publish_public_news(self.source, self.target)
+        await self.bot.workflow_events.delete_member(41)
+        self.assertEqual(self.cog._state, {"published": {}, "prompts": {}})
+        self.assertFalse(self.cog._prompt_views)
+        self.assertEqual(await self.saved_state(), self.cog._state)
 
 
 if __name__ == "__main__":
