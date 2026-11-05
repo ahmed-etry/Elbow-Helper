@@ -13,6 +13,7 @@ from unittest.mock import patch
 import discord
 
 from tests.data.link_fixtures import attach_links
+from tests.features.profile_source import profile_demand
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.recruitment import commands
 from elbow_helper.features.recruitment import trials
@@ -150,7 +151,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                 owner, interaction, user, target_channel, *_ = self._flow()
                 links = object.__new__(AccountLinks)
                 tags = ["#P0Y", "#LQG", "#2PP", "#2PQ", "#2PR"]
-                links.clash_client = SimpleNamespace(
+                links.profiles = profile_demand(SimpleNamespace(
                     configured=True,
                     get=AsyncMock(side_effect=[
                         ClashResponse(404, {"reason": "notFound"}, {}, 1, 0),
@@ -159,7 +160,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                         ClashResponse(429, {"reason": "requestThrottled"}, {}, 3, 0),
                         ClashResponse(200, {"name": "Alpha"}, {}, 1, 0),
                     ]),
-                )
+                ))
                 links.refresh_linked_boards = AsyncMock()
                 owner.account_links = links
 
@@ -198,7 +199,8 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_accept_without_clash_setup_still_saves_the_tag(self) -> None:
         owner, interaction, user, target_channel, *_ = self._flow()
         links = object.__new__(AccountLinks)
-        links.clash_client = SimpleNamespace(configured=False, get=AsyncMock())
+        client = SimpleNamespace(configured=False, get=AsyncMock())
+        links.profiles = profile_demand(client)
         links.refresh_linked_boards = AsyncMock()
         owner.account_links = links
         with tempfile.TemporaryDirectory() as directory:
@@ -212,7 +214,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                         additional_notes=None, player_tags=["#P0Y"],
                     )
                 self.assertEqual((await asyncio.to_thread(links.get_link_by_tag, "#P0Y"))["player_name_last_seen"], "#P0Y")
-        links.clash_client.get.assert_not_awaited()
+        client.get.assert_not_awaited()
         interaction.followup.send.assert_not_awaited()
 
     async def test_acceptance_reports_each_failure_and_continues_other_steps(self) -> None:

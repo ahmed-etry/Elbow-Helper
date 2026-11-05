@@ -13,6 +13,7 @@ from elbow_helper.features.account_links.evidence import (
 from elbow_helper.agent.models import AgentTurnState
 from elbow_helper.agent.research.members import find_discord_roles
 from elbow_helper.infrastructure.clash.client import ClashResponse
+from tests.features.profile_source import profile_demand
 
 
 def _account(tag, **changes):
@@ -21,10 +22,13 @@ def _account(tag, **changes):
 
 
 def _links(rows, response=None):
+    # `client` is the test's Clash client; the feature only reaches it through the collectors' profiles.
+    client = SimpleNamespace(configured=True, get=AsyncMock(return_value=response))
     return SimpleNamespace(
         get_links_for_members=lambda ids: {value: rows.get(value, []) for value in ids},
         get_player_location=lambda tag: None,
-        clash_client=SimpleNamespace(get=AsyncMock(return_value=response)),
+        profiles=profile_demand(client),
+        client=client,
     )
 
 
@@ -65,7 +69,7 @@ class AgentReportTests(unittest.IsolatedAsyncioTestCase):
             "clan_role": None, "in_clan": None, "location_status": "unknown",
             "checked_at": None,
         }
-        context.account_links.clash_client.get.return_value = ClashResponse(
+        context.account_links.client.get.return_value = ClashResponse(
             503, None, {}, 1, 1,
         )
         refreshed = await refresh_account_locations(context.account_links, [account])
@@ -84,7 +88,7 @@ class AgentReportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_refresh_distinguishes_no_clan_from_failed_lookup(self):
         links = _links({1: [_account("#2PP"), _account("#2PQ")]})
-        links.clash_client.get.side_effect = [ClashResponse(200, {"tag": "#2PP", "name": "Unclanned"}, {}, 1, 1),
+        links.client.get.side_effect = [ClashResponse(200, {"tag": "#2PP", "name": "Unclanned"}, {}, 1, 1),
                                              ClashResponse(503, None, {}, 1, 1)]
         result = await member_account_evidence(links, [1, 2], refresh=True)
         self.assertTrue(all("primary" not in row for row in result[1]))
@@ -105,7 +109,7 @@ class AgentReportTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.Event().wait()
             finally:
                 cancelled.append(True)
-        links.clash_client.get.side_effect = delayed
+        links.client.get.side_effect = delayed
         with patch("elbow_helper.features.account_links.evidence.LOCATION_REFRESH_SECONDS", 0.01):
             result = await member_account_evidence(links, [1], refresh=True)
         self.assertEqual(len(result[1]), 2)

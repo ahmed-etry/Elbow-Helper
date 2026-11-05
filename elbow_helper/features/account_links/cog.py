@@ -16,10 +16,9 @@ from elbow_helper.infrastructure.discord.interactions import deny
 from elbow_helper.infrastructure.discord.interactions import fail
 from elbow_helper.infrastructure.discord.interactions import warn
 
-from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.core.background import start_resilient_loop
-from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.data.collectors import ProfileDemand
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import CORE
@@ -46,9 +45,9 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
 
     account_group = app_commands.Group(name="account", description="Manage linked player accounts")
 
-    def __init__(self, bot: commands.Bot, clash_client: ClashClient):
+    def __init__(self, bot: commands.Bot, profiles: ProfileDemand):
         self.bot = bot
-        self.clash_client = clash_client
+        self.profiles = profiles
         self.link_service = getattr(bot, "link_service", None)
         self.membership_reads = getattr(bot, "membership_reads", None)
         self._board_refresher = None
@@ -236,23 +235,22 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
     async def lookup_players(self, player_tags: list[str]) -> list[dict[str, str]]:
         """Return linkable players, omitting only confirmed nonexistent tags."""
         out: list[dict[str, str]] = []
-        if not self.clash_client.configured:
+        if not self.profiles.configured:
             return [{"player_tag": tag, "player_name": tag} for tag in player_tags]
         for player_tag in player_tags:
-            path = f"/players/{encode_clash_tag(player_tag)}"
             player_name = player_tag
-            response = await self.clash_client.get(
-                path,
+            # Only the name and existence matter here, so any profile the collectors hold will do.
+            result = await self.profiles.player(
+                player_tag,
                 attempts=CLAN_FETCH_RETRIES,
                 timeout_seconds=COC_HTTP_TOTAL_TIMEOUT_SECONDS,
                 backoff_seconds=CLAN_FETCH_BACKOFF_SECONDS,
                 maximum_backoff_seconds=10.0,
             )
-            if response.status == 404:
+            if result.failure == "not_found":
                 continue
-            payload = response.payload_object
-            if response.ok and payload is not None:
-                player_name = str(payload.get("name") or player_tag)
+            if result.payload is not None:
+                player_name = str(result.payload.get("name") or player_tag)
             out.append({"player_tag": player_tag, "player_name": player_name})
         return out
 

@@ -1,32 +1,35 @@
 from typing import Any
 
-from elbow_helper.domain.player_tags import encode_clash_tag
-from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.data.collectors import ProfileDemand
 
 from .constants import LOGGER
 
 
-async def fetch_player(tag: str, clash_client: ClashClient) -> dict[str, Any] | None:
-    """Fetch a player profile from the Clash API."""
-    if not clash_client.configured:
+# A plan reads the account's current army, so it accepts only a profile from the last few minutes.
+PROFILE_MAX_AGE_SECONDS = 5 * 60
+
+
+async def fetch_player(tag: str, profiles: ProfileDemand) -> dict[str, Any] | None:
+    """Ask the collectors for a recent player profile, with the request details the plan checks."""
+    if not profiles.configured:
         return None
-    response = await clash_client.get(
-        f"/players/{encode_clash_tag(tag)}",
+    result = await profiles.player(
+        tag,
+        max_age=PROFILE_MAX_AGE_SECONDS,
         attempts=3,
         timeout_seconds=10,
         backoff_seconds=0.75,
     )
-    payload = response.payload_object
-    data = dict(payload) if payload is not None else {"_raw_response": str(response.payload)}
-    data["_http_status"] = response.status
-    data["_latency_ms"] = response.latency_ms
-    data["_attempts"] = response.attempts
-    if response.error is not None:
+    data = dict(result.payload) if result.payload is not None else {"_raw_response": str(result.payload)}
+    data["_http_status"] = result.status
+    data["_latency_ms"] = result.latency_ms
+    data["_attempts"] = result.attempts
+    if result.failure in {"network_error", "collector_error", "invalid_tag"}:
         LOGGER.info(
             "Player fetch failed for %s after %s attempt(s): %s",
             tag,
-            response.attempts,
-            response.error,
+            result.attempts,
+            result.failure,
         )
         data["_error"] = "network_error"
     return data

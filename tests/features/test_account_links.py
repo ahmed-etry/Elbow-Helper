@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from tests.data.link_fixtures import attach_links
+from tests.features.profile_source import profile_demand
 from elbow_helper.features.account_links.database import AccountLinksDbMixin
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.account_links.evidence import (
@@ -212,7 +213,7 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_add_rejects_404_and_saves_temporary_failures_and_named_players(self) -> None:
         links = object.__new__(AccountLinks)
         tags = ["#P0Y", "#LQG", "#2PP", "#2PQ", "#2PR"]
-        links.clash_client = SimpleNamespace(
+        client = SimpleNamespace(
             configured=True,
             get=AsyncMock(side_effect=[
                 ClashResponse(404, {"reason": "notFound"}, {}, 1, 0),
@@ -222,6 +223,7 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
                 ClashResponse(200, {"name": "Alpha"}, {}, 1, 0),
             ]),
         )
+        links.profiles = profile_demand(client)
         links._can_manage_accounts = MagicMock(return_value=True)
         links._try_refresh_linked_boards = AsyncMock()
         interaction = SimpleNamespace(
@@ -250,7 +252,7 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Linked #P0Y", message)
         self.assertIn("- Linked Alpha (`#2PR`) to <@42>", message)
         self.assertEqual(
-            [call.args[0] for call in links.clash_client.get.await_args_list],
+            [call.args[0] for call in client.get.await_args_list],
             [f"/players/%23{tag[1:]}" for tag in tags],
         )
 
@@ -258,10 +260,10 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
         for commit in (False, True):
             with self.subTest(commit=commit):
                 links = object.__new__(AccountLinks)
-                links.clash_client = SimpleNamespace(
+                links.profiles = profile_demand(SimpleNamespace(
                     configured=True,
                     get=AsyncMock(return_value=ClashResponse(404, None, {}, 1, 0)),
-                )
+                ))
                 links.get_links_for_user = MagicMock(return_value=[])
                 links.get_all_links = MagicMock(return_value={"#P0Y": {"discord_user_id": 99}})
                 links.upsert_links = AsyncMock()
@@ -280,7 +282,8 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_add_without_clash_setup_still_saves_the_tag(self) -> None:
         links = object.__new__(AccountLinks)
-        links.clash_client = SimpleNamespace(configured=False, get=AsyncMock())
+        client = SimpleNamespace(configured=False, get=AsyncMock())
+        links.profiles = profile_demand(client)
         links._try_refresh_linked_boards = AsyncMock()
         with tempfile.TemporaryDirectory() as directory:
             with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
@@ -291,7 +294,7 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual((await asyncio.to_thread(links.get_link_by_tag, "#P0Y"))["player_name_last_seen"], "#P0Y")
         self.assertEqual(result["invalid_tags"], [])
-        links.clash_client.get.assert_not_awaited()
+        client.get.assert_not_awaited()
 
     async def test_add_keeps_saved_result_when_board_refresh_fails(self) -> None:
         links = object.__new__(AccountLinks)
@@ -400,7 +403,7 @@ class ClanSnapshotTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_incomplete_clan_response_preserves_the_previous_snapshot(self) -> None:
         links = object.__new__(AccountLinks)
-        links.clash_client = SimpleNamespace(configured=True)
+        links.profiles = SimpleNamespace(configured=True)
         known_member = {
             "player_tag": "#KNOWN",
             "player_name": "Known",

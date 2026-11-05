@@ -1,4 +1,4 @@
-"""Clash API profile enrichment for native roster workflows."""
+"""Player profile enrichment for native roster workflows, through the collectors."""
 
 from __future__ import annotations
 
@@ -7,8 +7,7 @@ from dataclasses import replace
 import logging
 from typing import Any
 
-from elbow_helper.domain.player_tags import encode_clash_tag
-from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.data.collectors import ProfileDemand
 
 from elbow_helper.configuration.clans import CLANS
 
@@ -19,6 +18,8 @@ from ..models import RosterMember
 
 
 LOGGER = logging.getLogger(__name__)
+# Rosters stay as current as the shared client cache kept them: at most a minute old.
+PROFILE_MAX_AGE_SECONDS = 60
 CLAN_CODES_BY_TAG = {clan.tag: code for code, clan in CLANS.items()}
 HERO_INITIALS = {
     "Barbarian King": "BK",
@@ -61,7 +62,7 @@ def _account_from_payload(account: LinkedAccount, payload: dict[str, Any]) -> Li
 
 async def fetch_account_profiles(
     accounts: list[LinkedAccount],
-    clash_client: ClashClient,
+    player_profiles: ProfileDemand,
     *,
     fresh: bool = False,
 ) -> tuple[dict[str, LinkedAccount], set[str]]:
@@ -69,7 +70,7 @@ async def fetch_account_profiles(
     unique_accounts = {account.player_tag: account for account in accounts}
     if not unique_accounts:
         return {}, set()
-    if not clash_client.configured:
+    if not player_profiles.configured:
         return {}, set(unique_accounts)
 
     profiles: dict[str, LinkedAccount] = {}
@@ -78,22 +79,21 @@ async def fetch_account_profiles(
 
     async def load(account: LinkedAccount) -> None:
         async with semaphore:
-            response = await clash_client.get(
-                f"/players/{encode_clash_tag(account.player_tag)}",
+            result = await player_profiles.player(
+                account.player_tag,
+                max_age=0 if fresh else PROFILE_MAX_AGE_SECONDS,
                 attempts=1,
                 timeout_seconds=12,
-                fresh=fresh,
             )
-        payload = response.payload_object
-        if response.status != 200 or payload is None:
+        if result.payload is None:
             LOGGER.debug(
                 "Roster account enrichment failed for %s status=%s error=%s",
                 account.player_tag,
-                response.status,
-                response.error,
+                result.status,
+                result.failure,
             )
             return
-        profiles[account.player_tag] = _account_from_payload(account, payload)
+        profiles[account.player_tag] = _account_from_payload(account, result.payload)
         failed_tags.discard(account.player_tag)
 
     await asyncio.gather(*(load(account) for account in unique_accounts.values()))
@@ -102,7 +102,7 @@ async def fetch_account_profiles(
 
 async def enrich_accounts(
     accounts: list[LinkedAccount],
-    clash_client: ClashClient,
+    player_profiles: ProfileDemand,
     *,
     fresh: bool = False,
 ) -> list[LinkedAccount]:
@@ -110,7 +110,7 @@ async def enrich_accounts(
     if not accounts:
         return accounts
 
-    profiles, _ = await fetch_account_profiles(accounts, clash_client, fresh=fresh)
+    profiles, _ = await fetch_account_profiles(accounts, player_profiles, fresh=fresh)
     return [profiles.get(account.player_tag, account) for account in accounts]
 
 
@@ -120,10 +120,10 @@ class RosterProfileService:
     def __init__(
         self,
         repository: RosterRepository,
-        clash_client: ClashClient,
+        player_profiles: ProfileDemand,
     ):
         self._repository = repository
-        self._clash_client = clash_client
+        self._player_profiles = player_profiles
 
     async def refresh(
         self,
@@ -149,7 +149,7 @@ class RosterProfileService:
                 )
                 for member in members
             ],
-            self._clash_client,
+            self._player_profiles,
             fresh=True,
         )
         snapshots = {

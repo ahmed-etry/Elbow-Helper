@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.domain.player_tags import encode_clash_tag, normalize_player_tag
+from elbow_helper.domain.player_tags import normalize_player_tag
 
 
 LOCATION_CONCURRENCY = 4
@@ -238,12 +238,12 @@ async def _refresh_account_locations(
         for tag in tags:
             if normalize_player_tag(tag) is None:
                 continue
-            response = await account_links.clash_client.get(
-                f"/players/{encode_clash_tag(tag)}", attempts=1, timeout_seconds=5.0,
-                fresh=True,
+            # An explicit check: only a profile fetched now counts as the account's location.
+            result = await account_links.profiles.player(
+                tag, max_age=0, attempts=1, timeout_seconds=5.0,
             )
-            payload = response.payload_object
-            if not response.ok or not payload or normalize_player_tag(payload.get("tag")) != tag:
+            payload = result.payload
+            if not payload or normalize_player_tag(payload.get("tag")) != tag:
                 continue
             clan = payload.get("clan")
             if clan is not None and (not isinstance(clan, dict) or not clan.get("tag")):

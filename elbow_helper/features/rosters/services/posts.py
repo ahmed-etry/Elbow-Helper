@@ -14,7 +14,7 @@ import discord
 from discord.ext import commands
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.data.collectors import ProfileDemand
 from elbow_helper.infrastructure.discord.publishing import PublishResult
 
 from ..config import ROSTER_POST_BURY_AFTER_MESSAGES
@@ -56,14 +56,14 @@ class RosterPostService:
         self,
         bot: commands.Bot,
         repository: RosterRepository,
-        clash_client: ClashClient,
+        player_profiles: ProfileDemand,
         accounts: RosterAccountDirectory,
         view_owner: Any,
         emoji_provider: TownHallEmojiProvider | None = None,
     ):
         self._bot = bot
         self._repository = repository
-        self._clash_client = clash_client
+        self._player_profiles = player_profiles
         self._accounts = accounts
         self._view_owner = view_owner
         self._emojis = emoji_provider or TownHallEmojiProvider(bot)
@@ -176,7 +176,7 @@ class RosterPostService:
                     )
                     for member in missing_heroes
                 ],
-                self._clash_client,
+                self._player_profiles,
             )
             profile_map = {profile.player_tag: profile for profile in profiles}
             snapshots = {

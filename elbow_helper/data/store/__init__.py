@@ -27,6 +27,9 @@ def _queued(collector):
     if collector == "players":
         from . import player_state
         return player_state
+    if collector == "player_demand":
+        from . import demand_state
+        return demand_state
     if collector == "wars":
         from . import war_state
         return war_state

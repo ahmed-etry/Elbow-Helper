@@ -17,7 +17,7 @@ from elbow_helper.features.cwl.transfers import CwlTransferMixin
 class CwlTransferReminderCommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_feature_builds_and_posts_the_prepared_content(self):
         workflow = CwlTransferMixin()
-        workflow.clash_client = SimpleNamespace(configured=True)
+        workflow.profiles = SimpleNamespace(configured=True)
         workflow.transfer_state = {"reminder_messages": []}
         workflow._transfer_reminder_lock = asyncio.Lock()
         workflow._save_transfer_state = MagicMock()
