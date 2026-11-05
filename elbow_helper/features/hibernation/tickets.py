@@ -25,11 +25,7 @@ from .state import (
     get_fallback_info_message_id,
     get_fallback_thread_entry,
     remove_fallback_thread_entry,
-    set_fallback_info_message_id,
     set_fallback_thread_entry,
-    load_hibernation_state,
-    save_hibernation_member,
-    save_hibernation_state,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -154,7 +150,7 @@ class HibernationTicketMixin:
             LOGGER.warning("Fallback channel %s not found for info message", HIBERNATION_FALLBACK)
             return None
 
-        data = load_hibernation_state()
+        data = self.hibernation_state.snapshot()
         message_id = get_fallback_info_message_id(data)
         embed = self._build_fallback_info_embed()
         if isinstance(message_id, int):
@@ -162,11 +158,9 @@ class HibernationTicketMixin:
                 message = await fallback_channel.fetch_message(message_id)
                 if await self.bot.publishing.edit_message(message, embed=embed, view=None):
                     return message
-                set_fallback_info_message_id(data, None)
-                save_hibernation_state(data)
+                await self.hibernation_state.save_fallback_info(None)
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                set_fallback_info_message_id(data, None)
-                save_hibernation_state(data)
+                await self.hibernation_state.save_fallback_info(None)
 
         try:
             message = await fallback_channel.send(embed=embed)
@@ -174,8 +168,7 @@ class HibernationTicketMixin:
             LOGGER.warning("Failed posting fallback info message in channel %s", HIBERNATION_FALLBACK)
             return None
 
-        set_fallback_info_message_id(data, message.id)
-        save_hibernation_state(data)
+        await self.hibernation_state.save_fallback_info(message.id)
         return message
 
     async def _resolve_or_create_fallback_thread(
@@ -184,7 +177,7 @@ class HibernationTicketMixin:
     ) -> discord.Thread | None:
         guild = user.guild
         await self.ensure_fallback_info_message(guild)
-        data = load_hibernation_state()
+        data = self.hibernation_state.snapshot()
         existing = get_fallback_thread_entry(data, user.id)
         if existing is not None:
             thread_id = existing.get("thread_id")
@@ -234,8 +227,7 @@ class HibernationTicketMixin:
                         )
                         return None
                     return thread
-            remove_fallback_thread_entry(data, user.id)
-            save_hibernation_state(data)
+            await self.hibernation_state.save_fallback_thread(user.id, None)
 
         fallback_channel = guild.get_channel(HIBERNATION_FALLBACK)
         if not isinstance(fallback_channel, discord.TextChannel):
@@ -292,7 +284,7 @@ class HibernationTicketMixin:
                 "last_notice_message_id": None,
             },
         )
-        save_hibernation_state(data)
+        await self.hibernation_state.save_fallback_thread(user.id, get_fallback_thread_entry(data, user.id))
         return thread
 
     async def _post_hibernation_notice_in_fallback_thread(self, user: discord.Member) -> bool:
@@ -300,7 +292,7 @@ class HibernationTicketMixin:
         if thread is None:
             return False
 
-        data = load_hibernation_state()
+        data = self.hibernation_state.snapshot()
         entry = get_fallback_thread_entry(data, user.id)
         if entry is None:
             entry = {
@@ -335,7 +327,7 @@ class HibernationTicketMixin:
         entry["thread_id"] = thread.id
         entry["last_notice_message_id"] = notice_message.id
         set_fallback_thread_entry(data, user.id, entry)
-        save_hibernation_state(data)
+        await self.hibernation_state.save_fallback_thread(user.id, entry)
         return True
 
     async def _archive_fallback_thread_for_member(
@@ -344,7 +336,7 @@ class HibernationTicketMixin:
         *,
         reason: str,
     ) -> None:
-        data = load_hibernation_state()
+        data = self.hibernation_state.snapshot()
         entry = get_fallback_thread_entry(data, user_id)
         if entry is None:
             return
@@ -372,10 +364,9 @@ class HibernationTicketMixin:
         self,
         user_id: int,
     ) -> None:
-        data = load_hibernation_state()
+        data = self.hibernation_state.snapshot()
         entry = remove_fallback_thread_entry(data, user_id)
         if entry is None:
-            save_hibernation_state(data)
             return
 
         thread_id = entry.get("thread_id")
@@ -387,7 +378,7 @@ class HibernationTicketMixin:
                 except (discord.Forbidden, discord.HTTPException):
                     LOGGER.warning("Failed deleting fallback thread %s for user %s", thread_id, user_id)
 
-        save_hibernation_state(data)
+        await self.hibernation_state.save_fallback_thread(user_id, None)
 
     async def _resolve_ticket_owner_from_topic(
         self,
@@ -546,7 +537,7 @@ class HibernationTicketMixin:
                 except discord.NotFound:
                     for key in ("ticket_channel_id", "welcome_sent", "ticket_registered", "controls_sent"):
                         progress.pop(key, None)
-                    save_hibernation_member(target.id, hibernation_info)
+                    await self.hibernation_state.save_member(target.id, hibernation_info)
         if ticket_channel is None:
             ticket_channel = await guild.create_text_channel(
                 name=prepared["name"],
@@ -555,11 +546,11 @@ class HibernationTicketMixin:
                 topic=prepared["topic"],
             )
             progress["ticket_channel_id"] = ticket_channel.id
-            save_hibernation_member(target.id, hibernation_info)
+            await self.hibernation_state.save_member(target.id, hibernation_info)
         if not progress.get("welcome_sent"):
             await ticket_channel.send(prepared["welcome"])
             progress["welcome_sent"] = True
-            save_hibernation_member(target.id, hibernation_info)
+            await self.hibernation_state.save_member(target.id, hibernation_info)
 
         if not progress.get("ticket_registered"):
             await self.bot.get_cog("SupportActions").ticket_state.register(ticket_channel.id, {
@@ -569,14 +560,14 @@ class HibernationTicketMixin:
                 "source": "reactivation",
             }, actor_id=actor.id, via=progress.get("via", "command"))
             progress["ticket_registered"] = True
-            save_hibernation_member(target.id, hibernation_info)
+            await self.hibernation_state.save_member(target.id, hibernation_info)
 
         if not progress.get("controls_sent"):
             await ticket_channel.send(
                 embed=prepared["embed"], view=self._build_close_ticket_view(),
             )
             progress["controls_sent"] = True
-            save_hibernation_member(target.id, hibernation_info)
+            await self.hibernation_state.save_member(target.id, hibernation_info)
         return ticket_channel
 
     async def _close_reactivation_ticket(self, interaction: discord.Interaction) -> None:

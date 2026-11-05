@@ -5,6 +5,7 @@ from datetime import datetime
 
 import discord
 from discord import app_commands
+from elbow_helper.data.events import now_us
 from elbow_helper.infrastructure.discord.interactions import deny
 from elbow_helper.configuration.channels import HIBERNATION_FALLBACK, HIBERNATION_LOG
 
@@ -25,7 +26,7 @@ from .config import (
     RESTORE_ROLE_IDS,
     SNAPSHOT_ONLY_ROLE_IDS,
 )
-from .state import get_fallback_thread_entry, load_hibernation_state, save_hibernation_member
+from .state import get_fallback_thread_entry, hibernation_event
 
 LOGGER = logging.getLogger(__name__)
 
@@ -99,7 +100,7 @@ class HibernationCommandMixin:
         return self._build_hibernation_notice_message(user)
 
     def hibernation_member_state(self, member_id: int) -> dict[str, object] | None:
-        state = load_hibernation_state().get(str(member_id))
+        state = self.hibernation_state.snapshot().get(str(member_id))
         return dict(state) if isinstance(state, dict) else None
 
     def prepare_reactivation(self, *, guild: discord.Guild,
@@ -143,7 +144,7 @@ class HibernationCommandMixin:
         ticket = self.prepare_reactivation_ticket(
             guild, actor, target, info, projected_roles=projected_roles,
         )
-        fallback = get_fallback_thread_entry(load_hibernation_state(), target.id)
+        fallback = get_fallback_thread_entry(self.hibernation_state.snapshot(), target.id)
         return {"issue": None, "actor": actor, "target": target,
                 "guild": guild, "info": info,
                 "force_reactivate": force_reactivate,
@@ -160,11 +161,13 @@ class HibernationCommandMixin:
                 role = guild.get_role(role_id)
                 if role is None and operation == "to_add":
                     raise RuntimeError(f"Hibernation role {role_id} is unavailable")
-                if role is not None:
+                held = {held_role.id for held_role in member.roles}
+                if role is not None and ((operation == "to_remove" and role_id in held)
+                                         or (operation == "to_add" and role_id not in held)):
                     change = member.remove_roles if operation == "to_remove" else member.add_roles
                     await change(role, reason=reason)
                 progress[operation].pop(0)
-                save_hibernation_member(member.id, info)
+                await self.hibernation_state.save_member(member.id, info)
 
     @staticmethod
     def _hibernation_role_progress(plan):
@@ -172,6 +175,10 @@ class HibernationCommandMixin:
                 for key in ("to_remove", "to_add")}
 
     async def reactivate_member(self, plan: dict[str, object]) -> dict[str, object]:
+        async with self.hibernation_state.member_lock(plan["target"].id):
+            return await self._reactivate_member(plan)
+
+    async def _reactivate_member(self, plan: dict[str, object]) -> dict[str, object]:
         guild = plan["guild"]
         actor = plan["actor"]
         target = plan["target"]
@@ -179,8 +186,11 @@ class HibernationCommandMixin:
         if info is None:
             raise RuntimeError("Hibernation state is unavailable")
         if "reactivation_progress" not in info:
-            info["reactivation_progress"] = self._hibernation_role_progress(plan)
-            save_hibernation_member(target.id, info)
+            info["reactivation_progress"] = {
+                **self._hibernation_role_progress(plan), "actor_discord_id": actor.id,
+                "via": plan.get("via", "command"), "forced": plan["force_reactivate"],
+            }
+            await self.hibernation_state.save_member(target.id, info)
         progress = info["reactivation_progress"]
         await self._resume_hibernation_roles(
             guild, target, info, progress, reason=f"Reactivated by {actor}",
@@ -188,7 +198,7 @@ class HibernationCommandMixin:
         if not progress.get("achievement_tracked"):
             await self.achievement_rewards.track_hibernation_survivor(target.id)
             progress["achievement_tracked"] = True
-            save_hibernation_member(target.id, info)
+            await self.hibernation_state.save_member(target.id, info)
         target = await guild.fetch_member(target.id)
         ticket = await self._create_reactivation_ticket(
             guild=guild, actor=actor, target=target,
@@ -197,7 +207,12 @@ class HibernationCommandMixin:
         await self._archive_fallback_thread_for_member(
             target.id, reason=f"Hibernation ended by {actor}",
         )
-        save_hibernation_member(target.id, None)
+        event = hibernation_event(
+            target.id, info, "reactivated", actor_id=progress.get("actor_discord_id", actor.id),
+            via=progress.get("via", plan.get("via", "command")),
+            forced=progress.get("forced", plan["force_reactivate"]), ticket_id=ticket.id,
+        )
+        await self.hibernation_state.save_member(target.id, None, events=(event,))
         message = (f"Reactivated {target.mention}. Their roles were restored and a ticket was created."
                    if plan["force_reactivate"] else
                    "Welcome back. Your roles have been restored.")
@@ -209,6 +224,10 @@ class HibernationCommandMixin:
                                actor: discord.Member,
                                plan: dict[str, object],
                                *, reply=None) -> str:
+        async with self.hibernation_state.member_lock(plan["user"].id):
+            return await self._hibernate_member(guild, actor, plan, reply=reply)
+
+    async def _hibernate_member(self, guild, actor, plan, *, reply=None):
         user = plan["user"]
         info = self.hibernation_member_state(user.id)
         if info is not None and (
@@ -219,14 +238,16 @@ class HibernationCommandMixin:
             raise RuntimeError("Required hibernation roles are unavailable")
         if info is None:
             info = {
+                "_case_started_at": now_us(),
                 "roles": list(plan["stored_role_ids"]),
                 "rank_roles": list(plan["snapshot_role_ids"]),
                 "hibernation_date": f"<t:{plan['unix_ts']}:F>",
                 "hibernation_progress": {
                     **self._hibernation_role_progress(plan), "unix_ts": plan["unix_ts"],
+                    "actor_discord_id": actor.id, "via": plan.get("via", "command"),
                 },
             }
-            save_hibernation_member(user.id, info)
+            await self.hibernation_state.save_member(user.id, info)
         progress = info["hibernation_progress"]
         await self._resume_hibernation_roles(
             guild, user, info, progress, reason=f"Moved to hibernation by {actor}",
@@ -236,10 +257,17 @@ class HibernationCommandMixin:
                 guild, actor, user, info["roles"], info["rank_roles"], progress["unix_ts"],
             )
             progress["log_sent"] = True
-            save_hibernation_member(user.id, info)
-        await self._send_hibernation_notice(user)
+            await self.hibernation_state.save_member(user.id, info)
+        if not progress.get("notice_sent"):
+            await self._send_hibernation_notice(user)
+            progress["notice_sent"] = True
+            await self.hibernation_state.save_member(user.id, info)
+        event = hibernation_event(
+            user.id, info, "hibernated", actor_id=progress.get("actor_discord_id", actor.id),
+            via=progress.get("via", plan.get("via", "command")),
+        )
         del info["hibernation_progress"]
-        save_hibernation_member(user.id, info)
+        await self.hibernation_state.save_member(user.id, info, events=(event,))
         message = f"Moved {user.mention} to hibernation."
         if reply is not None:
             await reply(message)
@@ -261,12 +289,13 @@ class HibernationCommandMixin:
         self, interaction: discord.Interaction, *,
         guild: discord.Guild, actor: discord.Member | discord.User,
         target: discord.Member, force_reactivate: bool,
-        response_ephemeral: bool,
+        response_ephemeral: bool, via="command",
     ) -> None:
         plan = self.prepare_reactivation(
             guild=guild, actor=actor, target=target,
             force_reactivate=force_reactivate,
         )
+        plan["via"] = via
         if plan["issue"]:
             await self._send_reactivation_reply(
                 interaction, plan["issue"], ephemeral=response_ephemeral,
@@ -323,6 +352,7 @@ class HibernationCommandMixin:
                 target=target,
                 force_reactivate=False,
                 response_ephemeral=response_ephemeral,
+                via="button",
             )
         except (discord.Forbidden, discord.HTTPException, OSError, RuntimeError, TypeError, ValueError):
             LOGGER.exception("Button reactivation failed for actor %s", interaction.user.id)

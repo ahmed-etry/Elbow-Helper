@@ -120,6 +120,16 @@ class EventsStore:
                     state = {key: row for key, row in state.items()
                              if row.get("owner") != discord_id
                              and str(row.get("created_by")) != str(discord_id)}
+                elif workflow == "hibernation":
+                    state.pop(str(discord_id), None)
+                    state.get("_fallback_threads", {}).pop(str(discord_id), None)
+                    for key, info in state.items():
+                        if key.startswith("_"):
+                            continue
+                        for marker in ("hibernation_progress", "reactivation_progress"):
+                            progress = info.get(marker, {})
+                            if progress.get("actor_discord_id") == discord_id:
+                                progress["actor_discord_id"] = None
                 else:
                     state["prompts"] = {key: row for key, row in state["prompts"].items()
                                         if row.get("subject_discord_id") != discord_id}

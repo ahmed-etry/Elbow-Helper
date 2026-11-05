@@ -12,12 +12,15 @@ KINDS = {
     "leadership_news": frozenset({"news_published", "voided"}),
     "transfers": frozenset({"transfer_requested", "transfer_cancelled", "transfer_expired", "queue_cleared", "voided"}),
     "support": frozenset({"ticket_opened", "ticket_closed", "ticket_reopened", "ticket_deleted", "voided"}),
+    "hibernation": frozenset({"hibernated", "reactivated", "voided"}),
 }
 DETAILS = {
     "news_published": frozenset({"channel_id", "message_id", "guild_id"}),
     "transfer_requested": frozenset(), "transfer_cancelled": frozenset(),
     "transfer_expired": frozenset({"after_hours"}), "queue_cleared": frozenset({"count"}),
     "voided": frozenset({"voids"}),
+    "hibernated": frozenset({"roles_taken"}),
+    "reactivated": frozenset({"forced", "ticket_channel_id"}),
     **{kind: frozenset({"source"}) for kind in
        ("ticket_opened", "ticket_closed", "ticket_reopened", "ticket_deleted")},
 }
@@ -77,7 +80,7 @@ def validate(event):
         raise ValueError("Invalid event player tag")
     # Case keys contain only numeric identities and a configured clan code.
     parts = event.case_key.split(":")
-    expected = 3 if event.workflow == "transfers" else 1
+    expected = {"transfers": 3, "hibernation": 2}.get(event.workflow, 1)
     if len(parts) != expected:
         raise ValueError("Invalid event case")
     for index, part in enumerate(parts):
@@ -89,12 +92,22 @@ def validate(event):
     if event.workflow == "transfers" and (
             str(event.subject_discord_id) != parts[0] or event.clan_code != parts[1]):
         raise ValueError("Transfer case must match its subject and clan")
+    if event.workflow == "hibernation" and str(event.subject_discord_id) != parts[0]:
+        raise ValueError("Hibernation case must match its subject")
     if set(event.detail) != DETAILS[event.kind]:
         raise ValueError("Invalid event details")
     if (type(event.sequence) is not int or not 0 <= event.sequence < 2**63
             or (event.sequence and event.workflow != "support")):
         raise ValueError("Invalid event sequence")
     for key, value in event.detail.items():
+        if key == "roles_taken":
+            if not isinstance(value, list) or any(not _positive(role_id) for role_id in value):
+                raise ValueError("Invalid hibernation roles")
+            continue
+        if key == "forced":
+            if type(value) is not bool:
+                raise ValueError("Invalid reactivation mode")
+            continue
         if key == "source":
             if value not in {"open", "reactivation"}:
                 raise ValueError("Invalid ticket source")

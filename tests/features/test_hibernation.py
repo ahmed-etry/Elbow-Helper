@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from copy import deepcopy
 from types import SimpleNamespace
@@ -14,29 +15,19 @@ from elbow_helper.configuration.roles import (
 )
 from elbow_helper.features.hibernation.commands import HibernationCommandMixin
 from elbow_helper.features.hibernation.config import SNAPSHOT_ONLY_ROLE_IDS
-from elbow_helper.features.hibernation.state import load_hibernation_state, save_hibernation_state
+from elbow_helper.data.events import save_state
+from elbow_helper.data.events.testing import MemoryEventsStore
+from elbow_helper.features.hibernation.state import HibernationState
 from elbow_helper.features.hibernation.tickets import HibernationTicketMixin
-
-
-class HibernationPersistenceTests(unittest.TestCase):
-    def test_state_write_failure_is_reported_to_the_workflow(self) -> None:
-        with patch(
-            "elbow_helper.features.hibernation.state.write_json_atomic",
-            side_effect=OSError("disk full"),
-        ):
-            with (
-                self.assertLogs(
-                    "elbow_helper.features.hibernation.state",
-                    level="ERROR",
-                ),
-                self.assertRaisesRegex(OSError, "disk full"),
-            ):
-                save_hibernation_state({"42": {"roles": [1]}})
 
 
 class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_snapshot_failure_stops_before_roles_change(self) -> None:
         owner = HibernationCommandMixin()
+        owner.hibernation_state = SimpleNamespace(
+            snapshot=lambda: {}, member_lock=lambda _: asyncio.Lock(),
+            save_member=AsyncMock(side_effect=OSError("disk full")),
+        )
         member = SimpleNamespace(
             id=42,
             mention="<@42>",
@@ -44,7 +35,7 @@ class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
             remove_roles=AsyncMock(),
             add_roles=AsyncMock(),
         )
-        actor = SimpleNamespace(roles=[SimpleNamespace(id=99)])
+        actor = SimpleNamespace(id=7, roles=[SimpleNamespace(id=99)])
         interaction = SimpleNamespace(
             user=actor,
             guild=SimpleNamespace(get_role=lambda role_id: SimpleNamespace(id=role_id)),
@@ -56,14 +47,6 @@ class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
             patch(
                 "elbow_helper.features.hibernation.commands.LEAD_PLUS",
                 frozenset({99}),
-            ),
-            patch(
-                "elbow_helper.features.hibernation.commands.load_hibernation_state",
-                return_value={},
-            ),
-            patch(
-                "elbow_helper.features.hibernation.commands.save_hibernation_member",
-                side_effect=OSError("disk full"),
             ),
         ):
             with self.assertLogs(
@@ -90,26 +73,15 @@ class Workflow(HibernationCommandMixin, HibernationTicketMixin):
 
 class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.saved_state = {}
-        self.saved_tickets = {}
-
-        def write_state(path, data, **kwargs):
-            self.saved_state = deepcopy(data)
-
-        for name, replacement in (
-            ("state.read_json", Mock(side_effect=lambda _: deepcopy(self.saved_state))),
-            ("state.write_json_atomic", Mock(side_effect=write_state)),
-        ):
-            patcher = patch(
-                f"elbow_helper.features.hibernation.{name}", replacement,
-            )
-            patcher.start()
-            self.addCleanup(patcher.stop)
         self.reset_workflow()
 
     def reset_workflow(self):
-        self.saved_state = {}
         self.saved_tickets = {}
+        events = MemoryEventsStore()
+        self.addCleanup(events.close)
+        self.hibernation_state = HibernationState(events)
+        self.hibernation_state._mirror = AsyncMock()
+        self.seed({})
         self.roles = {
             role_id: SimpleNamespace(id=role_id, name=str(role_id), is_default=lambda: False)
             for role_id in (
@@ -142,8 +114,18 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
         self.archive = AsyncMock()
         self.owner = self.new_owner()
 
+    def seed(self, data):
+        data = deepcopy(data)
+        for key, info in data.items():
+            if key.isdecimal():
+                info.setdefault("_case_started_at", 123000000)
+        self.hibernation_state.state = data
+        self.hibernation_state.events._call(
+            lambda c: save_state(c, "hibernation", data), (), {})
+
     def new_owner(self):
         owner = Workflow()
+        owner.hibernation_state = self.hibernation_state
         async def register(channel_id, info, **kwargs):
             self.saved_tickets.setdefault(str(channel_id), deepcopy(info))
         owner.ticket_state = SimpleNamespace(register=AsyncMock(side_effect=register))
@@ -185,7 +167,7 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
 
     def start_reactivation(self):
         self.member.roles = [self.roles[HIBERNATING_ROLE_ID], self.roles[SLEEPING_CO_ROLE_ID]]
-        save_hibernation_state({"42": {
+        self.seed({"42": {
             "roles": [MEMBER_ROLE_ID, ALLIANCE_MEMBER_ROLE_ID, CO_LEADER_ROLE_ID],
             "rank_roles": [SNAPSHOT_ONLY_ROLE_IDS[0]], "hibernation_date": "<t:123:F>",
         }})
@@ -209,7 +191,7 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(discord.HTTPException):
                     await self.owner.hibernate_member(self.guild, self.actor, plan, reply=reply)
                 reply.assert_not_awaited()
-                saved = load_hibernation_state()["42"]
+                saved = self.hibernation_state.snapshot()["42"]
                 self.assertEqual(saved["roles"], expected_roles)
                 pending = saved["hibernation_progress"]
                 removals = self.member.remove_roles.await_count
@@ -225,8 +207,8 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
                 reply.assert_awaited_once_with(message)
                 self.assertEqual(self.member.remove_roles.await_count, removals + remaining_remove)
                 self.assertEqual(self.member.add_roles.await_count, additions + remaining_add)
-                self.assertEqual(load_hibernation_state()["42"]["roles"], expected_roles)
-                self.assertNotIn("hibernation_progress", load_hibernation_state()["42"])
+                self.assertEqual(self.hibernation_state.snapshot()["42"]["roles"], expected_roles)
+                self.assertNotIn("hibernation_progress", self.hibernation_state.snapshot()["42"])
                 self.assertEqual(self.log.await_count, 2 if stage == "log" else 1)
                 self.assertEqual(self.owner.prepare_hibernation(self.guild, self.member)["issue"],
                                  "That member is already hibernating.")
@@ -247,7 +229,7 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
                 self.fail_once(failing, at_call)
                 with self.assertRaises(discord.HTTPException):
                     await self.owner.reactivate_member(plan)
-                saved = load_hibernation_state()["42"]
+                saved = self.hibernation_state.snapshot()["42"]
                 self.assertEqual(saved["roles"], expected_roles)
                 pending = saved["reactivation_progress"]
                 removals = self.member.remove_roles.await_count
@@ -258,7 +240,7 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
                 result = await self.owner.reactivate_member(self.reactivation_plan())
                 self.assertEqual(result["message"], "Welcome back. Your roles have been restored.")
                 self.assertEqual(result["ticket_channel_id"], 123)
-                self.assertNotIn("42", load_hibernation_state())
+                self.assertNotIn("42", self.hibernation_state.snapshot())
                 self.assertEqual(self.member.remove_roles.await_count, removals + remaining_remove)
                 self.assertEqual(self.member.add_roles.await_count, additions + remaining_add)
                 self.assertEqual(self.guild.create_text_channel.await_count, 2 if stage == "create" else 1)
@@ -272,7 +254,7 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
                           side_effect=OSError("disk full")):
             with self.assertRaises(OSError):
                 await self.owner.reactivate_member(plan)
-        self.assertEqual(load_hibernation_state()["42"]["roles"], plan["info"]["roles"])
+        self.assertEqual(self.hibernation_state.snapshot()["42"]["roles"], plan["info"]["roles"])
         self.owner = self.new_owner()
         await self.owner.reactivate_member(self.reactivation_plan())
         self.guild.create_text_channel.assert_awaited_once()
@@ -287,7 +269,7 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
             await HibernationTicketMixin._send_hibernation_notice(self.owner, self.member)
 
     async def test_archive_failure_is_not_silently_treated_as_complete(self):
-        save_hibernation_state({"_fallback_threads": {"42": {"thread_id": 456}}})
+        self.seed({"_fallback_threads": {"42": {"thread_id": 456}}})
         thread = SimpleNamespace(archived=False, edit=AsyncMock())
         self.owner.bot = SimpleNamespace(get_channel=lambda _: thread)
         self.fail_once(thread.edit)
@@ -301,13 +283,13 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
         plan = self.start_hibernation()
 
         async def notice(member):
-            data = load_hibernation_state()
+            data = self.hibernation_state.snapshot()
             data["_fallback_threads"] = {"42": {"thread_id": 456}}
-            save_hibernation_state(data)
+            await self.hibernation_state.save_fallback_thread(member.id, data["_fallback_threads"]["42"])
 
         self.notice.side_effect = notice
         await self.owner.hibernate_member(self.guild, self.actor, plan)
-        self.assertEqual(load_hibernation_state()["_fallback_threads"], {"42": {"thread_id": 456}})
+        self.assertEqual(self.hibernation_state.snapshot()["_fallback_threads"], {"42": {"thread_id": 456}})
 
 
 if __name__ == "__main__":
