@@ -10,11 +10,28 @@ from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.capabilities.recruitment.commands import (
     prepare_accept, prepare_decline, prepare_finalize, recruitment_adapters,
 )
+from elbow_helper.data.events.testing import MemoryEventsStore
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
+from elbow_helper.features.recruitment.state import RecruitmentState
 from agent.discord_actions.helpers import register_requester
 
 
+def recording_workflow():
+    """The feature mixin with a real history store, as the cog has."""
+    workflow = RecruitmentCommandMixin()
+    events = MemoryEventsStore()
+    workflow.recruitment_state = RecruitmentState(events)
+    return workflow
+
+
 class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
+    async def assert_agent_event(self, workflow, kind):
+        row, = await workflow.recruitment_state.events.read()
+        self.assertEqual((row["kind"], row["subject_discord_id"], row["actor_discord_id"],
+                          row["actor_kind"], row["via"], row["source_channel_id"], row["detail"]),
+                         (kind, 3, 2, "agent", "agent", 4, {}))
+        workflow.recruitment_state.events.close()
+
     async def test_accept_previews_all_steps_and_runs_the_public_flow(self):
         role = SimpleNamespace(
             id=20, name="Trial", mention="<@&20>", position=1,
@@ -81,12 +98,14 @@ class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.result["member_id"], 3)
         self.assertEqual(result.result["failures"], [])
         workflow.perform_accept.assert_awaited_once()
+        self.assertEqual((workflow.perform_accept.await_args.kwargs["actor_id"],
+                          workflow.perform_accept.await_args.kwargs["via"]), (2, "agent"))
         self.assertIs(next(adapter for adapter in recruitment_adapters()
                            if adapter.path == "/accept").classification,
                       ActionClass.IRREVERSIBLE)
 
     async def test_finalize_previews_roles_ticket_and_message(self):
-        workflow = RecruitmentCommandMixin()
+        workflow = recording_workflow()
         bot_member = SimpleNamespace(
             id=1, top_role=SimpleNamespace(position=10),
         )
@@ -147,9 +166,10 @@ class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
             result = await change.run()
         self.assertIn("Completed Recruit's trial", result.text)
         channel.send.assert_awaited_once()
+        await self.assert_agent_event(workflow, "finalized")
 
     async def test_decline_previews_message_and_posts_on_confirm(self):
-        workflow = RecruitmentCommandMixin()
+        workflow = recording_workflow()
         bot_member = SimpleNamespace(
             id=1, top_role=SimpleNamespace(position=10),
         )
@@ -192,6 +212,7 @@ class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
             result = await change.run()
         self.assertIn("Declined Applicant", result.text)
         channel.send.assert_awaited_once()
+        await self.assert_agent_event(workflow, "declined")
 
 
 if __name__ == "__main__":

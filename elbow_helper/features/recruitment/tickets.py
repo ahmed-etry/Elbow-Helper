@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -354,7 +355,7 @@ class TicketMixin:
                                 **self.ticket_reminders.get(channel.id, {}),
                                 "last_applicant_message_id": last_msg.id,
                             }
-                            self.state_store.save_ticket_activity(self.ticket_reminders)
+                            await self.recruitment_state.save_ticket_activity(self.ticket_reminders)
                         continue
                     if last_reminder and (now - last_reminder) < timedelta(hours=REMINDER_HOURS):
                         continue
@@ -381,7 +382,7 @@ class TicketMixin:
                                 "message_channel_id": reminder_channel.id,
                                 "last_applicant_message_id": last_msg.id,
                             }
-                            self.state_store.save_ticket_activity(self.ticket_reminders)
+                            await self.recruitment_state.save_ticket_activity(self.ticket_reminders)
                 except discord.Forbidden as e:
                     self.logger.warning("Discord error checking inactive ticket %s (%s): %s", channel.name, channel.id, e)
                 except (discord.HTTPException, aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
@@ -399,7 +400,7 @@ class TicketMixin:
                         self.logger.warning("Discord error checking inactive ticket %s (%s): %s", channel.name, channel.id, e)
                     else:
                         self.logger.exception("Unexpected error checking inactive ticket %s (%s): %s", channel.name, channel.id, e)
-                except (TypeError, ValueError, RuntimeError) as e:
+                except (TypeError, ValueError, RuntimeError, sqlite3.Error) as e:
                     self.logger.exception("Unexpected error checking inactive ticket %s (%s): %s", channel.name, channel.id, e)
         self._clear_recurring_issue("inactive_tickets:discord_network")
 
@@ -460,7 +461,7 @@ class TicketMixin:
             async with self._ticket_reminder_lock:
                 for channel_id, info in reminders.items():
                     self.ticket_reminders[int(channel_id)] = info
-                self.state_store.save_ticket_activity(self.ticket_reminders)
+                await self.recruitment_state.save_ticket_activity(self.ticket_reminders)
 
     @cleanup_old_ticket_reminders.before_loop
     async def before_cleanup_old_ticket_reminders(self):

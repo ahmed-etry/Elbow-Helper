@@ -10,13 +10,13 @@ from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.capabilities.recruitment.commands import (
     prepare_checkup, recruitment_adapters,
 )
-from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
+from agent.capabilities.recruitment.test_agent_recruitment_decisions import recording_workflow
 from agent.discord_actions.helpers import register_requester
 
 
 class CheckupCommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_checkup_posts_the_previewed_message_once(self):
-        workflow = RecruitmentCommandMixin()
+        workflow = recording_workflow()
         bot_member = SimpleNamespace(id=1, top_role=SimpleNamespace(position=10))
         requester = SimpleNamespace(id=2)
         applicant = SimpleNamespace(
@@ -58,6 +58,10 @@ class CheckupCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.result["channel_id"], 4)
         channel.send.assert_awaited_once()
         self.assertIn("<@3>", channel.send.await_args.args[0])
+        row, = await workflow.recruitment_state.events.read()
+        self.assertEqual((row["kind"], row["subject_discord_id"], row["actor_discord_id"], row["via"]),
+                         ("checkup_sent", 3, 2, "agent"))
+        workflow.recruitment_state.events.close()
 
 
 if __name__ == "__main__":

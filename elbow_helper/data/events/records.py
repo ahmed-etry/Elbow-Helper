@@ -13,7 +13,10 @@ KINDS = {
     "transfers": frozenset({"transfer_requested", "transfer_cancelled", "transfer_expired", "queue_cleared", "voided"}),
     "support": frozenset({"ticket_opened", "ticket_closed", "ticket_reopened", "ticket_deleted", "voided"}),
     "hibernation": frozenset({"hibernated", "reactivated", "voided"}),
+    "recruitment": frozenset({"trial_started", "trial_ended", "trial_followup_resolved", "accepted",
+                              "declined", "finalized", "checkup_sent", "voided"}),
 }
+TRIAL_ENDINGS = frozenset({"early", "expired", "applicant_left"})
 DETAILS = {
     "news_published": frozenset({"channel_id", "message_id", "guild_id"}),
     "transfer_requested": frozenset(), "transfer_cancelled": frozenset(),
@@ -23,6 +26,9 @@ DETAILS = {
     "reactivated": frozenset({"forced", "ticket_channel_id"}),
     **{kind: frozenset({"source"}) for kind in
        ("ticket_opened", "ticket_closed", "ticket_reopened", "ticket_deleted")},
+    "trial_started": frozenset({"days"}), "trial_ended": frozenset({"how"}),
+    "accepted": frozenset({"clans", "trial_days"}),
+    **{kind: frozenset() for kind in ("trial_followup_resolved", "declined", "finalized", "checkup_sent")},
 }
 
 
@@ -80,7 +86,8 @@ def validate(event):
         raise ValueError("Invalid event player tag")
     # Case keys contain only numeric identities and a configured clan code.
     parts = event.case_key.split(":")
-    expected = {"transfers": 3, "hibernation": 2}.get(event.workflow, 1)
+    # Recruitment cases are a ticket channel and the case's start time.
+    expected = {"transfers": 3, "hibernation": 2, "recruitment": 2}.get(event.workflow, 1)
     if len(parts) != expected:
         raise ValueError("Invalid event case")
     for index, part in enumerate(parts):
@@ -111,6 +118,15 @@ def validate(event):
         if key == "source":
             if value not in {"open", "reactivation"}:
                 raise ValueError("Invalid ticket source")
+            continue
+        if key == "how":
+            if value not in TRIAL_ENDINGS:
+                raise ValueError("Invalid trial ending")
+            continue
+        if key == "clans":
+            if (not isinstance(value, list) or not 1 <= len(value) <= 7 or len(set(value)) != len(value)
+                    or any(not isinstance(code, str) or code not in CLANS for code in value)):
+                raise ValueError("Invalid accepted clans")
             continue
         if type(value) is not int or value < (0 if key == "count" else 1) or value >= 2**63:
             raise ValueError("Invalid event detail value")

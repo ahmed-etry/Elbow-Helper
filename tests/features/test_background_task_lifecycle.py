@@ -81,6 +81,7 @@ class BackgroundTaskLifecycleTests(unittest.IsolatedAsyncioTestCase):
         cog = object.__new__(Recruitment)
         cog.logger = logging.getLogger("test.recruitment.tasks")
         cog._applicant_ticket_tasks = set()
+        cog.recruitment_state = SimpleNamespace(events=SimpleNamespace(unregister_member_deletion=MagicMock()))
         for name in (
             "check_expired_trials",
             "cleanup_trial_reminders",

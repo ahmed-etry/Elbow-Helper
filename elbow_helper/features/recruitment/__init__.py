@@ -2,7 +2,7 @@ import discord
 from elbow_helper.configuration.guild import GUILD_ID
 
 from .cog import Recruitment
-from .state import RecruitmentStateStore
+from .state import RecruitmentState
 from .queries import RecruitmentQueries
 
 __all__ = ["RecruitmentQueries", "setup"]
@@ -20,7 +20,7 @@ async def setup(bot) -> None:
             bot,
             account_links=account_links,
             achievement_rewards=achievements.rewards,
-            state_store=RecruitmentStateStore(),
+            recruitment_state=RecruitmentState(bot.workflow_events),
         ),
         guild=discord.Object(GUILD_ID),
     )

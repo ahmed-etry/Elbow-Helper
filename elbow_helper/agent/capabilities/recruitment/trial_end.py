@@ -101,7 +101,7 @@ async def prepare_trial_end(context: AgentRequestContext,
     async def run() -> ActionOutcome:
         result = await workflow.complete_trial_end(
             ticket.id, applicant_id, context.member,
-            allow_missing=trial is None, resolve_reminder=reminder is not None)
+            allow_missing=trial is None, resolve_reminder=reminder is not None, via="agent")
         if not result.ended:
             raise ActionRefused(result.error or "That trial isn't available.")
         return ActionOutcome("complete", "private", text="\n".join(

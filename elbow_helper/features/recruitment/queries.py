@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import math
 from typing import Any
 
 from .config import TRIAL_DAYS_DEFAULT
@@ -40,6 +41,24 @@ class ActiveRecruitmentTrialSnapshot:
     trials: tuple[ActiveRecruitmentTrial, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class RecruitmentTrialFollowup:
+    """A trial-end reminder: created when the trial period elapsed, ended when the follow-up was sent."""
+    ticket_channel_id: int
+    applicant_member_id: int | None
+    created_at: int | None
+    trial_ended_at: int | None
+    message_id: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class RecruitmentTicketReminder:
+    """The last 18-hour unanswered-applicant reminder of a ticket."""
+    ticket_channel_id: int
+    last_reminder_at: str | None
+    last_applicant_message_id: int | None
+
+
 class RecruitmentQueries:
     """Project recruitment state without exposing tracking or reminder details."""
 
@@ -48,9 +67,37 @@ class RecruitmentQueries:
         trial_loader: Callable[[], Mapping[str, Any]],
         *,
         clock: Callable[[], datetime] | None = None,
+        reminder_loader: Callable[[], Mapping[str, Any]] = dict,
+        ticket_activity_loader: Callable[[], Mapping[str, Any]] = dict,
     ) -> None:
         self._trial_loader = trial_loader
+        self._reminder_loader = reminder_loader
+        self._ticket_activity_loader = ticket_activity_loader
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+
+    def trial_followups(self) -> tuple[RecruitmentTrialFollowup, ...]:
+        rows = []
+        for raw_channel_id, value in _mapping(self._reminder_loader()).items():
+            channel_id = _positive_int(raw_channel_id)
+            if channel_id is None or not isinstance(value, Mapping):
+                continue
+            rows.append(RecruitmentTrialFollowup(
+                channel_id, _positive_int(value.get("applicant_id")),
+                _optional_int(value.get("created_at")), _optional_int(value.get("resolved_at")),
+                _positive_int(value.get("message_id"))))
+        return tuple(sorted(rows, key=lambda row: row.ticket_channel_id))
+
+    def ticket_reminders(self) -> tuple[RecruitmentTicketReminder, ...]:
+        rows = []
+        for raw_channel_id, value in _mapping(self._ticket_activity_loader()).items():
+            channel_id = _positive_int(raw_channel_id)
+            if channel_id is None or not isinstance(value, Mapping):
+                continue
+            last_at = value.get("last_reminder_at")
+            rows.append(RecruitmentTicketReminder(
+                channel_id, last_at if isinstance(last_at, str) else None,
+                _positive_int(value.get("last_applicant_message_id"))))
+        return tuple(sorted(rows, key=lambda row: row.ticket_channel_id))
 
     def has_open_trial(self, member_id: int) -> bool:
         """An unclosed trial owns membership roles even after its expected end."""
@@ -167,6 +214,16 @@ def _trial(
     )
 
 
+def _mapping(data: Any) -> Mapping[str, Any]:
+    if not isinstance(data, Mapping):
+        raise ValueError("Invalid recruitment workflow state")
+    return data
+
+
+def _optional_int(value: Any) -> int | None:
+    return int(value) if type(value) in (int, float) and math.isfinite(value) else None
+
+
 def _positive_int(value: Any) -> int | None:
     if type(value) is int:
         return value if value > 0 else None
@@ -196,5 +253,7 @@ __all__ = [
     "ActiveRecruitmentTrialSnapshot",
     "MAX_ACTIVE_RECRUITMENT_TRIALS",
     "RecruitmentQueries",
+    "RecruitmentTicketReminder",
+    "RecruitmentTrialFollowup",
     "RecruitmentTrialRegistration",
 ]

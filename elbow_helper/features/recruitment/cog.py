@@ -14,7 +14,7 @@ from elbow_helper.configuration.guild import GUILD_ID
 from .ai import AIMixin
 from .commands import RecruitmentCommandMixin
 from .helpers import HelperMixin
-from .state import RecruitmentStateStore
+from .state import RecruitmentState
 from .queries import RecruitmentQueries
 from .tickets import TicketMixin
 from .trials import TrialMixin
@@ -30,29 +30,36 @@ class Recruitment(HelperMixin, TrialMixin, TicketMixin, AIMixin, RecruitmentComm
         *,
         account_links,
         achievement_rewards,
-        state_store: RecruitmentStateStore,
+        recruitment_state: RecruitmentState,
     ):
         self.bot = bot
         self.account_links = account_links
         self.achievement_rewards = achievement_rewards
-        self.state_store = state_store
-        self.queries = RecruitmentQueries(state_store.load_trial_data)
+        self.recruitment_state = recruitment_state
+        self.queries = RecruitmentQueries(
+            recruitment_state.trials,
+            reminder_loader=recruitment_state.reminders,
+            ticket_activity_loader=recruitment_state.ticket_activity_records,
+        )
         self.text_generator = bot.text_generator
         self.logger = logging.getLogger(__name__)
         self._recurring_issue_log_times: dict[str, float] = {}
-        # State/locks for persistent views and disk-backed workflow data.
+        # State/locks for persistent views and workflow data.
         self._persistent_views_added = False
         self._trial_lock = asyncio.Lock()
         self._reminder_lock = asyncio.Lock()
         self._ticket_reminder_lock = asyncio.Lock()
         self._applicant_ai_lock = asyncio.Lock()
         self._applicant_ticket_tasks: set[asyncio.Task[None]] = set()
-        self.ticket_reminders = self.state_store.load_ticket_activity()
-        self.applicant_ai_messages = (
-            self.state_store.load_applicant_ai_messages()
-        )
-        
+        self.ticket_reminders = {}
+        self.applicant_ai_messages = {}
+
         self.validate_clan_info_boards()
+
+    async def cog_load(self):
+        await self.recruitment_state.startup()
+        self.ticket_reminders = self.recruitment_state.ticket_activity()
+        self.applicant_ai_messages = self.recruitment_state.ai_messages()
         # Background maintenance loops.
         start_resilient_loop(self.check_expired_trials)
         start_resilient_loop(self.cleanup_trial_reminders)
@@ -110,6 +117,7 @@ class Recruitment(HelperMixin, TrialMixin, TicketMixin, AIMixin, RecruitmentComm
 
 
     def cog_unload(self):
+        self.recruitment_state.events.unregister_member_deletion("recruitment")
         self.check_expired_trials.cancel()
         self.cleanup_trial_reminders.cancel()
         self.organize_tickets.cancel()
@@ -126,7 +134,7 @@ class Recruitment(HelperMixin, TrialMixin, TicketMixin, AIMixin, RecruitmentComm
         if self._persistent_views_added:
             return
         # Re-register persistent views after restart.
-        trial_data = self.state_store.load_trial_data()
+        trial_data = self.recruitment_state.trials()
         for channel_id, info in trial_data.items():
             applicant_id = info.get("applicant_id")
             if not applicant_id:
@@ -135,7 +143,7 @@ class Recruitment(HelperMixin, TrialMixin, TicketMixin, AIMixin, RecruitmentComm
                 self.bot.add_view(PersistentEndNowView(GUILD_ID, int(channel_id), int(applicant_id)))
             except (TypeError, ValueError, discord.HTTPException):
                 self.logger.exception("Failed to register End Now view for %s", channel_id)
-        reminders = self.state_store.load_trial_reminders()
+        reminders = self.recruitment_state.reminders()
         for ticket_id, info in reminders.items():
             applicant_id = info.get("applicant_id")
             message_id = info.get("message_id")
@@ -145,11 +153,13 @@ class Recruitment(HelperMixin, TrialMixin, TicketMixin, AIMixin, RecruitmentComm
                     applicant_id = await self._resolve_applicant_id(channel)
                     if applicant_id:
                         async with self._reminder_lock:
-                            reminders[str(ticket_id)] = {
-                                **info,
-                                "applicant_id": applicant_id,
-                            }
-                            self.state_store.save_trial_reminders(reminders)
+                            def edit(state, ticket_id=str(ticket_id), applicant_id=applicant_id):
+                                current = state["reminders"].get(ticket_id)
+                                if not isinstance(current, dict):
+                                    return None
+                                current["applicant_id"] = applicant_id
+                                return ()
+                            await self.recruitment_state.change(edit)
             if not applicant_id:
                 continue
             try:

@@ -26,7 +26,7 @@ class WorkflowFamilyTests(unittest.IsolatedAsyncioTestCase):
                                                  'timing_status': 'due'}]})
         query = AsyncMock(return_value={'rows': [{'ticket_channel_id': 100,
             'applicant_member_id': 41, 'trial_ended_at': 200}]})
-        with patch.object(reads, 'complete_snapshot', snapshot), patch.object(reads, 'active_trial_rows', active), patch.object(reads, 'query_context', query):
+        with patch.object(reads, 'complete_snapshot', snapshot), patch.object(reads, 'active_trial_rows', active), patch.object(reads, 'ticket_records', query):
             result = await reads.recruitment(_context(), {})
         self.assertEqual(len(result['rows']), 1)
         row = result['rows'][0]
@@ -113,13 +113,13 @@ class WorkflowFamilyTests(unittest.IsolatedAsyncioTestCase):
         context = replace(context, bot=SimpleNamespace(paths=SimpleNamespace()))
         query = AsyncMock(return_value={'rows':[{'ticket_channel_id':100,'trial_ended_at':200,
                            'content':'accept or decline words are irrelevant'}]})
-        with patch.object(reads,'query_context',query):
+        with patch.object(reads,'ticket_records',query):
             result = await reads.recruitment(context, {'stage':'trial_followups'})
         self.assertEqual(result['rows'][0]['workflow_status'],'trial_ended_followup_recorded')
         self.assertIn('unverified',result['rows'][0]['followup_delivery_status'])
         self.assertIsNone(result['rows'][0]['acceptance_decision'])
         self.assertIsNone(result['rows'][0]['finalized'])
-        self.assertIsNone(query.call_args.kwargs['max_rows'])
+        self.assertEqual(query.call_args.args[1], 'trial_followups')
 
     async def test_trial_account_projection_keeps_missing_profiles_unknown(self):
         from elbow_helper.agent.families import identity_reads

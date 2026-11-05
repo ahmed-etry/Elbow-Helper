@@ -100,9 +100,8 @@ class DataGuide:
                 "read_clash clan excludes their parked membership by default; member_scope=current "
                 "is only for explicitly requested current in-game membership.",
                 *([
-                    "Recruitment: state.recruitment_trials, state.recruitment_trial_reminders "
-                    "and state.recruitment_ticket_activity are JSON objects keyed by accessible "
-                    "ticket channel ID. Use json_each(doc); key is the ticket ID and value the record. "
+                    "Recruitment: read_recruitment_pipeline returns active trials, trial-end "
+                    "follow-ups and applicant reply reminders by ticket channel ID. "
                     "These are current workflow records, not application/conversion totals. "
                     f"Trial-list is channel {TRIAL_LIST}; saved ticket transcripts are in {TICKETS_LOG}. "
                     "Combine these records with trial-list posts, ticket acceptance messages and "
