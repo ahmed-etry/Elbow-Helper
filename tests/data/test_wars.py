@@ -127,6 +127,35 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.record(war("warEnded"), at=END + 600 * SECOND)
         self.assertEqual(final, (await self.rows("SELECT * FROM wars"))[0])
 
+    async def league_members(self):
+        rows = await self.rows("SELECT side,player_tag,attacks_expected,attacks_used FROM war_members ORDER BY side,player_tag")
+        return [tuple(row.values()) for row in rows]
+
+    async def test_a_league_war_saves_one_attack_each_though_clash_leaves_it_out(self):
+        payload = war()
+        payload.pop("attacksPerMember")
+        await self.record(payload, kind="cwl_war", scope="#R0")
+        stored = (await self.rows("SELECT attacks_per_member,field_presence_json FROM wars"))[0]
+        self.assertEqual(stored["attacks_per_member"], 1)
+        # What Clash really sent stays on record.
+        self.assertNotIn("attacksPerMember", stored["field_presence_json"])
+        lineup = [(0, "#Q0", 1, 1), (0, "#Q2", 1, 0), (1, "#P0", 1, 1), (1, "#P2", 1, 0)]
+        self.assertEqual(await self.league_members(), lineup)
+        # A running war saved before this gets its allowance on the next check.
+        await self.execute("UPDATE wars SET attacks_per_member=NULL,content_hash='old'")
+        await self.execute("UPDATE war_members SET attacks_expected=NULL")
+        await self.record(payload, kind="cwl_war", scope="#R0", at=self.at + 60 * SECOND)
+        self.assertEqual(await self.league_members(), lineup)
+
+    async def test_an_allowance_clash_sends_is_kept_and_a_regular_war_gets_none(self):
+        await self.record(war(), kind="cwl_war", scope="#R0")
+        regular = war(clans=("#LQ", "#CU"))
+        regular.pop("attacksPerMember")
+        await self.record(regular, scope="#LQ")
+        rows = await self.rows("SELECT w.war_tag,w.attacks_per_member,m.attacks_expected FROM wars w "
+                               "JOIN war_members m ON m.war_id=w.id")
+        self.assertEqual({tuple(row.values()) for row in rows}, {("#R0", 2, 2), (None, None, None)})
+
     async def test_restart_mid_war_and_failed_fetch_preserve_last_good(self):
         await self.record(war())
         before = await self.rows("SELECT * FROM wars")

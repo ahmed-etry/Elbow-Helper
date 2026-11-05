@@ -1,4 +1,4 @@
-"""Attendance totals per account or owner over completed-war lineup rows.
+"""Attendance totals per account or owner over war lineup rows.
 
 Regular and league war rows both come from the family record.
 """
@@ -19,6 +19,9 @@ def aggregate_attendance(rows, owners, unit):
         item['war_ids'].add(row['war_id'])
         if row['missed'] is None:
             item['unconfirmed_opportunities'] += 1
+            # A war still under way counts its attacks so far; it has no misses yet.
+            if 'not_final' in row.get('uncertainty_reasons', ()):
+                item['attacks_used'] += row['attacks_used'] or 0
         else:
             item['attacks_expected'] += row['attacks_expected']
             item['attacks_used'] += row['attacks_used']

@@ -293,8 +293,14 @@ class CwlHistory:
                 row["clan_code"], row["war_id"], row["attack_order"], row["player_name"]))}
 
     def attendance(self, *, clan_codes, war_type, after_ts=None, before_ts=None, season=None, war_ids=(),
-                   latest_completed=None, season_keys=(), history_limit=None):
-        """Completed league-war participation from final lineups, in the old attendance shape."""
+                   latest_completed=None, season_keys=(), history_limit=None, running=False):
+        """League-war participation from stored lineups, in the old attendance shape.
+
+        Ended wars count from their final lineups. With ``running``, a chosen
+        season, window or set of wars also holds its wars still under way, with
+        attacks so far and no misses; a window takes them once they have started.
+        Recent seasons and latest wars stay completed wars.
+        """
         if war_type != "CWL":
             raise ValueError("Stored war history holds league wars only; regular wars are in the family record.")
         if history_limit is not None:
@@ -302,7 +308,8 @@ class CwlHistory:
                 raise ValueError("Invalid CWL history limit")
             if season or season_keys or war_ids or latest_completed or after_ts is not None or before_ts is not None:
                 raise ValueError("Choose recent seasons or an explicit period, not both.")
-        wars = self._wars(clan_codes, details=False)
+        completed_only = not running or history_limit is not None or latest_completed is not None
+        wars = self._wars(clan_codes, details=False, ended=completed_only)
         if len(wars) > MAX_WARS:
             raise ValueError("Choose fewer clans; stored war identities exceed the snapshot bound.")
         component_seasons = list(season_keys)
@@ -317,7 +324,8 @@ class CwlHistory:
             component_seasons = sorted(completed, key=lambda key: (completed[key], key), reverse=True)[:history_limit]
         requested = set(war_ids)
         selected = [war for war in wars if not (
-            after_ts is not None and war["end_ts"] < after_ts or before_ts is not None and war["end_ts"] >= before_ts
+            after_ts is not None and war["end_ts"] < after_ts
+            or before_ts is not None and war["end_ts" if war["state"] == "warEnded" else "start_ts"] >= before_ts
             or season is not None and war["cwl_season"] != season
             or (season_keys or history_limit is not None) and war["cwl_season"] not in component_seasons
             or requested and war["war_id"] not in requested)]
@@ -328,7 +336,8 @@ class CwlHistory:
         tags = sorted({war["war_id"].removeprefix("CWL:") for war in selected})
         for index in range(0, len(tags), TAGS_PER_READ):
             details.update(((war["war_id"], war["clan_code"]), war) for war in self._wars(
-                sorted({war["clan_code"] for war in selected}), war_tags=tags[index:index + TAGS_PER_READ]))
+                sorted({war["clan_code"] for war in selected}), war_tags=tags[index:index + TAGS_PER_READ],
+                ended=completed_only))
         rows, empty, sources, unproven, coverage = [], [], [], set(), []
         for summary in selected:
             war = details.get((summary["war_id"], summary["clan_code"]), {**summary, "roster": [], "attacks": []})
@@ -377,4 +386,6 @@ class CwlHistory:
                 "identity_conflicts": [], "unproven_war_ids": sorted(unproven), "duplicate_identities_removed": 0,
                 "coverage": {"query_complete": True, "historical_collection_complete": False,
                              "exact_ranking": not (empty or unproven), "wars": coverage,
-                             "basis": "family record league wars ended in the selection; final lineups only"}}
+                             "wars_not_final": sum(war["state"] != "warEnded" for war in selected),
+                             "basis": "family record league wars in the selection; ended wars from final lineups, "
+                                      "wars_not_final with attacks so far and no misses"}}

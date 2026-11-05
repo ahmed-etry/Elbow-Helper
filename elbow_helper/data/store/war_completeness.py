@@ -58,3 +58,16 @@ def upgrade_cwl_completeness(connection):
         attacks = all(coverage[side]["attacks_complete"] for side in ("own", "opponent"))
         connection.execute("UPDATE wars SET roster_complete=?,attacks_complete=? WHERE id=?",
                            (int(roster), int(attacks), war["id"]))
+
+
+def fill_cwl_allowance(connection):
+    """Version 18: league wars saved before their allowance was, which is one attack per member.
+
+    Clash lists a member's attacks, so a stored used count is Clash's own. A
+    defender copied from old attacks has none: it stays unknown, never a zero or a miss.
+    """
+    connection.execute("UPDATE wars SET attacks_per_member=1 WHERE type='CWL' AND attacks_per_member IS NULL")
+    connection.execute(
+        "UPDATE war_members SET attacks_expected=(SELECT w.attacks_per_member FROM wars w WHERE w.id=war_id) "
+        "WHERE attacks_expected IS NULL AND attacks_used IS NOT NULL "
+        "AND war_id IN (SELECT id FROM wars WHERE type='CWL')")

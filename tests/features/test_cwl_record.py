@@ -358,6 +358,38 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         result = await self.attendance_matches_shared_rows()
         self.assertEqual(result["war_ids"], ["CWL:#R0"])
 
+    async def test_a_chosen_season_or_window_lists_running_wars_with_no_misses(self):
+        await self.november()
+        chosen = {"clan_codes": ["ONE"], "war_type": "CWL", "running": True}
+        result = await self.call(self.history.attendance, **chosen, season="2026-11")
+        self.assertEqual(result["war_ids"], ["CWL:#R0", "CWL:#R8", "CWL:#RC"])
+        self.assertEqual(result["coverage"]["wars_not_final"], 2)
+        rows = {(row["war_id"], row["player_tag"]): row for row in result["rows"]}
+        running = rows["CWL:#R8", "#P0"]
+        self.assertEqual((running["attacks_used"], running["missed"], running["final_capture"],
+                          running["observed_attack_performance"]["attacks"]), (1, None, False, 1))
+        self.assertIn("not_final", running["uncertainty_reasons"])
+        self.assertEqual((rows["CWL:#RC", "#P0"]["attacks_used"], rows["CWL:#RC", "#P0"]["missed"]), (0, None))
+        self.assertIn("CWL:#R8", result["unproven_war_ids"])
+        self.assertFalse(result["coverage"]["exact_ranking"])
+        # A window holds a running war once it started, whenever it will end.
+        window = await self.call(self.history.attendance, **chosen, after_ts=(NOV - 2 * DAY) // SECOND,
+                                 before_ts=(end_of(2) - DAY // 2) // SECOND)
+        self.assertEqual(window["war_ids"], ["CWL:#R0", "CWL:#R8"])
+        # By default the same selection stays completed wars.
+        result = await self.call(self.history.attendance, clan_codes=["ONE"], war_type="CWL", season="2026-11")
+        self.assertEqual((result["war_ids"], result["coverage"]["wars_not_final"]), (["CWL:#R0"], 0))
+
+    async def test_recent_seasons_and_latest_wars_stay_completed_with_running_asked(self):
+        await self.november()
+        chosen = {"clan_codes": ["ONE"], "war_type": "CWL", "running": True}
+        latest = await self.call(self.history.attendance, **chosen, latest_completed=1)
+        self.assertEqual(latest["war_ids"], ["CWL:#R0"])
+        # Two running wars never complete a season of one ended war.
+        with patch("elbow_helper.features.cwl.record.SEASON_WARS", 2):
+            recent = await self.call(self.history.attendance, **chosen, history_limit=1)
+        self.assertEqual((recent["war_ids"], recent["component_seasons"]), ([], []))
+
     async def test_unknown_used_count_stays_unknown_despite_a_saved_attack(self):
         await self.november()
         await self.execute("UPDATE war_members SET attacks_used=NULL WHERE player_tag='#P0' "

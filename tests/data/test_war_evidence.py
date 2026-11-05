@@ -9,7 +9,8 @@ from elbow_helper.data.reads.coverage import WAR_CADENCES, envelope, war_side_co
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.schema import MIGRATIONS, SCHEMA_VERSION
 from elbow_helper.data.store.war_projection import HOUR
-from elbow_helper.infrastructure.persistence.migrations import run_sqlite_migrations
+from elbow_helper.infrastructure.persistence.migrations import (
+    SQLiteMigration, SQLiteMigrationError, run_sqlite_migrations)
 
 from .test_wars import END, SECOND, WarFixture, war, war_log
 
@@ -44,6 +45,7 @@ class WarUpgradeTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                 for kind in ("current_war", "war_log"):
                     c.execute("INSERT INTO war_collection_state(source_kind,scope_id,next_due_at) VALUES (?,'#PY',?)",
                               (kind, 10 ** 18))
+                c.execute("UPDATE wars SET attacks_per_member=1 WHERE id=5")
                 c.commit()
                 return [tuple(row) for row in c.execute("SELECT * FROM wars ORDER BY id")]
 
@@ -121,6 +123,69 @@ class WarUpgradeTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sides, [(3, 50, "lose"), (3, 50, "win")])
         self.assertEqual(keys, [("end", 10), ("end", 10), ("preparation", 10), ("war_log", 10)])
         self.assertEqual((current, orphaned, foreign), (10, 0, []))
+
+
+class LeagueAllowanceUpgradeTests(WarFixture, unittest.IsolatedAsyncioTestCase):
+    """League wars saved at version 17 hold Clash's used counts and no allowance."""
+
+    async def version_17(self):
+        payload = war("inWar")
+        payload.update(state="warEnded")
+        payload.pop("attacksPerMember")
+        await self.record(payload, kind="cwl_war", scope="#R0", at=END + 90 * SECOND)
+        regular = war(clans=("#LQ", "#CU"))
+        regular.pop("attacksPerMember")
+        await self.record(regular, scope="#LQ", at=self.at)
+        await self.execute("UPDATE wars SET attacks_per_member=NULL")
+        await self.execute("UPDATE war_members SET attacks_expected=NULL")
+        # A defender copied from old attacks, known only as a base that was hit.
+        league = (await self.rows("SELECT id FROM wars WHERE war_tag='#R0'"))[0]["id"]
+        await self.execute("UPDATE war_members SET attacks_used=NULL,extra_json='{\"partial\":true}' "
+                           "WHERE war_id=? AND player_tag='#Q2'", (league,))
+        await self.execute(f"PRAGMA user_version={SCHEMA_VERSION - 1}")
+        return league
+
+    async def lineup(self, war_id):
+        rows = await self.rows("SELECT player_tag,attacks_expected,attacks_used FROM war_members "
+                               "WHERE war_id=? ORDER BY player_tag", (war_id,))
+        return [tuple(row.values()) for row in rows]
+
+    async def test_upgrade_fills_what_clash_listed_and_leaves_everything_else(self):
+        league = await self.version_17()
+        before = await self.rows("SELECT * FROM wars ORDER BY id")
+        upgraded = FamilyStore(self.path)
+        await upgraded.initialize()
+        self.assertEqual(await upgraded.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), SCHEMA_VERSION)
+        self.assertEqual(await self.lineup(league), [("#P0", 1, 1), ("#P2", 1, 0), ("#Q0", 1, 1), ("#Q2", None, None)])
+        after = await self.rows("SELECT * FROM wars ORDER BY id")
+        self.assertEqual([row["attacks_per_member"] for row in after if row["id"] == league], [1])
+        # Only the allowance changes; a regular war without one keeps none.
+        self.assertEqual([{**row, "attacks_per_member": None} for row in after], before)
+        regular = next(row["id"] for row in after if row["id"] != league)
+        self.assertEqual({row[1] for row in await self.lineup(regular)}, {None})
+        coverage = await upgraded.call(war_side_coverage, league, "#PY")
+        self.assertTrue(coverage["own"]["attacks_complete"])
+        self.assertFalse(coverage["opponent"]["attacks_complete"])
+        await FamilyStore(self.path).initialize()
+        self.assertEqual(await self.lineup(league), [("#P0", 1, 1), ("#P2", 1, 0), ("#Q0", 1, 1), ("#Q2", None, None)])
+
+    async def test_a_failed_upgrade_changes_nothing(self):
+        league = await self.version_17()
+
+        def fail(_):
+            raise ValueError("synthetic failure")
+
+        def upgrade(c):
+            later = SQLiteMigration(SCHEMA_VERSION + 1, "failed subject", fail)
+            return run_sqlite_migrations(c, (*MIGRATIONS, later), target_version=SCHEMA_VERSION + 1)
+
+        with self.assertRaises(SQLiteMigrationError):
+            await self.store.call(upgrade)
+        self.assertEqual(await self.store.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]),
+                         SCHEMA_VERSION - 1)
+        self.assertEqual((await self.rows("SELECT attacks_per_member FROM wars WHERE id=?", (league,)))[0],
+                         {"attacks_per_member": None})
+        self.assertEqual({row[1] for row in await self.lineup(league)}, {None})
 
 
 class WarCoverageTests(WarFixture, unittest.IsolatedAsyncioTestCase):

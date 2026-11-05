@@ -32,8 +32,7 @@ from .record_fixtures import PeopleFixture, row
 
 class LiveRecordUpgradeTests(PeopleFixture):
     async def test_live_version_16_upgrades_without_changing_facts_or_copy_receipts(self):
-        # Main's deployed record is version 16; version 17 is the pending last-message table.
-        self.assertEqual(SCHEMA_VERSION, 17)
+        # Main's deployed record is version 16; later upgrades must retain its facts.
         await self.execute("DROP TABLE member_last_messages")
         await self.execute("PRAGMA user_version=16")
         before = await self.dump()
@@ -41,7 +40,7 @@ class LiveRecordUpgradeTests(PeopleFixture):
         await restart.initialize()
         after = await restart.call(lambda c: tuple(c.iterdump()))
         self.assertEqual(set(before) - set(after), set())
-        self.assertEqual(await restart.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), 17)
+        self.assertEqual(await restart.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), SCHEMA_VERSION)
         self.assertEqual(await restart.call(lambda c: c.execute("PRAGMA foreign_key_check").fetchall()), [])
         links = LinkService(restart)
         self.addAsyncCleanup(links.close)
@@ -63,7 +62,8 @@ class LiveRecordUpgradeTests(PeopleFixture):
             MIGRATIONS[16].apply(c)
             raise OSError("synthetic interrupted upgrade")
 
-        with patch("elbow_helper.data.store.MIGRATIONS", (*MIGRATIONS[:16], SQLiteMigration(17, "failure", fail))):
+        failing = (*MIGRATIONS[:16], SQLiteMigration(17, "failure", fail), *MIGRATIONS[17:])
+        with patch("elbow_helper.data.store.MIGRATIONS", failing):
             with self.assertRaises(SQLiteMigrationError):
                 await FamilyStore(self.store.path).initialize()
         self.assertEqual(await self.dump(), before)

@@ -6,6 +6,7 @@ family record. No Discord, Clash or LLM call is made.
 
 from dataclasses import replace
 from datetime import datetime, timezone
+import json
 import sqlite3
 from types import SimpleNamespace
 import unittest
@@ -19,6 +20,7 @@ from elbow_helper.agent.read_cache import ReadCache
 from elbow_helper.configuration.channels import HIBERNATION_LOG
 from elbow_helper.data.reads import CwlReads, WarReads
 from tests.data.record_fixtures import seed_war_alias
+from elbow_helper.features.clan_health.attendance import aggregate_attendance
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.cwl.record import CwlHistory
 from elbow_helper.features.hibernation.queries import HibernationQueries
@@ -219,6 +221,185 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                                                  "regular_wars_not_checked_for_friendly", "friendly_wars_not_counted",
                                                  "regular", "league", "basis"})
         self.assertEqual(comparable(both)["#P0"][:4], (sorted([*expected]), 3, 6, 3))
+
+    async def running_league(self):
+        """Clan BEH's round ended; clan BE4's first round is still in battle day, as Clash stores league wars."""
+        await self.record(group(rounds=[{"warTags": ["#R0", "#R2"]}, {"warTags": ["#R8", "#R9"]}], season="2026-11"),
+                          kind="cwl_group", at=self.now - 3 * DAY)
+        await self.record(group(rounds=[{"warTags": ["#R0", "#R2"]}, {"warTags": ["#R8", "#R9"]}], season="2026-11"),
+                          kind="cwl_group", scope="#LQ", at=self.now - 3 * DAY)
+        ended = war("warEnded", end="20261101T180000.000Z")
+        ended.update(preparationStartTime="20261030T180000.000Z", startTime="20261031T180000.000Z")
+        await self.record(ended, kind="cwl_war", scope="#R0", at=ts(ended["endTime"]) * SECOND + 90 * SECOND)
+        running = json.loads(json.dumps(war(clans=("#LQ", "#CU"), end="20261103T080000.000Z"))
+                             .replace('"#P0"', '"#Y0"').replace('"#P2"', '"#Y2"'))
+        running.update(preparationStartTime="20261101T080000.000Z", startTime="20261102T080000.000Z")
+        running.pop("attacksPerMember")
+        await self.record(running, kind="cwl_war", scope="#R8", at=self.now - 600 * SECOND)
+        self.running = running
+
+    async def league_checked(self, current=None):
+        """Clan BE4's latest checks, as the collector makes them during its league."""
+        await self.record(current or {"state": "notInWar"}, scope="#LQ", at=self.now - 10 * SECOND)
+        await self.record(self.running, kind="cwl_war", scope="#R8", at=self.now - 10 * SECOND)
+
+    async def be4(self):
+        return (await TOOLS["read_current_war"].handler(self.context, {"clan_codes": ["BE4"]}))["rows"][0]
+
+    async def test_current_war_shows_a_running_league_war_with_a_regular_wars_fields(self):
+        await self.running_league()
+        await self.league_checked()
+        row = await self.be4()
+        self.assertEqual((row["status"], row["state"], row["team_size"], row["opponent"], row["end_at"]),
+                         ("ok", "inWar", 2, "Clan #CU", "20261103T080000.000Z"))
+        self.assertEqual(row["score"]["clan"]["attacks"], 1)
+        self.assertEqual([(m["player_tag"], m["attacks_used"], m["unused_attacks"], m["missed"]) for m in row["members"]],
+                         [("#Y0", 1, 0, None), ("#Y2", 0, 1, None)])
+        self.assertIsNotNone(row["observed_at"])
+        await self.record(later_war("inWar"), at=self.now - 10 * SECOND)
+        regular = (await TOOLS["read_current_war"].handler(self.context, {"clan_codes": ["BEH"]}))["rows"][0]
+        self.assertEqual(set(row), set(regular))
+        self.assertEqual(set(row["members"][0]), set(regular["members"][0]))
+        # One account can be asked for, as in a regular war.
+        one = await TOOLS["read_current_war"].handler(self.context, {"clan_codes": ["BE4"], "account_tags": ["#Y2"]})
+        self.assertEqual([m["player_tag"] for m in one["rows"][0]["members"]], ["#Y2"])
+
+    async def test_current_war_shows_preparation_once_the_battle_day_is_over(self):
+        await self.running_league()
+        next_round = json.loads(json.dumps(war("preparation", clans=("#LQ", "#GR"), end="20261104T080000.000Z"))
+                                .replace('"#P0"', '"#Y0"').replace('"#P2"', '"#Y2"'))
+        next_round.update(preparationStartTime="20261102T080000.000Z", startTime="20261103T080000.000Z")
+        next_round.pop("attacksPerMember")
+        await self.league_checked()
+        await self.record(next_round, kind="cwl_war", scope="#R9", at=self.now - 10 * SECOND)
+        self.assertEqual((await self.be4())["state"], "inWar")
+        # The battle day passed; only the next round is checked from here.
+        self.now = ts("20261103T080100.000Z") * SECOND
+        await self.record({"state": "notInWar"}, scope="#LQ", at=self.now - 10 * SECOND)
+        await self.record(next_round, kind="cwl_war", scope="#R9", at=self.now - 10 * SECOND)
+        row = await self.be4()
+        self.assertEqual((row["status"], row["state"], row["opponent"], row["end_at"]),
+                         ("ok", "preparation", "Clan #GR", "20261104T080000.000Z"))
+        self.assertEqual([m["unused_attacks"] for m in row["members"]], [1, 1])
+
+    async def test_current_war_still_shows_a_regular_war_under_way(self):
+        await self.running_league()
+        regular = war(clans=("#LQ", "#GR"), end="20261103T180000.000Z")
+        regular.update(preparationStartTime="20261101T180000.000Z", startTime="20261102T180000.000Z")
+        await self.league_checked(regular)
+        row = await self.be4()
+        self.assertEqual((row["state"], row["opponent"]), ("inWar", "Clan #GR"))
+
+    async def test_a_running_league_war_replaces_an_ended_regular_war(self):
+        await self.running_league()
+        ended = war("warEnded", clans=("#LQ", "#GR"), end="20261031T180000.000Z")
+        ended.update(preparationStartTime="20261029T180000.000Z", startTime="20261030T180000.000Z")
+        await self.league_checked(ended)
+        row = await self.be4()
+        self.assertEqual((row["state"], row["opponent"]), ("inWar", "Clan #CU"))
+
+    async def test_without_a_running_league_war_a_clan_stays_not_in_war(self):
+        await self.running_league()
+        await self.league_checked()
+        self.now = ts("20261103T080100.000Z") * SECOND
+        await self.record({"state": "notInWar"}, scope="#LQ", at=self.now - 10 * SECOND)
+        row = await self.be4()
+        self.assertEqual((row["status"], row["state"], row["members"]), ("ok", "notInWar", []))
+
+    async def test_a_stale_league_check_gives_no_war_and_a_failed_read_is_unavailable(self):
+        await self.running_league()
+        await self.league_checked()
+        # The clan's own check stays good, but the war's checks stopped.
+        self.now += 900 * SECOND
+        await self.record({"state": "notInWar"}, scope="#LQ", at=self.now - 10 * SECOND)
+        row = await self.be4()
+        self.assertEqual((row["status"], row["state"], row["members"]), ("stale", None, []))
+        # A failed clan check shows nothing, league war or not.
+        await self.league_checked()
+        await self.record(None, scope="#LQ", status=503, at=self.now)
+        row = await self.be4()
+        self.assertEqual((row["status"], row["state"], row["members"]), ("unavailable", None, []))
+        await self.league_checked()
+        with patch.object(self.reads, "running_league", AsyncMock(side_effect=sqlite3.OperationalError("locked"))):
+            result = await war_reads.current_war(self.context, {"clan_codes": ["BE4"]})
+        self.assertEqual(result["cause"], "source_unavailable")
+
+    def test_only_a_war_under_way_adds_unconfirmed_attacks_to_a_total(self):
+        base = {"player_tag": "#P0", "player_name": "Player", "attacks_expected": None, "missed": None}
+        rows = [{**base, "war_id": "running", "attacks_used": 1, "uncertainty_reasons": ["not_final"]},
+                {**base, "war_id": "no count", "attacks_used": None, "uncertainty_reasons": ["not_final"]},
+                {**base, "war_id": "ended", "attacks_used": 1, "uncertainty_reasons": ["attacks_incomplete"]},
+                {**base, "war_id": "older", "attacks_used": 1}]
+        (row,) = aggregate_attendance(rows, {}, "account")
+        self.assertEqual((row["attacks_used"], row["attacks_expected"], row["missed"],
+                          row["unconfirmed_opportunities"], row["totals_complete"]), (1, 0, 0, 4, False))
+
+    async def test_ended_league_wars_give_real_used_and_missed_counts(self):
+        payload = war("inWar")
+        payload.update(state="warEnded", preparationStartTime="20261026T180000.000Z")
+        payload.pop("attacksPerMember")
+        await self.league_war(payload, "#R0")
+        result = await self.attendance({"war_type": "CWL", "season": "2026-10", "clan_codes": ["BEH"]})
+        self.assertEqual(comparable(result), {
+            "#P0": (["CWL:#R0"], 1, 1, 0, 0, "warring", 3, 1, 1),
+            "#P2": (["CWL:#R0"], 0, 1, 1, 0, "joined_without_attacking", 0, 0, 0)})
+        self.assertEqual(result["unproven_war_ids"], [])
+        totals = result["clan_totals"][0]
+        self.assertEqual((totals["attacks_used"], totals["attacks_expected"], totals["missed"], totals["totals_complete"]),
+                         (1, 2, 1, True))
+
+    async def test_another_clans_ended_round_never_hides_an_account_in_a_running_round(self):
+        await self.running_league()
+        season = {"season": "2026-11", "account_tags": ["#Y0", "#Y2", "#Y8"]}
+        for name, arguments in (("read_war_attendance", {"war_type": "CWL", **season}),
+                                ("read_war_attendance", {"war_type": "both", **season}),
+                                ("read_cwl_results", {"metric": "attendance", **season})):
+            with self.subTest(tool=name, arguments=arguments):
+                result = await TOOLS[name].handler(self.context, arguments)
+                rows = {row["player_tag"]: row for row in result["rows"]}
+                self.assertEqual((rows["#Y0"]["war_ids"], rows["#Y0"]["participation_status"],
+                                  rows["#Y0"]["attack_performance"]["observed_attacks"],
+                                  rows["#Y0"]["unconfirmed_opportunities"], rows["#Y0"]["totals_complete"]),
+                                 (["CWL:#R8"], "warring", 1, 1, False))
+                # Attacks so far count; a running war has no misses and adds nothing owed.
+                self.assertEqual((rows["#Y0"]["attacks_used"], rows["#Y0"]["attacks_expected"], rows["#Y0"]["missed"]),
+                                 (1, 0, 0))
+                self.assertEqual((rows["#Y2"]["attacks_used"], rows["#Y2"]["missed"]), (0, 0))
+                self.assertEqual((rows["#Y2"]["war_ids"], rows["#Y2"]["participation_status"]),
+                                 (["CWL:#R8"], "unknown"))
+        # An account in none of the lineups is still a known zero, running wars checked too.
+        result = await self.attendance({"war_type": "CWL", **season})
+        self.assertEqual(result["coverage"]["wars_not_final"], 1)
+        absent = next(row for row in result["rows"] if row["player_tag"] == "#Y8")
+        self.assertEqual((absent["attacks_used"], absent["participation_status"]), (0, "not_in_checked_lineups"))
+
+    async def test_a_running_round_shows_in_a_window_and_a_clans_own_season(self):
+        await self.running_league()
+        for kind in ("CWL", "both"):
+            with self.subTest(kind=kind):
+                window = {"after": "2026-11-01T00:00:00+00:00", "before": "2026-11-02T17:00:00+00:00"}
+                result = await self.attendance({"war_type": kind, "account_tags": ["#Y0"], **window})
+                self.assertEqual(result["rows"][0]["war_ids"], ["CWL:#R8"])
+        result = await self.attendance({"war_type": "CWL", "clan_codes": ["BE4"], "season": "2026-11",
+                                        "account_tags": ["#Y0"]})
+        self.assertEqual((result["war_ids"], result["clan_totals"][0]["wars"], result["clan_totals"][0]["totals_complete"]),
+                         (["CWL:#R8"], 1, False))
+
+    async def test_a_running_war_without_a_lineup_leaves_absence_unknown(self):
+        await self.running_league()
+        await self.execute("DELETE FROM war_attacks WHERE war_id=(SELECT id FROM wars WHERE war_tag='#R8')")
+        await self.execute("DELETE FROM war_members WHERE war_id=(SELECT id FROM wars WHERE war_tag='#R8')")
+        result = await self.attendance({"war_type": "CWL", "season": "2026-11", "account_tags": ["#Y0"]})
+        self.assertEqual(result["wars_without_rosters"], ["CWL:#R8"])
+        self.assertEqual((result["rows"][0]["attacks_used"], result["rows"][0]["observation_status"]),
+                         (None, "no_stored_participation"))
+
+    async def test_scoring_and_cohort_selections_stay_completed_wars(self):
+        await self.running_league()
+        selected = await war_reads.selected_wars(self.context, {"season": "2026-11"}, "CWL")
+        self.assertEqual(selected["war_ids"], ["CWL:#R0"])
+        both = await war_reads.selected_wars(self.context, {"season": "2026-11"}, "both")
+        self.assertEqual(both["war_ids"], ["CWL:#R0"])
 
     async def test_record_failures_are_unavailable_not_empty(self):
         await self.both_wars()
