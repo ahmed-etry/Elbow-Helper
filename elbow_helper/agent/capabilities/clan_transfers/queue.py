@@ -62,7 +62,7 @@ async def prepare_clear_transfer_queue(context: AgentRequestContext,
         return workflow.transfer_queue_clear_state(clan_code) == state
 
     async def run() -> ActionOutcome:
-        text = await workflow.clear_transfer_queue(clan_code)
+        text = await workflow.clear_transfer_queue(clan_code, actor_discord_id=context.member.id, via="agent")
         return ActionOutcome("complete", "private", text=text)
 
     context.state.proposed_changes.append(PreparedAction(

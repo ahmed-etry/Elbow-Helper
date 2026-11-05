@@ -13,6 +13,7 @@ from discord import app_commands
 from .config import CLAN_CHOICES
 from .config import CLAN_TRANSFER_QUEUES
 from .config import CWL_SEASON_TRANSFER_CLANS
+from .state import request_event
 
 
 class ClanTransfersCommandMixin:
@@ -40,7 +41,7 @@ class ClanTransfersCommandMixin:
             "notify_role_ids": tuple(self._get_notify_role_ids(clan_code)) if not cancel and not queue.pending else (),
         }
 
-    async def request_transfer(self, clan_code: str, member_id: int) -> str:
+    async def request_transfer(self, clan_code: str, member_id: int, *, via="command") -> str:
         if clan_code in CWL_SEASON_TRANSFER_CLANS and not self._is_cwl_season_transfer_window():
             return f"Transfers to {clan_code} open around CWL season."
         async with self.locks[clan_code]:
@@ -49,17 +50,22 @@ class ClanTransfersCommandMixin:
             pending = clan_state.get("pending", [])
             if any(entry["user_id"] == member_id for entry in pending):
                 return f"You already have a request for {clan_code}. Use /transfer cancel to remove it."
-            pending.append({"user_id": member_id, "created_at": self._now().isoformat()})
-            was_empty = len(pending) == 1
-            clan_state["pending"] = pending
-            self._save_state()
+            entry = {"user_id": member_id, "created_at": self._now().isoformat()}
+            def add(state):
+                queue = state["clans"][clan_code]["pending"]
+                was_empty = not queue
+                queue.append(entry)
+                return was_empty, [request_event("transfer_requested", clan_code, entry,
+                    at=int(self._now().timestamp() * 1_000_000),
+                    actor_kind="agent" if via == "agent" else "member", actor_discord_id=member_id, via=via)]
+            was_empty = await self.state_store.change(add)
         await self.ensure_queue_message(clan_code)
         await self.ensure_global_board()
         if was_empty:
             await self._send_ping(clan_code)
         return f"Added you to the {clan_code} transfer queue."
 
-    async def cancel_transfer(self, clan_code: str, member_id: int) -> str:
+    async def cancel_transfer(self, clan_code: str, member_id: int, *, via="command") -> str:
         async with self.locks[clan_code]:
             await self._expire_stale_requests(clan_code, lock_held=True)
             clan_state = self._get_clan_state(clan_code)
@@ -67,10 +73,17 @@ class ClanTransfersCommandMixin:
             new_pending = [entry for entry in pending if entry["user_id"] != member_id]
             if len(new_pending) == len(pending):
                 return f"You don't have a pending transfer request for {clan_code}."
-            clan_state["pending"] = new_pending
+            def cancel(state):
+                queue = state["clans"][clan_code]
+                removed = [entry for entry in queue["pending"] if entry["user_id"] == member_id]
+                queue["pending"] = [entry for entry in queue["pending"] if entry["user_id"] != member_id]
+                return None, [request_event("transfer_cancelled", clan_code, entry,
+                    at=int(self._now().timestamp() * 1_000_000),
+                    actor_kind="agent" if via == "agent" else "member", actor_discord_id=member_id, via=via)
+                    for entry in removed]
+            await self.state_store.change(cancel)
             if not new_pending:
                 await self._delete_ping(clan_code)
-            self._save_state()
         await self.ensure_queue_message(clan_code)
         await self.ensure_global_board()
         return f"Cancelled your request for {clan_code}."

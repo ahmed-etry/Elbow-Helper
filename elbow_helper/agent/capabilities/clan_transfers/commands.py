@@ -58,9 +58,9 @@ async def _prepare(context: Any, values: Mapping[str, Any],
         ) == state
 
     async def run() -> ActionOutcome:
-        message = (await workflow.cancel_transfer(clan_code, context.member.id)
+        message = (await workflow.cancel_transfer(clan_code, context.member.id, via="agent")
                    if cancel else
-                   await workflow.request_transfer(clan_code, context.member.id))
+                   await workflow.request_transfer(clan_code, context.member.id, via="agent"))
         if workflow.transfer_request_status(clan_code, context.member.id) == cancel:
             raise OSError("Transfer request could not be verified")
         return ActionOutcome("complete", "private", text=message,

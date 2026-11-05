@@ -22,7 +22,7 @@ retain older feature names because existing deployments depend on them.
 | Health reports | `data/clan_health/settings.sqlite3` | Each clan's health-report expectations and their change log |
 | Health reports | `data/clan_health/player_health_config.json` | Default health-report expectations |
 | Clan reports | `data/clan_data/clan_activity.json` | Monthly report and board state |
-| Clan transfers | `data/events/events.sqlite3` | Pending queues, board and ping IDs, and request, cancellation, expiry and clearing history; `data/clan_transfers/transfer_queue.json` is also written for one update so a revert keeps open requests |
+| Clan transfers | `data/events/events.sqlite3` | Open transfer requests, their board and ping messages, and what happened to each request |
 | CWL | `data/cwl/cwl_threads.json` | Registered CWL threads |
 | CWL | `data/cwl/cwl_scheduler_state.json` | Reminder and schedule state |
 | CWL | `data/cwl/cwl_transfer_state.json` | Transfer hub message ID, released roster cycles, and reminder state |
