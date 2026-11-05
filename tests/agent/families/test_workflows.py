@@ -44,16 +44,22 @@ class WorkflowFamilyTests(unittest.IsolatedAsyncioTestCase):
 
         def account(tag):
             battles = [] if tag != tags[0] else [
-                {'battle_at': (start - 60) * second, 'payload': {'attack': True}},
-                {'battle_at': (start + 60) * second, 'payload': {'attack': True}},
-                {'battle_at': (start + 120) * second, 'payload': {'attack': False}}]
+                {'battle_at': (start - 60) * second, 'payload': {'attack': True, 'battleType': 'RANKED'}},
+                {'battle_at': (start + 60) * second, 'payload': {'attack': True, 'battleType': 'RANKED'}},
+                {'battle_at': (start + 120) * second, 'payload': {'attack': False, 'battleType': 'RANKED'}}]
             status = 'never_read' if tag == tags[-1] else 'partial'
             gaps = ([{'after': (start - 3600) * second, 'before': (start + 30) * second, 'cause': 'before_first_read'}]
                     if status == 'partial' else [{'after': start * second, 'before': (start + 999) * second, 'cause': 'never_read'}])
-            return {'player_tag': tag, 'battles': battles, 'log_coverage': {'status': status, 'gaps': gaps}}
-        window = AsyncMock(side_effect=lambda selector, values, **kw: {'accounts': [account(tag) for tag in values]})
+            from agent.families.test_ranked import account as full_account, coverage
+            row = full_account(tag, status=status)
+            return {**row, 'battles': battles, 'log_coverage': {**coverage(status), 'gaps': gaps}}
+        from agent.families.test_ranked import stored
+        window = AsyncMock(side_effect=lambda selector, values, **kw: stored([account(tag) for tag in values]))
         context = _context()
-        context.guild.get_member = lambda identifier: SimpleNamespace(id=identifier, display_name='Synthetic', roles=[], joined_at=None)
+        for role in context.member.roles:
+            role.name = 'Synthetic'
+            role.is_default = lambda: False
+        context.guild.get_member = lambda identifier: context.member if identifier == context.member.id else SimpleNamespace(id=identifier, display_name='Synthetic', roles=[], joined_at=None)
         context = replace(context, bot=SimpleNamespace(ranked_reads=SimpleNamespace(window=window)),
             account_links=SimpleNamespace(get_links_for_members=lambda ids: {41: [{'player_tag': tag} for tag in tags]}))
         source = {'rows': [{'member_id': 41, 'started_at': '2020-01-01T00:00:00+00:00',
@@ -77,7 +83,10 @@ class WorkflowFamilyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_hibernation_without_the_record_leaves_ranked_activity_unknown(self):
         context = _context()
-        context.guild.get_member = lambda identifier: SimpleNamespace(id=identifier, display_name='Synthetic', roles=[], joined_at=None)
+        for role in context.member.roles:
+            role.name = 'Synthetic'
+            role.is_default = lambda: False
+        context.guild.get_member = lambda identifier: context.member if identifier == context.member.id else SimpleNamespace(id=identifier, display_name='Synthetic', roles=[], joined_at=None)
         context = replace(context, account_links=SimpleNamespace(get_links_for_members=lambda ids: {41: [{'player_tag': '#P0'}]}))
         source = {'rows': [{'member_id': 41, 'started_at': '2020-01-01T00:00:00+00:00',
                             'started_ts': 1577836800, 'start_time_status': 'known'}]}

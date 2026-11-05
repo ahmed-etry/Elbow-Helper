@@ -42,7 +42,7 @@ class CommunityDataContextTests(unittest.TestCase):
         for source in ('features/recruitment/commands.py', 'features/recruitment/trials.py', 'features/account_links/cog.py',
                        'agent/families/identity_reads.py', 'agent/families/domain_facts.py',
                        'agent/families/workflow_reads.py', 'agent/families/recruitment_history.py',
-                       'agent/families/war_reads.py', 'agent/families/ranked_reads.py',
+                       'agent/families/war_reads.py', 'agent/reads/ranked.py',
                        'agent/families/reference_reads.py', 'agent/families/access_reads.py'):
             self.assertTrue((root / source).is_file(), source)
         self.assertIn('deleted when tracking ends', COMMUNITY_DATA_CONTEXT)

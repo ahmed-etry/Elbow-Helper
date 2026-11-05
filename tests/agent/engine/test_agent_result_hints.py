@@ -26,7 +26,6 @@ from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.plan.executor import execute_plan
 from elbow_helper.agent.plan.results import model_result
 from elbow_helper.agent.models import AgentCapabilityEffect
-from elbow_helper.agent.datasets.ranked import RankedAccount
 from elbow_helper.agent.capabilities.achievements.report import AchievementProgressReport
 from elbow_helper.agent.capabilities.clan_reporting.report import MissingElderReport
 from elbow_helper.agent.capabilities.clan_transfers.report import TransferQueueReport
@@ -163,7 +162,6 @@ def fixed_results(seed):
     return {
         "query_bot_data": {"rows": [{"synthetic_number": seed}], "row_count": 1,
                            "truncated": False},
-        "read_ranked_stats": {"accounts": [asdict(synthetic_value(RankedAccount, seed))]},
         "read_linked_accounts": {"source": "bot_account_links", "accounts": [{"member_id": 42, "player_tag": "#P0", "player_name": "Synthetic"}]},
         "read_cohort_leagues": {"source": "cohort_ranked_leagues", "accounts": [{"member_id": 42, "player_tag": "#P0", "player_name": "Synthetic",
             "status": "ok", "ranked_league": "Dragon League 30", "legacy_league": "Silver III", "trophies": 0,

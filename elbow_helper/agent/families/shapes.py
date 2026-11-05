@@ -10,6 +10,29 @@ RESULT_FIELDS = {
     'read_current_war': {**COMMON, 'rows': [{**names('clan_code,status,state,start_at,end_at,team_size,opponent'), 'members': [names('player_tag,player_name,attacks_used,unused_attacks,missed')]}]},
 }
 
+_RANKED_RATIO = names('numerator,denominator,value,display')
+RESULT_FIELDS['read_ranked_activity'].update({
+    'aggregate': {**names('selection,direction,mode,battles,stars_total,triples,stars_denominator,destruction_denominator,destruction_total,missing_stars,missing_destruction,coverage'),
+                  **{metric: dict(_RANKED_RATIO) for metric in (
+                      'average_stars', 'triple_rate_percent', 'average_destruction_percent')}},
+    'measurement': names('field,places,account_tags,after,before,metric,direction,mode'),
+    'resolved_selection': names('account_tags,after,before,metric,direction,mode'),
+    **names('history_coverage,coverage_complete,source_complete')})
+_RANKED_ACCOUNT = RESULT_FIELDS['read_ranked_activity']['rows'][0]
+_RANKED_ACCOUNT.update({
+    **names('clan_tag,ranking_observed_at,defenses,battle_records,historical_counts_complete,first_observed_at,last_observed_at'),
+    'ranking': names('trophies,bestTrophies,attackWins,defenseWins,leagueTier,league,legendStatistics'),
+    'daily': [names('date,attacks_used,defenses')],
+    'log_coverage': {**names('status,watched_from,last_read_at,failed_reads_in_window'),
+                     'gaps': [names('after,before,cause,reasons')]},
+    'battles': [{**names('battle_at,clan_tag,clan_basis,old_store'),
+                 'payload': names('battleTimestamp,battleType,attack,opponentPlayerTag,opponentName,stars,destructionPercentage,opponentTownHallLevel')}]})
+for _direction in ('attacks', 'defenses'):
+    _RANKED_ACCOUNT['observed_' + _direction] = {
+        **names('selection,battles,stars_total,triples,stars_denominator,destruction_denominator,destruction_total,missing_stars,missing_destruction,coverage'),
+        **{metric: dict(_RANKED_RATIO) for metric in (
+            'average_stars', 'triple_rate_percent', 'average_destruction_percent')}}
+
 RESULT_FIELDS.update({
     'read_member_accounts': {**COMMON, 'rows': [{**names('member_id,member_name,joined_at,player_tag,player_name,townHallLevel,role,ranked_league,legacy_league,clan,clan_status,trophies,profile_status'), 'roles': [names('role_id,name')]}], **names('member_count,account_count,status')},
     'read_clan_rosters': {**COMMON, 'rows': [names('clan_code,basis,season,player_tag,player_name,townHallLevel,role,donations,profile_status')]},

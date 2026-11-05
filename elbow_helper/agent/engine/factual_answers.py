@@ -1,6 +1,7 @@
 """Check numeric claims against typed tool fields without replacing prose."""
 
 import math
+import json
 import re
 
 from elbow_helper.domain.player_tags import normalize_player_tag
@@ -89,13 +90,16 @@ _METRICS = (
 )
 
 
-def numeric_conflicts(question, answer, evidence):
+def numeric_conflicts(question, answer, evidence, *, ranked_only=False):
     """Return verified figures only for contradictory claims of the same metric.
 
     This deliberately checks explicit numeric claims, not the completeness or
     truth of arbitrary prose. Missing, ambiguous and failed data are not grounds
     for rewriting an answer. Quoted messages cannot supply trusted figures.
     """
+    ranked = ranked_conflicts(answer, evidence)
+    if ranked_only:
+        return ranked
     question = question.casefold()
     # Keep decimal points and account tags intact when separating claims.
     clauses = re.split(r"[\n;!?]+|(?<!\d)\.(?:\s|$)|(?<=\d)\.(?=\s|$)", answer.casefold())
@@ -152,47 +156,84 @@ def numeric_conflicts(question, answer, evidence):
             claim = re.fullmatch(r"\s*(?:count\s*[:=]?\s*)?(\d+)\s*[.!]?\s*", answer, re.I)
             if claim and int(claim[1]) != int(expected):
                 conflicts.append(f"Requested count: {expected}.")
-    results = _clash_results(evidence, "battle_log")
-    # Multiple aggregates may cover different windows or cohorts. Do not guess
-    # which one supports a generated figure.
-    if len(results) == 1:
-        result = results[0]
-        aggregate = result.get("aggregate", {})
-        items = _items(result)
-        tags = {item.get("tag") for item in items if item.get("status") == "ok"}
-        requested_tags = _clan_subjects(question)
-        if (isinstance(aggregate, dict) and tags and None not in tags
-                and (not requested_tags or requested_tags == tags)):
-            selection = aggregate.get("selection", "")
-            if (re.search(r"\battacks?\b", question) and not selection.endswith("_attacks")
-                    or re.search(r"\bdefen[cs]es?\b", question) and not selection.endswith("_defenses")
-                    or "ranked" in question and not selection.startswith("ranked_")):
-                return tuple(dict.fromkeys(conflicts))
-            requested_metrics = [field for field, _, pattern, _, _ in _METRICS if re.search(pattern, question)]
-            for field, label, pattern, suffix, places in _METRICS:
-                metric = aggregate.get(field, {})
-                if not isinstance(metric, dict):
-                    continue
-                numerator, denominator = metric.get("numerator"), metric.get("denominator")
-                if not _number(numerator) or type(denominator) is not int or denominator <= 0:
-                    continue
-                value = numerator / denominator
-                for clause in clauses:
-                    mentioned_tags = {normalize_player_tag(tag) for tag in re.findall(r"#[a-z0-9]+", clause)}
-                    if mentioned_tags and mentioned_tags != tags:
-                        continue
-                    if (re.search(r"\battacks?\b", clause) and not selection.endswith("_attacks")
-                            or re.search(r"\bdefen[cs]es?\b", clause) and not selection.endswith("_defenses")
-                            or "ranked" in clause and not selection.startswith("ranked_")):
-                        continue
-                    claims = re.findall(pattern + r"\s*(?:is|was|:|=|of)?\s*(\d+(?:\.\d+)?)", clause)
-                    claims += re.findall(r"(\d+(?:\.\d+)?)%?\s+" + pattern, clause)
-                    bare = re.fullmatch(r"\s*(\d+(?:\.\d+)?)%?\s*", clause)
-                    if requested_metrics == [field] and bare:
-                        claims.append(bare[1])
-                    if any(_different_number(claim, value) for claim in claims):
-                        subjects = ", ".join(sorted(tags))
-                        conflicts.append(f"{subjects} {selection} {label.lower()}: {value:.{places}f}{suffix} "
-                                         f"({denominator} measured battles; observed rolling logs only).")
-                        break
-    return tuple(dict.fromkeys(conflicts))
+    return tuple(dict.fromkeys((*conflicts, *ranked)))
+
+
+def ranked_conflicts(answer, evidence):
+    """Bind numeric claims to one checked ranked selection and aggregate field.
+
+    Intent comes only from the planner's typed read arguments echoed by the
+    adapter. Request text is neither read nor classified here. Generated prose
+    is checked only when its metric and subjects match that bound field.
+    """
+    candidates = {}
+    for result in observations(evidence):
+        if result.get('source') != 'family_record' or result.get('family') not in (None, 'read_ranked_activity'):
+            continue
+        selected, binding, aggregate = (result.get(key) for key in ('resolved_selection', 'measurement', 'aggregate'))
+        if not all(isinstance(value, dict) for value in (selected, binding, aggregate)):
+            continue
+        metric = selected.get('metric')
+        specs = [spec for spec in _METRICS if spec[0] == metric]
+        if len(specs) != 1:
+            continue
+        field, label, pattern, suffix, places = specs[0]
+        direction, mode = selected.get('direction'), selected.get('mode')
+        tags = selected.get('account_tags')
+        coverage = aggregate.get('coverage', {})
+        if (direction not in ('attacks', 'defenses') or mode not in ('ranked_and_legend', 'ranked', 'legend')
+                or not isinstance(tags, list) or not tags
+                or any(not isinstance(tag, str) or normalize_player_tag(tag) != tag for tag in tags)
+                or not selected.get('after') or not selected.get('before')
+                or any(binding.get(key) != selected.get(key) for key in (
+                    'account_tags', 'after', 'before', 'mode', 'direction', 'metric'))
+                or binding.get('field') != 'aggregate.' + field or binding.get('places') != places
+                or aggregate.get('direction') != direction or aggregate.get('mode') != mode
+                or aggregate.get('selection') != ('ranked_' if mode == 'ranked_and_legend' else mode + '_') + direction
+                or not isinstance(coverage, dict) or coverage.get('scope') != 'collected_ranked_history'
+                or coverage.get('requested_after') != selected['after']
+                or coverage.get('requested_before') != selected['before']):
+            continue
+        value = aggregate.get(field, {})
+        if not isinstance(value, dict):
+            continue
+        numerator, denominator = value.get('numerator'), value.get('denominator')
+        if not _number(numerator) or type(denominator) is not int or denominator <= 0:
+            continue
+        totals = {'average_stars': ('stars_total', 'stars_denominator', 1),
+                  'triple_rate_percent': ('triples', 'stars_denominator', 100),
+                  'average_destruction_percent': ('destruction_total', 'destruction_denominator', 1)}
+        total, measured, scale = totals[field]
+        if (not _number(aggregate.get(total)) or numerator != aggregate[total] * scale
+                or denominator != aggregate.get(measured)):
+            continue
+        exact = numerator / denominator
+        if not _number(value.get('value')) or not math.isclose(value['value'], exact, abs_tol=1e-9):
+            continue
+        signature = json.dumps([selected, field, numerator, denominator], sort_keys=True)
+        candidates[signature] = (set(tags), aggregate.get('selection'), direction, mode,
+                                  label, pattern, suffix, places, exact, denominator)
+    # Different cohorts, windows or requested metrics cannot choose each other's claims.
+    if len(candidates) != 1:
+        return ()
+    tags, selection, direction, mode, label, pattern, suffix, places, value, denominator = next(iter(candidates.values()))
+    clauses = re.split(r'[\n;!?]+|(?<!\d)\.(?:\s|$)|(?<=\d)\.(?=\s|$)', answer.casefold())
+    for clause in clauses:
+        mentioned = {normalize_player_tag(tag) for tag in re.findall(r'#[a-z0-9]+', clause)}
+        if mentioned and mentioned != tags:
+            continue
+        if (re.search(r'\battacks?\b', clause) and direction != 'attacks'
+                or re.search(r'\bdefen[cs]es?\b', clause) and direction != 'defenses'
+                or re.search(r'\blegend\b', clause) and mode != 'legend'
+                or re.search(r'\branked\b', clause) and mode == 'legend'):
+            continue
+        claims = re.findall(pattern + r'\s*(?:is|was|:|=|of)?\s*(\d+(?:\.\d+)?)', clause)
+        claims += re.findall(r'(\d+(?:\.\d+)?)%?\s+' + pattern, clause)
+        bare = re.fullmatch(r'\s*(\d+(?:\.\d+)?)%?\s*', clause)
+        if bare:
+            claims.append(bare[1])
+        if any(_different_number(claim, value) for claim in claims):
+            subjects = ', '.join(sorted(tags))
+            return (f'{subjects} {selection} {label.lower()}: {value:.{places}f}{suffix} '
+                    f'({denominator} measured battles; observed rolling logs only).',)
+    return ()

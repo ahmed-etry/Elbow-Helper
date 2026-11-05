@@ -6,7 +6,7 @@ import unittest
 
 from elbow_helper.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
 from elbow_helper.agent.engine.tool_call import bound_tool_result
-from elbow_helper.agent.families import ranked_reads
+from elbow_helper.agent.reads import ranked_tools as ranked_reads
 from elbow_helper.agent.plan.results import model_result, model_view
 from agent.test_agent_ranked import RankedRecordFixture, iso
 from data.test_ranked_import import BASE, SECOND, battle

@@ -416,21 +416,20 @@ class AnswerFlow:
             max_output_tokens=limits.FINAL_MAX_OUTPUT_TOKENS)
 
     def _append_verified_figures(self, answer):
-        if self.context.state.family_catalogue:
-            return answer
         conflicts = numeric_conflicts(self.context.state.request_text, answer,
-                                      self.context.state.grounding_evidence)
-        roles = role_conflicts(answer, self.context.state.grounding_evidence)
+                                      self.context.state.grounding_evidence,
+                                      ranked_only=self.context.state.family_catalogue)
+        roles = () if self.context.state.family_catalogue else role_conflicts(answer, self.context.state.grounding_evidence)
         if roles:
             return "\n\n".join((answer, "Verified facts: " + " ".join((*conflicts, *roles))))
         return "\n\n".join((answer, "Verified figures: " + " ".join(conflicts))) if conflicts else answer
 
     async def _checked_figures(self, answer):
-        if self.context.state.family_catalogue:
-            return answer
         conflicts = numeric_conflicts(self.context.state.request_text, answer,
-                                      self.context.state.grounding_evidence)
-        conflicts += role_conflicts(answer, self.context.state.grounding_evidence)
+                                      self.context.state.grounding_evidence,
+                                      ranked_only=self.context.state.family_catalogue)
+        if not self.context.state.family_catalogue:
+            conflicts += role_conflicts(answer, self.context.state.grounding_evidence)
         if not conflicts:
             return answer
         try:

@@ -2,8 +2,7 @@
 from datetime import timedelta
 import unittest
 
-from elbow_helper.agent.datasets import ranked
-from elbow_helper.agent.families.ranked_reads import TOOLS
+from elbow_helper.agent.reads.ranked_tools import TOOLS
 from agent.test_agent_ranked import RankedRecordFixture, iso
 from data.test_ranked_import import BASE, SECOND, battle
 
@@ -30,10 +29,10 @@ class RankedLongWindowTests(RankedRecordFixture, unittest.IsolatedAsyncioTestCas
         await self.copy()
         arguments = {'account_tags': ['#P0', '#P9'], 'after': iso(BASE - timedelta(days=1).total_seconds() * SECOND),
                      'before': iso(BASE + 3600 * SECOND)}
-        page = await ranked.read_ranked_stats(self.context, {**arguments, 'offset': 1, 'limit': 1})
+        first = await TOOLS[0].handler(self.context, {**arguments, 'limit': 1})
+        self.assertEqual((first['rows'][0]['player_tag'], first['next_offset']), ('#P0', 1))
+        page = await TOOLS[0].handler(self.context, {'report_id': first['report_id'], 'offset': 1, 'limit': 1})
         self.assertEqual(page['total_accounts'], 2)
-        self.assertEqual(page['accounts'][0]['player_tag'], '#P9')
+        self.assertEqual(page['rows'][0]['player_tag'], '#P9')
         self.assertIsNone(page['next_offset'])
-        first = await ranked.read_ranked_stats(self.context, {**arguments, 'limit': 1})
-        self.assertEqual((first['accounts'][0]['player_tag'], first['next_offset']), ('#P0', 1))
-        self.assertIn('more_accounts_available', first['history_coverage']['reasons'])
+        self.assertEqual(first['history_coverage'], page['history_coverage'])

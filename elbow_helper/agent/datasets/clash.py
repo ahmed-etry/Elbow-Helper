@@ -20,7 +20,7 @@ from ..plan.input_rules import RULES
 from .battle_logs import select_battles
 from .clash_cache import MAX_AGE_SECONDS
 from ..read_cache import LIVE_READ_SECONDS, read_scope
-from .findings import AGGREGATES, FIELD_MEANINGS, battle_aggregate, cohort_aggregate
+from .findings import FIELD_MEANINGS
 
 
 ENDPOINTS = {
@@ -241,11 +241,8 @@ async def read_clash(context, arguments):
         return invalid_arguments("Use valid ISO dates, chronological order and offset for battle logs only.",
                                  "after", "before", "order", "offset")
     aggregate = arguments.get("aggregate")
-    if aggregate is not None and (kind != "battle_log" or aggregate not in AGGREGATES):
-        return invalid_arguments("Choose a supported battle-log aggregate.", "aggregate")
-    # Repeated tags must not multiply a cohort's denominators.
     if aggregate is not None:
-        normalized = list(dict.fromkeys(normalized))
+        return invalid_arguments("Choose a supported battle-log aggregate.", "aggregate")
     items = [{"tag": tag, "status": "unavailable"} for tag in normalized]
     semaphore = asyncio.Semaphore(8)
     deadline = time.monotonic() + budgets.TOOL_TIMEOUT_SECONDS - 1
@@ -332,10 +329,6 @@ async def read_clash(context, arguments):
                 )
                 if coverage is not None:
                     items[index]["coverage"] = coverage
-                if aggregate is not None:
-                    items[index]["aggregate"] = battle_aggregate(
-                        original, aggregate, after=after, before=before,
-                    )
             else:
                 status = (
                     "timeout" if isinstance(getattr(response, 'error', None), TimeoutError)
@@ -374,8 +367,6 @@ async def read_clash(context, arguments):
             "projection": "fields" if fields is not None else arguments.get("detail", "summary"),
             **({"fields": fields} if fields is not None else {}),
             "field_meanings": FIELD_MEANINGS.get(kind, {}),
-            **({"aggregate": cohort_aggregate(items, aggregate, after=after, before=before)}
-               if aggregate is not None else {}),
             "observed_at": min((item["observed_at"] for item in items if "observed_at" in item),
                                default=datetime.now(timezone.utc).isoformat()),
             "truncated": truncated,
@@ -388,7 +379,7 @@ def clash_tools():
     return (RegisteredAgentTool(
         AgentToolDefinition(
             "read_clash",
-            "Read Clash clans, wars and profiles using resolved tags, never placeholder values.",
+            "Read Clash clans, wars, profiles and raw latest logs; use read_ranked_activity for history.",
             {
                 "type": "object",
                 "properties": {
@@ -411,7 +402,6 @@ def clash_tools():
                     "offset": {"type": "integer", "minimum": 0, "default": 0},
                     "after": {"type": "string", "maxLength": 40},
                     "before": {"type": "string", "maxLength": 40},
-                    "aggregate": {"type": "string", "enum": list(AGGREGATES)},
                     "max_age_seconds": {"type": "integer", "minimum": 0, "maximum": LIVE_READ_SECONDS,
                                         "default": LIVE_READ_SECONDS},
                 },
@@ -420,7 +410,7 @@ def clash_tools():
                          "forbids": ["order", "offset", "after", "before", "aggregate"],
                          "error": "Use order, offset, dates and aggregates for battle logs only."}],
             },
-            usage_note="Max 200 players/20 others; fields overrides detail. CWL-only clans need a seasonal CWL cohort first; player.warStars is cumulative.",
+            usage_note="Use resolved tags, never placeholder values; fields overrides detail. CWL-only clans need a seasonal CWL cohort first; player.warStars is cumulative.",
         ),
         read_clash,
         contract=CapabilityContract(), returns="items[].tag,status,data; observed_at",
