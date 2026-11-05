@@ -8,7 +8,7 @@ from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
 from .api_fields import unpack
 from .legacy_links import TOPIC, BootstrapRequired, ImportMismatch, snapshot
-from .link_state import apply_rows, check_mapping, receipt
+from .link_state import apply_rows, check_mapping, receipt, display_rows
 from .projections import canonical_json
 
 ROSTER_MAX_AGE_US = 30 * 60 * 1_000_000
@@ -81,36 +81,28 @@ def roster_checks(connection, at, checks):
     return checks
 
 
-def import_people(connection, path, frozen=None):
+def import_people(connection, path, frozen=None, *, at=None):
     """Caller holds the family writer; relevant legacy writers must be stopped."""
-    frozen = snapshot(path) if frozen is None else frozen
     marker = connection.execute("SELECT * FROM imports WHERE topic=?", (TOPIC,)).fetchone()
-    unchanged = marker is not None and marker["current_links_digest"] == frozen.links_digest
+    if marker is not None:
+        return {"imported": False}
+    frozen = snapshot(path, at) if frozen is None else frozen
     with sqlite_transaction(connection, immediate=True):
-        if not unchanged:
-            item = receipt(connection, "people_membership_import", TOPIC, frozen.frozen_at, len(frozen.links))
-            apply_rows(connection, frozen.normalized, frozen.frozen_at, item, basis="legacy_current", reset=True, aliases=True)
+        item = receipt(connection, "people_membership_import", TOPIC, frozen.frozen_at, len(frozen.links))
+        apply_rows(connection, frozen.normalized, frozen.frozen_at, item, basis="legacy_current", reset=True, aliases=True)
+        display_rows(connection, frozen.normalized, raw_tags=frozen.links)
         checks = check_mapping(connection, frozen.normalized, constraints=True)
         checks["suggestions"] = len(frozen.auxiliary["suggestions"])
         checks["ignored_tags"] = len(frozen.auxiliary["ignored_tags"])
-        # The roster proves the first switch only. Once imported, the marker
-        # and the legacy comparison are sufficient, including after rollback.
-        if marker is None:
-            checks["linked_tags"] = sorted(frozen.normalized)
-            roster_checks(connection, frozen.frozen_at, checks)
+        checks["linked_tags"] = sorted(frozen.normalized)
+        roster_checks(connection, frozen.frozen_at, checks)
         if snapshot(path, frozen.frozen_at).content_digest != frozen.content_digest:
             raise ImportMismatch("legacy_changed_during_import", checks)
-        if not unchanged:
-            connection.execute("INSERT INTO link_imports(source_version,source_digest,frozen_at,basis,checks_json,source_item_id) "
-                               "VALUES (?,?,?,?,?,?)", (frozen.version, frozen.content_digest, frozen.frozen_at,
-                               "rollback_gap" if marker else "initial", canonical_json(checks), item))
-            connection.execute(
-                "INSERT INTO imports VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(topic) DO UPDATE SET "
-                "source_version=excluded.source_version,source_digest=excluded.source_digest,frozen_at=excluded.frozen_at,"
-                "current_links_digest=excluded.current_links_digest,checked_at=excluded.checked_at,"
-                "checks_json=excluded.checks_json,source_item_id=excluded.source_item_id",
-                (TOPIC, frozen.version, frozen.content_digest, frozen.frozen_at, frozen.links_digest,
-                 frozen.frozen_at, canonical_json(checks), item),
-            )
-        return {"imported": not unchanged, "source_version": frozen.version, "source_digest": frozen.content_digest,
+        connection.execute("INSERT INTO link_imports(source_version,source_digest,frozen_at,basis,checks_json,source_item_id) "
+                           "VALUES (?,?,?,'initial',?,?)", (frozen.version, frozen.content_digest, frozen.frozen_at,
+                           canonical_json(checks), item))
+        connection.execute("INSERT INTO imports VALUES (?,?,?,?,?,?,?,?)",
+                           (TOPIC, frozen.version, frozen.content_digest, frozen.frozen_at, frozen.links_digest,
+                            frozen.frozen_at, canonical_json(checks), item))
+        return {"imported": True, "source_version": frozen.version, "source_digest": frozen.content_digest,
                 "frozen_at": frozen.frozen_at, "checks": checks}

@@ -326,12 +326,12 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(await self.rows("SELECT * FROM members")), 1)
 
     async def test_due_time_survives_restart_and_does_not_catch_up(self):
-        from elbow_helper.data.collectors.service import LINK_INTERVAL_SECONDS
+        from elbow_helper.data.collectors.service import CLAN_INTERVAL_SECONDS
         await self.links(100, {})
         self.store = FamilyStore(self.path)
         await self.store.initialize()
-        self.assertFalse(await self.store.due("links", LINK_INTERVAL_SECONDS, 299_000_100))
-        self.assertTrue(await self.store.due("links", LINK_INTERVAL_SECONDS, 300_000_100))
+        self.assertFalse(await self.store.due("links", CLAN_INTERVAL_SECONDS, 899_000_100))
+        self.assertTrue(await self.store.due("links", CLAN_INTERVAL_SECONDS, 900_000_100))
 
     async def test_disk_work_off_loop_and_writer_remains_serialized_after_cancellation(self):
         main_thread = threading.get_ident()

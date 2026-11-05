@@ -12,7 +12,7 @@ from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.data.store import FamilyStore, now_us
 from elbow_helper.data.store.clans import collect_clans
-from elbow_helper.data.store.people import mirror_links, observe_discord
+from elbow_helper.data.store.people import observe_discord
 from elbow_helper.data.store.players import collect_player, due_accounts, players_due
 from elbow_helper.data.store.source_state import COLLECTORS as SOURCE_COLLECTORS
 from elbow_helper.data.store.sources import due_sources
@@ -27,7 +27,6 @@ LOGGER = logging.getLogger(__name__)
 # GETs/day at that population; outside linked accounts add 24 each.
 CLAN_INTERVAL_SECONDS = 15 * 60
 PLAYER_INTERVAL_SECONDS = 60 * 60
-LINK_INTERVAL_SECONDS = 5 * 60
 DISCORD_INTERVAL_SECONDS = 24 * 60 * 60
 SCHEDULE_CHECK_SECONDS = 30
 # Stands for the whole collector in the failures it is known to have, next to its items.
@@ -67,7 +66,6 @@ class FamilyCollectors(commands.Cog):
         self._tasks: list[asyncio.Task] = []
         self._discord_lock = asyncio.Lock()
         self._clan_lock = asyncio.Lock()
-        self._link_lock = asyncio.Lock()
         self._player_lock = asyncio.Lock()
         self._war_lock = asyncio.Lock()
         self._source_locks = {name: asyncio.Lock() for name in SOURCE_COLLECTORS}
@@ -90,8 +88,6 @@ class FamilyCollectors(commands.Cog):
             asyncio.create_task(self._schedule("wars", SCHEDULE_CHECK_SECONDS, self.collect_wars, after=copy)),
             asyncio.create_task(self._schedule("discord", DISCORD_INTERVAL_SECONDS, self.scan_discord, startup=True)),
         ]
-        if getattr(self.bot, "link_service", None) is None:
-            self._tasks.append(asyncio.create_task(self._schedule("links", LINK_INTERVAL_SECONDS, self.collect_links)))
         self._tasks.extend(asyncio.create_task(self._schedule(name, SCHEDULE_CHECK_SECONDS,
                             lambda name=name: collect_sources(self, name), after=copy if name == "battle_logs" else None))
                            for name in sorted(SOURCE_COLLECTORS))
@@ -104,7 +100,7 @@ class FamilyCollectors(commands.Cog):
         self._tasks.clear()
         # Listener callbacks are dispatched as separate Discord tasks. Wait for
         # their in-flight transactions before allowing the client to close.
-        async with self._discord_lock, self._clan_lock, self._link_lock, self._player_lock, self._war_lock:
+        async with self._discord_lock, self._clan_lock, self._player_lock, self._war_lock:
             for lock in self._source_locks.values():
                 async with lock:
                     pass
@@ -163,26 +159,24 @@ class FamilyCollectors(commands.Cog):
             await asyncio.sleep(SCHEDULE_CHECK_SECONDS)
 
     def _note(self, collector, run, specs, error, problems):
-        # Warn once per active reason, even when successive runs poll different items.
-        # Compare reasons before removing recovered items: a reason moving to another item is still active.
+        # A failure warns when it starts and the collector logs once when it ends; a run that fails the same
+        # way again is only a debug line. A new item failing, or an item failing another way, warns again.
         # `problems` is None when nothing failed. Only items polled in this run can recover; a run that
         # ended in an error says nothing about its items.
         known = self._failing.setdefault(collector, {})
-        reasons = set(known.values())
         current = {RUN_KEY: error} if error else {
             (kind, scope): f"HTTP {status}" if status not in (None, 200) else code or "unknown"
             for kind, scope, status, code in problems or ()}
         polled = set() if error else {RUN_KEY, *specs}
         recovered = {key: known.pop(key) for key in [key for key in known if key in polled and key not in current]}
-        started = {key: how for key, how in current.items()
-                   if (known.get(key) != how if error else how not in reasons)}
+        started = {key: how for key, how in current.items() if known.get(key) != how}
         if started:
             LOGGER.warning("Family %s collection failing (run=%s): %s", collector, run, _described(started))
         elif current:
             LOGGER.debug("Family %s collection still failing (run=%s): %s", collector, run, _described(current))
-        known.update(current)
-        if recovered and not known:
+        if recovered:
             LOGGER.info("Family %s collection recovered (run=%s): %s", collector, run, _described(recovered))
+        known.update(current)
 
     async def _run(self, collector, scope_kind, specs, operation):
         run = None
@@ -286,26 +280,6 @@ class FamilyCollectors(commands.Cog):
             if callable(dispatch):
                 dispatch("family_wars_collected")
             return report
-
-    async def collect_links(self):
-        if getattr(self.bot, "link_service", None) is not None:
-            # Imported ownership is written by the journal service, never by
-            # the old shadow sampler (including while mirroring is deferred).
-            return
-        async with self._link_lock:
-            if self._closing:
-                return
-
-            async def operation(run):
-                await self.store.requested(run, 0)
-                source = self.bot.get_cog("AccountLinks")
-                if source is None:
-                    raise RuntimeError("account_links_unavailable")
-                # The feature's service returns one consistent SQLite snapshot.
-                snapshot = await asyncio.to_thread(source.get_all_links)
-                await self.store.call(mirror_links, run, snapshot, now_us())
-
-            return await self._run("links", "current_links", [("account_links", "current")], operation)
 
     async def scan_discord(self):
         async with self._discord_lock:

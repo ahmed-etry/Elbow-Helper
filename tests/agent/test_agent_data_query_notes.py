@@ -4,7 +4,7 @@ import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 
-from agent.dataset_helpers import synthetic_datasets
+from agent.dataset_helpers import synthetic_datasets, seed_record_links
 from elbow_helper.agent.datasets.catalogue import SOURCES
 from elbow_helper.agent.datasets.guide import DataGuide
 from elbow_helper.agent.datasets.query import run_query
@@ -92,13 +92,7 @@ class MemberJoinTests(unittest.TestCase):
                  (100, "#CCC", "Synthetic Three", 5), (200, "#CCC", "Synthetic Three", 9)],
             )
             connection.commit()
-        with closing(sqlite3.connect(sources["links"].resolve(self.paths))) as connection:
-            connection.executemany(
-                "INSERT INTO links (player_tag, discord_user_id) VALUES (?, ?)",
-                [("#AAA", 11), ("#BBB", 11), ("#CCC", 22)],
-            )
-            connection.execute("INSERT INTO links (player_tag, discord_user_id) VALUES ('#DDD', 33)")
-            connection.commit()
+        seed_record_links(self.paths, [("#AAA", 11), ("#BBB", 11), ("#CCC", 22), ("#DDD", 33)])
 
     def query(self, sql, params=None, max_rows=1000):
         return run_query(SOURCES, self.paths, set(), sql, params, max_rows)

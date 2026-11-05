@@ -105,6 +105,24 @@ def signal(connection, kind, scope, at, *, after=None, before=None, account_id=N
             "truncated": max(len(gaps), len(failures), len(points), len(compact)) > MAX_PAGE,
             "privacy_redacted": False, "continuous_state_known": False,
             "scope_basis": "observed_collection_items"}
+    if kind == "account_links":
+        imported = connection.execute("SELECT frozen_at FROM imports WHERE topic='people_membership' AND frozen_at<=?",
+                                      (end,)).fetchone()
+        if imported:
+            latest_change = connection.execute("SELECT MAX(created_at) FROM link_operations "
+                                               "WHERE status='complete' AND created_at<=?", (end,)).fetchone()[0]
+            pending = connection.execute("SELECT 1 FROM link_operations WHERE status='pending'").fetchone()
+            count = connection.execute("SELECT COUNT(*) FROM account_links WHERE from_at<=? "
+                                       "AND (to_at IS NULL OR to_at>?)", (end, end)).fetchone()[0]
+            # This is local transactional state, not a periodically observed
+            # external table. Silence between commands never makes it stale.
+            result.update(collection_start=imported[0], last_good_at=max(imported[0], latest_change or 0),
+                          status="unavailable" if pending else "observed", source_complete=not pending,
+                          expected_population=count, field_completeness={"complete": True}, failures=[],
+                          gaps=[{"after": after, "before": imported[0], "cause": "not_tracked"}]
+                          if after is not None and after < imported[0] else [],
+                          observation_points=[], compact_spans=[], truncated=False,
+                          continuous_state_known=not pending, scope_basis="local_transactions")
     cache[cache_key] = result
     return result
 

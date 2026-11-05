@@ -1,9 +1,6 @@
 """Confirmed account links are readable without leadership access."""
 
-from contextlib import closing
 from dataclasses import replace
-from pathlib import Path
-import sqlite3
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
@@ -66,17 +63,11 @@ class AccountLinkReadAccessTests(unittest.IsolatedAsyncioTestCase):
 
     def test_only_review_account_datasets_require_reviewer_access(self):
         with TemporaryDirectory() as root:
-            path = Path(root) / "links.db"
-            with closing(sqlite3.connect(path)) as connection:
-                connection.executescript("""
-                    CREATE TABLE links (player_tag TEXT, discord_user_id INTEGER);
-                    INSERT INTO links VALUES ('#P0', 101);
-                    CREATE TABLE suggestions (player_tag TEXT);
-                    CREATE TABLE ignored_tags (player_tag TEXT);
-                """)
-                connection.commit()
-            sources = (replace(SOURCES[0], path=path),)
-            result, access = run_query(sources, None, set(),
+            from agent.dataset_helpers import synthetic_datasets, seed_record_links
+            paths = synthetic_datasets(root)
+            seed_record_links(paths, [("#P0", 101)])
+            sources = (SOURCES[0],)
+            result, access = run_query(sources, paths, set(),
                                       "SELECT player_tag, discord_user_id FROM links.links")
             self.assertEqual(result["rows"], [{"player_tag": "#P0", "discord_user_id": 101}])
             self.assertFalse(access)
@@ -85,13 +76,13 @@ class AccountLinkReadAccessTests(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(table=table):
                     expected_access = "recruiter_or_core" if table in restricted else "none"
                     self.assertEqual(level, expected_access)
-                    result, access = run_query(sources, None, set(), f"SELECT * FROM links.{table}")
+                    result, access = run_query(sources, paths, set(), f"SELECT * FROM links.{table}")
                     if table in restricted:
                         self.assertEqual(result["required_access"], ["recruiter_or_core"])
                         self.assertIn("error", result)
                         self.assertFalse(access)
                         result, access = run_query(
-                            sources, None, {"recruiter_or_core"}, f"SELECT * FROM links.{table}",
+                            sources, paths, {"recruiter_or_core"}, f"SELECT * FROM links.{table}",
                         )
                         self.assertEqual(result["rows"], [])
                         self.assertEqual(access, {"recruiter_or_core"})

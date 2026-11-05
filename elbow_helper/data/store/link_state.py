@@ -1,7 +1,6 @@
 """Family transactions for imported ownership and locally committed changes."""
 
 from collections import Counter
-import json
 
 from .legacy_links import FIELDS, ImportMismatch
 from .people import account, member, close_interval
@@ -122,18 +121,6 @@ def apply_rows(connection, rows, at, item, *, basis, operation_key=None, reset=F
                                    (account_id, at, name, search_key(name), item))
 
 
-def requested_patch(legacy, requested):
-    """Preserve existing raw legacy keys while resolving canonical selectors."""
-    from elbow_helper.domain.player_tags import normalize_player_tag
-    keys = {normalize_player_tag(tag): tag for tag in legacy}
-    before, after = {}, {}
-    for tag, value in requested.items():
-        key = keys.get(tag, tag)
-        before[key] = legacy.get(key)
-        after[key] = {**value, "player_tag": key} if value is not None else None
-    return before, after
-
-
 def patched(rows, patch):
     result = dict(rows)
     for tag, row in patch.items():
@@ -144,10 +131,19 @@ def patched(rows, patch):
     return result
 
 
-def operation_patch(operation):
-    from .projections import link_projection
-    after = json.loads(operation["after_json"])
-    # Deleted keys still need canonical identities for closing ownership.
+def display_rows(connection, rows, *, reorder=False, raw_tags=None):
     from elbow_helper.domain.player_tags import normalize_player_tag
-    return {normalize_player_tag(tag): None for tag, row in after.items() if row is None} | {
-        row["player_tag"]: row for row in link_projection({tag: row for tag, row in after.items() if row is not None})}
+    next_order = connection.execute("SELECT COALESCE(MAX(display_order),0) FROM account_link_metadata").fetchone()[0]
+    raw_tags = {} if raw_tags is None else {normalize_player_tag(tag): tag for tag in raw_tags}
+    for tag, row in rows.items():
+        state = connection.execute("SELECT d.account_id,d.display_order,d.display_tag FROM account_link_metadata d "
+                                   "JOIN accounts a ON a.id=d.account_id WHERE a.player_tag=?", (tag,)).fetchone()
+        if state is None:
+            continue
+        if row is None:
+            connection.execute("UPDATE account_link_metadata SET display_order=NULL,display_tag=NULL WHERE account_id=?",
+                               (state["account_id"],))
+        elif reorder or state["display_order"] is None or raw_tags:
+            next_order += 1
+            connection.execute("UPDATE account_link_metadata SET display_order=?,display_tag=? WHERE account_id=?",
+                               (next_order, raw_tags.get(tag, state["display_tag"] or tag), state["account_id"]))

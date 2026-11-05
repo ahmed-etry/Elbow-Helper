@@ -103,12 +103,23 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
                     name: level for name, level, note in source.tables
                     if level == "none" or level in levels
                 }
-                if source.state_name or not readable or not path.is_file():
+                if source.state_name or not readable or (source.snapshot is None and not path.is_file()):
                     continue
-                connection.execute(
-                    f"ATTACH DATABASE ? AS \"{source.alias}\"",
-                    (path.resolve().as_uri() + "?mode=ro",),
-                )
+                if source.snapshot is not None:
+                    selected = {name: level for name, level in readable.items()
+                                if re.search(r"\b" + re.escape(name) + r"\b", identifiers)}
+                    tables = source.snapshot(paths, path, selected)
+                    connection.execute(f'ATTACH DATABASE \':memory:\' AS "{source.alias}"')
+                    for name, (columns, rows) in tables.items():
+                        names = ','.join('"' + column + '" ' + kind for column, kind in columns)
+                        connection.execute(f'CREATE TABLE "{source.alias}"."{name}" ({names})')
+                        connection.executemany(
+                            f'INSERT INTO "{source.alias}"."{name}" VALUES ({",".join("?" for _ in columns)})', rows)
+                else:
+                    connection.execute(
+                        f"ATTACH DATABASE ? AS \"{source.alias}\"",
+                        (path.resolve().as_uri() + "?mode=ro",),
+                    )
                 allowed.update({(source.alias, name): level for name, level in readable.items()})
                 for name, level in readable.items():
                     if re.search(r"\b" + re.escape(source.alias + "." + name) + r"\b", identifiers):

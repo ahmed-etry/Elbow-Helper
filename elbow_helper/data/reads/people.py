@@ -12,6 +12,7 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from .core import RecordReads, identifiers, tags, timestamp, pagination, page, placeholders
 from .coverage import signal, envelope
 from .profiles import summary, account_history
+from .people_links import CurrentLinksMixin
 
 
 def ownership(connection, tag, at):
@@ -65,7 +66,7 @@ def member_row(connection, identifier, at, clans=None):
     return result
 
 
-class PeopleReads(RecordReads):
+class PeopleReads(CurrentLinksMixin, RecordReads):
     """All selectors are bounded to 200; all disk/alias-adapter work is threaded.
 
     ``alias_reader`` is the read-only ``cwl_queries.account_names`` callable.

@@ -151,12 +151,12 @@ class AccountLinksTests(unittest.TestCase):
                 links = _LinksHarness()
                 links._init_db()
                 asyncio.run(attach_links(links))
-                with links._db_connect() as conn:
+                with links.link_service.store._connection() as conn:
                     conn.execute(
                         """
                         CREATE TRIGGER reject_test_link
-                        BEFORE INSERT ON links
-                        WHEN NEW.player_tag = '#Q0'
+                        BEFORE INSERT ON account_links
+                        WHEN NEW.account_id = (SELECT id FROM accounts WHERE player_tag = '#Q0')
                         BEGIN
                             SELECT RAISE(ABORT, 'rejected test link');
                         END
@@ -188,12 +188,12 @@ class AccountLinksTests(unittest.TestCase):
                         {"player_tag": "#Q0", "discord_user_id": 1},
                     ]
                 ))
-                with links._db_connect() as conn:
+                with links.link_service.store._connection() as conn:
                     conn.execute(
                         """
                         CREATE TRIGGER reject_test_delete
-                        BEFORE DELETE ON links
-                        WHEN OLD.player_tag = '#Q0'
+                        BEFORE UPDATE OF to_at ON account_links
+                        WHEN OLD.account_id = (SELECT id FROM accounts WHERE player_tag = '#Q0')
                         BEGIN
                             SELECT RAISE(ABORT, 'rejected test delete');
                         END
@@ -381,48 +381,22 @@ class ClanSnapshotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot.accounts[0].location_status, "observed_family_clan")
         self.assertEqual(snapshot.accounts[1].location_status, "not_in_complete_family_snapshot")
 
-    async def test_clan_snapshot_keeps_the_live_badge_url(self) -> None:
+    async def test_clan_snapshot_keeps_the_record_badge_url(self):
         links = object.__new__(AccountLinks)
-        links.clash_client = SimpleNamespace(configured=True)
         links._clan_badge_urls = {}
-        links._fetch_coc_json = AsyncMock(
-            return_value={
-                "badgeUrls": {
-                    "small": "https://example.com/beh-small.png",
-                    "large": "https://example.com/beh-large.png",
-                },
-                "members": 0,
-                "memberList": [],
-            }
-        )
-
+        links.membership_reads = SimpleNamespace(rosters=AsyncMock(return_value={"rows": [
+            {"members": [], "badge_url": "https://example.com/beh-small.png"}]}))
         await links._fetch_clan_members("BEH")
+        self.assertEqual(links.get_clan_badge_url("BEH"), "https://example.com/beh-small.png")
 
-        self.assertEqual(
-            links.get_clan_badge_url("BEH"),
-            "https://example.com/beh-small.png",
-        )
 
-    async def test_incomplete_clan_response_is_rejected(self) -> None:
+    async def test_incomplete_record_roster_is_rejected(self):
         links = object.__new__(AccountLinks)
-        links.clash_client = SimpleNamespace(configured=True)
         links._clan_badge_urls = {}
-        links._fetch_coc_json = AsyncMock(
-            return_value={
-                "members": 2,
-                "memberList": [
-                    {"tag": "#ONE", "name": "One"},
-                ],
-            }
-        )
+        links.membership_reads = SimpleNamespace(rosters=AsyncMock(return_value={"rows": [
+            {"members": None, "badge_url": None}]}))
+        self.assertIsNone(await links._fetch_clan_members("BEH"))
 
-        with self.assertLogs(
-            "elbow_helper.features.account_links.cog",
-            level="WARNING",
-        ):
-            members = await links._fetch_clan_members("BEH")
-
-        self.assertIsNone(members)
 
     async def test_incomplete_clan_response_preserves_the_previous_snapshot(self) -> None:
         links = object.__new__(AccountLinks)
@@ -434,7 +408,10 @@ class ClanSnapshotTests(unittest.IsolatedAsyncioTestCase):
         }
         links._clan_members = {"BEH": {"#KNOWN": known_member}}
         links._player_locations = {"#KNOWN": known_member}
-        links._fetch_clan_members = AsyncMock(return_value=None)
+        from elbow_helper.configuration.clans import CLANS
+        links._clan_badge_urls = {}
+        links.membership_reads = SimpleNamespace(rosters=AsyncMock(return_value={"complete": False, "rows": [
+            {"clan_tag": CLANS["BEH"].tag, "members": None, "badge_url": None}]}))
 
         with patch(
             "elbow_helper.features.account_links.cog.TRACKED_CLAN_CODES",

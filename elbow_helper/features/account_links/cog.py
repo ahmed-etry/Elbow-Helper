@@ -6,7 +6,6 @@ import asyncio
 from datetime import datetime, timezone
 import logging
 import sqlite3
-import time
 from typing import Any
 
 import discord
@@ -30,9 +29,7 @@ from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 
 from .config import COC_HTTP_TOTAL_TIMEOUT_SECONDS
 from .config import CLAN_FETCH_BACKOFF_SECONDS
-from .config import CLAN_FETCH_CONCURRENCY
 from .config import CLAN_FETCH_RETRIES
-from .config import CLAN_FETCH_WARNING_COOLDOWN_SECONDS
 from .config import LINK_ROLE_AT_OR_ABOVE_ELDER
 from .config import POLL_INTERVAL_MINUTES
 from .config import TRACKED_CLAN_CODES
@@ -53,6 +50,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         self.bot = bot
         self.clash_client = clash_client
         self.link_service = getattr(bot, "link_service", None)
+        self.membership_reads = getattr(bot, "membership_reads", None)
         self._board_refresher = None
         self._snapshot_lock = asyncio.Lock()
         self._snapshot_ready = asyncio.Event()
@@ -66,13 +64,8 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             "observed_at": None, "complete": False, "locations": {},
             "location_statuses": {},
         }
-        self._clan_fetch_warning_state: dict[str, dict[str, Any]] = {}
 
     async def cog_load(self) -> None:
-        # Startup already validated the rollback file without upgrading it.
-        # A failed topic must not make this required extension fail to load.
-        if getattr(self, "link_service", None) is None:
-            await asyncio.to_thread(self._init_db)
         start_resilient_loop(self._poll_clans_loop)
         try:
             await self.register_pending_suggestion_views()
@@ -101,159 +94,14 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             return
         self._ready_refresh_task = asyncio.create_task(self._refresh_after_ready())
 
-    def _log_clan_fetch_failure(self, key: str, label: str, detail: str, *, transient: bool) -> None:
-        now = time.monotonic()
-        state = self._clan_fetch_warning_state.get(key)
-        if state:
-            last_detail = str(state.get("detail") or "")
-            last_ts = float(state.get("last_ts") or 0.0)
-            if (
-                detail == last_detail
-                and (now - last_ts) < CLAN_FETCH_WARNING_COOLDOWN_SECONDS
-            ):
-                state["suppressed"] = int(state.get("suppressed") or 0) + 1
-                self._clan_fetch_warning_state[key] = state
-                return
-
-        suppressed = int((state or {}).get("suppressed") or 0)
-        suffix = f" (suppressed {suppressed} similar warnings)" if suppressed else ""
-        log = LOGGER.info if transient else LOGGER.warning
-        log("Failed to fetch %s: %s%s", label, detail, suffix)
-        self._clan_fetch_warning_state[key] = {
-            "detail": detail,
-            "last_ts": now,
-            "suppressed": 0,
-        }
-
-    @staticmethod
-    def _group_transient_fetch_warning(key: str, label: str) -> tuple[str, str]:
-        category = key.split(":", 1)[0]
-        if category == "members":
-            return "members:transient", "clan member snapshots"
-        return key, label
-
-    async def _fetch_coc_json(
-        self,
-        path: str,
-        *,
-        warning_key: str,
-        warning_label: str,
-        log_failure: bool = True,
-        fresh: bool = False,
-    ) -> dict[str, Any] | None:
-        response = await self.clash_client.get(
-            path,
-            attempts=CLAN_FETCH_RETRIES,
-            timeout_seconds=COC_HTTP_TOTAL_TIMEOUT_SECONDS,
-            backoff_seconds=CLAN_FETCH_BACKOFF_SECONDS,
-            maximum_backoff_seconds=10.0,
-            fresh=fresh,
-        )
-        payload = response.payload_object
-        if response.ok and payload is not None:
-            self._clan_fetch_warning_state.pop(warning_key, None)
-            transient_key, _ = self._group_transient_fetch_warning(
-                warning_key,
-                warning_label,
-            )
-            self._clan_fetch_warning_state.pop(transient_key, None)
-            return payload
-
-        detail = str(response.error or f"status={response.status}").strip()
-        if response.attempts > 1:
-            detail = f"{detail} (after {response.attempts} attempts)"
-        if log_failure:
-            log_key, log_label = (
-                self._group_transient_fetch_warning(warning_key, warning_label)
-                if response.transient
-                else (warning_key, warning_label)
-            )
-            self._log_clan_fetch_failure(
-                log_key,
-                log_label,
-                detail,
-                transient=response.transient,
-            )
-        else:
-            LOGGER.debug("Failed to fetch %s: %s", warning_label, detail)
-        return None
-
     async def _fetch_clan_members(self, clan_code: str, *, fresh: bool = False) -> list[dict[str, Any]] | None:
-        if not self.clash_client.configured:
-            return []
-        clan_tag = CLANS[clan_code].tag
-        path = f"/clans/{encode_clash_tag(clan_tag)}"
-        payload = await self._fetch_coc_json(
-            path,
-            warning_key=f"members:{clan_code}",
-            warning_label=f"clan members for {clan_code}",
-            fresh=fresh,
-        )
-        if payload is None:
-            return None
-
-        raw_members = payload.get("memberList")
-        declared_count = payload.get("members")
-        returned_count = len(raw_members) if isinstance(raw_members, list) else 0
-        valid_members = (
-            [
-                member
-                for member in raw_members
-                if isinstance(member, dict) and str(member.get("tag") or "").strip()
-            ]
-            if isinstance(raw_members, list)
-            else []
-        )
-        unique_tags = {
-            str(member.get("tag") or "").strip().upper()
-            for member in valid_members
-        }
-        roster_complete = (
-            isinstance(raw_members, list)
-            and not isinstance(declared_count, bool)
-            and isinstance(declared_count, int)
-            and declared_count >= 0
-            and returned_count == declared_count
-            and len(valid_members) == declared_count
-            and len(unique_tags) == declared_count
-        )
-        if not roster_complete:
-            LOGGER.warning(
-                "Clan member snapshot incomplete clan=%s returned=%s declared=%s",
-                clan_code,
-                returned_count,
-                declared_count,
-            )
-            return None
-
-        badge_urls = payload.get("badgeUrls") or {}
-        badge_url = next(
-            (
-                badge_urls.get(size)
-                for size in ("small", "medium", "large")
-                if isinstance(badge_urls.get(size), str) and badge_urls.get(size)
-            ),
-            None,
-        )
-        if badge_url:
-            self._clan_badge_urls[clan_code] = badge_url
-
-        out: list[dict[str, Any]] = []
-        for member in valid_members:
-            player_tag = str(member.get("tag") or "").strip().upper()
-            if not player_tag:
-                continue
-            out.append(
-                {
-                    "player_tag": player_tag,
-                    "player_name": str(member.get("name") or player_tag),
-                    "clan_code": clan_code,
-                    "clan_tag": clan_tag,
-                    "townhall": int(member.get("townHallLevel") or 0),
-                    "role": str(member.get("role") or ""),
-                }
-            )
-        return out
+        snapshot = await self.membership_reads.rosters(clans=[clan_code])
+        row = snapshot["rows"][0]
+        if row["badge_url"]:
+            self._clan_badge_urls[clan_code] = row["badge_url"]
+        return None if row["members"] is None else [
+            {**member, "clan_code": clan_code, "clan_tag": CLANS[clan_code].tag}
+            for member in row["members"]]
 
     def get_clan_badge_url(self, clan_code: str) -> str | None:
         """Return the latest badge URL from the existing clan snapshot."""
@@ -306,16 +154,18 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
     async def _rebuild_snapshots(self, *, fresh: bool = False) -> None:
         fresh_members: dict[str, dict[str, dict[str, Any]]] = {}
         player_locations: dict[str, dict[str, Any]] = {}
-        semaphore = asyncio.Semaphore(CLAN_FETCH_CONCURRENCY)
-
-        async def fetch_one(clan_code: str) -> tuple[str, list[dict[str, Any]] | None]:
-            async with semaphore:
-                return clan_code, await self._fetch_clan_members(clan_code, fresh=fresh)
-
-        results = await asyncio.gather(*(fetch_one(clan_code) for clan_code in TRACKED_CLAN_CODES))
-        self._last_snapshot_complete = self.clash_client.configured and all(
-            members is not None for _, members in results
-        )
+        snapshot = await self.membership_reads.rosters(clans=TRACKED_CLAN_CODES)
+        by_tag = {row["clan_tag"]: row for row in snapshot["rows"]}
+        results = []
+        for clan_code in TRACKED_CLAN_CODES:
+            row = by_tag[CLANS[clan_code].tag]
+            if row["badge_url"]:
+                self._clan_badge_urls[clan_code] = row["badge_url"]
+            members = None if row["members"] is None else [
+                {**member, "clan_code": clan_code, "clan_tag": row["clan_tag"]}
+                for member in row["members"]]
+            results.append((clan_code, members))
+        self._last_snapshot_complete = snapshot["complete"]
         location_statuses: dict[str, str] = {}
         for clan_code, members in results:
             carried_forward = members is None

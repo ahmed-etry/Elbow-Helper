@@ -6,7 +6,7 @@ import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 
-from agent.dataset_helpers import synthetic_datasets
+from agent.dataset_helpers import synthetic_datasets, seed_record_links
 from elbow_helper.agent.datasets.catalogue import SOURCES
 from elbow_helper.agent.datasets.guide import DataGuide
 from elbow_helper.agent.datasets.query import run_query
@@ -43,8 +43,7 @@ class RecordQueryTests(unittest.TestCase):
                 INSERT INTO cwl_clans VALUES (1,'#C0','Synthetic',1,NULL,'{}',1);
                 INSERT INTO cwl_rounds VALUES (1,1,'#W0',1,1);
             """)
-        with closing(sqlite3.connect(self.sources['links'].resolve(self.paths))) as conn, conn:
-            conn.execute("INSERT INTO links (player_tag,discord_user_id) VALUES ('#P0',99)")
+        seed_record_links(self.paths, [("#P0", 99)])
 
     def query(self, sql, params=None, **kwargs):
         result, touched = run_query(SOURCES, self.paths, set(), sql, params, **kwargs)

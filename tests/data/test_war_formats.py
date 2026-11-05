@@ -236,12 +236,18 @@ class WarFormatTests(WarFixture, unittest.IsolatedAsyncioTestCase):
             return {table: [tuple(row) for row in c.execute(f"SELECT * FROM {table}")] for table in tables}
 
         before = await old.call(snapshot)
+        original_columns = await old.call(lambda c: {
+            table: [row[1] for row in c.execute(f'PRAGMA table_info("{table}")')]
+            for table in before})
         for table in ("player_observations", "player_items", "hero_equipment", "player_counters"):
             self.assertTrue(before[table], table)
         upgraded = FamilyStore(path)
         await upgraded.initialize()
         after = await upgraded.call(snapshot)
-        self.assertEqual(before, {table: after[table] for table in before})
+        preserved = await upgraded.call(lambda c: {
+            table: [tuple(row[column] for column in columns) for row in c.execute(f'SELECT * FROM "{table}"')]
+            for table, columns in original_columns.items()})
+        self.assertEqual(before, preserved)
         self.assertEqual(await upgraded.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), SCHEMA_VERSION)
         await FamilyStore(path).initialize()
         self.assertEqual(after, await upgraded.call(snapshot))

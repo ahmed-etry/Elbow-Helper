@@ -1,4 +1,4 @@
-"""SQLite storage for player links and pending suggestions."""
+"""Family-record link adapters and feature-owned suggestion/ignore state."""
 
 from __future__ import annotations
 

@@ -113,20 +113,15 @@ class ClashFreshnessTests(unittest.IsolatedAsyncioTestCase):
         await AccountLinks.refresh_now(links)
         links._rebuild_snapshots.assert_awaited_once_with(fresh=False)
 
-    async def test_clan_members_refresh_bypasses_the_cached_roster(self):
-        client, session = self.client([
-            _FakeResponse(200, {"members": 1, "memberList": [{"tag": "#2PP"}]},
-                          headers={"Cache-Control": "max-age=120"}),
-            _FakeResponse(200, {"members": 0, "memberList": []}),
-        ])
-        links = object.__new__(AccountLinks)
-        links.clash_client = client
-        links._clan_fetch_warning_state = {}
-        links._clan_badge_urls = {}
-        before = await links._fetch_clan_members("BEH")
-        self.assertEqual(len(before), 1)
+    async def test_clan_members_refresh_reads_the_record_without_a_clash_request(self):
+        client, session = self.client([])
+        links = AccountLinks(SimpleNamespace(), client)
+        links.membership_reads = SimpleNamespace(rosters=AsyncMock(return_value={"rows": [
+            {"members": [], "badge_url": None}]}))
         self.assertEqual(await links._fetch_clan_members("BEH", fresh=True), [])
-        self.assertEqual(len(session.urls), 2)
+        links.membership_reads.rosters.assert_awaited_once_with(clans=["BEH"])
+        self.assertEqual(session.urls, [])
+
 
     async def test_connection_check_reports_a_request_instead_of_cached_success(self):
         client, session = self.client([

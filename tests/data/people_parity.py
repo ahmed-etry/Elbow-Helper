@@ -9,7 +9,6 @@ import asyncio
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
-from urllib.parse import unquote
 
 from elbow_helper.agent.families import account_names, identity_reads
 from .link_fixtures import FrozenLegacyLinks as FrozenLinks
@@ -82,15 +81,16 @@ async def compare_frozen(people, membership, links_path, *, as_of, members, prof
         if result["next_offset"] is None:
             break
         offset = result["next_offset"]
-    async def clan_payload(path, **kwargs):
-        return deepcopy(rosters.get(unquote(path.rsplit("/", 1)[-1])))
-    facade = SimpleNamespace(clash_client=SimpleNamespace(configured=True), _fetch_coc_json=clan_payload,
-                             _clan_badge_urls={})
+    facade = SimpleNamespace()
     legacy_locations = {}
     for clan in membership.clans:
-        old_rows = await AccountLinks._fetch_clan_members(facade, clan.code)
-        if old_rows is not None:
-            legacy_locations.update({row["player_tag"]: row for row in old_rows})
+        payload = rosters.get(clan.tag)
+        if payload is not None:
+            legacy_locations.update({m["tag"]: {
+                "player_tag": m["tag"], "player_name": str(m.get("name") or m["tag"]),
+                "clan_tag": clan.tag, "clan_code": clan.code,
+                "townhall": int(m.get("townHallLevel") or 0), "role": str(m.get("role") or "")}
+                for m in payload["memberList"]})
     facade._player_locations = legacy_locations
     facade._last_snapshot_complete = True
     facade._location_snapshot_observed_at = as_of
