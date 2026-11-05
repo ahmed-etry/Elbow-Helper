@@ -20,14 +20,23 @@ from .config import CLAN_TRANSFER_QUEUES
 from .config import CWL_SEASON_TRANSFER_CLANS
 from .config import REQUEST_TTL_HOURS
 from .state import default_clan_state
-from .state import save_state
+from .state import request_event
 from .views import ClanTransfersView
 
 
 class ClanTransferQueueMixin:
 
-    def _save_state(self) -> None:
-        save_state(self.state)
+    async def _set_clan_field(self, clan_code, field, value):
+        def edit(state):
+            state["clans"][clan_code][field] = value
+            return None, []
+        await self.state_store.change(edit)
+
+    async def _set_board_message(self, value):
+        def edit(state):
+            state["global_board_message_id"] = value
+            return None, []
+        await self.state_store.change(edit)
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)
@@ -38,26 +47,25 @@ class ClanTransferQueueMixin:
         except (TypeError, ValueError):
             return self._now()
 
-    def _prune_expired_pending(self, clan_code: str, *, now: datetime | None = None) -> int:
-        clan_state = self._get_clan_state(clan_code)
-        pending = list(clan_state.get("pending", []))
-        if not pending:
-            return 0
-
+    async def _prune_expired_pending(self, clan_code: str, *, now: datetime | None = None) -> int:
         current_time = now or self._now()
         expiry_delta = timedelta(hours=REQUEST_TTL_HOURS)
-        active_pending = [
-            entry
-            for entry in pending
-            if (current_time - self._parse_timestamp(entry.get("created_at"))) < expiry_delta
-        ]
-        expired_count = len(pending) - len(active_pending)
-        if not expired_count:
+        def expire(state):
+            queue = state["clans"][clan_code]
+            expired = [entry for entry in queue["pending"]
+                       if current_time - self._parse_timestamp(entry["created_at"]) >= expiry_delta]
+            queue["pending"] = [entry for entry in queue["pending"] if entry not in expired]
+            events = [request_event("transfer_expired", clan_code, entry,
+                      at=int((self._parse_timestamp(entry["created_at"]) + expiry_delta).timestamp() * 1_000_000),
+                      detail={"after_hours": REQUEST_TTL_HOURS}) for entry in expired]
+            return len(expired), events
+        # Avoid disk writes during the common, unchanged queue refresh.
+        if not any(current_time - self._parse_timestamp(entry["created_at"]) >= expiry_delta
+                   for entry in self._get_clan_state(clan_code)["pending"]):
             return 0
-
-        clan_state["pending"] = active_pending
-        self._save_state()
-        self.logger.info("Expired %s stale transfer request(s) for %s", expired_count, clan_code)
+        expired_count = await self.state_store.change(expire)
+        if expired_count:
+            self.logger.info("Expired %s stale transfer request(s) for %s", expired_count, clan_code)
         return expired_count
 
     async def _expire_stale_requests(
@@ -71,7 +79,7 @@ class ClanTransferQueueMixin:
             async with self.locks[clan_code]:
                 return await self._expire_stale_requests(clan_code, now=now, lock_held=True)
 
-        expired_count = self._prune_expired_pending(clan_code, now=now)
+        expired_count = await self._prune_expired_pending(clan_code, now=now)
         if expired_count:
             await self._delete_ping(clan_code)
         return expired_count
@@ -152,6 +160,9 @@ class ClanTransferQueueMixin:
         await self.bot.wait_until_ready()
         await self._cleanup_expired_requests()
         for clan_code in CLAN_TRANSFER_QUEUES:
+            queue = self._get_clan_state(clan_code)
+            if not queue["pending"] and queue.get("last_ping_message_id"):
+                await self._delete_ping(clan_code)
             await self.ensure_queue_message(clan_code)
         await self.ensure_global_board()
 
@@ -177,24 +188,20 @@ class ClanTransferQueueMixin:
                         result = await self.bot.publishing.edit_message(message, embed=embed, view=view)
                         if result:
                             return
-                        clan_state["queue_message_id"] = None
-                        self._save_state()
+                        await self._set_clan_field(clan_code, "queue_message_id", None)
                     except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                        clan_state["queue_message_id"] = None
-                        self._save_state()
+                        await self._set_clan_field(clan_code, "queue_message_id", None)
 
                 existing = await self._find_existing_queue_message(thread, clan_code)
                 if existing is not None:
                     result = await self.bot.publishing.edit_message(existing, embed=embed, view=view)
                     if result:
-                        clan_state["queue_message_id"] = existing.id
-                        self._save_state()
+                        await self._set_clan_field(clan_code, "queue_message_id", existing.id)
                         return
 
                 try:
                     message = await thread.send(embed=embed, view=view)
-                    clan_state["queue_message_id"] = message.id
-                    self._save_state()
+                    await self._set_clan_field(clan_code, "queue_message_id", message.id)
                 except (discord.Forbidden, discord.HTTPException) as exc:
                     self.logger.warning("Failed to send queue message for %s: %s", clan_code, exc)
             finally:
@@ -215,17 +222,15 @@ class ClanTransferQueueMixin:
                     message = await channel.fetch_message(message_id)
                     result = await self.bot.publishing.edit_message(message, embed=embed, view=view)
                     if result:
-                        self._save_state()
                         return
-                    self.state["global_board_message_id"] = None
+                    await self._set_board_message(None)
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
                     self.logger.warning("Failed to edit global board %s: %s", message_id, exc)
-                    self.state["global_board_message_id"] = None
+                    await self._set_board_message(None)
 
             try:
                 message = await channel.send(embed=embed, view=view)
-                self.state["global_board_message_id"] = message.id
-                self._save_state()
+                await self._set_board_message(message.id)
             except (discord.Forbidden, discord.HTTPException) as exc:
                 self.logger.warning("Failed to send global board: %s", exc)
 
@@ -399,8 +404,7 @@ class ClanTransferQueueMixin:
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     self.logger.debug("Failed to delete previous ping for %s", clan_code)
             message = await thread.send(content)
-            clan_state["last_ping_message_id"] = message.id
-            self._save_state()
+            await self._set_clan_field(clan_code, "last_ping_message_id", message.id)
         except (discord.Forbidden, discord.HTTPException) as exc:
             self.logger.warning("Failed to send ping for %s: %s", clan_code, exc)
 
@@ -409,12 +413,11 @@ class ClanTransferQueueMixin:
         thread = await self._fetch_channel(clan_state["thread_id"])
         message_id = clan_state.get("last_ping_message_id")
         if thread is None or not message_id:
-            clan_state["last_ping_message_id"] = None
+            await self._set_clan_field(clan_code, "last_ping_message_id", None)
             return
         thread = await self._ensure_thread_active(thread, clan_code)
         if thread is None:
-            clan_state["last_ping_message_id"] = None
-            self._save_state()
+            await self._set_clan_field(clan_code, "last_ping_message_id", None)
             return
 
         try:
@@ -423,8 +426,7 @@ class ClanTransferQueueMixin:
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             self.logger.debug("Failed to delete ping message %s for %s", message_id, clan_code)
         finally:
-            clan_state["last_ping_message_id"] = None
-            self._save_state()
+            await self._set_clan_field(clan_code, "last_ping_message_id", None)
 
     async def handle_clear_queue(self, interaction: discord.Interaction, clan_code: str) -> None:
         if not self._is_queue_manager(interaction, clan_code):
@@ -448,7 +450,8 @@ class ClanTransferQueueMixin:
                 clan_code,
             )
 
-        cleared_message = await self.clear_transfer_queue(clan_code)
+        cleared_message = await self.clear_transfer_queue(
+            clan_code, actor_discord_id=interaction.user.id, via="button")
         await self._safe_ephemeral_reply(interaction, cleared_message)
 
     def transfer_queue_clear_state(self, clan_code: str) -> dict[str, Any] | None:
@@ -464,16 +467,24 @@ class ClanTransferQueueMixin:
             "board_channel_id": TRANSFER_REQUESTS,
         }
 
-    async def clear_transfer_queue(self, clan_code: str) -> str:
+    async def clear_transfer_queue(self, clan_code: str, *, actor_discord_id=None, via="schedule") -> str:
         """Clear a queue for both its panel button and the agent."""
         if clan_code not in CLAN_TRANSFER_QUEUES:
             raise ValueError("Unknown transfer queue")
         async with self.locks[clan_code]:
-            clan_state = self._get_clan_state(clan_code)
-            cleared_count = len(clan_state.get("pending", []))
-            clan_state["pending"] = []
+            cleared_at = int(self._now().timestamp() * 1_000_000)
+            def clear(state):
+                queue = state["clans"][clan_code]
+                pending = queue["pending"]
+                queue["pending"] = []
+                events = [request_event("queue_cleared", clan_code, entry,
+                          at=cleared_at,
+                          actor_kind=("agent" if via == "agent" else "member") if actor_discord_id else "automatic",
+                          actor_discord_id=actor_discord_id, via=via, detail={"count": len(pending)})
+                          for entry in pending]
+                return len(pending), events
+            cleared_count = await self.state_store.change(clear)
             await self._delete_ping(clan_code)
-            self._save_state()
 
         await self.ensure_queue_message(clan_code)
         await self.ensure_global_board()

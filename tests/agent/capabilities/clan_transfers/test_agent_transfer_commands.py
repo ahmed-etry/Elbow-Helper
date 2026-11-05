@@ -23,6 +23,7 @@ class TransferCommandTests(unittest.IsolatedAsyncioTestCase):
         )
         context = SimpleNamespace(
             bot=SimpleNamespace(get_cog=lambda name: workflow),
+            member=SimpleNamespace(id=42),
             state=AgentTurnState(),
         )
         with patch("elbow_helper.agent.capabilities.clan_transfers.queue.require_evidence_access",
@@ -36,7 +37,7 @@ class TransferCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await action.preview.recheck())
         workflow.clear_transfer_queue.assert_not_awaited()
         self.assertEqual((await action.run()).text, "Cleared two requests.")
-        workflow.clear_transfer_queue.assert_awaited_once_with("BEH")
+        workflow.clear_transfer_queue.assert_awaited_once_with("BEH", actor_discord_id=42, via="agent")
 
     async def test_request_and_cancel_use_same_queue_state(self):
         pending = False
@@ -51,12 +52,12 @@ class TransferCommandTests(unittest.IsolatedAsyncioTestCase):
                 }
             return {"issue": "No matching change"}
 
-        async def request(*_):
+        async def request(*_, **kwargs):
             nonlocal pending
             pending = True
             return "Added"
 
-        async def cancel(*_):
+        async def cancel(*_, **kwargs):
             nonlocal pending
             pending = False
             return "Cancelled"
@@ -79,11 +80,13 @@ class TransferCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("<@&10>" in line for line in request_change.preview.lines))
         workflow.request_transfer.assert_not_awaited()
         self.assertEqual((await request_change.run()).after["pending"], True)
+        workflow.request_transfer.assert_awaited_once_with("BEH", 2, via="agent")
         self.assertFalse(await request_change.preview.recheck())
 
         cancel_change = await prepare_transfer_cancel(context, values)
         self.assertTrue(await cancel_change.preview.recheck())
         self.assertEqual((await cancel_change.run()).after["pending"], False)
+        workflow.cancel_transfer.assert_awaited_once_with("BEH", 2, via="agent")
         self.assertFalse(await cancel_change.preview.recheck())
 
 
