@@ -4,7 +4,7 @@ import asyncio
 import sqlite3
 
 from .model_view import pick, ranked_view
-from .war_reads import attendance, period
+from ..reads.wars import attendance, period
 
 
 HISTORY_KINDS = ('regular_war', 'cwl', 'ranked')

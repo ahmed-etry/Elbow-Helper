@@ -138,7 +138,7 @@ class PlannerFix2EvidenceTests(unittest.IsolatedAsyncioTestCase):
 
         context = replace(_context(), cwl_queries=SimpleNamespace(ass_wars=score))
         tool = next(t for t in war_reads.TOOLS if t.definition.name == 'read_cwl_results')
-        with patch.object(war_reads, 'selected_wars', AsyncMock(return_value={'war_ids': ['war']})):
+        with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'war_ids': ['war']})):
             flow, evidence = await self.writer(context, {'read_cwl_results': tool}, [{
                 'id': 'ass', 'capability': 'read_cwl_results', 'arguments': {'metric': 'ass',
                     'clan_codes': codes, 'season': '2026-10', 'delivery': 'xlsx',

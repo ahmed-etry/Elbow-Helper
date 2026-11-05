@@ -190,8 +190,6 @@ async def read_clash(context, arguments):
             cache.clear()
         raise
     client = getattr(context.bot, "clash_client", None)
-    if client is None or not client.configured:
-        return {"error": "The Clash API is not set up."}
     if cache is not None:
         cache.bind((id(client), *read_scope(context)))
     max_age = arguments.get("max_age_seconds", LIVE_READ_SECONDS)
@@ -226,6 +224,10 @@ async def read_clash(context, arguments):
         if tag is None:
             return invalid_arguments("Use valid Clash tags or family clan codes.", "tags")
         normalized.append(tag)
+    record_only = kind in ('current_war', 'war_log')
+    collected = {clan.tag for clan in CLANS.values()} if record_only else set()
+    if any(tag not in collected for tag in normalized) and (client is None or not client.configured):
+        return {"error": "The Clash API is not set up."}
     limit = arguments.get("limit", 2 if kind == "capital_raids" else 10)
     if type(limit) is not int or not 1 <= limit <= (10 if kind == "capital_raids" else 50):
         return invalid_arguments("The selected Clash history limit is invalid.", "limit")
@@ -250,6 +252,11 @@ async def read_clash(context, arguments):
         deadline = min(deadline, context.deadline_monotonic - 1)
 
     async def read(index, tag):
+        if tag in collected:
+            items[index] = {'tag': tag, 'status': 'record_required',
+                            'tools': ['read_current_war', 'read_war_attendance'],
+                            'instruction': 'Use the collected family war record for this clan.'}
+            return
         if tag == "#0":
             items[index] = {"tag": tag, "status": "not_found"}
             return
@@ -410,7 +417,7 @@ def clash_tools():
                          "forbids": ["order", "offset", "after", "before", "aggregate"],
                          "error": "Use order, offset, dates and aggregates for battle logs only."}],
             },
-            usage_note="Use resolved tags, never placeholder values; fields overrides detail. CWL-only clans need a seasonal CWL cohort first; player.warStars is cumulative.",
+            usage_note="Use resolved tags, never placeholder values; fields overrides detail. current_war/war_log: uncollected clans only. CWL-only clans need a CWL cohort first.",
         ),
         read_clash,
         contract=CapabilityContract(), returns="items[].tag,status,data; observed_at",

@@ -18,7 +18,7 @@ class WarAccountMetricTests(unittest.IsolatedAsyncioTestCase):
             'observed_attack_performance': {'attacks': 1, 'stars': stars, 'stars_measured': 1,
                 'triples': int(stars == 3), 'destruction_total': stars * 30, 'destruction_measured': 1}}
             for tag, stars in (('#P0', 3), ('#Q0', 1))]
-        with patch.object(war_reads, 'selected_wars', AsyncMock(return_value={'rows': rows, 'war_ids': ['#R0']})):
+        with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'rows': rows, 'war_ids': ['#R0']})):
             result = await war_reads.attendance(context, {'war_type': 'REG', 'account_tags': list(owners)})
             by_tag = {row['player_tag']: row for row in result['rows']}
             self.assertEqual(by_tag['#P0']['attack_performance']['stars'], 3)

@@ -1,11 +1,13 @@
 """Typed account projections and authorized cohort references shared by family reads."""
 import asyncio
 import json
-from collections import defaultdict
 
 from .core import FamilyReport, UNKEPT_REPORT
-from .war_metrics import aggregate_performance
 from ..reports.tools import authorize_report
+from ..reads.wars import performance_projection
+
+__all__ = ['performance_projection', 'cohort_selection', 'ACCOUNT_FILTERS', 'COHORT_REF', 'PERFORMANCE',
+           'account_matches', 'unknown_account_filter', 'unknown_account_data']
 
 
 ACCOUNT_FILTERS = {
@@ -25,38 +27,6 @@ PERFORMANCE = {'type':'object','properties':{
     'clan_codes':{'type':'array','minItems':1,'maxItems':9,'items':{'type':'string',
         'enum':['BEH','BE4','BES','BE1','BEM','BEC','BEE','BEP','BEW']}}},
     'required':['war_type'],'additionalProperties':False}
-
-
-async def performance_projection(context, rows, selection, *, account_tags=None):
-    from .war_reads import selected_wars
-    from elbow_helper.features.clan_health.attendance import aggregate_attendance
-    ids = sorted({row.get('member_id') or row.get('applicant_member_id') for row in rows
-                  if row.get('member_id') or row.get('applicant_member_id')})
-    if not ids:
-        return {'coverage':'No resolved member IDs for a performance join.'}
-    result = await selected_wars(context, selection, selection['war_type'])
-    if 'error' in result:
-        return {'error':result['error'],'cause':result.get('cause','source_unavailable')}
-    tags = sorted({row['player_tag'] for row in result['rows']})
-    linked = await asyncio.to_thread(context.account_links.get_links_by_tags, tags) if context.account_links else {}
-    owners = {tag: value['discord_user_id'] for tag, value in linked.items() if value}
-    selected = [row for row in result['rows'] if owners.get(row['player_tag']) in ids
-                and (account_tags is None or row['player_tag'] in account_tags)]
-    by_member = {row['member_id']: row for row in aggregate_attendance(selected, owners, 'member')}
-    by_member_type = defaultdict(list)
-    for opportunity in selected:
-        by_member_type[(owners[opportunity['player_tag']], opportunity['war_type'])].append(opportunity)
-    for row in rows:
-        identifier = row.get('member_id') or row.get('applicant_member_id')
-        row['war_attendance'] = by_member.get(identifier)
-        performance = {}
-        for kind in ('REG', 'CWL'):
-            metrics = aggregate_performance(by_member_type[(identifier, kind)])
-            performance[kind] = {key: metrics[key] for key in (
-                'wars', 'account_war_opportunities', 'observed_attacks', 'average_stars',
-                'triple_rate_percent', 'average_destruction_percent', 'measurement_status', 'accounts')}
-        row['attack_performance'] = performance
-    return {**{key:value for key,value in result.items() if key!='rows'}, 'resolved_selection': selection}
 
 
 def account_matches(row, arguments):

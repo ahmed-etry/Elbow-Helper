@@ -273,7 +273,7 @@ class IdentitySideTests(unittest.IsolatedAsyncioTestCase):
         observations = [{'player_tag': tag, 'player_name': tag, 'clan_code': 'BEH', 'war_id': 'synthetic',
                          'attacks_expected': 2, 'attacks_used': 1, 'missed': 1}
                         for tag in ('#P0', '#Q0')]
-        with patch.object(war_reads, 'selected_wars', AsyncMock(return_value={'rows': observations})):
+        with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'rows': observations})):
             accounts = await war_reads.attendance(context, {'war_type': 'REG', 'unit': 'account'})
             members = await war_reads.attendance(context, {'war_type': 'REG', 'unit': 'member'})
         self.assertEqual(len(accounts['members']), 1)

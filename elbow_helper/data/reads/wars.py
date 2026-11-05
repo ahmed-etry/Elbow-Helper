@@ -284,6 +284,26 @@ class WarReads(RecordReads):
         path = getattr(self.store, "path", None)
         return sqlite_revision(path) if path is not None else None
 
+    async def regular_selection(self, clans, *, after=None, before=None, war_ids=(), latest_completed=None, as_of=None):
+        """Select regular wars by window, legacy/record IDs, or latest distinct wars.
+
+        Compact participation and coverage are read in the same worker snapshot.
+        Friendly wars stay separate. All selected clan-facing lineups are retained.
+        """
+        from .war_selection import RegularSelection, select_regular
+        clans, at = clan_tags(clans), timestamp(as_of)
+        ids = tuple(war_ids)
+        if len(ids) > 56 or any(not isinstance(value, str) or len(value) > 100 for value in ids):
+            raise ValueError('Expected at most 56 regular war IDs')
+        ids = tuple(dict.fromkeys(ids))
+        if latest_completed is not None and (type(latest_completed) is not int or not 1 <= latest_completed <= 100):
+            raise ValueError('Expected 1..100 latest completed wars')
+        if bool(ids) + (latest_completed is not None) + (after is not None or before is not None) != 1:
+            raise ValueError('Choose regular war IDs, latest wars or a window')
+        if after is not None or before is not None:
+            after, before = window(after, before)
+        return await self._read(select_regular, RegularSelection(clans, after, before, ids, latest_completed, at))
+
     async def current(self, clan, as_of=None, *, lineups=False):
         """What the war board shows now: the clan's latest current-war check.
 
@@ -301,8 +321,11 @@ class WarReads(RecordReads):
         if observed not in (None, "notInWar") and state and state["war_id"]:
             row = connection.execute("SELECT * FROM wars WHERE id=?", (state["war_id"],)).fetchone()
             war = war_view(connection, row, clan, at, lineups) if row else None
-        return {"clan_tag": clan, "state": observed, "checked_at": signal["last_attempt_at"],
-                "observed_at": signal["last_good_at"], "war": war, "coverage": envelope([signal], at=at)}
+        result = {"clan_tag": clan, "state": observed, "checked_at": signal["last_attempt_at"],
+                  "observed_at": signal["last_good_at"], "war": war, "coverage": envelope([signal], at=at)}
+        if lineups:
+            result['participation'] = member_rows(connection, row, clan, war['coverage']) if war is not None else []
+        return result
 
     async def previous(self, clan, as_of=None, *, types=("FRIENDLY", "REG"), lineups=False):
         """The clan's last ended non-league war before the current one, as the board's Previous War."""

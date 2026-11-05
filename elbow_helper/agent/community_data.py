@@ -40,7 +40,7 @@ Read contents (all obey current access and retain source gaps):
   [agent/families/workflow_reads.py; agent/families/recruitment_history.py]
 - read_war_attendance: stored completed-war lineups, attacks/misses and per-clan participation.
 - read_cwl_results: season performance/ASS, leagues or signed-up/assigned account rosters.
-- read_current_war: current lineups and attacks still due. [agent/families/war_reads.py]
+- read_current_war: current lineups and attacks still due. [agent/reads/wars.py]
 - read_ranked_activity: stored ranked attacks with collection gaps. [agent/reads/ranked.py]
 - read_hibernation: active hibernation and observed activity since its start.
 - read_promotion_cases: intake, examiner routing and recorded responses. [agent/families/workflow_reads.py]

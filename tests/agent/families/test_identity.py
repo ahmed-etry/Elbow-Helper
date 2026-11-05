@@ -350,11 +350,10 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
             role.name, role.is_default = 'Core', lambda: False
         context = replace(context, account_links=SimpleNamespace(get_links_for_members=lambda _: {},
             get_links_by_tags=lambda tags: {'#P0': {'discord_user_id': 41}}))
-        from elbow_helper.agent.families import war_reads
         source = AsyncMock(return_value={'rows':[{'player_tag':'#P0','player_name':'Synthetic','war_id':'#R0','war_type':'CWL',
             'attacks_used':0,'attacks_expected':1,'missed':1}],
                                          'coverage':'stored completed wars'})
-        with patch.object(war_reads,'selected_wars',source):
+        with patch('elbow_helper.agent.reads.wars.selected_wars',source):
             result = await reads.member_cohort(context,{'basis':'joined_discord',
                 'performance':{'war_type':'CWL','season':'2026-09'}})
         self.assertEqual(source.await_count, 1)

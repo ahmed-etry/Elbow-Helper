@@ -1,7 +1,7 @@
 """Complete roster cohorts with account donations, war evidence and stored Discord activity."""
 import asyncio
 from elbow_helper.features.clan_health.attendance import aggregate_attendance
-from .war_reads import selected_wars, period
+from ..reads.wars import selected_wars, period
 
 
 async def roster_cohort(context, arguments):

@@ -59,10 +59,18 @@ def comparable(result):
 class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         await super().asyncSetUp()
+        for target in ('elbow_helper.infrastructure.clash.ClashClient.get',
+                       'elbow_helper.infrastructure.ai.client.DeepSeekTextClient.complete',
+                       'elbow_helper.infrastructure.ai.client.DeepSeekTextClient.create_agent_session'):
+            patcher = patch(target, side_effect=AssertionError('War reads must not call Clash or the LLM'))
+            forbidden = patcher.start()
+            self.addCleanup(patcher.stop)
+            self.addCleanup(forbidden.assert_not_called)
         self.now = END + 5 * DAY
         for patcher in (patch.object(record_wars, "CLANS", FAMILY),
                         patch.object(record_wars, "CODES", {"#PY": "BEH", "#LQ": "BE4"}),
                         patch.object(war_reads, "CLANS", FAMILY),
+                        patch("elbow_helper.agent.reads.wars.CLANS", FAMILY),
                         patch("elbow_helper.data.reads.core.now_us", side_effect=lambda: self.now)):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -213,7 +221,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_record_failures_are_unavailable_not_empty(self):
         await self.both_wars()
-        with patch.object(self.reads, "completed", AsyncMock(side_effect=sqlite3.OperationalError("locked"))):
+        with patch.object(self.reads, "regular_selection", AsyncMock(side_effect=sqlite3.OperationalError("locked"))):
             result = await war_reads.selected_wars(self.context, {"clan_codes": ["BEH"], **OCTOBER}, "REG")
             self.assertEqual(result["cause"], "source_unavailable")
             tool = await TOOLS["read_war_attendance"].handler(
@@ -233,7 +241,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                 self.now += DAY
                 await self.record(payload, at=self.now - 10 * SECOND)
                 checked = {"items": [{"tag": "#PY", "status": "ok", "data": payload}]}
-                with patch.object(record_wars, "current_wars", AsyncMock(return_value=checked)):
+                with patch("elbow_helper.agent.reads.wars.current_wars", AsyncMock(return_value=checked)):
                     expected = await war_reads.current_war(self.context, {"clan_codes": ["BEH"], "include_attacks": True})
                 new = await war_reads.current_war(self.context, {"clan_codes": ["BEH"], "include_attacks": True})
                 (before,), (after,) = expected["rows"], new["rows"]

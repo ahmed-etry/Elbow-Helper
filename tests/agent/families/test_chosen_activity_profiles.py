@@ -36,7 +36,7 @@ class ChosenActivityProfileTests(unittest.IsolatedAsyncioTestCase):
         tool = next(tool for tool in reads.TOOLS if tool.definition.name == 'read_member_cohort')
         with patch('elbow_helper.agent.families.cohort_activity.selected_wars',
                    AsyncMock(return_value={'rows': wars})), \
-             patch('elbow_helper.agent.families.war_reads.selected_wars',
+             patch('elbow_helper.agent.reads.wars.selected_wars',
                    AsyncMock(return_value={'rows': wars})):
             result = await tool.handler(context, {'basis': 'selected', 'cohort_ref': selection['report_id'],
                 'include_activity': True, 'performance': {'war_type': 'REG'},
@@ -119,7 +119,7 @@ class ChosenActivityProfileTests(unittest.IsolatedAsyncioTestCase):
         wars = [{'player_tag': tag, 'player_name': tag, 'war_id': 'W', 'war_type': 'REG',
                  'attacks_used': used, 'attacks_expected': used, 'missed': 0}
                 for tag, used in (('#P0', 1), ('#P9', 99))]
-        with patch('elbow_helper.agent.families.war_reads.selected_wars',
+        with patch('elbow_helper.agent.reads.wars.selected_wars',
                    AsyncMock(return_value={'rows': wars})):
             await performance_projection(context, rows, {'war_type': 'REG'}, account_tags={'#P0'})
         self.assertEqual(rows[0]['war_attendance']['attacks_used'], 1)
