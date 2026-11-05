@@ -268,7 +268,8 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
     async def test_shared_startup_second_start_and_sparse_existing_summary(self):
         self.a()
         await self.cutoff()
-        result = await self.store.call(wars_import.copy_at_startup, self.health, None, self.ranked, clans={})
+        # The clan health part of the same start needs the synthetic clan's code.
+        result = await self.store.call(wars_import.copy_at_startup, self.health, None, self.ranked, clans={"ONE": "#PP9"})
         self.assertTrue(result["profiles"]["imported"])
         before = await self.dump()
         with patch.object(profile_import, "snapshot_for_record", side_effect=AssertionError("source read")):
