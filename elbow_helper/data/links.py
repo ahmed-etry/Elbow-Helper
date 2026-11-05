@@ -170,9 +170,12 @@ class LinkService:
                     raise LinkConflict("aborted_or_stale_operation_key")
                 return operation_key
             at = now_us() if at is None else at
-            marker = connection.execute("SELECT frozen_at FROM imports WHERE topic=?", (TOPIC,)).fetchone()
-            if at < marker[0]:
+            marker = connection.execute("SELECT frozen_at,checked_at FROM imports WHERE topic=?", (TOPIC,)).fetchone()
+            if at < marker["frozen_at"]:
                 raise LinkConflict("operation_precedes_import")
+            # checked_at advances with this transaction, including unlinks. Use
+            # one microsecond past it when the wall clock has not caught up yet.
+            at = max(at, marker["checked_at"] + 1)
             current = compatibility(connection)
             if kind == "refresh":
                 requested = {tag: {**current[tag], **{key: row[key] for key in FIELDS[2:]}}
