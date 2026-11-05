@@ -116,6 +116,10 @@ class EventsStore:
                 if workflow == "transfers":
                     for queue in state["clans"].values():
                         queue["pending"] = [row for row in queue["pending"] if row["user_id"] != discord_id]
+                elif workflow == "support":
+                    state = {key: row for key, row in state.items()
+                             if row.get("owner") != discord_id
+                             and str(row.get("created_by")) != str(discord_id)}
                 else:
                     state["prompts"] = {key: row for key, row in state["prompts"].items()
                                         if row.get("subject_discord_id") != discord_id}

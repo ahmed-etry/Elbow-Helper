@@ -96,15 +96,9 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
         def write_state(path, data, **kwargs):
             self.saved_state = deepcopy(data)
 
-        def write_tickets(path, data, **kwargs):
-            self.saved_tickets = deepcopy(data)
-
         for name, replacement in (
             ("state.read_json", Mock(side_effect=lambda _: deepcopy(self.saved_state))),
             ("state.write_json_atomic", Mock(side_effect=write_state)),
-            ("tickets.read_json", Mock(side_effect=lambda _: deepcopy(self.saved_tickets))),
-            ("tickets.write_json_atomic", Mock(side_effect=write_tickets)),
-            ("tickets.CREATED_TICKETS_FILE", Mock()),
         ):
             patcher = patch(
                 f"elbow_helper.features.hibernation.{name}", replacement,
@@ -150,6 +144,10 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
 
     def new_owner(self):
         owner = Workflow()
+        async def register(channel_id, info, **kwargs):
+            self.saved_tickets.setdefault(str(channel_id), deepcopy(info))
+        owner.ticket_state = SimpleNamespace(register=AsyncMock(side_effect=register))
+        owner.bot = SimpleNamespace(get_cog=lambda _: owner)
         owner.send_hibernation_log = self.log
         owner._send_hibernation_notice = self.notice
         owner._archive_fallback_thread_for_member = self.archive
@@ -270,8 +268,8 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_registry_write_failure_reuses_ticket_and_keeps_snapshot(self):
         plan = self.start_reactivation()
-        with patch("elbow_helper.features.hibernation.tickets.write_json_atomic",
-                   side_effect=OSError("disk full")):
+        with patch.object(self.owner.ticket_state, "register",
+                          side_effect=OSError("disk full")):
             with self.assertRaises(OSError):
                 await self.owner.reactivate_member(plan)
         self.assertEqual(load_hibernation_state()["42"]["roles"], plan["info"]["roles"])

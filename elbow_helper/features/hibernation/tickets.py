@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -12,9 +11,6 @@ from elbow_helper.infrastructure.discord.embeds import build_status_embed
 from elbow_helper.infrastructure.discord.views import TranscriptLinkPromptView
 
 from elbow_helper.configuration.channels import HIBERNATION_FALLBACK, HIBERNATION_LOG, RECRUITMENT_TICKET_CATEGORY, TICKETS_LOG
-from elbow_helper.configuration.files import CREATED_TICKETS_FILE
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic
 from elbow_helper.configuration.roles import CORE, LEAD, RECRUITERS
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX, DEFAULT_THUMBNAIL_URL
 
@@ -51,7 +47,7 @@ class HibernationTicketMixin:
 
     async def reopen_reactivation_ticket(self, guild: discord.Guild,
                                          channel: discord.abc.GuildChannel,
-                                         actor: discord.Member) -> tuple[discord.Member | None, bool]:
+                                         actor: discord.Member, *, via="button") -> tuple[discord.Member | None, bool]:
         """Restore the owner's messaging access for the panel and agent."""
         owner = await self.reactivation_reopen_state(guild, channel)
         if owner is None:
@@ -66,6 +62,9 @@ class HibernationTicketMixin:
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             LOGGER.warning("Could not unlock ticket %s for owner %s", channel.id, owner.id)
             return owner, False
+        await self.bot.get_cog("SupportActions").ticket_state.transition(
+            channel.id, "open", actor_id=actor.id, via=via,
+        )
         return owner, True
 
     @staticmethod
@@ -563,18 +562,12 @@ class HibernationTicketMixin:
             save_hibernation_member(target.id, hibernation_info)
 
         if not progress.get("ticket_registered"):
-            CREATED_TICKETS_FILE.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                tickets = read_json(CREATED_TICKETS_FILE)
-            except (FileNotFoundError, json.JSONDecodeError):
-                tickets = {}
-
-            tickets.setdefault(str(ticket_channel.id), {
+            await self.bot.get_cog("SupportActions").ticket_state.register(ticket_channel.id, {
+                "owner": target.id,
                 "created_by": str(actor.id),
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "source": "reactivation",
-            })
-            write_json_atomic(CREATED_TICKETS_FILE, tickets, indent=4)
+            }, actor_id=actor.id, via=progress.get("via", "command"))
             progress["ticket_registered"] = True
             save_hibernation_member(target.id, hibernation_info)
 
@@ -599,7 +592,7 @@ class HibernationTicketMixin:
     async def close_reactivation_ticket(self, guild: discord.Guild | None,
                                         channel: discord.abc.GuildChannel | None,
                                         actor: discord.Member,
-                                        *, report=None) -> tuple[bool, str | None]:
+                                        *, report=None, via="button") -> tuple[bool, str | None]:
         """Close a reactivation ticket for its panel and the agent."""
         channel_id = getattr(channel, "id", 0)
         channel_name = getattr(channel, "name", "unknown-channel")
@@ -637,6 +630,9 @@ class HibernationTicketMixin:
                     owner_member,
                     send_messages=False,
                     reason=f"Hibernation ticket closed by {actor}",
+                )
+                await self.bot.get_cog("SupportActions").ticket_state.transition(
+                    channel.id, "closed", actor_id=actor.id, via=via,
                 )
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 LOGGER.warning("Could not lock ticket %s for owner %s", channel_id, owner_member.id)
@@ -793,6 +789,9 @@ class HibernationTicketMixin:
                 "Ticket channel %s became unavailable before close controls could be posted.",
                 channel_id,
             )
+        await self.bot.get_cog("SupportActions").ticket_state.transition(
+            channel.id, "closed", actor_id=actor.id, via=via,
+        )
         return True, None
 
     async def _reopen_reactivation_ticket(self, interaction: discord.Interaction) -> None:

@@ -8,7 +8,6 @@ from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 from elbow_helper.configuration.roles import LEAD, RECRUITERS
 
-from .state import load_tickets, save_tickets
 
 if TYPE_CHECKING:
     from .cog import SupportActions
@@ -49,10 +48,9 @@ class SupportTicketConfirmView(BaseTimeoutView):
             await loading_status(interaction.client, "Deleting this ticket..."),
             ephemeral=True,
         )
-        tickets = load_tickets()
-        tickets.pop(str(interaction.channel.id), None)
-        save_tickets(tickets)
-        await interaction.channel.delete()
+        await self.cog.ticket_state.delete_channel(
+            interaction.channel, actor_id=interaction.user.id,
+        )
 
 
 class SupportTicketCloseView(BaseTimeoutView):

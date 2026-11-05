@@ -72,6 +72,7 @@ async def prepare_support_open(context: Any,
     prepared = await workflow.prepare_support_ticket(
         context.guild, member, values["topic"], context.member,
     )
+    prepared["via"] = "agent"
     category = prepared["category"]
     lines = [
         ACTION_SUPPORT_OPEN_LINE.format(name=prepared["name"], member=member.mention),
@@ -130,6 +131,7 @@ async def prepare_support_close(context: Any,
     prepared = workflow.prepare_support_close(
         context.guild, channel, context.member,
     )
+    prepared["via"] = "agent"
     if prepared["issue"]:
         raise ActionRefused(prepared["issue"])
     log_channel = prepared["log_channel"]

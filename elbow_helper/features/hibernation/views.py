@@ -66,7 +66,9 @@ class CloseTicketConfirmView(BaseTimeoutView):
             await loading_status(interaction.client, "Deleting this ticket..."),
             ephemeral=True,
         )
-        await interaction.channel.delete()
+        await self.cog.bot.get_cog("SupportActions").ticket_state.delete_channel(
+            interaction.channel, actor_id=interaction.user.id,
+        )
 
 
 class ReactivateView(BaseTimeoutView):

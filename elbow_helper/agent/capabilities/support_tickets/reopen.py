@@ -75,7 +75,7 @@ async def prepare_support_reopen(context: AgentRequestContext,
 
     async def run() -> ActionOutcome:
         _, restored = await workflow.reopen_support_ticket(context.guild, channel,
-                                                            context.member)
+                                                            context.member, via="agent")
         if not restored:
             raise ActionRefused("That ticket couldn't be reopened.")
         return ActionOutcome("complete", "private", text=ACTION_TICKET_REOPEN_LABEL)
