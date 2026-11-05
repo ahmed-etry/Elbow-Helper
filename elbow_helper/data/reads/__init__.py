@@ -1,4 +1,4 @@
-"""Family-record reads, deliberately not wired into any existing consumer.
+"""Shared family-record facts and coverage for features and the agent.
 
 Times are UTC epoch microseconds. Pagination is stable for a frozen record;
 callers paging a changing record should reuse an explicit ``as_of`` value.

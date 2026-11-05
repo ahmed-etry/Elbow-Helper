@@ -9,8 +9,8 @@ retain older feature names because existing deployments depend on them.
 | Application | `data/.logs/` | Runtime logs |
 | Application | `data/backups/` | Latest checked SQLite copies, made daily at 04:00 UTC with the same paths as under `data/` |
 | Shared exports | `data/.exports/` | Temporary workbooks and crash leftovers |
-| Family record | `data/family/family.sqlite3` | Observed people, account links, guild roles, clan membership and donations, with collection outcomes; filling only |
-| Account links | `data/clan_links/links.sqlite3` | Account links, suggestions, and current clan locations |
+| Family record | `data/family/family.sqlite3` | People and account ownership, Discord server membership and roles, clan membership and donations; profiles and player history; regular, friendly and CWL wars with lineups and attacks; ranked battles, seasons, groups and when each battle log was checked; raid weekends with each member's attacks; time each account spent in each clan; the result of each data check |
+| Account links | `data/clan_links/links.sqlite3` | Suggestions and ignored tags |
 | Achievements | `data/achievements/achievements.db` | Achievements, activity, coins, raffles, and rewards |
 | Agent | `data/agent/agent.sqlite3` | Conversations and reply IDs used to continue after a restart |
 | Agent | `data/agent/transcripts.sqlite3` | Request and reply text, plus troubleshooting records |
@@ -18,7 +18,7 @@ retain older feature names because existing deployments depend on them.
 | Agent | `data/agent/actions.sqlite3` | Action history, progress, tracked messages, scheduled requests, watched conditions, member timezones, and memes the bot posted (30 days, up to 500 per server) |
 | Agent | `data/agent/gifs/` | Local image files for the meme library; copy on deploy |
 | Agent | `data/agent/knowledge/*.md` | [Community reference files](../operators/agent-knowledge.md) |
-| Clan health | `data/clan_health/clan_health.db` | Snapshots, activity, movement, wars, and report evidence |
+| Clan health | `data/clan_health/clan_health.db` | Report snapshots, player directory, raid activity, settings, their change log and report evidence |
 | Clan health | `data/clan_health/player_health_config.json` | Health-report expectations |
 | Clan reports | `data/clan_data/clan_activity.json` | Monthly report and board state |
 | Clan transfers | `data/clan_transfers/transfer_queue.json` | Member transfer queues |
@@ -36,7 +36,7 @@ retain older feature names because existing deployments depend on them.
 | Hibernation | `data/hibernation/hibernation.json` | Saved roles and hibernating members |
 | Leadership news | `data/leadership_news/state.json` | Published updates and pending publish prompts |
 | Member lifecycle | `data/snapshot_intel/snapshot_intel.json` | Invites, ticket index, departures, and reports |
-| Records | `data/records/records.sqlite3` | Leadership incident history |
+| Old records | `data/records/records.sqlite3` | Leadership records, kept while that feature is rethought |
 | Recruitment | `data/recruitment/trial_data.json` | Active trials |
 | Recruitment | `data/recruitment/trial_reminders.json` | Trial reminders |
 | Recruitment | `data/recruitment/ticket_last_activity.json` | Recruitment ticket activity |
@@ -45,6 +45,10 @@ retain older feature names because existing deployments depend on them.
 | Rosters | `data/rosters/rosters.sqlite3` | Rosters, signups, posts, and schedules |
 | Support and hibernation | `data/support/created_tickets.json` | Bot-created support and reactivation tickets |
 | Wars | `data/war/war_cache.json` | Processed wars, board and summary message IDs, and war-role lineups |
+
+Features read shared data from the family record. Clan health still collects and saves
+its report inputs, including snapshots and raid activity. Achievements,
+rosters, CWL state and rules, and other feature JSON remain feature-owned.
 
 Agent cleanup deletes action history 90 days after execution, action progress
 90 days after its last update, and records of tracked messages 90 days after

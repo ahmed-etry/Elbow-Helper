@@ -1,6 +1,7 @@
 # Data and migrations
 
-The feature that creates data owns its format and access.
+`data/store` owns the family record's format and writes. Features own their
+remaining files and expose services or readers for other consumers.
 
 ## JSON
 
@@ -10,14 +11,20 @@ features use an owning service or reader instead of opening the file.
 
 ## SQLite
 
-A feature owns its schema, queries, row conversion, current version, and
-supported upgrades. Change `PRAGMA user_version` only after a complete
-transaction. Reject unknown newer versions and non-empty unversioned databases
-whose history cannot be proven.
+Each database owner controls its schema, queries, row conversion, current
+version, and supported upgrades. Change `PRAGMA user_version` only after a
+complete transaction. Reject unknown newer versions and non-empty unversioned
+databases whose history cannot be proven.
 
 New databases may begin at a later baseline. For example, a blank roster
 database starts at version 4; retired pre-baseline migrations do not need to
 run against it.
+
+Family-record reads in `data/reads` use a read-only transaction on a background
+thread and return facts and say what is missing. They never ask the Clash API for
+missing facts and never open features' own files. Ownership changes go through
+`data.links.LinkService`. See [Saved data](../reference/storage.md) for the
+files still owned by features.
 
 ## Changing a format
 

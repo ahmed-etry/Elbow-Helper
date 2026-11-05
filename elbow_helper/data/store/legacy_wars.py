@@ -1,4 +1,4 @@
-"""Old war identities mapped once to the record's wars; filled by the later copy-in."""
+"""Old war identities mapped to family-record wars by the checked startup copy."""
 
 
 SOURCES = {"clan_health", "war_cache"}
