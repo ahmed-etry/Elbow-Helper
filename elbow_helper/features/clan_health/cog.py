@@ -10,7 +10,7 @@ from discord.ext import commands
 
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import LocalExportStore
-from elbow_helper.configuration.roles import LEAD_PLUS
+from elbow_helper.configuration.roles import LEAD_PLUS, RECRUITERS
 
 from .analysis import ClanHealthAnalyzer
 from .commands import ClanHealthCommandMixin
@@ -55,3 +55,9 @@ class ClanHealth(
     def _has_access(interaction: discord.Interaction) -> bool:
         user = interaction.user
         return any(getattr(role, "id", None) in LEAD_PLUS for role in getattr(user, "roles", []))
+
+    @staticmethod
+    def _has_player_access(interaction: discord.Interaction) -> bool:
+        user = interaction.user
+        allowed = LEAD_PLUS | RECRUITERS
+        return any(getattr(role, "id", None) in allowed for role in getattr(user, "roles", []))

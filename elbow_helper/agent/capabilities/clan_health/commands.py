@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from elbow_helper.agent.access import ACCESS_LEAD_PLUS, has_access_requirements
+from elbow_helper.agent.access import ACCESS_LEAD_PLUS, ACCESS_RECRUITER, has_access_requirements
 from elbow_helper.features.clan_health.ui import ClanConfigHomeView
 from elbow_helper.features.clan_health.export import PreparedHealthExport
 from elbow_helper.features.help.discovery import ParameterInfo
@@ -40,7 +40,7 @@ async def run_health_player(context: Any, values: Mapping[str, Any]) -> ActionOu
     mode = values.get("period", "last_30d")
     if mode == "custom" and (not values.get("date_from") or not values.get("date_to")):
         return ActionOutcome.needs_input(("start and end dates",))
-    if not _health_access(context):
+    if not has_access_requirements(context.guild, context.member.id, {ACCESS_RECRUITER}):
         return ActionOutcome.unavailable()
     workflow = context.bot.get_cog("ClanHealth")
     if workflow is None:
