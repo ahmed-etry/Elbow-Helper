@@ -114,7 +114,7 @@ class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
             "synthetic.xlsx", "Synthetic report", ("Synthetic summary",),
             None, b"synthetic workbook",
         )
-        workflow._has_access = Mock(return_value=True)
+        workflow._has_player_access = Mock(return_value=True)
         workflow.run_player_health_export = AsyncMock(return_value=PlayerHealthCommandResult(
             "complete", export=export, season_key="last 30d",
         ))

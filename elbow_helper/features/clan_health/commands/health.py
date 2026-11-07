@@ -130,7 +130,7 @@ class ClanHealthRootCommandMixin:
     ) -> None:
         account = str(account or "").strip()
         if period is not None and period.value == "custom":
-            if not self._has_access(interaction):
+            if not self._has_player_access(interaction):
                 await deny(interaction)
                 return
             await interaction.response.send_modal(HealthDateRangeModal(self, player=account))

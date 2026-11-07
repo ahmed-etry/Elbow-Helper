@@ -220,7 +220,7 @@ class ClanHealthPlayerCommandMixin:
         date_to: Optional[str] = None,
     ) -> None:
         started = time.monotonic()
-        if not self._has_access(interaction):
+        if not self._has_player_access(interaction):
             LOGGER.info("Command denied /health player user=%s", getattr(interaction.user, "id", None))
             await deny(interaction)
             return

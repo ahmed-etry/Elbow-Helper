@@ -12,6 +12,14 @@ from elbow_helper.features.clan_health.commands.clan import (
 
 
 class ClanHealthCommandTests(unittest.IsolatedAsyncioTestCase):
+    def test_recruiters_can_export_player_reports_only(self):
+        from elbow_helper.configuration.roles import RECRUITER_ROLE_ID
+        from elbow_helper.features.clan_health.cog import ClanHealth
+
+        interaction = SimpleNamespace(user=SimpleNamespace(roles=[SimpleNamespace(id=RECRUITER_ROLE_ID)]))
+        self.assertTrue(ClanHealth._has_player_access(interaction))
+        self.assertFalse(ClanHealth._has_access(interaction))
+
     async def test_missing_export_is_reported_without_attempting_delivery(self):
         cog = ClanHealthClanCommandMixin()
         cog._has_access = lambda _: True

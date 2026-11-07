@@ -635,7 +635,7 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
             "Choose a report period, or use Custom dates to enter your own start and end dates."
         ),
         category=CAT_REPORTS,
-        visible_to=LEAD_PLUS,
+        visible_to=LEAD_PLUS | RECRUITERS,
         examples=(
             "/health player account:#PLAYER",
             "/health player account:#PLAYER period:Last 14 days",

@@ -92,7 +92,7 @@ channel permissions also apply.
 
 | Command | What it does | [Access](#access-groups) |
 |---|---|---|
-| `/health player` | Export a health report for a Clash account. | Lead Plus |
+| `/health player` | Export a health report for a Clash account. | Recruiter or Lead Plus |
 | `/health clan` | Export a clan or family health report. | Lead Plus |
 | `/health settings` | Set the activity expectations used in a clan's health reports. | Lead Plus |
 
