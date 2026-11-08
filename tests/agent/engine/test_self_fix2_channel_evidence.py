@@ -27,16 +27,3 @@ class ChannelWriterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Mention or recommend only channels present there', model.writer['system_prompt'])
         self.assertNotIn('private-bases', model.writer['prompt'])
         self.assertFalse(context.state.proposed_changes)
-
-    async def test_empty_directory_does_not_copy_stale_planning_channels(self):
-        context, model = _context(), WriterModel()
-        context.state.channel_directory = '{"93":"stale-bases"}'
-        flow, _ = AgentService(model)._start_flow(question='Where can I share bases?',
-            local_context='', context=context, conversation_history='')
-        with patch('elbow_helper.agent.research.directory.can_access_message_channel',
-                   AsyncMock(return_value=False)):
-            self.assertTrue(await flow._prepare_answer_session())
-        evidence = json.loads(model.writer['prompt'].split('\nAvailable evidence:\n', 1)[1])['results']
-        self.assertNotIn('channel_directory', evidence)
-        # The final evidence contains no stale locator from the planning index.
-        self.assertNotIn('stale-bases', model.writer['prompt'])

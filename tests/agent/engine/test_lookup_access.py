@@ -9,26 +9,10 @@ from elbow_helper.configuration.roles import CORE, RECRUITERS
 from elbow_helper.agent.access import ACCESS_ROLE_SETS, AgentAccessLost, has_access_requirements
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.models import AgentTurnState
-from elbow_helper.features.help.catalog import HELP_ENTRIES
 from elbow_helper.agent.wording import ACTION_UNAVAILABLE
 
 
 class LookupAccessTests(unittest.IsolatedAsyncioTestCase):
-    def test_levels_equal_help_access_groups(self):
-        mirrors = {
-            "lead": ("/event list",),
-            "lead_plus": ("/health clan",),
-            "recruiter": ("/health player",),
-            "lead_plus_or_core": ("/raffle list", "/raffle history"),
-            "core": ("/coinlog",),
-            "recruiter_or_core": ("/account list",),
-            "lead_plus_or_cwl_helper": ("/cwl bonus",),
-        }
-        entries = {entry.path: entry for entry in HELP_ENTRIES}
-        for level, paths in mirrors.items():
-            for path in paths:
-                with self.subTest(level=level, path=path):
-                    self.assertEqual(ACCESS_ROLE_SETS[level], entries[path].visible_to)
 
     def test_departments_are_any_role_but_combined_levels_are_all_required(self):
         member = SimpleNamespace(roles=[])

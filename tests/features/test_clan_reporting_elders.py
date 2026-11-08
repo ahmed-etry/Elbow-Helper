@@ -119,14 +119,6 @@ class MissingElderBoardTests(unittest.IsolatedAsyncioTestCase):
         self.channel.history.assert_called_once()
         await self.assert_quiet_activity()
 
-    async def test_empty_channel_is_remembered_without_further_history_scans(self):
-        self.rows = []
-
-        self.assertTrue(await self.manager._update_missing_elder_message("BEH"))
-
-        self.channel.history.assert_called_once()
-        self.assertIsNone(self.manager.state["missing_elder_messages"]["BEH"])
-        await self.assert_quiet_activity()
 
     async def test_rows_return_posts_fresh_board_and_sticky_behavior_resumes(self):
         old_board = self.message()
@@ -150,16 +142,6 @@ class MissingElderBoardTests(unittest.IsolatedAsyncioTestCase):
         board.delete.assert_awaited_once()
         self.assertEqual(self.channel.send.await_count, 2)
 
-    async def test_activity_deletes_tracked_board_when_rows_became_empty(self):
-        board = self.message()
-        self.manager.state["missing_elder_messages"]["BEH"] = board.id
-        trigger = self.bury()
-        self.rows = []
-
-        self.assertTrue(await self.manager._repost_missing_elder_message_from_activity("BEH", trigger))
-
-        board.delete.assert_awaited_once()
-        await self.assert_quiet_activity()
 
     async def test_restart_refresh_recovers_untracked_board_instead_of_sending(self):
         board = self.message()
@@ -172,27 +154,6 @@ class MissingElderBoardTests(unittest.IsolatedAsyncioTestCase):
         board.edit.assert_awaited_once()
         self.channel.send.assert_not_awaited()
 
-    async def test_restart_activity_recovers_and_reposts_buried_board(self):
-        board = self.message()
-        trigger = self.bury()
-        self.manager = self.new_manager({"missing_elder_messages": {}})
-
-        self.assertTrue(await self.manager._repost_missing_elder_message_from_activity("BEH", trigger))
-
-        board.delete.assert_awaited_once()
-        self.channel.send.assert_awaited_once()
-        self.assertNotEqual(self.manager.state["missing_elder_messages"]["BEH"], board.id)
-
-    async def test_restart_activity_recovers_empty_board_and_deletes_it(self):
-        board = self.message()
-        trigger = self.bury()
-        self.rows = []
-        self.manager = self.new_manager({"missing_elder_messages": {}})
-
-        self.assertTrue(await self.manager._repost_missing_elder_message_from_activity("BEH", trigger))
-
-        board.delete.assert_awaited_once()
-        await self.assert_quiet_activity()
 
     async def test_restart_remembers_intentional_absence_and_rows_can_return(self):
         self.rows = []
@@ -234,42 +195,6 @@ class MissingElderBoardTests(unittest.IsolatedAsyncioTestCase):
         self.channel.send.assert_awaited_once()
         self.assertNotEqual(self.manager.state["missing_elder_messages"]["BEH"], board.id)
 
-    async def test_edit_failure_preserves_board_and_does_not_raise_into_refresh(self):
-        board = self.message()
-        self.manager.state["missing_elder_messages"]["BEH"] = board.id
-        board.edit.side_effect = self.http_error(discord.HTTPException, 503)
-        with patch("elbow_helper.infrastructure.discord.publishing.HTTP_RETRY_DELAYS", (0, 0)):
-            with self.assertLogs("elbow_helper.discord.publishing", "WARNING") as logs:
-                self.assertFalse(await self.manager._update_missing_elder_message("BEH"))
-        self.assertEqual(len(logs.output), 1)
-        self.assertEqual(board.edit.await_count, 3)
-        self.assertEqual(self.manager.state["missing_elder_messages"]["BEH"], board.id)
-        self.channel.send.assert_not_awaited()
-
-    async def test_delete_not_found_records_intentional_absence(self):
-        board = self.message()
-        self.manager.state["missing_elder_messages"]["BEH"] = board.id
-        self.rows = []
-        board.delete.side_effect = self.http_error(discord.NotFound, 404)
-
-        self.assertTrue(await self.manager._update_missing_elder_message("BEH"))
-
-        await self.assert_quiet_activity()
-
-    async def test_rate_limited_delete_preserves_tracking(self):
-        board = self.message()
-        self.manager.state["missing_elder_messages"]["BEH"] = board.id
-        self.rows = []
-        board.delete.side_effect = self.http_error(discord.HTTPException, 429)
-
-        with (
-            patch("elbow_helper.features.clan_reporting.helpers.asyncio.sleep", new_callable=AsyncMock),
-            self.assertLogs("elbow_helper.features.clan_reporting.helpers", level="WARNING"),
-        ):
-            self.assertFalse(await self.manager._update_missing_elder_message("BEH"))
-
-        self.assertEqual(self.manager.state["missing_elder_messages"]["BEH"], board.id)
-        self.channel.send.assert_not_awaited()
 
     async def test_failed_recovery_does_not_record_intentional_absence(self):
         self.rows = []

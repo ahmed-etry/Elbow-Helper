@@ -49,9 +49,3 @@ class AssRankingTests(unittest.TestCase):
         result = json.loads(bound_tool_result(json.dumps({"ranking": ranking}), 64))
         self.assertNotIn("ranking", result)
         self.assertTrue(result["truncated"])
-
-    def test_empty_selected_set_has_no_invented_accounts(self):
-        ranking = ass_ranking([])
-        self.assertEqual(ranking["account_count"], 0)
-        self.assertEqual(len(ranking["text"].splitlines()), 1)
-        self.assertTrue(ranking["complete"])

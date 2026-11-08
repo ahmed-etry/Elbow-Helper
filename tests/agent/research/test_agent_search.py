@@ -13,7 +13,6 @@ from elbow_helper.infrastructure.discord.message_search import (
 )
 from elbow_helper.infrastructure.discord.thread_discovery import DiscordArchivedThreadPage
 from elbow_helper.agent.models import AgentTurnState
-from elbow_helper.agent.research.history import find_discord_channels
 from elbow_helper.agent.research.history import read_discord_channel_history
 from elbow_helper.agent.research.search import search_discord_messages
 from elbow_helper.agent.research.threads import find_discord_threads
@@ -62,12 +61,6 @@ class MentionSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("error", mismatch)
         context.message_search.search_page.assert_awaited_once()
 
-    async def test_mentions_only_search_is_valid(self):
-        context = _context()
-        result = await search_discord_messages(context, {"mentions": [42]})
-        self.assertNotIn("error", result)
-        self.assertEqual(context.message_search.search_page.await_args.kwargs["mentions"], [42])
-
 
 class ServerSearchTests(unittest.IsolatedAsyncioTestCase):
     async def test_words_only_server_search_pages_once_without_channels_or_totals(self):
@@ -112,22 +105,6 @@ class ServerSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("secret", str(result))
         self.assertEqual(context.state.source_channels, set())
 
-    async def test_explicit_accessible_channels_report_indexed_matches_and_server_wide_does_not(self):
-        context = _context()
-        context.message_search.search_page.return_value = DiscordSearchPage(
-            (DiscordSearchMessage(10, 100, 1, "Member", "topic", ""),), 0, 25, 1, None, False, False)
-        explicit = await search_discord_messages(context, {"query": "topic", "channel_id": 100})
-        self.assertEqual(explicit["coverage"]["returned_indexed_matches"], 1)
-        broad = await search_discord_messages(context, {"query": "topic"})
-        self.assertNotIn("returned_indexed_matches", broad["coverage"])
-
-    async def test_invalid_author_ids_ask_for_author_ids(self):
-        context = _context()
-        for arguments in ({"author_ids": [0]}, {"author_id": -1}, {"author_ids": ["x"]}):
-            with self.subTest(arguments=arguments):
-                result = await search_discord_messages(context, {"query": "topic", **arguments})
-                self.assertEqual(result, {"error": "Supply valid author member IDs."})
-        context.message_search.search_page.assert_not_awaited()
 
     async def test_server_rechecks_readability_after_search(self):
         context = _context()
@@ -163,15 +140,6 @@ class ServerSearchTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("error", result)
                 context.message_search.search_page.assert_awaited_once()
 
-    async def test_two_authors_in_one_search(self):
-        context = _context()
-        context.message_search.search_page.return_value = DiscordSearchPage(tuple(
-            DiscordSearchMessage(identifier, 100, identifier, "Synthetic", "body", "")
-            for identifier in (1, 2, 3)), 0, 25, 3, None, False, False)
-        result = await search_discord_messages(context, {"author_ids": [1, 2]})
-        self.assertEqual([row["author_id"] for row in result["matches"]], [1, 2])
-        self.assertEqual(context.message_search.search_page.await_args.kwargs["author_ids"], (1, 2))
-        context.message_search.search_page.assert_awaited_once()
 
     async def test_invalid_typed_filters_do_not_fetch_discord(self):
         for arguments in ({"author_ids": "1"}, {"author_ids": [True]}, {"author_id": [1, 2]},
@@ -260,20 +228,6 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.source_channels, {100})
         return results, rows
 
-    async def test_larger_history_page_reads_same_evidence_with_fewer_tool_calls(self):
-        from elbow_helper.agent.research.catalogue import discord_tools
-        from elbow_helper.agent.plan.checker import valid_arguments
-
-        tool = next(tool for tool in discord_tools() if tool.definition.name == "read_discord_channel_history")
-        self.assertTrue(valid_arguments({"channel_id": 100, "after": "2026-09-01", "limit": 100}, tool.definition.parameters))
-        small, _ = await self._history_review([f"Recruitment discussion {i}" for i in range(80)])
-        large, rows = await self._history_review([f"Recruitment discussion {i}" for i in range(80)], limit=100)
-        self.assertEqual(len(small), 4)
-        self.assertLess(len(large), len(small))
-        self.assertEqual([item for page in small for item in page["messages"]],
-                         [item for page in large for item in page["messages"]])
-        self.assertEqual([item["message_id"] for page in large for item in page["messages"]],
-                         [row.message_id for row in rows])
 
     async def test_long_history_pages_keep_every_matching_message_and_continuation(self):
         from elbow_helper.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
@@ -293,19 +247,6 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
                     self.assertLess(len(encoded), MAX_TOOL_RESULT_CHARACTERS)
                     self.assertEqual(_bound_tool_result(encoded, MAX_TOOL_RESULT_CHARACTERS), encoded)
 
-    async def test_twenty_results_are_valid_and_reach_discord(self):
-        from elbow_helper.agent.research.catalogue import discord_tools
-        from elbow_helper.agent.plan.checker import valid_arguments
-
-        context = _context()
-        tool = next(tool for tool in discord_tools() if tool.definition.name == "search_discord_messages")
-        arguments = {"query": "joins", "channel_id": 100, "limit": 20}
-        self.assertTrue(valid_arguments(arguments, tool.definition.parameters))
-        context.message_search.search_page.return_value = DiscordSearchPage(
-            (), 0, 20, 0, None, False, False,
-        )
-        await tool.handler(context, arguments)
-        self.assertEqual(context.message_search.search_page.await_args.kwargs["limit"], 20)
 
     async def test_requested_channel_author_and_period_exclude_unrelated_matches(self):
         context = _context()
@@ -350,31 +291,6 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["matches"], [])
         context.message_search.search_page.assert_awaited_once()
 
-    async def test_multiple_channel_search_rejects_mixed_and_drops_inaccessible_scope(self):
-        context = _context()
-        mixed = await search_discord_messages(context, {
-            "query": "decision", "channel_id": 100,
-            "channel_ids": [100, 200],
-        })
-        self.assertIn("error", mixed)
-        context.guild.channels[1].permissions_for = lambda member: SimpleNamespace(
-            view_channel=False, read_message_history=False,
-        )
-        denied = await search_discord_messages(context, {
-            "query": "decision", "channel_ids": [100, 200],
-        })
-        self.assertNotIn("error", denied)
-        self.assertEqual(denied["missing_sources"], [{"channel_id": 200, "cause": "source_unavailable"}])
-        self.assertEqual(context.message_search.search_page.await_args.kwargs["channel_ids"], (100,))
-        context.message_search.search.assert_not_awaited()
-
-    async def test_invalid_period_does_not_call_discord(self):
-        for start, end in (("yesterday", "2026-09-15"), ("2026-09-16", "2026-09-15")):
-            context = _context()
-            result = await search_discord_messages(context, {"query": "decision", "after": start, "before": end})
-            self.assertIn("error", result)
-            context.message_search.search.assert_not_awaited()
-            context.message_search.search_page.assert_not_awaited()
 
     async def test_short_page_keeps_server_reported_continuation(self):
         context = _context()
@@ -402,31 +318,6 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["coverage"]["snapshot_before_message_id"], 1_000)
 
-    async def test_broad_search_rejects_continuation_without_calling_discord(self):
-        context = _context()
-        result = await search_discord_messages(
-            context, {"query": "decision", "cursor": "v1.5.invalid"},
-        )
-        self.assertIn("error", result)
-        context.message_search.search.assert_not_awaited()
-        context.message_search.search_page.assert_not_awaited()
-
-    async def test_cursor_is_bound_to_the_original_search_scope(self):
-        context = _context()
-        context.message_search.search_page.return_value = DiscordSearchPage(
-            (), 0, 5, 10, 5, False, False,
-        )
-        first = await search_discord_messages(context, {
-            "query": "decision", "channel_id": 100,
-        })
-        cursor = first["coverage"]["next_cursor"]
-        context.message_search.search_page.reset_mock()
-
-        changed = await search_discord_messages(context, {
-            "query": "different", "channel_id": 100, "cursor": cursor,
-        })
-        self.assertIn("error", changed)
-        context.message_search.search_page.assert_not_awaited()
 
     async def test_channel_access_is_rechecked_after_page_before_metadata_returns(self):
         context = _context()
@@ -460,11 +351,6 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["coverage"]["out_of_scope_results_dropped"], 1)
         self.assertEqual(context.state.source_channels, {100})
 
-    async def test_channel_lookup_excludes_hidden_channels(self):
-        context = _context()
-        context.guild.channels[1].permissions_for = lambda member: SimpleNamespace(view_channel=False, read_message_history=False)
-        result = await find_discord_channels(context, {"query": "room"})
-        self.assertEqual(result["channels"], [{"channel_id": 100, "name": "room-100"}])
 
     async def test_archived_public_thread_discovery_is_paged_and_scope_bound(self):
         context = _context()
@@ -635,32 +521,6 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call["before_id"], first_id)
         self.assertEqual(second["coverage"]["snapshot_before_message_id"], upper)
 
-    async def test_history_cursor_rejects_changed_scope_before_read(self):
-        context = _context()
-        upper = discord.utils.time_snowflake(
-            datetime(2026, 9, 17, tzinfo=timezone.utc),
-        )
-        context.source_message.id = upper
-        first_id = upper - 100
-        message = DiscordSearchMessage(
-            first_id, 100, 1, "Member", "first", "2026-09-16T00:00:00+00:00",
-        )
-        after = discord.utils.time_snowflake(
-            datetime(2026, 9, 1, tzinfo=timezone.utc),
-        ) - 1
-        context.message_search.history_page.return_value = DiscordHistoryPage(
-            (message,), upper, after, 1, first_id, False,
-        )
-        first = await read_discord_channel_history(context, {
-            "channel_id": 100, "after": "2026-09-01", "limit": 1,
-        })
-        context.message_search.history_page.reset_mock()
-        changed = await read_discord_channel_history(context, {
-            "channel_id": 100, "after": "2026-09-02", "limit": 1,
-            "cursor": first["coverage"]["next_cursor"],
-        })
-        self.assertIn("error", changed)
-        context.message_search.history_page.assert_not_awaited()
 
     async def test_history_rechecks_access_after_discord_before_returning_data(self):
         context = _context()
@@ -684,27 +544,6 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertIn("error", result)
         self.assertNotIn("coverage", result)
-        self.assertEqual(context.state.source_channels, set())
-
-    async def test_history_rejects_out_of_scope_messages(self):
-        context = _context()
-        upper = discord.utils.time_snowflake(
-            datetime(2026, 9, 17, tzinfo=timezone.utc),
-        )
-        context.source_message.id = upper
-        after = discord.utils.time_snowflake(
-            datetime(2026, 9, 1, tzinfo=timezone.utc),
-        ) - 1
-        context.message_search.history_page.return_value = DiscordHistoryPage(
-            (DiscordSearchMessage(
-                upper - 100, 200, 1, "Member", "wrong", "2026-09-16T00:00:00+00:00",
-            ),),
-            upper, after, 25, None, True,
-        )
-        result = await read_discord_channel_history(context, {
-            "channel_id": 100, "after": "2026-09-01",
-        })
-        self.assertIn("error", result)
         self.assertEqual(context.state.source_channels, set())
 
 

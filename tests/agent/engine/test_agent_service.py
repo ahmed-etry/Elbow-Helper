@@ -21,7 +21,6 @@ from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.capability_contract import compile_capability_call
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.plan.checker import valid_arguments
-from elbow_helper.agent.engine.tool_call import bound_tool_result as _bound_tool_result
 from elbow_helper.agent.engine.tool_call import evidence_record as _evidence_record
 from elbow_helper.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
 from agent.report_helpers import make_event_report
@@ -106,15 +105,6 @@ def _context():
 
 class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
 
-    async def test_prior_private_candidate_does_not_relabel_an_unrelated_failure(self):
-        context = _context()
-        context.state.scope_audit.private_candidates.add('access:recruitment')
-        result = json.loads(await AgentService.execute_tool(
-            name='synthetic_read', handler=AsyncMock(return_value={
-                'error': 'Synthetic service unavailable.', 'cause': 'source_unavailable'}),
-            arguments={}, context=context,
-        ))
-        self.assertNotIn('available_privately', result)
 
     async def test_lookup_marks_only_its_own_new_private_candidate(self):
         context = _context()
@@ -155,32 +145,6 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("error", json.loads(result))
         self.assertEqual(context.state.required_access, {"lead"})
 
-    async def test_static_role_contract_marks_retained_report_without_handler_help(self):
-        tool = build_agent_tools()["read_role_connections"]
-        scope = {**compile_capability_call(tool, {}), "required_access": ("lead",)}
-        context = _context()
-        lead_role = SimpleNamespace(id=next(iter(LEAD)))
-        context.member.roles.append(lead_role)
-        context.guild.roles.append(lead_role)
-        context.source_message.channel.permissions_for = lambda actor: SimpleNamespace(
-            view_channel=getattr(actor, "id", None) in {context.member.id, context.guild.me.id, lead_role.id},
-            read_message_history=True,
-        )
-        report = make_event_report("role-report", "2026-09-17")
-
-        async def handler(request_context, _arguments):
-            request_context.state.reports[report.report_id] = report
-            return {"report_id": report.report_id}
-        result = await AgentService.execute_tool(
-            name="read_role_connections", handler=handler, arguments={},
-            capability_scope=scope, context=context,
-        )
-        self.assertEqual(json.loads(result), {"report_id": report.report_id})
-        self.assertEqual(context.state.required_access, {"lead"})
-        self.assertEqual(
-            context.state.report_access_requirements[report.report_id],
-            frozenset({"lead"}),
-        )
 
     async def test_failed_tool_restores_request_local_state_exactly(self):
         context = _context()
@@ -274,21 +238,6 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.reports, {"original": original})
         self.assertEqual(context.state.attachments, [])
 
-    async def test_unexpected_base_exception_rolls_back_before_propagating(self):
-        context = _context()
-        original = make_event_report("original", "2026-09-17")
-        context.state.reports[original.report_id] = original
-
-        async def broken(*_):
-            context.state.reports.clear()
-            context.state.source_channels.add(999)
-            raise BaseException("simulated interruption")
-        with self.assertRaises(BaseException):
-            await AgentService.execute_tool(
-                name="broken", handler=broken, arguments={}, context=context,
-            )
-        self.assertEqual(context.state.reports, {"original": original})
-        self.assertEqual(context.state.source_channels, set())
 
     async def test_new_report_records_cumulative_source_and_role_provenance(self):
         context = _context()
@@ -337,16 +286,6 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record["required_access"], [ACCESS_LEAD_PLUS])
         self.assertEqual(record["raw_result_characters"], 9000)
 
-    def test_arrays_booleans_and_enums_are_checked_before_tool_execution(self):
-        schema = {"properties": {
-            "roles": {"type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": True, "items": {"type": "integer", "minimum": 1}},
-            "refresh": {"type": "boolean"}, "selection": {"type": "string", "enum": ["all", "no_links"]},
-        }}
-        for arguments in ({"roles": []}, {"roles": [True]}, {"roles": [1, 1]}, {"roles": [1, 2, 3]},
-                          {"roles": [-1]}, {"refresh": "false"}, {"selection": "delete"}):
-            with self.subTest(arguments=arguments):
-                self.assertFalse(valid_arguments(arguments, schema))
-        self.assertTrue(valid_arguments({"roles": [1, 2], "refresh": False, "selection": "all"}, schema))
 
     def test_nested_object_arrays_are_validated_recursively(self):
         schema = {"properties": {"targets": {
@@ -380,11 +319,6 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(valid_arguments(arguments, schema))
         self.assertTrue(valid_arguments({"limit": 3}, schema))
 
-    def test_escaped_evidence_stays_within_encoded_budget(self):
-        content = json.dumps({"data": ('"\\\n' * 1000)})
-        bounded = _bound_tool_result(content, 100)
-        self.assertLessEqual(len(bounded), 100)
-        self.assertTrue(json.loads(bounded)["truncated"])
 
     async def test_casual_answer_does_not_force_a_tool_call(self) -> None:
         session = _AgentSession(

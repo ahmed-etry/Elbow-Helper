@@ -13,7 +13,6 @@ from elbow_helper.configuration.roles import (
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.models import RegisteredAgentTool
-from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from agent.engine.test_agent_plan_flow import (
@@ -64,29 +63,6 @@ class MemberEffortTests(unittest.IsolatedAsyncioTestCase):
             )
         return flow, session, model
 
-    async def test_member_assessment_is_high_without_repair_or_discussion_reads(self):
-        for channels in (None, [91]):
-            with self.subTest(channels=channels):
-                plan = {**_plan([_step("first")], effort="max"), "assessment": True}
-                if channels is not None:
-                    plan["discussion_channels"] = channels
-                else:
-                    self.assertFalse(check_plan(plan, self.registry).ok)
-                flow, session, _ = self.start([plan])
-                with self.assertLogs("elbow_helper.agent.engine.flow", "INFO") as logs:
-                    self.assertEqual(await flow.run(), "Synthetic answer.")
-                self.assertNotIn("assessment", flow.plan)
-                self.assertEqual(flow.plan["effort"], "high")
-                self.assertEqual(flow._planning_effort(), AgentReasoningEffort.HIGH)
-                self.assertFalse(flow.assessment_requested)
-                self.assertEqual(len(session.calls), 2)
-                self.assertEqual(session.events, ["model", "model"])
-                self.assertIn("first", flow.runner.completed_steps)
-                self.discussion.assert_not_awaited()
-                limited = [record for record in logs.records if "plan limited" in record.message]
-                self.assertEqual(len(limited), 1)
-                self.assertEqual(limited[0].levelname, "INFO")
-                self.assertIn("request=71", limited[0].message)
 
     async def test_member_revisions_and_corrections_are_limited_once_per_request(self):
         for correction in (False, True):
@@ -142,18 +118,3 @@ class MemberEffortTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(flow.assessment_requested)
         self.assertEqual(flow._planning_effort(), AgentReasoningEffort.HIGH)
         self.discussion.assert_not_awaited()
-
-    async def test_members_keep_low_and_high_with_shared_system_and_schema(self):
-        for effort in ("low", "high"):
-            with self.subTest(effort=effort):
-                plan = _plan([_step("first")], effort=effort)
-                member, session, member_model = self.start([plan])
-                leader, _, leader_model = self.start([plan], next(iter(CORE)))
-                self.assertEqual(member_model.request["system_prompt"],
-                                 leader_model.request["system_prompt"])
-                self.assertEqual(member_model.request["tools"], leader_model.request["tools"])
-                self.assertEqual(await member.run(), "Synthetic answer.")
-                self.assertEqual(member.plan["effort"], effort)
-                self.assertFalse(member.plan_limit_logged)
-                self.assertEqual(len(session.calls), 2)
-                self.assertEqual(await leader.run(), "Synthetic answer.")

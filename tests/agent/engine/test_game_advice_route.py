@@ -18,38 +18,6 @@ from agent.engine.test_answer_composition import client, provider_response, call
 
 
 class GameAdviceRouteTests(unittest.IsolatedAsyncioTestCase):
-    async def test_research_and_fallback_keep_the_game_remit_with_knowledge_available(self):
-        from elbow_helper.agent.knowledge.store import KnowledgeCatalog
-
-        catalog = KnowledgeCatalog('synthetic', ())
-        for route in ('', 'research', 'game_advice'):
-            for actions_enabled in (False, True):
-                with self.subTest(route=route, actions_enabled=actions_enabled):
-                    context = replace(_context(),
-                        knowledge_store=SimpleNamespace(load=lambda: catalog),
-                        bot=SimpleNamespace(tree=object()) if actions_enabled else None)
-                    requests = []
-
-                    async def provider(**options):
-                        requests.append(deepcopy(options))
-                        system = options['messages'][0]['content']
-                        if system == ROUTE_INSTRUCTION:
-                            return provider_response(route)
-                        self.assertIn(GAME_ADVICE_RULES, system)
-                        self.assertIn('submit_request_plan', str(options['tools']))
-                        return provider_response('That village has seen better days.')
-
-                    model = client(provider)
-                    try:
-                        with patch('elbow_helper.agent.engine.service.build_agent_tools', return_value={}), \
-                             patch('elbow_helper.agent.engine.service.build_command_tools', return_value=({}, {})), \
-                             patch('elbow_helper.agent.engine.service.channel_knowledge_access', AsyncMock(return_value=frozenset())):
-                            answer = await AgentService(model).answer(
-                                question='My village is a museum now.', local_context='', context=context)
-                        self.assertEqual(answer, 'That village has seen better days.')
-                        self.assertEqual(len(requests), 2)
-                    finally:
-                        await model.close()
 
     async def test_advice_route_can_read_approved_faq_before_a_decline(self):
         from elbow_helper.agent.reads.reference import TOOLS

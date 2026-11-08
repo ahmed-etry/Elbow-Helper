@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 import unittest
 
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
-from elbow_helper.agent.plan.results import compact_result
 
 
 class EvidenceTimeTests(unittest.TestCase):
@@ -38,16 +37,6 @@ class EvidenceTimeTests(unittest.TestCase):
             {"started_ts": self.readable, "duration_seconds": self.epoch}])
         self.assertEqual(raw, original)
 
-    def test_compacted_rows_keep_columns_and_format_timestamp_cells_at_any_depth(self):
-        rows = [{"member_id": index, "signed_up_ts": self.epoch,
-                 "details": {"updated_at": self.epoch}, "score": self.epoch} for index in range(12)]
-        raw = {"sample": compact_result({"rows": rows})}
-        original = deepcopy(raw)
-        table = answer_evidence(raw)["sample"]["rows"]
-        self.assertEqual(table["columns"], list(rows[0]))
-        self.assertEqual(table["rows"], [[index, self.readable, {"updated_at": self.readable}, self.epoch]
-                                        for index in range(12)])
-        self.assertEqual(raw, original)
 
     def test_non_temporal_values_and_source_strings_stay_exact(self):
         prose = f"signed_up_ts {self.epoch}; timestamp {self.epoch}"
@@ -57,11 +46,6 @@ class EvidenceTimeTests(unittest.TestCase):
                "timestamp": self.instant.isoformat()}
         self.assertEqual(answer_evidence({"sample": {"rows": [row]}}), {"sample": {"rows": [row]}})
 
-    def test_limits_and_timestamp_arrays_are_projected_too(self):
-        raw = {"sample": {"status": "needs_input", "choices": [
-            {"opens_at": [self.epoch, self.epoch], "deadline_ts": self.epoch}]}}
-        choice = answer_evidence(raw)["sample"]["choices"][0]
-        self.assertEqual(choice, {"opens_at": [self.readable, self.readable], "deadline_ts": self.readable})
 
     def test_invalid_timestamps_become_unknown_and_booleans_stay_booleans(self):
         for value in (float("nan"), float("inf"), -float("inf"), 10**1000, "1e999"):

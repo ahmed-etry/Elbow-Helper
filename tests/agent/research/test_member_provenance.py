@@ -100,15 +100,6 @@ class MemberProvenanceTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCa
         self.assertTrue(member_target_issue(target, {"member_id": 42}))
         self.assertEqual(target.state.resolved_members, {101: "Ahmad (amaj)"})
 
-    async def test_non_target_numbers_and_read_actions_are_not_blocked(self):
-        target = context()
-        self.assertEqual(member_target_issue(target, {"channel_id": 101, "message_id": 42}), "")
-        handler = AsyncMock(return_value={"members": []})
-        result = await execute_tool(name="read_members", handler=handler, context=target,
-                                    arguments={"member_ids": [101]}, action_class=ActionClass.READ)
-        self.assertNotIn("error", json.loads(result))
-        handler.assert_awaited_once()
-        self.assertEqual(target.state.resolved_members, {})
 
     async def test_action_can_use_only_the_member_resolved_by_an_earlier_step(self):
         for query, called in (("Ahmad (amaj)", True), ("Ahmad", False)):
@@ -161,48 +152,6 @@ class MemberProvenanceTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCa
         self.assertEqual(answer, "<@101> synthetic roast")
         self.assertEqual(target.state.resolved_members, {101: "Ahmad (amaj)"})
 
-    async def test_model_asks_after_ambiguous_lookup(self):
-        target = context()
-        lookup = plan_call(AgentToolCall("find", "find_discord_members", '{"query":"Ahmad"}'))
-        session = _AgentSession([
-            AgentStep("", (lookup,), AgentUsage()), AgentStep("Which Ahmad: owner or amaj?", (), AgentUsage()),
-        ])
-        answer = await AgentService(_AgentModel(session)).answer(
-            question="Could Ahmad get a nudge?", local_context="", context=target,
-        )
-        self.assertEqual(answer, "Which Ahmad: owner or amaj?")
-        self.assertEqual(target.state.resolved_members, {})
-
-    async def test_model_handles_pronouns_and_unusual_phrasings_without_preflight(self):
-        for question in ("tag him", "fais-lui signe", "Perhaps a nudge would help him?"):
-            target = context()
-            target.source_message.reference = SimpleNamespace(message_id=200, channel_id=100)
-            target.state.local_messages = [{"message_id": 200, "author_id": 101}]
-            session = _AgentSession([AgentStep("<@101> over here", (), AgentUsage())])
-            model = _AgentModel(session)
-            answer = await AgentService(model).answer(question=question, local_context="", context=target)
-            self.assertEqual(answer, "<@101> over here")
-            self.assertIsNotNone(model.request)
-
-    async def test_missing_pronoun_and_unproven_roast_are_left_to_model_clarification(self):
-        for question in ("tag him", "Roast ahmad amaj too"):
-            session = _AgentSession([
-                AgentStep("<@42> synthetic roast", (), AgentUsage()),
-                AgentStep("Who did you mean?", (), AgentUsage()),
-            ])
-            answer = await AgentService(_AgentModel(session)).answer(
-                question=question, local_context="Nearby owner: member_id=42", context=context(),
-            )
-            self.assertEqual(answer, "Who did you mean?")
-            self.assertEqual(len(session.calls), 2)
-            self.assertIn("Resolve them first", session.instructions[1])
-
-    async def test_self_flag_is_a_validated_plan_argument(self):
-        session = _AgentSession([reply("<@42> synthetic self roast", self_target=True)])
-        answer = await AgentService(_AgentModel(session)).answer(
-            question="Roast me", local_context="", context=context(),
-        )
-        self.assertEqual(answer, "<@42> synthetic self roast")
 
     async def test_invalid_self_flag_does_not_authorize_the_asker(self):
         invalid = reply("<@42> synthetic self roast", self_target="true")

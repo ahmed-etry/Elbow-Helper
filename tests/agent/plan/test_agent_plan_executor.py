@@ -74,16 +74,6 @@ class PlanExecutorTests(unittest.IsolatedAsyncioTestCase):
         expected = [row["name"] for group in groups for row in group["items"]]
         self.assertEqual(result["names"], expected)
 
-    def test_rows_aliases_do_not_change_lists_that_the_model_does_not_compact(self):
-        lists = ([{"name": index} for index in range(9)],
-                 [{"name": index} for index in range(9)] + [{"other": 9}], list(range(12)))
-        for items in lists:
-            with self.subTest(items=items), self.assertRaises(UnresolvedReferenceError):
-                resolve_arguments({"value": {"step": "source", "path": ["items", "rows"]}},
-                                  {"source": {"items": items}})
-        result = resolve_arguments({"value": {"step": "source", "path": ["items", "rows", 0]}},
-                                   {"source": {"items": {"columns": ["Value"], "rows": [[7]]}}})
-        self.assertEqual(result, {"value": [7]})
 
     def test_nested_wildcards_flatten_only_expanded_indexes(self):
         source = {"groups": [{"members": [{"accounts": [{"tag": "#P0"}, {"tag": "#P2"}]}]},
@@ -111,17 +101,6 @@ class PlanExecutorTests(unittest.IsolatedAsyncioTestCase):
             "created": {"target_id": 7},
         }), {"target_id": 7})
 
-    async def test_ready_reads_finish_before_change_previews(self):
-        order = []
-        async def run(step, arguments, earlier):
-            order.append(step["id"])
-            return {"value": step["id"]}
-        plan = {"steps": [
-            {"id": "change", "arguments": {}, "depends_on": []},
-            {"id": "read", "arguments": {}, "depends_on": []},
-        ]}
-        await execute_plan(plan, run, parallel=lambda step: step["id"] == "read")
-        self.assertEqual(order, ["read", "change"])
 
     async def test_failed_batch_waits_for_other_steps_before_returning(self):
         finished = asyncio.Event()

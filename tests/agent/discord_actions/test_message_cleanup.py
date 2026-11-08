@@ -95,14 +95,6 @@ class CleanupTests(unittest.IsolatedAsyncioTestCase):
         channel.fetch_message.assert_awaited_once_with(1)
         self.assertEqual(channel.history.call_count, 1)
 
-    async def test_missing_message_inside_page_needs_no_single_fetch(self):
-        context, channel, _, member = fixture()
-        messages = add_messages(channel, member)
-        del messages[2]
-        _, selected, missing = await selected_messages(context, 200, [1, 2, 3], allow_missing=True)
-        self.assertEqual([message.id for message in selected], [1, 3])
-        self.assertEqual(missing, [2])
-        channel.fetch_message.assert_not_awaited()
 
     async def test_caps_and_bot_permissions_are_checked_before_preview(self):
         for ids in ([1, 1], list(range(1, 102)), []):

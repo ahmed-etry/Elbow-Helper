@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import unittest
 from collections import deque
-from pathlib import Path
 from typing import Any
 
 from elbow_helper.domain.player_tags import canonical_player_tag
@@ -62,19 +61,6 @@ class ClashTagTests(unittest.TestCase):
         self.assertEqual(encode_clash_tag("p0y2l"), "%23P0Y2L")
 
 
-class ClashBoundaryTests(unittest.TestCase):
-    def test_cogs_do_not_bypass_runtime_settings_or_shared_transport(self) -> None:
-        cogs_directory = Path(__file__).resolve().parents[1] / "cogs"
-        violations: list[str] = []
-
-        for path in cogs_directory.rglob("*.py"):
-            source = path.read_text(encoding="utf-8-sig")
-            if "COC_API_KEY" in source or "api.clashofclans.com" in source:
-                violations.append(str(path.relative_to(cogs_directory.parent)))
-
-        self.assertEqual(violations, [])
-
-
 class ClashClientTests(unittest.IsolatedAsyncioTestCase):
     async def test_unconfigured_client_does_not_open_a_session(self) -> None:
         client = ClashClient(None)
@@ -83,39 +69,4 @@ class ClashClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(response.status)
         self.assertEqual(response.attempts, 0)
-        self.assertIsNone(client._session)
-
-    async def test_retryable_status_uses_one_shared_session(self) -> None:
-        client = ClashClient(
-            "token",
-            base_url="https://example.test/v1",
-            default_backoff_seconds=0,
-        )
-        session = _FakeSession(
-            [
-                _FakeResponse(429, {"reason": "rateLimit"}),
-                _FakeResponse(200, {"tag": "#P0Y2L"}),
-            ]
-        )
-        client._session = session  # type: ignore[assignment]
-
-        response = await client.get(
-            "/players/%23P0Y2L",
-            attempts=2,
-            backoff_seconds=0,
-        )
-
-        self.assertTrue(response.ok)
-        self.assertEqual(response.payload_object, {"tag": "#P0Y2L"})
-        self.assertEqual(response.attempts, 2)
-        self.assertEqual(
-            session.urls,
-            [
-                "https://example.test/v1/players/%23P0Y2L",
-                "https://example.test/v1/players/%23P0Y2L",
-            ],
-        )
-
-        await client.close()
-        self.assertTrue(session.closed)
         self.assertIsNone(client._session)

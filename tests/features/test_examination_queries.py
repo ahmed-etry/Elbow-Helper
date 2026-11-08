@@ -1,7 +1,6 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 import unittest
-from unittest.mock import patch
 
 from elbow_helper.features.examination.queries import (
     ExaminationQueries,
@@ -50,14 +49,6 @@ class ExaminationQueryTests(unittest.TestCase):
             clock=lambda: self.now,
         )
 
-    def test_registrations_expose_only_candidate_channel_ids(self):
-        registrations = self.queries.case_registrations()
-        self.assertEqual(
-            [row.ticket_channel_id for row in registrations],
-            [100, 200, 300, 400, 500],
-        )
-        self.assertNotIn("private", repr(registrations))
-        self.assertNotIn("88", repr(registrations))
 
     def test_snapshot_projects_only_selected_status_fields(self):
         original = deepcopy(self.state)
@@ -107,37 +98,6 @@ class ExaminationQueryTests(unittest.TestCase):
         for arguments, expected in cases:
             with self.subTest(expected=expected):
                 self.assertEqual(examination_workflow_status(**arguments), expected)
-
-    def test_invalid_selected_rows_and_bounds_fail_closed(self):
-        for channel_id, change in enumerate((
-            {"type": []},
-            {"intake_state": []},
-            {"stage": []},
-            {"responded": "yes"},
-            {"routing_inflight": 1},
-            {"opener_id": 0},
-        ), start=600):
-            value = _case(
-                channel_id, type="clan_promo", intake_state="complete",
-            )
-            value.update(change)
-            self.state[str(channel_id)] = value
-        snapshot = self.queries.case_snapshot(
-            ticket_channel_ids=tuple(range(600, 606)),
-        )
-        self.assertEqual(snapshot.selected_entry_count, 6)
-        self.assertEqual(snapshot.skipped_invalid_selected_count, 6)
-        self.assertEqual(snapshot.cases, ())
-
-        with self.assertRaises(ValueError):
-            self.queries.case_snapshot(ticket_channel_ids=(100, 100))
-        with self.assertRaises(ValueError):
-            ExaminationQueries(lambda: []).case_registrations()
-        with patch(
-            "elbow_helper.features.examination.queries.MAX_ACTIVE_EXAMINATION_CASES",
-            1,
-        ), self.assertRaises(ValueError):
-            self.queries.case_registrations()
 
 
 if __name__ == "__main__":

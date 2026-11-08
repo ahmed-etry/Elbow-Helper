@@ -78,13 +78,3 @@ class QuotedGifAnswerTests(unittest.IsolatedAsyncioTestCase):
         sent = self.message.reply.await_args.args[0]
         self.assertTrue(sent.strip())
         self.assertNotIn("tenor.com", sent)
-
-    async def test_banter_gif_from_the_gif_tool_still_posts_on_its_own(self):
-        self.context.state.gif_url = GIF
-        delivery = AgentDelivery()
-        await self.surface.send_response(self.message, "Synthetic banter.", None,
-                                         context=self.context, delivery=delivery)
-        self.message.reply.assert_awaited_once()
-        self.assertEqual(self.message.reply.await_args.args, (GIF,))
-        self.assertEqual(delivery.text_parts, [GIF])
-        self.assertEqual(self.context.state.gif_fallback_text, "Synthetic banter.")

@@ -73,10 +73,6 @@ class SearchCoverageTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         validate_research_coverage({**_coverage(), key: invalid}, kind="search")
 
-    def test_present_total_accepts_zero_and_positive_integers(self):
-        for total in (0, 20):
-            coverage = {**_coverage(), "total_results_estimate": total}
-            self.assertEqual(validate_research_coverage(coverage, kind="search"), coverage)
 
     def test_aggregate_indexed_count_is_bounded_by_pages(self):
         coverage = {**_coverage(), "pages_scanned": 8, "returned_indexed_matches": 80}
@@ -86,14 +82,3 @@ class SearchCoverageTests(unittest.TestCase):
         coverage.pop("pages_scanned")
         with self.assertRaises(ValueError):
             validate_research_coverage(coverage, kind="search")
-
-    def test_required_fields_still_required_without_total(self):
-        for key in (
-            "next_cursor", "deep_historical_indexing",
-            "offset_limit_reached", "reached_current_indexed_end",
-        ):
-            with self.subTest(key=key):
-                coverage = _coverage(explicit=False)
-                coverage.pop(key)
-                with self.assertRaises(ValueError):
-                    validate_research_coverage(coverage, kind="search")

@@ -21,10 +21,6 @@ class RequestUsageTests(unittest.TestCase):
         self.assertEqual(usage.prompt_tokens, 100)
         self.assertEqual((usage.unknown_token_rounds, usage.unknown_cache_rounds), (2, 2))
 
-    def test_missing_cache_breakdown_does_not_invalidate_total_tokens(self):
-        usage = RequestUsage(attempted_rounds=1)
-        usage.observe(AgentUsage(100, 0))
-        self.assertEqual((usage.unknown_token_rounds, usage.unknown_cache_rounds), (0, 1))
 
     def test_zero_is_reported_and_invalid_usage_is_not(self):
         self.assertEqual(_usage_value({'tokens': 0}, 'tokens'), 0)

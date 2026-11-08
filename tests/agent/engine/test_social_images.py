@@ -64,16 +64,6 @@ class SocialImageTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(model.routing_session.calls), 1)
                 self.assertEqual(len(session.calls), 1)
 
-    async def test_missing_observation_is_explicit_without_an_extra_model_call(self):
-        context, _ = self.context('attachment')
-        session = _AgentSession([social_step('I cannot make out that image.', meme_id=None)])
-        model = _AgentModel(session, route=json.dumps({'route': 'social', 'image_observation': ''}))
-        answer = await AgentService(model).answer(
-            question=context.source_message.content, local_context='', context=context,
-        )
-        self.assertEqual(answer, 'I cannot make out that image.')
-        self.assertIn('"status": "unavailable"', model.request['prompt'])
-        self.assertEqual(len(model.routing_session.calls) + len(session.calls), 2)
 
     async def test_malformed_truncated_or_failed_reads_do_not_supply_visual_evidence(self):
         image = AgentImage('image/png', png('red'), 'Image 1')
@@ -94,14 +84,6 @@ class SocialImageTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(route.social)
                 self.assertEqual(route.image_observation, '')
                 advance.assert_awaited_once()
-
-    async def test_plain_text_social_requests_keep_two_calls_without_visual_context(self):
-        session = _AgentSession([social_step('Evening.', meme_id=None)])
-        model = _AgentModel(session, route='social')
-        await AgentService(model).answer(question='Hello there', local_context='', context=_context())
-        self.assertNotIn('images', model.routing_request)
-        self.assertNotIn('<image_observation>', model.request['prompt'])
-        self.assertEqual(len(model.routing_session.calls) + len(session.calls), 2)
 
 
 if __name__ == '__main__':

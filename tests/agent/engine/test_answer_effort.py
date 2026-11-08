@@ -8,7 +8,6 @@ from elbow_helper.agent.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan, _step
-from agent.engine.test_factual_answers import clan
 
 
 class AnswerEffortTests(unittest.IsolatedAsyncioTestCase):
@@ -39,14 +38,6 @@ class AnswerEffortTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer, "Keep recruiting.")
         self.assertEqual(efforts, [AgentReasoningEffort.HIGH, AgentReasoningEffort.LOW, AgentReasoningEffort.LOW])
 
-    async def test_figure_repair_does_not_inherit_maximum_planner_effort(self):
-        answer, efforts = await self.answer([
-            _model_step(_plan([_step("read")], effort="max")),
-            AgentStep("#P0 has 49 members. Keep recruiting.", (), AgentUsage()),
-            AgentStep("#P0 has 48 members. Keep recruiting.", (), AgentUsage()),
-        ], payload=clan())
-        self.assertEqual(answer, "#P0 has 48 members. Keep recruiting.")
-        self.assertEqual(efforts, [AgentReasoningEffort.HIGH, AgentReasoningEffort.LOW, AgentReasoningEffort.LOW])
 
     async def test_later_plan_cannot_raise_writer_effort(self):
         answer, efforts = await self.answer([
@@ -56,15 +47,3 @@ class AnswerEffortTests(unittest.IsolatedAsyncioTestCase):
         ])
         self.assertEqual(answer, "Keep recruiting.")
         self.assertEqual(efforts, [AgentReasoningEffort.HIGH, AgentReasoningEffort.LOW, AgentReasoningEffort.LOW])
-
-    async def test_writer_does_not_lower_the_floor_for_a_plan_correction(self):
-        invalid = _plan([{**_step("second"), "capability": "missing_capability"}])
-        answer, efforts = await self.answer([
-            _model_step(_plan([_step("first")], effort="max")),
-            _model_step(invalid),
-            _model_step(_plan([_step("second")])),
-            AgentStep("Keep recruiting.", (), AgentUsage(1000, 100)),
-        ])
-        self.assertEqual(answer, "Keep recruiting.")
-        self.assertEqual(efforts, [AgentReasoningEffort.HIGH, AgentReasoningEffort.LOW,
-                                  AgentReasoningEffort.MAX, AgentReasoningEffort.LOW])

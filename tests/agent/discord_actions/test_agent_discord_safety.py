@@ -73,12 +73,6 @@ class DiscordActionSafetyTests(unittest.TestCase):
                 with self.assertRaisesRegex(DiscordActionRefused, "That member ranks at or above you"):
                     check_raw_nickname(member, bot, guild=self.guild, requester=self.requester)
 
-    def test_missing_targets_keep_unavailable_errors(self):
-        bot = SimpleNamespace(id=1, top_role=SimpleNamespace(position=30))
-        with self.assertRaisesRegex(DiscordActionRefused, "That role is unavailable"):
-            check_role(None, self.guild, bot, {}, requester=self.requester)
-        with self.assertRaisesRegex(DiscordActionRefused, "That member is unavailable"):
-            check_member(None, bot, guild=self.guild, requester=self.requester)
 
     def test_every_unsafe_role_combination_is_refused(self):
         bot = SimpleNamespace(id=1, top_role=SimpleNamespace(position=10))

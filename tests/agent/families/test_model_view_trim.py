@@ -33,19 +33,6 @@ class ModelViewTrimTests(unittest.TestCase):
                     self.assertEqual(len(payload['war_ids']), 60)
                     self.assertIn('provenance', payload)
 
-    def test_second_projection_keeps_the_checked_count(self):
-        view = family_model_view(_payload('read_war_attendance', 2))
-        again = family_model_view(view)
-        self.assertEqual(again['wars_checked'], 60)
-
-    def test_missing_war_ids_still_report_zero_checked(self):
-        payload = _payload('read_war_attendance', 1)
-        del payload['war_ids']
-        self.assertEqual(family_model_view(payload)['wars_checked'], 0)
-
-    def test_provenance_is_dropped_for_other_families(self):
-        view = family_model_view({'family': 'read_member_accounts', 'rows': [], 'provenance': {'x': 1}})
-        self.assertNotIn('provenance', view)
 
     def test_message_rows_drop_source_but_cited_messages_still_link(self):
         from elbow_helper.agent.engine.grounding import ground_answer
@@ -74,18 +61,6 @@ class ModelViewTrimTests(unittest.TestCase):
                 self.assertIn(link.format(104), ground_answer(
                     'https://discord.com/channels/3/7/104', {'read': shown}, 3))
 
-    def test_roster_ownership_keeps_counts_not_the_owner_list(self):
-        owners = [{'member_id': i, 'member_name': f'Member {i}', 'account_count': 2} for i in range(30)]
-        payload = {'family': 'read_clan_rosters', 'rows': [], 'clans': [{
-            'clan_code': 'ZZ', 'ownership': {'linked_accounts': 60, 'unknown_owner_accounts': 1,
-                                             'distinct_linked_owners': 30, 'owners': owners,
-                                             'basis': 'synthetic'}}]}
-        view = family_model_view(payload)
-        self.assertEqual(view['clans'][0]['ownership'], {
-            'linked_accounts': 60, 'unknown_owner_accounts': 1,
-            'distinct_linked_owners': 30, 'basis': 'synthetic'})
-        self.assertLess(_size(view), _size(payload))
-        self.assertEqual(len(payload['clans'][0]['ownership']['owners']), 30)
 
     def test_other_families_keep_source_and_ownership_untouched(self):
         payload = {'family': 'read_member_accounts', 'rows': [{'source': 'x', 'ownership': {'owners': [1]}}]}

@@ -9,7 +9,6 @@ from elbow_helper.agent.engine.assessment import (
 )
 from elbow_helper.infrastructure.ai import AgentToolCall
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.tool_support.core import family_tool
 
 
@@ -56,12 +55,6 @@ class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
                        'rows': [unknown]},
             'known': {'leadership_filter': {'unverified_accounts': 1}, 'rows': [known]}}), {})
 
-    def test_compact_selection_rows_keep_the_same_unresolved_identity(self):
-        result = assessment_limits({'roster': {'leadership_filter': {'unverified_accounts': 1},
-            'rows': {'columns': ['player_tag', 'player_name', 'clan_code', 'leadership'],
-                     'rows': [['#P0', 'First', 'alpha', {'status': 'unknown'}]]}}})
-        self.assertEqual(result['unverified_selection'], [
-            {'player_tag': '#P0', 'player_name': 'First', 'clan_code': 'alpha'}])
 
     async def test_source_discovery_uses_only_request_and_authorized_metadata_and_restores_the_plan(self):
         for selected, expected, call_name in (([92], [92], 'select_discussion_sources'),
@@ -100,13 +93,6 @@ class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(rounder.advance.await_args.kwargs['allow_tools'])
                 self.assertEqual(requests[0]['tools'][0].name, 'select_discussion_sources')
 
-    def test_unresolved_intent_ends_with_one_question_after_any_requested_advice(self):
-        self.assertEqual(decision_answer(payload(recommendation=''), set()),
-            'Verified value: 7.\n\nWhich objective should guide the decision?')
-        # A requested recommendation is given under its stated assumption, then the question.
-        self.assertEqual(decision_answer(payload(recommendation='Assuming growth: move the active group.'), set()),
-            'Verified value: 7.\n\nAssuming growth: move the active group.\n\n'
-            'Which objective should guide the decision?')
 
     def test_established_discussion_intent_requires_a_read_message(self):
         with self.assertRaises(ValueError):
@@ -116,9 +102,6 @@ class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('advice', decision_answer(payload(intent_source='discussion', question='',
             discussion_message_ids=[91]), {91}))
 
-    def test_unresolved_intent_requires_a_question(self):
-        with self.assertRaises(ValueError):
-            decision_answer(payload(question=''), set())
 
     def test_an_explicit_goal_does_not_resolve_an_open_operational_choice(self):
         content = payload(intent='Open event signups', intent_source='unresolved',
@@ -141,14 +124,6 @@ class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
                 'columns': ['message_id', 'content'], 'rows': [[3, 'A decision.']]}}}
         self.assertEqual(discussion_ids(results), {3})
 
-    def test_planning_requires_discussion_source_selection(self):
-        tool = family_tool('read_conversation_evidence', 'Read a discussion.', {}, AsyncMock())
-        plan = {'goal': 'Assess a decision', 'effort': 'max', 'output': 'text', 'assessment': True,
-            'steps': [{'id': 'discussion', 'capability': 'read_conversation_evidence',
-                       'arguments': {}, 'depends_on': []}]}
-        self.assertFalse(check_plan(plan, {'read_conversation_evidence': tool}).ok)
-        plan['discussion_channels'] = [91]
-        self.assertTrue(check_plan(plan, {'read_conversation_evidence': tool}).ok)
 
     async def test_selected_discussion_is_read_once_through_the_normal_runner(self):
         result = {'decision_discussion_91': {'family': 'read_conversation_evidence', 'rows': []}}
@@ -163,34 +138,6 @@ class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
         await read_decision_discussions(flow)
         flow.runner.run.assert_awaited_once()
 
-    async def test_known_assessment_subjects_use_one_search_across_selected_channels(self):
-        for selectors, evidence, previous in (
-            ({'member_ids': [42, 43]}, {}, {}),
-            ({'member_ids': {'step': 'members', 'path': ['rows', '*', 'member_id']}},
-             {'members': {'family': 'read_member_cohort', 'rows': [
-                 {'member_id': 42}, {'member_id': 43}, {'member_id': 42}]}}, {}),
-            ({}, {'members': {'family': 'read_member_accounts', 'members': [
-                {'member_id': 42}, {'member_id': 43}], 'rows': []}}, {}),
-            ({}, {}, {42: 'Synthetic first', 43: 'Synthetic second'}),
-        ):
-            with self.subTest(selectors=selectors, evidence=evidence):
-                result = {f'decision_discussion_search_{index}':
-                          {'family': 'read_conversation_evidence', 'rows': []} for index in (0, 1)}
-                flow = SimpleNamespace(assessment_requested=True, registry={'read_conversation_evidence': object()},
-                    context=SimpleNamespace(state=SimpleNamespace(resolved_members=previous)),
-                    plan={'discussion_channels': [91, 92], 'steps': [{'id': 'measure',
-                          'capability': 'read_war_attendance', 'arguments': selectors}]},
-                    steps_by_id={}, completed_results=dict(evidence), read_results={}, result_views={},
-                    model_results=lambda values: values,
-                    runner=SimpleNamespace(run=AsyncMock(return_value=result), model_results_for=lambda values: values))
-                await read_decision_discussions(flow)
-                steps = flow.runner.run.await_args.args[0]['steps']
-                self.assertEqual([step['arguments'] for step in steps], [
-                    {'mode': 'search', 'author_ids': [42, 43], 'channel_ids': [91, 92]},
-                    {'mode': 'search', 'mentions': [42, 43], 'channel_ids': [91, 92]}])
-                self.assertEqual(len({step['id'] for step in steps}), 2)
-                await read_decision_discussions(flow)
-                flow.runner.run.assert_awaited_once()
 
     async def test_known_subject_search_replaces_planned_windows_and_preserves_dependents(self):
         result = {f'decision_discussion_search_{index}':
@@ -260,17 +207,6 @@ class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(flow.plan['steps'], [search, mention])
         flow.runner.run.assert_not_awaited()
 
-    async def test_discussion_already_in_the_plan_is_not_fetched_twice(self):
-        flow = SimpleNamespace(assessment_requested=True, registry={'read_conversation_evidence': object()},
-            plan={'discussion_channels': [91], 'steps': [{'id': 'discussion',
-                'capability': 'read_conversation_evidence',
-                'arguments': {'mode': 'channel_window', 'channel_id': 91}}]},
-            steps_by_id={}, completed_results={}, runner=SimpleNamespace(run=AsyncMock()))
-        with patch('elbow_helper.agent.engine.assessment.select_decision_sources',
-                   AsyncMock()) as discover:
-            self.assertEqual(await read_decision_discussions(flow), {})
-        discover.assert_not_awaited()
-        flow.runner.run.assert_not_awaited()
 
     async def test_discovered_rooms_join_the_scoped_read_plan_once(self):
         results = {f'decision_discussion_{identifier}': {

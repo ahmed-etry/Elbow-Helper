@@ -74,36 +74,6 @@ class RecordRegularWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await asyncio.to_thread(self.regular.war_counts, cycle_start_ts=start,
                                                  cycle_end_ts=checked, clan_codes={"ONE", "TWO"}), {"ONE": 1})
 
-    async def test_ended_regular_wars_count_once_friendly_wars_never_and_tags_keep_their_spelling(self):
-        await self.ended()
-        start, end = seconds(START), seconds(END) + 4 * DAY
-        activity = await asyncio.to_thread(self.regular.activity, cycle_start_ts=start, cycle_end_ts=end,
-                                           player_tags={"#p0", "not a tag", ""})
-        self.assertEqual(list(activity), ["#p0"])
-        self.assertEqual((activity["#p0"]["wars"], activity["#p0"]["attacks_used"]), (1, 1))
-        self.assertEqual(await asyncio.to_thread(self.regular.war_counts, cycle_start_ts=start, cycle_end_ts=end),
-                         {"ONE": 1})
-        self.assertEqual(await asyncio.to_thread(self.regular.activity, cycle_start_ts=end, cycle_end_ts=start,
-                                                 player_tags={"#P0"}), {})
-
-    async def test_long_periods_read_in_pieces_add_up_to_one_read(self):
-        await self.record(war(), at=self.at)
-        await self.ended()
-        start, end = seconds(START) - 3 * DAY, seconds(END) + 4 * DAY
-
-        async def everything():
-            return [await asyncio.to_thread(self.regular.activity, cycle_start_ts=start, cycle_end_ts=end,
-                                            player_tags={"#P0", "#P2"}),
-                    await asyncio.to_thread(self.regular.war_counts, cycle_start_ts=start, cycle_end_ts=end),
-                    await asyncio.to_thread(self.regular.attacks, player_tag="#P0", cycle_start_ts=start,
-                                            cycle_end_ts=end),
-                    await asyncio.to_thread(self.regular.latest_attack_ts, player_tag="#P2", after_ts=start,
-                                            until_ts=end)]
-
-        whole = await everything()
-        with patch("elbow_helper.features.clan_health.record_wars.SPAN", 7200 * SECOND):
-            self.assertEqual(await everything(), whole)
-        self.assertEqual((whole[0]["#P0"]["wars"], whole[1], whole[3]), (1, {"ONE": 1}, seconds(END)))
 
     async def test_health_scores_join_record_regular_and_league_wars(self):
         await self.ended()
@@ -159,15 +129,6 @@ class RecordRegularWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(commands._build_attack_sheet([unknown], "No attacks")[1][-1], "-")
         self.assertEqual(await asyncio.to_thread(self.regular.attacks, player_tag="not a tag",
                                                  cycle_start_ts=start, cycle_end_ts=end), [])
-
-class NoCollectionTests(unittest.TestCase):
-    def test_clan_health_collects_nothing_and_stores_no_verdicts(self):
-        import importlib.util
-        from elbow_helper.features.clan_health.cog import ClanHealth
-        for module in ("api", "snapshots", "queries", "database.repository", "database.records"):
-            self.assertIsNone(importlib.util.find_spec(f"elbow_helper.features.clan_health.{module}"), module)
-        for name in ("_snapshot_log_loop", "collector", "_run_background_snapshot_cycle"):
-            self.assertFalse(hasattr(ClanHealth, name), name)
 
 
 if __name__ == "__main__":

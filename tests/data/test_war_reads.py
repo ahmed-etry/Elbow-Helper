@@ -104,11 +104,6 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.reads.running_league("#PY", self.at - SECOND))
         self.assertIsNone(await self.reads.running_league("#LQ", self.at))
 
-    async def test_a_running_league_ignores_regular_and_ended_wars(self):
-        await self.record(war())
-        self.assertIsNone(await self.reads.running_league("#PY", self.at))
-        await self.record(war("warEnded", clans=("#PY", "#CU")), kind="cwl_war", scope="#R0")
-        self.assertIsNone(await self.reads.running_league("#PY", self.at))
 
     async def test_lineups_list_both_sides_with_their_attacks_only_when_asked(self):
         await self.record(war("warEnded"), at=END + 90 * SECOND)

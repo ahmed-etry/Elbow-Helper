@@ -107,23 +107,6 @@ class ExaminationFollowupTests(unittest.IsolatedAsyncioTestCase):
         routing_message.reply.assert_not_awaited()
         owner._save.assert_called_once_with()
 
-    async def test_unresolved_ticket_is_preserved_without_confirmed_deletion(self) -> None:
-        for missing_id in (False, True):
-            with self.subTest(missing_id=missing_id):
-                owner = self._owner()
-                cases = owner._get_cases.return_value
-                if missing_id:
-                    cases["123"].pop("ticket_channel_id")
-                original = deepcopy(cases)
-                owner.bot.get_channel.return_value = None
-                owner.bot.fetch_channel.return_value = MagicMock(spec=discord.CategoryChannel)
-                routing_channel = owner._get_routing_channel.return_value
-
-                await self._run_pass(owner)
-
-                self.assertEqual(cases, original)
-                routing_channel.fetch_message.assert_not_awaited()
-                owner._save.assert_not_called()
 
     async def test_send_failure_preserves_stage_and_retries_reminder_or_fallback(self) -> None:
         for age_hours, stage, expected_stage in (

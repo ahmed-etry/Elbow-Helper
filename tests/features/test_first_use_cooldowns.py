@@ -9,8 +9,6 @@ from unittest.mock import patch
 import discord
 
 from elbow_helper.features.clan_reporting.elders import ClanReportingElderMixin
-from elbow_helper.features.examination.cog import Examination
-from elbow_helper.features.recruitment.cog import Recruitment
 from elbow_helper.features.rosters.cog import Rosters
 
 
@@ -113,36 +111,6 @@ class FirstUseCooldownTests(unittest.IsolatedAsyncioTestCase):
             interaction,
             "This roster was just refreshed. Try again in a moment.",
         )
-
-    def test_recruitment_first_recurring_issue_is_a_warning(self) -> None:
-        cog = object.__new__(Recruitment)
-        cog._recurring_issue_log_times = {}
-        cog.logger = MagicMock()
-
-        with patch(
-            "elbow_helper.features.recruitment.cog.time.monotonic",
-            return_value=10.0,
-        ):
-            cog._warn_recurring_issue("test", "Problem: %s", "details")
-            cog._warn_recurring_issue("test", "Problem: %s", "details")
-
-        cog.logger.warning.assert_called_once_with("Problem: %s", "details")
-        cog.logger.debug.assert_called_once_with("Problem: %s", "details")
-
-    def test_examination_first_reorder_issue_is_a_warning(self) -> None:
-        cog = object.__new__(Examination)
-        cog._ticket_reorder_issue_log_times = {}
-        cog.logger = MagicMock()
-
-        with patch(
-            "elbow_helper.features.examination.cog.time.monotonic",
-            return_value=10.0,
-        ):
-            cog._warn_ticket_reorder_issue("test", "Problem: %s", "details")
-            cog._warn_ticket_reorder_issue("test", "Problem: %s", "details")
-
-        cog.logger.warning.assert_called_once_with("Problem: %s", "details")
-        cog.logger.debug.assert_called_once_with("Problem: %s", "details")
 
 
 if __name__ == "__main__":

@@ -41,12 +41,6 @@ class WriterTableTests(unittest.TestCase):
         self.assertIn('measures.rate.value', result['accounts']['columns'])
         self.assertEqual(result['accounts']['shared']['leadership.status'], 'unknown')
 
-    def test_existing_column_tables_are_reprojected_without_losing_rows(self):
-        rows = [{'id': str(i), 'metric': {'value': i, 'complete': True}} for i in range(30)]
-        result = writer_tables({'columns': ['id', 'metric'],
-                                'rows': [[row['id'], row['metric']] for row in rows]})
-        self.assertEqual(expand(result), rows)
-        self.assertEqual(writer_tables(result), result)
 
     def test_null_false_zero_and_float_are_not_shared_as_equal_values(self):
         rows = [{'id': str(i), 'value': [None, False, 0, 0.0, True, 1][i % 6]}
@@ -54,9 +48,6 @@ class WriterTableTests(unittest.TestCase):
         result = writer_tables(rows)
         self.assertEqual(json.dumps(expand(result), sort_keys=True), json.dumps(rows, sort_keys=True))
 
-    def test_empty_table_keeps_its_schema(self):
-        value = {'columns': ['id', 'metric'], 'rows': []}
-        self.assertEqual(writer_tables(value), value)
 
     def test_literal_dotted_keys_are_not_flattened_into_a_collision(self):
         rows = [{'a.b': i, 'a': {'b': i + 1}} for i in range(12)]

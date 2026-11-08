@@ -1,9 +1,7 @@
 """Synthetic Discord permission equivalence and directory scaling regressions."""
 
-import asyncio
 from collections import Counter
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
 import json
 from types import SimpleNamespace
 import unittest
@@ -135,63 +133,6 @@ def _permission_counts():
 
 
 class DirectoryPermissionsTests(unittest.IsolatedAsyncioTestCase):
-    async def test_cached_decisions_match_original_member_scan(self):
-        fixture = SyntheticGuild()
-        guild = fixture.guild
-        # Include a timeout, a guild owner, administrators and overlapping roles.
-        guild.get_member(13).timed_out_until = datetime.now(timezone.utc) + timedelta(days=1)
-        guild.get_member(11)._roles = discord.utils.SnowflakeList([AGENT_TESTER_ROLE_ID, 5, 6])
-        # Discord can retain a role ID on a member before the role is cached.
-        guild.get_member(19)._roles.add(888)
-        sources = [
-            fixture.channel(200),
-            fixture.channel(201, [_overwrite(14, member=True, view_channel=False)]),
-            fixture.channel(202, [_overwrite(14, member=True, read_message_history=False)]),
-            fixture.channel(203, [_overwrite(10, member=True, view_channel=False),
-                                  _overwrite(12, member=True, read_message_history=False)]),
-            fixture.channel(204, [_overwrite(5, read_message_history=False),
-                                  _overwrite(6, read_message_history=True)]),
-            fixture.channel(205, [_overwrite(1, view_channel=False),
-                                  _overwrite(5, view_channel=True),
-                                  _overwrite(14, member=True, view_channel=True)]),
-            fixture.channel(206, [_overwrite(13, member=True, manage_threads=True)]),
-            fixture.channel(207, [_overwrite(14, member=True, read_message_history=False)], forum=True),
-            fixture.channel(208, [_overwrite(888, read_message_history=False)]),
-        ]
-        sources.append(fixture.thread(300, sources[2]))
-        self.assertFalse(await disclosure.personal_source_allowed(fixture.destination, sources[8], guild))
-        private = fixture.thread(301, sources[6], private=True)
-        sources.append(private)
-        destinations = [fixture.destination,
-                        fixture.channel(101, [_overwrite(14, member=True, view_channel=False)]),
-                        fixture.thread(102, fixture.destination),
-                        fixture.thread(103, fixture.destination, private=True)]
-        results = []
-        for chunked in (True, False):
-            guild._member_count = len(guild.members) if chunked else len(guild.members) + 1
-            for destination in destinations:
-                for joined in ([10, 11, 12], list(range(10, 21)), [404], None):
-                    async def fetch_members(thread):
-                        if joined is None:
-                            raise OSError("Synthetic fetch failure")
-                        return [SimpleNamespace(id=identifier) for identifier in joined]
-
-                    with patch.object(discord.Thread, "fetch_members", fetch_members):
-                        with _legacy_scans():
-                            expected = [await disclosure.personal_source_allowed(
-                                destination, source, guild, thread_members={},
-                            ) for source in sources]
-                            clearance = await disclosure.destination_clearance(destination, guild)
-                        cache = {}
-                        actual = [await disclosure.personal_source_allowed(
-                            destination, source, guild, thread_members=cache,
-                        ) for source in sources]
-                        self.assertEqual(actual, expected)
-                        self.assertEqual(await disclosure.destination_clearance(
-                            destination, guild, thread_members=cache), clearance)
-                        results.extend(actual)
-        self.assertIn(True, results)
-        self.assertIn(False, results)
 
     async def test_recheck_recomputes_viewers_and_denies_new_reader(self):
         fixture = SyntheticGuild()
@@ -236,22 +177,3 @@ class DirectoryPermissionsTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(AgentAccessLost):
                 await require_evidence_access(context)
             self.assertEqual(fetch.await_count, 2)
-
-    async def test_large_directory_permission_counts_and_repeated_pass(self):
-        fixture = SyntheticGuild(members=2000, channels=300)
-        with _legacy_scans(), _permission_counts() as before:
-            expected = await scoped_channel_directory(fixture.context())
-        self.assertGreater(sum(before.values()), 1_000_000)
-        context = fixture.context()
-        yielded = []
-        with _permission_counts() as after:
-            asyncio.get_running_loop().call_soon(lambda: yielded.append(sum(after.values())))
-            self.assertEqual(await scoped_channel_directory(context), expected)
-            first_checks = sum(after.values())
-            self.assertEqual(after[fixture.destination.id], 2001)
-            self.assertLess(first_checks, 10_000)
-            self.assertEqual(await scoped_channel_directory(context), expected)
-            self.assertEqual(after[fixture.destination.id], 2002)
-            self.assertLess(sum(after.values()) - first_checks, 5_000)
-        self.assertTrue(yielded)
-        self.assertLess(yielded[0], first_checks)

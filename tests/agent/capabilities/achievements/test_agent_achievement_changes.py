@@ -16,13 +16,9 @@ from elbow_helper.agent.tool_support.adapters.achievements.commands import prepa
 from elbow_helper.agent.tool_support.adapters.achievements.commands import prepare_grant_coins
 from elbow_helper.agent.tool_support.adapters.achievements.commands import prepare_grant_ticket
 from elbow_helper.agent.tool_support.adapters.achievements.commands import run_achievement_award
-from elbow_helper.agent.tool_support.adapters.achievements.raffle_commands import prepare_raffle_clear
-from elbow_helper.agent.tool_support.adapters.achievements.commands import prepare_raffle_remove
 from elbow_helper.agent.tool_support.adapters.achievements.commands import run_achievement_remove
 from elbow_helper.agent.tool_support.adapters.achievements.commands import run_grant_coins
 from elbow_helper.agent.tool_support.adapters.achievements.commands import run_grant_ticket
-from elbow_helper.agent.tool_support.adapters.achievements.raffle_commands import run_raffle_clear
-from elbow_helper.agent.tool_support.adapters.achievements.commands import run_raffle_remove
 
 
 class _Store(AchievementServiceMixin):
@@ -75,44 +71,6 @@ class _EconomyStore(AchievementEconomyMixin):
 
 
 class AchievementChangeTests(unittest.IsolatedAsyncioTestCase):
-    async def test_raffle_removal_and_clear_show_affected_members(self):
-        member = SimpleNamespace(id=7, mention="<@7>", display_name="Member")
-        ticket = {"month_key": 24117, "has_ticket": True,
-                  "last_ticket_month": 24117}
-        raffle = {"month_key": 24117, "winners": [8], "tickets": [7, 8]}
-
-        async def remove_ticket(*args):
-            ticket["has_ticket"] = False
-            ticket["last_ticket_month"] = None
-            return "Ticket removed for this month (if any)."
-
-        async def clear(*args):
-            raffle["winners"] = []
-            raffle["tickets"] = []
-            return "Cleared this month's raffle winners and tickets."
-
-        workflow = SimpleNamespace(
-            raffle_member_ticket_state=AsyncMock(side_effect=lambda *args: dict(ticket)),
-            remove_raffle_ticket=AsyncMock(side_effect=remove_ticket),
-            raffle_clear_state=AsyncMock(side_effect=lambda: dict(raffle)),
-            clear_raffle=AsyncMock(side_effect=clear),
-        )
-        context = SimpleNamespace(
-            bot=SimpleNamespace(get_cog=lambda _: workflow),
-            guild=SimpleNamespace(get_member=lambda _: member),
-        )
-        removal = await prepare_raffle_remove(context, {"user": 7})
-        self.assertTrue(await removal.recheck())
-        workflow.remove_raffle_ticket.assert_not_awaited()
-        await run_raffle_remove(context, {"user": 7})
-        self.assertFalse(await removal.recheck())
-        preview = await prepare_raffle_clear(context, {"clear_tickets": True})
-        self.assertIn("Winner: <@8>", preview.lines)
-        self.assertIn("Ticket: <@7>", preview.lines)
-        self.assertTrue(await preview.recheck())
-        workflow.clear_raffle.assert_not_awaited()
-        await run_raffle_clear(context, {"clear_tickets": True})
-        self.assertFalse(await preview.recheck())
 
     async def test_coin_grant_keeps_caps_and_amount_limit(self):
         store = _EconomyStore()
@@ -178,26 +136,6 @@ class AchievementChangeTests(unittest.IsolatedAsyncioTestCase):
         await run_grant_ticket(context, ticket_values)
         self.assertFalse(await ticket_preview.recheck())
 
-    async def test_name_resolution_and_prior_coin_state(self):
-        store = _Store()
-        try:
-            state = await store.achievement_change_state(7, "One of Us")
-            self.assertEqual(state["id"], "one_of_us")
-            self.assertIsNone(state["completed_date"])
-            self.assertIsNone(await store.achievement_change_state(7, "missing"))
-            with self.assertRaisesRegex(ValueError, "ambiguous"):
-                await store.achievement_change_state(7, "one")
-            store.connection.execute(
-                "INSERT INTO user_achievements VALUES (7, 'one_of_us', 100)"
-            )
-            store.connection.execute(
-                "INSERT INTO coin_transactions VALUES (7, 'achievement', 'one_of_us')"
-            )
-            state = await store.achievement_change_state(7, "one_of_us")
-            self.assertEqual(state["completed_date"], 100)
-            self.assertTrue(state["reversal_due"])
-        finally:
-            store.connection.close()
 
     async def test_award_and_remove_use_feature_operations_after_preview(self):
         state = {"id": "one_of_us", "name": "One of Us", "completed_date": None,

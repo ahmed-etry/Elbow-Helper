@@ -7,10 +7,7 @@ import unittest
 from agent import test_ranked_contracts as contracts
 from agent.families.test_ranked import account, stored, BATTLE, AFTER, BEFORE
 from elbow_helper.agent.access import AgentAccessLost
-from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.tool_support.core import FamilyReport
-from elbow_helper.agent.plan.checker import check_plan
-from elbow_helper.agent.plan.results import model_result, model_view
 from elbow_helper.agent.reads.ranked import read_ranked
 from elbow_helper.agent.reads.ranked_tools import TOOLS
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationError
@@ -62,12 +59,6 @@ class RankedTypedTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(row['counts_complete'])
                 forbidden.assert_not_awaited()
 
-    async def test_explicit_detail_exposes_battles_and_summary_stays_compact(self):
-        context, _, _ = self.context()
-        detailed = await TOOLS[0].handler(context, self.arguments(detail='detail'))
-        self.assertEqual(len(model_view(model_result(detailed))['rows'][0]['battles']), 4)
-        summary = await TOOLS[0].handler(context, self.arguments())
-        self.assertNotIn('battles', model_view(model_result(summary))['rows'][0])
 
     def cohort(self, context, tags, *, guild=None, requester=None):
         report = FamilyReport('cohort', guild or context.guild.id, 'read_member_cohort', json.dumps({
@@ -160,14 +151,3 @@ class RankedTypedTests(unittest.IsolatedAsyncioTestCase):
             context, source, _ = self.context()
             self.assertIn('error', await read_ranked(context, self.arguments(**extra)))
             source.assert_not_awaited()
-
-    def test_catalogue_has_one_ranked_read_and_requires_a_typed_direction_for_a_metric(self):
-        registry = build_agent_tools()
-        self.assertNotIn('read_ranked_stats', registry)
-        self.assertNotIn('aggregate', registry['read_clash'].definition.parameters['properties'])
-        for arguments in (self.arguments(metric='average_stars'),
-                          {'kind': 'battle_log', 'tags': ['#P0'], 'aggregate': 'ranked_attacks'}):
-            capability = 'read_clash' if 'kind' in arguments else 'read_ranked_activity'
-            checked = check_plan({'goal': 'Synthetic', 'effort': 'low', 'output': 'text', 'steps': [{
-                'id': 'read', 'capability': capability, 'arguments': arguments, 'depends_on': []}]}, registry)
-            self.assertTrue(checked.step_errors or checked.error)

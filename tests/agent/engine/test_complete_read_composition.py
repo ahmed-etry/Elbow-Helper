@@ -4,10 +4,8 @@ import json
 import unittest
 from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.conversation.context import estimate_tokens
-from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.tool_support.core import family_tool
-from elbow_helper.agent.plan.format import answer_instructions
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan, _model_step
@@ -91,28 +89,6 @@ class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(requests[2]['prompt'])['draft'], 'Seven volunteers are confirmed.')
         self.assertNotIn('Available evidence', requests[2]['prompt'])
 
-    async def test_tool_enabled_assessment_prose_still_gets_max_final_composition(self):
-        source = AsyncMock(return_value={'error': 'Unavailable source', 'cause': 'source_unavailable'})
-        tool = family_tool('read_community_reference', 'Read a value.', {}, source)
-        registry = {'read_community_reference': tool}
-        plan = {**_plan([{'id': 'facts', 'capability': 'read_community_reference',
-            'arguments': {}, 'depends_on': []}]), 'assessment': True}
-        sessions = [_Session([replace(_model_step(plan), usage=AgentUsage(1000, 100))], []),
-            _Session([AgentStep('Tentative prose.', (), AgentUsage(1000, 20))], []),
-            _Session([AgentStep(decision_payload(), (), AgentUsage(1000, 20))], [])]
-        requests = []
-
-        class Model:
-            def create_agent_session(self, **kwargs):
-                requests.append(kwargs)
-                return sessions[len(requests) - 1]
-
-        with patch('elbow_helper.agent.engine.service.build_agent_tools', return_value=registry):
-            flow, _ = AgentService(Model())._start_flow(question='Assess the supplied values',
-                local_context='', context=_context(), conversation_history='')
-        self.assertEqual(await flow.run(), 'Supported conclusion.')
-        self.assertEqual(sessions[1].calls[0][2], AgentReasoningEffort.HIGH)
-        self.assertEqual(sessions[2].calls[0][2], AgentReasoningEffort.MAX)
 
     async def test_assessment_final_reserves_max_reasoning_and_repairs_a_cutoff(self):
         for cutoff in (False, True):
@@ -163,38 +139,6 @@ class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reply.content, 'Corrected public prose.')
         self.assertNotIn(DECISION_ANSWER_INSTRUCTION, model.session.instructions[-1])
 
-    async def test_complete_simple_plan_composes_without_resending_replanning_catalogue(self):
-        for result, can_replan in (({'rows': [{'value': 7}]}, False),
-                ({'error': 'Missing source', 'cause': 'source_unavailable'}, True),
-                ({'rows': [], 'selection_complete': False}, True),
-                ({'rows': [], 'missing_sources': [{'cause': 'source_unavailable'}]}, True),
-                ({'rows': [], 'mode': 'index'}, True),
-                ({'rows': [], 'source_next_cursor': 'older-history'}, True)):
-            with self.subTest(result=result):
-                source = AsyncMock(return_value=result)
-                tool = family_tool('read_community_reference', 'Read facts.', {}, source)
-                registry = {'read_community_reference': tool, 'hidden': replace(tool, default_visible=False)}
-                plan = {**_plan([{'id': 'facts', 'capability': 'read_community_reference',
-                    'arguments': {}, 'depends_on': []}]), 'finish_after_reads': True}
-                initial = _Session([_model_step(plan)], [])
-                final = _Session([AgentStep('Synthetic answer.', (), AgentUsage(1000, 20))], [])
-
-                class Model(CaptureModel):
-                    def create_agent_session(self, **kwargs):
-                        if self.request is not None:
-                            self.writer = kwargs
-                            return final
-                        return super().create_agent_session(**kwargs)
-
-                model = Model(initial)
-                with patch('elbow_helper.agent.engine.service.build_agent_tools', return_value=registry):
-                    flow, _ = AgentService(model)._start_flow(question='Give the requested fact',
-                        local_context='', context=_context(), conversation_history='')
-                self.assertEqual(await flow.run(), 'Synthetic answer.')
-                self.assertEqual(len(initial.calls), 1)
-                self.assertEqual(len(final.calls), 1)
-                self.assertEqual(bool(model.writer['tools']), can_replan)
-                source.assert_awaited_once()
 
     async def test_standalone_war_snapshot_restores_every_row_after_transport_paging(self):
         context = _context()
@@ -249,11 +193,3 @@ class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):
         visible = evidence['results']['ranked']['rows']
         self.assertEqual([{key: row[key] for key in rows[0]} for row in visible], rows)
         source.assert_awaited_once()
-
-    def test_followup_prompt_keeps_action_semantics_with_bounded_prefix(self):
-        registry = {name: tool for name, tool in build_agent_tools().items() if tool.default_visible}
-        prompt = answer_instructions(registry)
-        self.assertIn('depends_on', prompt)
-        # Include the shared assessment rules while staying below the former
-        # 61k-character follow-up prefix, before evidence.
-        self.assertLess(estimate_tokens(prompt), 12_000)

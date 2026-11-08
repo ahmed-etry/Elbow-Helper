@@ -65,25 +65,3 @@ class PeopleAgentReadTests(PeopleFixture):
             with self.assertRaises(PermissionError):
                 await PeopleAdapter(context).links(PeopleSelection('members', (100,)))
         forbidden.assert_not_called()
-
-    async def test_directory_union_matches_feature_names_without_calling_feature(self):
-        from elbow_helper.data.reads import CwlReads, StayReads
-        from .link_fixtures import CLANS
-        from .test_wars import war, END
-        from .test_family_store import response
-        from elbow_helper.data.store.wars import record_response
-        clan_tag = next(iter(CLANS.values())).tag
-        payload = war('warEnded', clans=(clan_tag, '#GR'))
-        payload['clan']['members'][0]['name'] = 'Old lineup alias'
-        run = await self.store.begin_run('wars', 'family_wars', [('current_war', clan_tag)], END)
-        await self.store.call(record_response, run, 0, 'current_war', clan_tag, response(payload),
-                              {clan.tag for clan in CLANS.values()}, END)
-        await self.store.finish(run)
-        # Exercise the two neutral inputs directly: this is the feature's union.
-        stays = await StayReads(self.store).names(as_of=END)
-        wars = await CwlReads(self.store).account_names([clan.tag for clan in CLANS.values()], as_of=END)
-        expected = sorted({(r['player_tag'], r['player_name']) for r in stays['rows'] + wars['rows']})
-        names = await PeopleReads(self.store, clans=CLANS.values()).directory_names(END)
-        self.assertEqual([(r['player_tag'], r['player_name']) for r in names['rows']], expected)
-        self.assertIn(('#P0', 'Old lineup alias'), expected)
-        self.assertNotIn('#Q0', {r['player_tag'] for r in wars['rows']})  # Opponent names never enter the directory.

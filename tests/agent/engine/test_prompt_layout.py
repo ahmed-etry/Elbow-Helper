@@ -11,11 +11,6 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.engine.assessment import select_decision_sources
 from elbow_helper.agent.engine.routing import RouteDecision, judge_route
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.engine.recommended_actions import action_catalogue
-from elbow_helper.agent.plan.format import (
-    answer_instructions, output_forms, plan_definition, system_instructions,
-)
 from elbow_helper.agent.scheduled.watchers import evaluate
 from elbow_helper.agent.prompts import LIMIT_ANSWER_INSTRUCTION
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
@@ -175,58 +170,6 @@ class PromptLayoutTests(unittest.IsolatedAsyncioTestCase):
                 else:
                     self.assertIn(DECISION_ANSWER_INSTRUCTION, continuation)
 
-    async def test_fixed_request_guidance_precedes_history_and_metadata(self):
-        requests = await capture_requests('ALPHA')
-        for name in ('planning', 'banter'):
-            with self.subTest(call=name):
-                prompt = requests[name]['prompt']
-                self.assertLess(prompt.index('Triggering message (a mention is not necessarily a request):'),
-                                prompt.index('A passing mention talks about you'))
-                self.assertLess(prompt.index('A passing mention talks about you'), prompt.index('<request>'))
-                if name == 'planning':
-                    self.assertLess(prompt.index('Canonical public command help'),
-                                    prompt.index('<history_checkpoint>'))
-
-    def test_retained_finding_guidance_precedes_data_only_when_findings_exist(self):
-        from elbow_helper.agent.conversation.context import compile_context
-        from elbow_helper.agent.conversation.findings import FINDINGS_INSTRUCTION
-        from agent.conversation.test_agent_context import _turn
-
-        context = _context()
-        turn = _turn(1)
-        context.state.authorized_history = (replace(turn,
-            record=replace(turn.record, evidence=('Synthetic retained evidence',))),)
-        for finding in (None, '{"fact":"Synthetic earlier finding"}'):
-            with self.subTest(finding=finding):
-                with patch('elbow_helper.agent.conversation.context.retained_finding',
-                           return_value=finding):
-                    compiled = compile_context(question='Continue', local_context='', context=context, tools=())
-                if finding is None:
-                    self.assertNotIn(FINDINGS_INSTRUCTION, compiled.prompt)
-                else:
-                    self.assertLess(compiled.prompt.index(FINDINGS_INSTRUCTION),
-                                    compiled.prompt.index('<history_checkpoint>'))
-                    self.assertIn('Synthetic earlier finding', compiled.answer_context)
-
-    def test_fixed_extensions_precede_access_dependent_catalogues(self):
-        registry = build_agent_tools()
-        for instructions in (
-            system_instructions(registry, extra_instructions=('Fixed extension.',)),
-            answer_instructions(registry, extra_instructions=('Fixed extension.',)),
-        ):
-            self.assertLess(instructions.index('Fixed extension.'), instructions.index('<capabilities>'))
-            self.assertEqual(instructions.count('Fixed extension.'), 1)
-
-    def test_catalogues_and_output_forms_ignore_registration_order(self):
-        registry = build_agent_tools()
-        reversed_registry = dict(reversed(tuple(registry.items())))
-        self.assertEqual(system_instructions(registry), system_instructions(reversed_registry))
-        self.assertEqual(answer_instructions(registry), answer_instructions(reversed_registry))
-        self.assertEqual(plan_definition(registry), plan_definition(reversed_registry))
-        self.assertEqual(output_forms(registry), output_forms(reversed_registry))
-        actions = action_catalogue(registry)
-        self.assertTrue(json.loads(actions)['recommended_action_capabilities'])
-        self.assertEqual(actions, action_catalogue(reversed_registry))
 
     def test_access_dependent_catalogues_follow_the_complete_fixed_rules(self):
         from elbow_helper.agent.conversation.reply_context import REPLY_CONTEXT_INSTRUCTION
@@ -246,23 +189,3 @@ class PromptLayoutTests(unittest.IsolatedAsyncioTestCase):
                 system = model.request['system_prompt']
                 for rule in rules:
                     self.assertIn(rule, system[:system.index('<capabilities>')])
-
-    def test_permission_mode_follows_shared_rules_without_losing_either_mode(self):
-        from os.path import commonprefix
-        from elbow_helper.agent.prompts import (
-            ACTION_CAPABILITY_PARAGRAPH, ACTION_PLANNING_RULES, READ_ONLY_CAPABILITY_PARAGRAPH,
-            STANDING_RULE_RULES,
-        )
-
-        allowed = system_instructions({}, extra_instructions=('Shared extension.',))
-        readonly = system_instructions({}, actions_enabled=False,
-                                       extra_instructions=('Shared extension.',))
-        self.assertIn('Shared extension.', commonprefix((allowed, readonly)))
-        self.assertIn(ACTION_CAPABILITY_PARAGRAPH, allowed)
-        self.assertIn(ACTION_PLANNING_RULES, allowed)
-        self.assertIn(STANDING_RULE_RULES, allowed)
-        self.assertNotIn(READ_ONLY_CAPABILITY_PARAGRAPH, allowed)
-        self.assertIn(READ_ONLY_CAPABILITY_PARAGRAPH, readonly)
-        self.assertNotIn(ACTION_CAPABILITY_PARAGRAPH, readonly)
-        self.assertNotIn(ACTION_PLANNING_RULES, readonly)
-

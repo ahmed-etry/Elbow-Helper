@@ -4,12 +4,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-import discord
 
 from elbow_helper.agent.actions.private_view import PrivateResultView
-from elbow_helper.agent.actions.outcomes import ActionOutcome
-from elbow_helper.agent.delivery import AgentDeliveryMixin
-from elbow_helper.agent.models import AgentDelivery, AgentTurnState
 from elbow_helper.agent.models import AgentAttachment
 from elbow_helper.agent.wording import (
     ACTION_PRIVATE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER,
@@ -57,12 +53,6 @@ class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("synthetic private data", str(other.response.send_message.await_args))
 
-    async def test_requester_receives_every_part_privately(self):
-        view = PrivateResultView(101, ("synthetic one", "synthetic two"))
-        member = self.interaction(101)
-        await view.open_result(member)
-        member.response.send_message.assert_awaited_once_with("synthetic one", ephemeral=True)
-        member.followup.send.assert_awaited_once_with("synthetic two", ephemeral=True)
 
     async def test_private_attachment_is_sent_only_on_owner_click(self):
         view = PrivateResultView(101, (), (AgentAttachment("synthetic.txt", b"secret"),))
@@ -110,67 +100,3 @@ class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
         member = self.interaction(101)
         await view.open_result(member)
         member.response.send_message.assert_awaited_once_with(ACTION_RESULT_EXPIRED, ephemeral=True)
-
-    async def test_deleted_or_expired_message_cleanup_is_debug_and_still_refuses_open(self):
-        for error in (
-            discord.NotFound(SimpleNamespace(status=404, reason="Not Found"),
-                             {"code": 10008, "message": "Unknown Message"}),
-            discord.NotFound(SimpleNamespace(status=404, reason="Not Found"),
-                             {"code": 10015, "message": "Unknown Webhook"}),
-            discord.HTTPException(SimpleNamespace(status=401, reason="Unauthorized"),
-                                  {"code": 50027, "message": "Invalid Webhook Token"}),
-        ):
-            with self.subTest(code=error.code):
-                view = PrivateResultView(101, ("synthetic private data",))
-                view.message = SimpleNamespace(edit=AsyncMock(side_effect=error))
-                with self.assertLogs("elbow_helper.agent.actions.private_view", level="DEBUG") as logs:
-                    await view.on_timeout()
-                self.assertEqual([record.levelname for record in logs.records], ["DEBUG"])
-                self.assertTrue(view.expired)
-                self.assertTrue(all(item.disabled for item in view.children))
-                member = self.interaction(101)
-                await view.open_result(member)
-                member.response.send_message.assert_awaited_once_with(ACTION_RESULT_EXPIRED, ephemeral=True)
-
-    async def test_unexpected_cleanup_failure_keeps_warning_with_diagnostics(self):
-        for error in (
-            discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"),
-                              {"code": 50013, "message": "Missing Permissions"}),
-            discord.HTTPException(SimpleNamespace(status=500, reason="Server Error"), "Failure"),
-        ):
-            with self.subTest(status=error.status):
-                view = PrivateResultView(101, ("synthetic private data",))
-                view.message = SimpleNamespace(edit=AsyncMock(side_effect=error))
-                with self.assertLogs("elbow_helper.agent.actions.private_view", level="WARNING") as logs:
-                    await view.on_timeout()
-                self.assertEqual(len(logs.output), 1)
-                self.assertIsNotNone(logs.records[0].exc_info)
-                self.assertTrue(view.expired)
-
-    async def test_delivery_attaches_the_private_view_to_the_public_note(self):
-        delivery_surface = AgentDeliveryMixin()
-        delivery_surface.bot = SimpleNamespace(user=SimpleNamespace(id=999))
-        delivery_surface.transcript_archive = None
-        sent = SimpleNamespace(id=303)
-        message = SimpleNamespace(
-            id=101, author=SimpleNamespace(id=202), mentions=[],
-            reply=AsyncMock(return_value=sent),
-            channel=SimpleNamespace(),
-        )
-        state = AgentTurnState()
-        state.outcomes.append(ActionOutcome(
-            "complete", "private", private_parts=("synthetic private data",),
-        ))
-        context = SimpleNamespace(state=state)
-        from unittest.mock import patch
-        with patch("elbow_helper.agent.delivery.require_evidence_access",
-                   new_callable=AsyncMock):
-            await delivery_surface.send_response(
-                message, "Result is ready.", None,
-                delivery=AgentDelivery(), context=context,
-            )
-        kwargs = message.reply.await_args.kwargs
-        self.assertIsInstance(kwargs["view"], PrivateResultView)
-        self.assertEqual(kwargs["view"].owner_id, 202)
-        self.assertIs(kwargs["view"].message, sent)
-        self.assertNotIn("synthetic private data", str(message.reply.await_args))

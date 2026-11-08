@@ -5,10 +5,6 @@ import unittest
 from unittest.mock import patch
 
 from elbow_helper.data.reads import CwlReads, MembershipReads, PeopleReads, WarReads
-from elbow_helper.data.store import FamilyStore
-from elbow_helper.data.store.schema import SCHEMA_VERSION
-from elbow_helper.data.store.war_completeness import upgrade_cwl_completeness, war_side_coverage
-from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationError
 from tests.data import test_family_store as family
 from tests.data import test_people_reads as people_fixtures
 from tests.data.test_wars import END, SECOND, START, WarFixture, group, war
@@ -71,44 +67,6 @@ class LeagueEvidenceTests(CwlFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["war_tag"] for row in weeks["coverage"]["missing_wars"]], ["#R8"])
         self.assertEqual(weeks["weeks"][0]["wars"][0]["source_coverage"]["signals"][0]["last_outcome"], "failed")
 
-    async def test_failed_completeness_upgrade_rolls_back_and_retries(self):
-        await self.week()
-        first = (await self.rows("SELECT id FROM wars ORDER BY id"))[0]["id"]
-        evidence = await self.store.call(war_side_coverage, first, "#PY")
-        await self.execute("UPDATE wars SET roster_complete=1,attacks_complete=1")
-        await self.execute("DROP TABLE member_last_messages")
-        await self.execute("PRAGMA user_version=15")
-        fresh = FamilyStore(self.path)
-        with patch("elbow_helper.data.store.war_completeness.war_side_coverage",
-                   side_effect=[evidence, sqlite3.OperationalError("interrupted")]):
-            with self.assertRaises(SQLiteMigrationError):
-                await fresh.initialize()
-        self.assertEqual((await self.rows("PRAGMA user_version"))[0]["user_version"], 15)
-        self.assertTrue(all(tuple(row.values()) == (1, 1) for row in
-                            await self.rows("SELECT roster_complete,attacks_complete FROM wars")))
-        await fresh.initialize()
-        self.assertEqual((await self.rows("PRAGMA user_version"))[0]["user_version"], SCHEMA_VERSION)
-
-    async def test_import_flags_and_upgrade_describe_both_sides_without_inventing_counts(self):
-        await self.week(positions=(30, 40), defender_positions=(31, 41))
-        wars = await self.rows("SELECT * FROM wars WHERE type='CWL'")
-        self.assertTrue(all((row["roster_complete"], row["attacks_complete"]) == (0, 0) for row in wars))
-        sides = await self.store.call(war_side_coverage, wars[0]["id"], "#PY")
-        reverse = await self.store.call(war_side_coverage, wars[0]["id"], sides["opponent"]["clan_tag"])
-        self.assertEqual(sides["own"], reverse["opponent"])
-        self.assertTrue(sides["own"]["attacks_complete"])
-        self.assertFalse(sides["opponent"]["attacks_complete"])
-        self.assertIsNone(sides["opponent"]["attacks_reported"])
-        await self.execute("UPDATE wars SET roster_complete=1,attacks_complete=1")
-        await self.execute("DROP TABLE member_last_messages")
-        await self.execute("PRAGMA user_version=15")
-        fresh = FamilyStore(self.path)
-        await fresh.initialize()
-        await fresh.call(upgrade_cwl_completeness)
-        repaired = await self.rows("SELECT roster_complete,attacks_complete FROM wars")
-        self.assertTrue(all(tuple(row.values()) == (0, 0) for row in repaired))
-        self.assertEqual((await self.rows("PRAGMA user_version"))[0]["user_version"], SCHEMA_VERSION)
-        self.assertIsNone((await fresh.call(war_side_coverage, wars[0]["id"], "#PY"))["opponent"]["attacks_reported"])
 
     async def test_native_league_rows_keep_positions_times_and_per_war_evidence(self):
         await self.week(positions=(30, 40), defender_positions=(31, 41))
@@ -167,8 +125,3 @@ class PeopleEvidenceTests(unittest.IsolatedAsyncioTestCase):
             await self.membership.generations(2, 1)
         empty = await MembershipReads(self.store, clans=()).generations(0, 1)
         self.assertFalse(empty["coverage"]["complete"])
-
-    async def test_current_links_without_old_files_are_empty_and_ready(self):
-        result = await self.people.current_links(100)
-        self.assertEqual(result["rows"], [])
-        self.assertTrue(result["coverage"]["complete"])

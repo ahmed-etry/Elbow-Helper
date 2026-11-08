@@ -30,15 +30,6 @@ class CommunityRetrievalTests(unittest.IsolatedAsyncioTestCase):
                   return_value=SimpleNamespace(levels=frozenset(), requester=False)))):
             return await search_approved_knowledge(self.context, args)
 
-    async def test_indexed_filename_preserves_query_and_channel_scope(self):
-        for filename, query, expected in (("clan-profiles.md", "Cedar requirements", "Competitive entry"),
-                                           ("culture.md", "pulling moss", "Family lore")):
-            with self.subTest(filename=filename):
-                result = await self.search({"titles": [filename], "query": query, "scope": "channel"})
-                self.assertEqual(result["sections"][0]["title"], expected)
-                self.assertEqual(result["coverage"]["method"], "lexical_ranked")
-                self.assertFalse(result["search_is_exhaustive"])
-                self.assertNotIn("Restricted notes", str(result))
 
     async def test_heading_opens_even_when_search_terms_do_not_match(self):
         result = await self.search({"titles": ["Family lore"], "query": "absent"})

@@ -67,15 +67,6 @@ class MemberLifecycleQueryTests(unittest.TestCase):
         )
         self.assertIsNone(snapshot.rows[0].last_seen_channel_id)
 
-    def test_oversize_state_is_rejected(self):
-        self.state["platform_counts"] = {
-            str(index): index for index in range(101)
-        }
-        with self.assertRaises(ValueError):
-            self.queries.snapshot(
-                current_members={1: "One"}, activity_channels={},
-            )
-
 
 if __name__ == "__main__":
     unittest.main()

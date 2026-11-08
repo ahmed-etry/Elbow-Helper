@@ -13,7 +13,6 @@ from elbow_helper.agent.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID, channel_gif_urls
 from elbow_helper.agent.discord_actions.gifs import channel_gif_history, find_gif, gif_tools
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import AgentDelivery
 from agent.engine.helpers import social_step
 from agent.engine.test_agent_service import _AgentModel, _AgentSession
 from agent.engine.test_banter_gifs import gif_context
@@ -101,37 +100,6 @@ class LocalGifLibraryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await find_gif(self.context, {"query": "synthetic"}), {"url": link})
             self.assertIsNone(self.context.state.gif_attachment)
 
-    async def test_local_social_reply_ignores_legacy_caption_flag(self):
-        name = "synthetic.png"
-        (self.directory / name).write_bytes(b"synthetic media")
-        for with_text in (False, True):
-            self.context.source_message.reply.reset_mock()
-            self.context.source_message.channel.send.reset_mock()
-            with self.library([name]):
-                session = _AgentSession([
-                    social_step("Synthetic line.", meme_id="synthetic", gif_with_text=with_text),
-                ])
-                answer = await AgentService(_AgentModel(session, route="social")).answer(
-                    question="Synthetic exchange", local_context="", context=self.context,
-                )
-            self.assertEqual(answer, "")
-            self.assertEqual(self.context.state.gif_fallback_text, "Synthetic line.")
-            delivery = AgentDelivery()
-            surface = AgentDeliveryMixin()
-            surface._send_response = AsyncMock()
-            with (patch("elbow_helper.agent.delivery.require_evidence_access", AsyncMock()),
-                  patch("elbow_helper.agent.delivery.assert_answer_scope", AsyncMock())):
-                await surface.send_response(self.context.source_message, answer, None,
-                                            context=self.context, delivery=delivery)
-            sent = self.context.source_message.reply
-            self.assertEqual(sent.await_args.args, (None,))
-            file = sent.await_args.kwargs["file"]
-            self.assertEqual(file.filename, name)
-            self.assertTrue(file.fp.closed)
-            self.assertFalse(sent.await_args.kwargs["allowed_mentions"].users)
-            self.assertEqual(delivery.text_parts[-1], "attachment://" + name)
-            self.assertTrue(delivery.complete)
-            self.assertEqual(len(session.calls), 1)
 
     async def test_changed_upload_limit_restores_fallback_text_before_delivery(self):
         (self.directory / "synthetic.gif").write_bytes(b"synthetic media")

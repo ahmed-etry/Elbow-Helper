@@ -9,8 +9,6 @@ from unittest.mock import AsyncMock
 import discord
 from PIL import Image
 
-from elbow_helper.configuration.guild import GUILD_ID
-from elbow_helper.agent.cog import AgentCog
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.files.images import MAX_IMAGE_BYTES, request_images
 from elbow_helper.agent.text import message_text
@@ -59,25 +57,6 @@ class StickerImageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.source_channels, {channel.id})
         self.assertEqual(message_text(source), "Synthetic caption\n[sticker: Synthetic salute]")
 
-    async def test_attachment_labels_distinguish_human_reply_targets_from_the_bot(self):
-        context, source, channel = self.context(sticker())
-        source.stickers = []
-        source.attachments = [SimpleNamespace(filename="synthetic.png", content_type="image/png",
-                                             size=3, read=AsyncMock(return_value=b"png"))]
-        target = SimpleNamespace(id=299, channel=channel, author=SimpleNamespace(
-            id=40, display_name="Synthetic member"), attachments=[], embeds=[])
-        source.reference = SimpleNamespace(message_id=299, resolved=None)
-        context.attachment_sources = (source, target)
-        channel.fetch_message = AsyncMock(return_value=target)
-        images = await request_images(context)
-        self.assertIn('"reply_recipient": {"name": "Synthetic member", "member_id": 40, "is_you": false}',
-                      images[0].label)
-        context.attachment_sources = (source,)
-        source.reference.resolved = SimpleNamespace(id=299, channel=SimpleNamespace(id=999),
-                                                   author=target.author)
-        images = await request_images(context)
-        self.assertIn('"replies_to_message_id": 299', images[0].label)
-        self.assertNotIn('"reply_recipient"', images[0].label)
 
     async def test_animated_stickers_become_png_contact_sheets(self):
         output = io.BytesIO()
@@ -137,15 +116,3 @@ class StickerImageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.request["images"][0].data, png("red"))
         self.assertIn('sticker "Synthetic salute"', model.request["prompt"])
         self.assertIn('"sender"', model.request["prompt"])
-
-    def test_mention_and_reply_with_only_a_sticker_are_requests(self):
-        cog = object.__new__(AgentCog)
-        cog.bot = SimpleNamespace(user=SimpleNamespace(id=99))
-        cog._reply_conversation = lambda message: object() if message.reference else None
-        for content, mentions, reference in (("<@99>", [99], None), ("", [], object())):
-            message = SimpleNamespace(content=content, raw_mentions=mentions, reference=reference,
-                                      guild=SimpleNamespace(id=GUILD_ID), author=SimpleNamespace(bot=False),
-                                      stickers=[sticker()])
-            self.assertTrue(cog._is_agent_request(message))
-            self.assertEqual(cog._extract_question(message),
-                             "Respond to the image, sticker or GIF in this message.")

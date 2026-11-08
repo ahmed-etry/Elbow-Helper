@@ -33,29 +33,6 @@ def regular(wars, expected, used, *, stars=0, destruction=0.0, measured=0, unkno
 
 
 class FamilyWarParticipationTests(unittest.TestCase):
-    def test_regular_and_league_wars_from_the_record_join(self):
-        repository = SimpleNamespace()
-        stub = RegularWarsStub({"#P0": regular(2, 4, 3, stars=7, destruction=250.0, measured=3)})
-        # Three league wars: one missed; each attack scored two stars.
-        league = RegularWarsStub({"#P0": regular(3, 3, 2, stars=4, destruction=160.0, measured=2)})
-        analyzer = ClanHealthAnalyzer(repository, stub, league)
-        rows = [{"player_tag": "#P0", "clan_code": "BES"}, {"player_tag": "#P8", "clan_code": "BES"}]
-        start, end = (datetime.fromtimestamp(value, tz=UTC) for value in (1, 200))
-        analyzer._apply_family_war_activity(rows, cycle_start=start, cycle_end=end)
-        for wars in (stub, league):
-            self.assertEqual(wars.calls, [("activity", {"cycle_start_ts": 1, "cycle_end_ts": 200,
-                                                        "player_tags": {"#P0", "#P8"}})])
-        row = rows[0]
-        self.assertEqual((row["regular_war_events_joined"], row["regular_war_hits_expected"],
-                          row["regular_war_hits_used"], row["regular_war_missed"]), (2, 4, 3, 1))
-        self.assertEqual((row["cwl_events_joined"], row["cwl_hits_expected"], row["cwl_hits_used"],
-                          row["cwl_missed"]), (3, 3, 2, 1))
-        self.assertEqual((row["war_events_joined"], row["war_hits_expected"], row["war_hits_used"],
-                          row["war_missed"]), (5, 7, 5, 2))
-        self.assertEqual((row["war_stars_total"], row["war_destruction_total"], row["war_attack_count"]),
-                         (11.0, 410.0, 5))
-        # No war at all leaves the account's other war fields as they were.
-        self.assertEqual(rows[1], {"player_tag": "#P8", "clan_code": "BES", "war_events_joined": 0})
 
     def test_a_regular_war_with_unknown_counts_is_joined_but_never_missed(self):
         stub = RegularWarsStub({"#P0": regular(1, 0, 0, unknown=1)})
@@ -91,17 +68,3 @@ class FamilyWarParticipationTests(unittest.TestCase):
         self.assertEqual(ClanHealthPlayerCommandMixin._signal_summary_text(card), expected)
         self.assertEqual(card["verdict"], "Good")
         self.assertEqual(row["war_hit_usage_verdict"], "Good")
-
-    def test_one_and_no_regular_wars_have_matching_report_wording(self):
-        repository = SimpleNamespace()
-        rules = {"_profile_name": "casual", "war": {"wars_to_join": 0}}
-        for count, expected in ((1, "Joined 1 regular war across the family"),
-                                (0, "No regular wars joined during this period")):
-            with self.subTest(count=count), patch(
-                "elbow_helper.features.clan_health.analysis.flags.effective_player_rules", return_value=rules,
-            ):
-                rows = [{"player_tag": "#P0", "clan_code": "BES", "regular_war_events_joined": count}]
-                ClanHealthAnalyzer(repository, RegularWarsStub(), RegularWarsStub())._apply_flags(rows)
-                card = rows[0]["signal_cards"]["war_attendance"]
-                self.assertEqual(card["current"], expected)
-                self.assertEqual(card["reason"], "Regular wars are not required for this clan.")

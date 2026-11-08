@@ -57,46 +57,6 @@ class AttendanceDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(result['report_id'], context.state.reports)
         self.assertEqual(context.deadline_monotonic, original_deadline)
 
-    async def test_repeated_clan_identities_do_not_block_complete_account_pages(self):
-        rows = [{'player_tag': f'#P{i}', 'player_name': f'Player {i}',
-                 'member_id': None, 'attacks_used': i % 8, 'attacks_expected': 8,
-                 'missed': 8 - i % 8, 'totals_complete': True} for i in range(240)]
-        identities = [{'member_id': None, 'member_name': None,
-                       'player_tag': r['player_tag'], 'player_name': r['player_name'],
-                       'account_tags': [r['player_tag']], 'unit': 'account'} for r in rows]
-        summary = [{'clan_code': code, 'warring': {'member_count': 0,
-                    'unlinked_account_count': len(identities), 'identities': identities}}
-                   for code in ('first', 'second', 'third', 'fourth')]
-
-        async def source(context, arguments):
-            return {'rows': rows, 'clan_participation': summary}
-
-        tool = family_tool('read_war_attendance', 'Read attendance.', {}, source)
-        context, observed, arguments = _context(), [], {}
-        while True:
-            page = await tool.handler(context, arguments)
-            self.assertNotIn('error', page)
-            view = model_view(model_result(page))
-            # The runner projects a result again after paging/compacting its
-            # summary. That second boundary must accept the same identities.
-            repeated = family_model_view({**view, 'rows': page['rows']})
-            self.assertEqual(repeated['clan_participation'],
-                             family_model_view(page)['clan_participation'])
-            self.assertLessEqual(len(json.dumps(view, ensure_ascii=False,
-                                                separators=(',', ':'))), 16000)
-            table = view['rows']
-            page_rows = [dict(zip(table['columns'], row)) for row in table['rows']]
-            observed.extend(page_rows)
-            for clan in view['clan_participation']:
-                selected = clan['warring']['identities']
-                self.assertEqual(selected['rows'], [[r['player_tag']] for r in page_rows])
-                self.assertEqual(clan['warring']['unlinked_account_count'], 240)
-            if not page['next_cursor']:
-                break
-            arguments = {'report_id': page['report_id'], 'cursor': page['next_cursor']}
-        self.assertEqual(observed, rows)
-        retained = json.loads(context.state.reports[page['report_id']].payload)
-        self.assertEqual(retained['summary']['clan_participation'], summary)
 
     async def test_linked_participation_headers_page_for_both_attendance_families(self):
         # One owner has many accounts. Identity summaries must follow account

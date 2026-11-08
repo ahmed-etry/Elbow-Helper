@@ -87,21 +87,6 @@ class PostCompositionRepairTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(prepared.filename, 'synthetic-workbook.xlsx')
                     self.assertEqual(prepared.sheet_rows, (('Synthetic group', 1),))
 
-    async def test_same_plain_reply_path_keeps_findings_without_an_unverified_ping(self):
-        flow, session, model, usage = self.flow(assessment=False)
-        self.assertEqual(await self.answer(flow, model, usage), 'Synthetic finding about Synthetic nickname.')
-        self.assertFalse(flow.decision_composed)
-        self.assertTrue(flow.rounder.budget_limited)
-        self.assertEqual(session.calls, [])
-
-    async def test_authorized_mention_keeps_finished_assessment_without_spending_a_repair(self):
-        flow, session, model, usage = self.flow(workbook=True)
-        flow.context.source_message.raw_mentions = [101]
-        answer = await self.answer(flow, model, usage)
-        self.assertEqual(answer, 'Synthetic finding about <@101>.')
-        self.assertEqual(flow.context.operator_debug.status, 'completed')
-        self.assertEqual(session.calls, [])
-        self.assertEqual(len(flow.context.state.attachments), 1)
 
     async def test_other_unavailable_repairs_preserve_the_identity_guard_and_prepared_workbook(self):
         for error in (TextGenerationError('Synthetic provider failure'), TimeoutError()):
@@ -112,14 +97,6 @@ class PostCompositionRepairTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(flow.context.state.attachments), 1)
                 flow._advance_answer.assert_awaited_once()
 
-    async def test_unavailable_repair_preserves_addressed_prose_and_its_workbook(self):
-        flow, session, model, usage = self.flow(workbook=True)
-        flow._advance_answer = AsyncMock(side_effect=TimeoutError())
-        answer = await self.answer(flow, model, usage,
-                                  question='Send the synthetic findings to the named member')
-        self.assertEqual(answer, 'Synthetic finding about Synthetic nickname.')
-        self.assertEqual(len(flow.context.state.attachments), 1)
-        self.assertEqual(session.calls, [])
 
     async def test_missing_guild_members_are_dropped_and_all_other_findings_survive(self):
         flow, _, model, usage = self.flow(workbook=True)

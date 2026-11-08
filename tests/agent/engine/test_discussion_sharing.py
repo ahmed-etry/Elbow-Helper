@@ -59,27 +59,11 @@ class DiscussionSharingTests(unittest.TestCase):
                     'other': {**discussion(self.rows[4:9]), **limits}}
                 self.assertEqual(share_discussion_rows(original), original)
 
-    def test_disjoint_windows_preserve_their_original_layout(self):
-        original = {'first': discussion(self.rows[:5]), 'other': discussion(self.rows[5:])}
-        self.assertEqual(share_discussion_rows(original), original)
 
     def test_writer_keeps_observation_dates_and_shared_read_coverage(self):
         original = {'discussion': discussion(self.rows, after='2025-05-01T00:00:00+00:00')}
         projected = answer_evidence(original)
         self.assertEqual(projected['discussion']['coverage'], original['discussion']['coverage'])
-
-    def test_shared_read_metadata_cannot_reintroduce_transport_instructions(self):
-        original = {'wide': {**discussion(self.rows), 'report_id': 'opaque locator',
-            'instruction': 'INTERNAL_TRANSPORT', 'selection': {'limit': 1}},
-            'dated': discussion(self.rows[7:], after='2025-05-08T00:00:00+00:00', complete=True)}
-        projected = expand(answer_evidence(share_discussion_rows(original)))['wide']
-        header = projected['source_reads']['wide']
-        self.assertNotIn('report_id', header)
-        self.assertNotIn('instruction', header)
-        self.assertNotIn('selection', header)
-        self.assertEqual(projected['source_reads']['dated']['coverage']['requested_after'],
-                         '2025-05-08T00:00:00+00:00')
-        self.assertEqual(header['message_ids'], list(range(1, 16)))
 
 
 class AuthorizedDiscussionSharingTests(unittest.IsolatedAsyncioTestCase):

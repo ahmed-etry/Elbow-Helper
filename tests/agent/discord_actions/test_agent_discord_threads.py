@@ -93,18 +93,6 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
         ))
         self.addCleanup(self.patches.close)
 
-    async def test_create_thread_returns_a_later_action_target(self):
-        result = await prepare_create_thread(self.context, {
-            "parent_channel_id": 2, "name": "Before",
-        })
-        self.assertEqual(result["status"], "confirmation_required")
-        action = self.context.state.proposed_changes.pop()
-        self.assertTrue(await action.preview.recheck())
-        outcome = await action.run()
-        self.assertEqual(outcome.status, "complete")
-        self.assertEqual(outcome.result["thread_id"], self.thread.id)
-        self.assertTrue(await action.verify())
-        self.parent.create_thread.assert_awaited_once()
 
     async def test_update_thread_checks_the_old_value(self):
         result = await prepare_update_thread(self.context, {

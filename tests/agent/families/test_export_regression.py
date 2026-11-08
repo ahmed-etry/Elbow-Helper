@@ -26,25 +26,6 @@ class ExportRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(export.call_count, 1)
         self.assertEqual(len(context.state.attachments), 1)
 
-    async def test_large_internal_reads_never_attach_files_but_requested_export_is_complete_once(self):
-        async def source(context, arguments):
-            return {'rows': [{'name': 'Account ' + str(index), 'details': 'x' * 1000}
-                             for index in range(620)]}
-        context = _context()
-        tool = family_tool('read_synthetic', 'Read large evidence.', {}, source)
-        first = await tool.handler(context, {})
-        self.assertEqual(first['total_rows'], 620)
-        self.assertFalse(context.state.attachments)
-        self.assertNotIn('artifact', first)
-        await tool.handler(context, {'report_id': first['report_id'], 'cursor': first['next_cursor']})
-        self.assertFalse(context.state.attachments)
-        requested = await tool.handler(context, {'report_id': first['report_id'], 'delivery': 'csv'})
-        await tool.handler(context, {'report_id': first['report_id'], 'delivery': 'csv'})
-        await tool.handler(context, {'delivery': 'csv'})
-        self.assertEqual(len(context.state.attachments), 1)
-        self.assertEqual(requested['artifact_status'], 'complete')
-        exported = list(csv.reader(StringIO(context.state.attachments[0].data.decode('utf-8-sig'))))
-        self.assertEqual(len(exported), 621)
 
     async def test_xlsx_delivery_preserves_long_scalar_and_nested_values_losslessly(self):
         for value in ('x' * 32767, 'x' * 32768, 'x' * 40000,

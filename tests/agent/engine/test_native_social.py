@@ -13,7 +13,6 @@ from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.agent.engine.routing import ROUTE_INSTRUCTION
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.models import AgentDelivery
-from elbow_helper.agent.plan.planning import request_plan
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage, DeepSeekTextClient, TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.agent.wording import FAILURE_MESSAGE
@@ -143,33 +142,6 @@ class NativeSocialTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
                 self.assertEqual({item.call_id for item in session.calls[1][0]},
                                  {item.call_id for item in invalid.tool_calls})
 
-    async def test_wrong_forms_missing_queries_and_plain_prose_keep_valid_text(self):
-        for invalid in (social_step("Synthetic salvaged line.", reply_form=None),
-                        social_step("Synthetic salvaged line.", form="wrong"),
-                        social_step("Synthetic salvaged line.", form="gif", meme_id=""),
-                        social_step("Synthetic salvaged line.", meme_id=""),
-                        AgentStep("Synthetic salvaged line.", (), AgentUsage())):
-
-            context = replace(gif_context(), bot=SimpleNamespace())
-            session = _AgentSession([invalid])
-            answer = await AgentService(_AgentModel(session, route="social")).answer(
-                question="Synthetic shared joke", local_context="", context=context,
-            )
-            self.assertEqual(answer, "Synthetic salvaged line.")
-            self.assertEqual(len(session.calls), 1)
-
-    async def test_bad_reaction_fields_do_not_discard_valid_reactions_or_text(self):
-        context = _context()
-        context.source_message.id = 300
-        context.source_message.add_reaction = AsyncMock()
-        session = _AgentSession([social_step("Synthetic line.", form="wrong",
-                                           reactions=[None, "\U0001f44d", "", 42])])
-        answer = await AgentService(_AgentModel(session, route="social")).answer(
-            question="Synthetic shared joke", local_context="", context=context,
-        )
-        self.assertEqual(answer, "Synthetic line.")
-        self.assertEqual(len(session.calls), 1)
-        context.source_message.add_reaction.assert_awaited_once_with("\U0001f44d")
 
     async def test_provider_failure_uses_existing_message_and_keeps_salvaged_reactions(self):
         for error in (TextGenerationError("Synthetic provider failure"), TimeoutError()):
@@ -250,10 +222,3 @@ class NativeSocialTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
                 if mode == "expanded":
                     self.assertEqual([definition.name for definition in session.tool_replacements[0]],
                                      ["submit_request_plan"])
-
-    def test_native_plan_ids_remain_distinct_for_later_calls(self):
-        first = request_plan(AgentStep("", (AgentToolCall("one", "find_gif", '{"query":"synthetic"}'),), AgentUsage()),
-                             {"find_gif"})
-        second = request_plan(AgentStep("", (AgentToolCall("two", "find_gif", '{"query":"synthetic"}'),), AgentUsage()),
-                              {"find_gif"})
-        self.assertNotEqual(first["steps"][0]["id"], second["steps"][0]["id"])

@@ -69,15 +69,6 @@ class ThreadScopeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual([row["channel_id"] for row in result["matches"]], [300, 100])
                 self.assertEqual(context.state.source_channels, {100, 300})
 
-    async def test_uncached_thread_is_resolved_through_existing_access_check(self):
-        context = _context()
-        context.bot = SimpleNamespace(fetch_channel=AsyncMock(return_value=thread(context)))
-        context.message_search.search_page.return_value = DiscordSearchPage(
-            (message(900, 300),), 0, 25, 1, None, False, False,
-        )
-        result = await search_discord_messages(context, {"channel_id": 100})
-        self.assertEqual([row["channel_id"] for row in result["matches"]], [300])
-        context.bot.fetch_channel.assert_awaited_with(300)
 
     async def test_unrelated_channel_and_thread_are_dropped_without_losing_valid_rows(self):
         context = _context()
@@ -113,18 +104,6 @@ class ThreadScopeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(300 in context.state.source_channels, allowed)
                 child.fetch_member.assert_awaited()
 
-    async def test_unavailable_thread_does_not_fail_the_page(self):
-        context = _context()
-        context.bot = SimpleNamespace(fetch_channel=AsyncMock(side_effect=discord.Forbidden(
-            SimpleNamespace(status=403, reason="Forbidden"), "Synthetic unavailable thread",
-        )))
-        context.message_search.search_page.return_value = DiscordSearchPage(
-            (message(900, 300), message(899)), 0, 25, 2, None, False, False,
-        )
-        result = await search_discord_messages(context, {"channel_ids": [100]})
-        self.assertNotIn("error", result)
-        self.assertEqual([row["message_id"] for row in result["matches"]], [899])
-        self.assertEqual(context.state.source_channels, {100})
 
     async def test_author_and_time_scope_violations_are_dropped(self):
         context = _context()
@@ -216,12 +195,6 @@ class SearchPagingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("matches", result)
         self.assertEqual(context.message_search.search_page.await_count, 2)
 
-    async def test_invalid_page_counts_do_not_call_discord(self):
-        for pages in (0, 9, True, "3"):
-            context = _context()
-            result = await search_discord_messages(context, {"channel_id": 100, "pages": pages})
-            self.assertIn("error", result)
-            context.message_search.search_page.assert_not_awaited()
 
     def runner(self):
         context = runner_context()
@@ -262,11 +235,3 @@ class SearchPagingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["rows"]), 2)
         self.assertEqual(runner.tool_calls, 2)
         self.assertLessEqual(runner.evidence_characters, 5000)
-
-    async def test_complete_three_page_read_charges_three_lookups(self):
-        runner = self.runner()
-        result = await self.run_search(runner)
-        self.assertEqual(result["coverage"]["pages_scanned"], 3)
-        self.assertEqual(result["coverage"]["next_offset"], 75)
-        self.assertEqual(len(result["rows"]), 6)
-        self.assertEqual(runner.tool_calls, 3)

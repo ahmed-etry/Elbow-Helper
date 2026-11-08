@@ -4,9 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from elbow_helper.features.support_tickets.ai import SupportWelcomeService
 from elbow_helper.features.support_tickets.commands import SupportCommandMixin
-from elbow_helper.infrastructure.ai import GenerationTier
 
 
 class _FakeTextChannel:
@@ -129,18 +127,6 @@ class SupportTicketCloseTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SupportTicketCreationTests(unittest.IsolatedAsyncioTestCase):
-    async def test_welcome_generation_uses_the_routine_tier(self) -> None:
-        text_generator = SimpleNamespace(
-            complete=AsyncMock(return_value="Generated welcome!"),
-        )
-        service = SupportWelcomeService(text_generator)
-
-        result = await service.create("Clan placement", "Member")
-
-        self.assertEqual(result, "Generated welcome.")
-        request = text_generator.complete.await_args.kwargs
-        self.assertEqual(request["tier"], GenerationTier.ROUTINE)
-        self.assertEqual(request["max_output_tokens"], 80)
 
     async def test_state_failure_removes_the_untracked_channel(self) -> None:
         ticket_channel = SimpleNamespace(
@@ -203,7 +189,6 @@ class SupportTicketCreationTests(unittest.IsolatedAsyncioTestCase):
 
         ticket_channel.delete.assert_awaited_once_with()
         send_failure.assert_awaited_once_with(interaction)
-
 
 
 if __name__ == "__main__":

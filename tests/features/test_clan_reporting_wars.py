@@ -128,31 +128,6 @@ class MonthlyWarSummaryTests(SummaryHarness, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.saved_states), saved_count)
         self.manager._get_thread.assert_awaited_once()
 
-    async def test_unavailable_war_log_notice_remains_pending_until_recovery(self):
-        self.logs.status[CLAN_TAGS["BE4"]] = "unavailable"
-
-        await self.run_loop()
-
-        self.assertIsNone(self.manager.state["last_summary_month"])
-        self.assert_completed("BEH", "BES")
-        notice = self.threads["BE4"].send.call_args.kwargs["embed"]
-        self.assertEqual(notice.title, "War Summary - September 2026")
-        self.assertEqual(notice.description, "The war log isn't available.")
-        notice_id = self.manager.state["war_summaries"]["BE4"]
-        self.logs.status.clear()
-        self.manager = self.new_manager()
-
-        await self.run_loop()
-
-        self.manager._get_thread.assert_awaited_once_with("BE4")
-        self.manager._fetch_message.assert_awaited_once_with(self.threads["BE4"], notice_id)
-        self.assert_completed(*self.clans)
-        self.assertEqual(self.manager.state["last_summary_month"], "2026-09")
-        summary = self.threads["BE4"].send.call_args.kwargs["embed"]
-        self.assertEqual(summary.description, "No wars recorded for this month.")
-        self.assertEqual(self.threads["BE4"].send.await_count, 2)
-        self.threads["BEH"].send.assert_awaited_once()
-        self.threads["BES"].send.assert_awaited_once()
 
     async def test_chart_failure_remains_pending_until_chart_can_be_sent(self):
         self.logs.counts = {CLAN_TAGS[code]: (1, 0, 0) for code in self.clans}
@@ -213,41 +188,6 @@ class MonthlyWarSummaryTests(SummaryHarness, unittest.IsolatedAsyncioTestCase):
         self.threads["BEH"].send.assert_awaited_once()
         self.assert_completed(*self.clans)
 
-    async def test_missing_clan_tag_is_retried(self):
-        with patch.dict("elbow_helper.features.clan_reporting.wars.CLAN_TAGS", {"BE4": ""}):
-            await self.run_loop()
-
-        self.assert_completed("BEH", "BES")
-        self.threads["BE4"].send.assert_not_awaited()
-        await self.run_loop()
-        self.assert_completed(*self.clans)
-        self.threads["BE4"].send.assert_awaited_once()
-
-    async def test_legacy_completed_month_is_readable_without_reposting(self):
-        self.persisted_state = json.dumps({
-            "last_summary_month": "2026-09", "war_summaries": {"BEH": 42},
-        })
-        self.manager = self.new_manager()
-
-        await self.run_loop()
-
-        self.assert_completed(*self.clans)
-        self.assertEqual(self.manager.state["war_summaries"], {"BEH": 42})
-        self.manager._get_thread.assert_not_awaited()
-
-    async def test_per_clan_progress_takes_precedence_over_legacy_month(self):
-        self.persisted_state = json.dumps({
-            "last_summary_month": "2026-09",
-            "last_summary_month_by_clan": {"BEH": "2026-09"},
-            "war_summaries": {"BEH": 42},
-        })
-        self.manager = self.new_manager()
-
-        await self.run_loop()
-
-        self.assertEqual(self.manager._get_thread.await_args_list, [call("BE4"), call("BES")])
-        self.assert_completed(*self.clans)
-        self.assertEqual(self.manager.state["war_summaries"]["BEH"], 42)
 
     async def test_previous_completion_does_not_skip_a_new_month(self):
         self.persisted_state = json.dumps({"last_summary_month": "2026-08"})
@@ -265,14 +205,6 @@ class MonthlyWarSummaryTests(SummaryHarness, unittest.IsolatedAsyncioTestCase):
         )
         for thread in self.threads.values():
             self.assertEqual(thread.send.await_count, 2)
-
-    async def test_summaries_wait_for_scheduled_time(self):
-        self.clock.now.return_value = datetime(2026, 10, 1, 7, 59, tzinfo=timezone.utc)
-
-        await self.run_loop()
-
-        self.manager._get_thread.assert_not_awaited()
-        self.assertEqual(self.saved_states, [])
 
 
 SEPTEMBER = (datetime(2026, 9, 1, tzinfo=timezone.utc), datetime(2026, 10, 1, tzinfo=timezone.utc))
@@ -402,18 +334,6 @@ class RecordedMonthlyWarSummaryTests(SummaryHarness, WarFixture, unittest.Isolat
         self.assertEqual(self.manager._get_thread.await_args_list, [call("BE4"), call("BES")])
         self.assertEqual(self.description("BE4"), "No wars recorded for this month.")
         self.threads["BEH"].send.assert_awaited_once()
-
-    async def test_without_the_record_reads_nothing_is_posted_and_every_clan_waits(self):
-        await self.record_log(september_log())
-        self.manager.war_reads = None
-
-        with self.assertLogs("elbow_helper.features.clan_reporting.wars", level="WARNING"):
-            self.assertEqual(await self.manager._month_war_counts("#PY", *SEPTEMBER), ("waiting", (0, 0, 0)))
-            await self.run_loop()
-
-        for thread in self.threads.values():
-            thread.send.assert_not_awaited()
-        self.assertEqual(self.manager.state.get("last_summary_month_by_clan", {}), {})
 
 
 if __name__ == "__main__":

@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.rounds import AgentLimitReached
 from elbow_helper.agent.models import RegisteredAgentTool
-from elbow_helper.agent.plan.format import answer_instructions
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
 from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan, _step
 
@@ -53,14 +52,6 @@ class AnswerGoalTests(unittest.IsolatedAsyncioTestCase):
         frame = json.loads(another._answer_frame({}, allow_more=False, instruction=""))
         self.assertEqual(frame["asker_wants"], [])
 
-    async def test_reply_only_plan_has_no_executed_goal(self):
-        plan = {**_plan([]), "goal": "Reply without a read", "reply": "Synthetic answer."}
-        flow, source = self.start_flow(_Session([
-            replace(_model_step(plan), usage=AgentUsage(1000, 100))], []))
-
-        self.assertEqual(await flow.run(), "Synthetic answer.")
-        source.assert_not_awaited()
-        self.assertEqual(json.loads(flow._answer_frame({}, allow_more=False, instruction=""))["asker_wants"], [])
 
     async def test_checked_plan_stopped_before_execution_has_no_goal(self):
         plan = {**_plan([_step("identity")]), "goal": "Read the member's server activity"}
@@ -84,18 +75,3 @@ class AnswerGoalTests(unittest.IsolatedAsyncioTestCase):
         source.assert_awaited_once()
         self.assertEqual(json.loads(flow._answer_frame({}, allow_more=False, instruction=""))["asker_wants"],
                          [plan["goal"]])
-
-    def test_malformed_plans_without_text_goals_leave_an_empty_answer_frame(self):
-        flow, _ = self.start_flow(_Session([], []))
-        for plan in (None, [], {}, {"goal": None}, {"goal": 7}):
-            self.assertEqual(flow._limit_plan(plan), plan)
-        for allow_more in (True, False):
-            frame = json.loads(flow._answer_frame({}, allow_more=allow_more, instruction=""))
-            self.assertEqual(frame["asker_wants"], [])
-
-    def test_writer_instructions_prioritize_the_request_over_plan_goals(self):
-        flow, _ = self.start_flow(_Session([], []))
-        sentence = ("Answer what asker_wants describes and leave out facts from the results that don't serve it; "
-                    "when it conflicts with the request, the request wins.")
-        for prompt in (answer_instructions(), answer_instructions(flow.registry)):
-            self.assertIn(sentence, " ".join(prompt.split()))

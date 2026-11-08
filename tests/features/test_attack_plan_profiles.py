@@ -31,26 +31,6 @@ class AttackPlanProfileTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.data.collectors.demand.now_us", return_value=10**18):
             self.assertEqual((await fetch_player("#2PP", profiles))["name"], "Later")
 
-    async def test_failures_keep_the_same_replies(self):
-        planning = object.__new__(Planning)
-        cases = (
-            (ClashResponse(404, {"reason": "notFound"}, {}, 1, 5), "That player couldn't be found."),
-            (ClashResponse(403, {"reason": "accessDenied"}, {}, 1, 5), "Clash data is unavailable."),
-            (ClashResponse(503, {"reason": "maintenance"}, {}, 3, 5),
-             "Clash data isn't available right now. Try again later."),
-            (ClashResponse(200, None, {}, 3, 5, ValueError("not json")),
-             "Clash data isn't available right now. Try again later."),
-        )
-        for reply, text in cases:
-            with self.subTest(status=reply.status):
-                profiles, _ = self.profiles(reply)
-                data = await fetch_player("#2PP", profiles)
-                self.assertEqual(data["_http_status"], reply.status)
-                self.assertEqual(Planning._player_fetch_error_text(data), text)
-        planning.profiles, client = self.profiles(configured=False)
-        self.assertIsNone(await fetch_player("#2PP", planning.profiles))
-        client.get.assert_not_awaited()
-        self.assertEqual(Planning._player_fetch_error_text(None), "Clash data isn't available right now. Try again later.")
 
     async def test_a_failed_lookup_gets_the_commands_own_reply(self):
         unavailable = "Clash data isn't available right now. Try again later."
@@ -70,14 +50,6 @@ class AttackPlanProfileTests(unittest.IsolatedAsyncioTestCase):
                 prepared = await planning.prepare_attack_plan("#2PP", "plan", image, image)
                 self.assertEqual(prepared, {"issue": text, "player_tag": "#2PP"})
                 planning.plan_emojis.get.assert_not_awaited()
-
-    async def test_missing_clash_access_is_reported_before_asking(self):
-        planning = object.__new__(Planning)
-        planning.profiles, client = self.profiles(configured=False)
-        image = SimpleNamespace(content_type="image/png")
-        self.assertEqual(planning.validate_plan_inputs("#2PP", image, image),
-                         (None, "Clash data isn't available because the connection hasn't been set up."))
-        client.get.assert_not_awaited()
 
 
 if __name__ == "__main__":

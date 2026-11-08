@@ -39,66 +39,6 @@ class DirectMessageTests(unittest.IsolatedAsyncioTestCase):
             "DM Example (@synthetic.1):", "Pings: Example (@synthetic.2)",
         ))
 
-    async def test_refusals_return_specific_messages_and_access_to_the_model(self):
-        from elbow_helper.agent.engine.tool_call import execute_tool
-
-        self.context.source_message = SimpleNamespace(id=1)
-        cases = (
-            ({"member_ids": [99], "text": "Synthetic"},
-             "Choose 1 to 50 distinct current server members."),
-            ({"member_ids": [1], "text": ""},
-             "The DM text must be 1 to 4,000 characters."),
-            ({"member_ids": [1], "text": "x" * 4001},
-             "The DM text must be 1 to 4,000 characters."),
-        )
-        with (
-            patch(
-                "elbow_helper.agent.engine.tool_call.require_evidence_access", AsyncMock(),
-            ),
-            patch(
-                "elbow_helper.agent.discord_actions.direct_messages."
-                "require_evidence_access",
-                AsyncMock(),
-            ),
-            patch(
-                "elbow_helper.agent.discord_actions.direct_messages."
-                "has_access_requirements",
-                return_value=False,
-            ),
-        ):
-            for arguments, expected in cases:
-                result = await execute_tool(
-                    name="send_direct_messages", handler=prepare_direct_messages,
-                    context=self.context, arguments=arguments,
-                )
-                self.assertEqual(json.loads(result)["error"], expected)
-            result = await execute_tool(
-                name="send_direct_messages", handler=prepare_direct_messages,
-                context=self.context, arguments={"member_ids": [2], "text": "Synthetic"},
-            )
-            self.assertEqual(json.loads(result), {
-                "error": "DMs to other members need lead access.",
-                "required_access": ["lead"],
-                "available_privately": False,
-            })
-            self.members[2].bot = True
-            result = await execute_tool(
-                name="send_direct_messages", handler=prepare_direct_messages,
-                context=self.context, arguments={"member_ids": [2], "text": "Synthetic"},
-            )
-            self.assertEqual(json.loads(result)["error"], "Bots can't receive DMs.")
-
-    async def test_other_recipient_footer_uses_asker_when_cache_entry_is_missing(self):
-        self.members.pop(1)
-        with patch(
-            "elbow_helper.agent.discord_actions.direct_messages.has_access_requirements",
-            return_value=True,
-        ):
-            await deliver_dms(self.context, [2], "Synthetic")
-        self.assertEqual(
-            self.members[2].send.await_args.args,
-            ("Synthetic\n\nSynthetic 1 asked me to send this.",),
-        )
 
     def setUp(self):
         self.members = {

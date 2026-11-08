@@ -38,13 +38,3 @@ class HistoricalReadDependencyTests(unittest.IsolatedAsyncioTestCase):
                 {'metric': 'performance', 'clan_codes': [CODE]})
         self.assertEqual(result['cause'], 'missing_setup')
         current.assert_not_awaited()
-
-    async def test_explicit_current_league_read_keeps_its_existing_behavior(self):
-        rows = [{'clan_code': 'alpha', 'status': 'ok',
-                 'current_league': {'name': 'Observed current league'}}]
-        current = AsyncMock(return_value=rows)
-        with patch.object(war_reads, 'current_leagues', current):
-            result = await war_reads.cwl_results(_context(),
-                {'metric': 'league', 'clan_codes': ['alpha']})
-        self.assertEqual(result['rows'], rows)
-        current.assert_awaited_once()

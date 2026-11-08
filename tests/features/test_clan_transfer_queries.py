@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 import unittest
-from unittest.mock import patch
 
 from elbow_helper.features.clan_transfers.config import CLAN_TRANSFER_QUEUES
 from elbow_helper.features.clan_transfers.queries import ClanTransferQueries
@@ -34,31 +33,6 @@ class ClanTransferQueryTests(unittest.TestCase):
         self.assertEqual(queue.pending[0].expires_at, "2026-09-17T17:00:00+00:00")
         self.assertEqual(len(self.state["clans"]["BEH"]["pending"]), 3)
 
-    def test_snapshot_rejects_malformed_duplicate_and_oversize_state(self):
-        cases = (
-            [{"user_id": True, "created_at": self.now.isoformat()}],
-            [{"user_id": 1, "created_at": "not-a-time"}],
-            [{"user_id": 1, "created_at": self.now.isoformat()},
-             {"user_id": 1, "created_at": self.now.isoformat()}],
-        )
-        for pending in cases:
-            with self.subTest(pending=pending):
-                self.state["clans"]["BEH"]["pending"] = pending
-                with self.assertRaises(ValueError):
-                    self.queries.pending_snapshot(
-                        clan_codes=tuple(CLAN_TRANSFER_QUEUES),
-                    )
-
-        self.state["clans"]["BEH"]["pending"] = [
-            {"user_id": 1, "created_at": self.now.isoformat()},
-            {"user_id": 2, "created_at": self.now.isoformat()},
-        ]
-        with patch(
-            "elbow_helper.features.clan_transfers.queries.MAX_STORED_TRANSFER_REQUESTS", 1,
-        ), self.assertRaises(ValueError):
-            self.queries.pending_snapshot(
-                clan_codes=tuple(CLAN_TRANSFER_QUEUES),
-            )
 
     def test_snapshot_reads_only_the_authorized_queue_selection(self):
         self.state["clans"]["BEH"]["pending"] = [

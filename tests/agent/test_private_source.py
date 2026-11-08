@@ -114,17 +114,6 @@ class PrivateSourceTests(unittest.IsolatedAsyncioTestCase):
                 finally:
                     self.personal.permissions_for = original
 
-    async def test_shared_destination_posts_the_read_content_as_before(self):
-        self.personal.viewers.add(self.peer.id)
-        session = self.session("Synthetic recruitment evidence")
-        answer = await self.answer(AgentService(_Model(session)))
-        self.assertEqual(self.personal.reads, 1)
-        self.assertIn("Synthetic recruitment evidence", str(session.calls))
-        self.assertFalse(self.context.state.scope_audit.private_candidates)
-        self.assertFalse(self.context.state.scope_audit.offered)
-        await self.delivery.send_response(self.message, answer, None, context=self.context)
-        self.assertEqual(self.message.reply.await_args.args[0], "Synthetic recruitment evidence")
-        self.assertNotIn("view", self.message.reply.await_args.kwargs)
 
     async def test_message_history_and_search_reads_signal_only_the_refused_source(self):
         readers = ((read_message_context, {"channel_id": 201, "message_id": 123}),

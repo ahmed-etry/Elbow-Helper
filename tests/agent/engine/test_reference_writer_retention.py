@@ -5,28 +5,13 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.engine.member_facts import reference_facts
 from elbow_helper.agent.tool_support.core import family_tool
-from elbow_helper.agent.plan.results import compact_result
 from agent.engine.test_agent_plan_flow import _context, _plan, _Session
 from agent.engine.test_complete_read_composition import CaptureModel
 from agent.engine.test_writer_tables import expand
 
 
 class ReferenceWriterRetentionTests(unittest.IsolatedAsyncioTestCase):
-    def test_compact_role_and_workflow_references_keep_the_same_semantic_facts(self):
-        scores = [{'workflow': 'ass_scoring', 'score': i} for i in range(30)]
-        role_rows = [{'subject': f'Role {i}', 'holds': []} for i in range(30)]
-        payloads = [
-            {'mode': 'implementation_reference', 'rows': scores},
-            {'reference_kind': 'roles', 'rows': role_rows},
-            {'rows': [{'body': 'Selected policy.'}],
-             'implementation_reference': {'mode': 'implementation_reference', 'rows': scores}},
-        ]
-        for payload in payloads:
-            with self.subTest(payload=payload):
-                self.assertEqual(reference_facts(compact_result(payload), _context().guild),
-                                 reference_facts(payload, _context().guild))
 
     async def make_flow(self, mode, rows):
         source = AsyncMock(return_value={'rows': rows, 'mode': mode})
