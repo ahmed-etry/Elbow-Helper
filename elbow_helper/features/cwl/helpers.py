@@ -6,8 +6,6 @@ import asyncio
 import re
 from datetime import datetime
 from datetime import timezone as dt_timezone
-from typing import Optional
-
 from discord.ext import commands
 timezone = dt_timezone
 
@@ -19,15 +17,6 @@ async def wait_for_boot_complete(bot: commands.Bot) -> None:
         await boot_event.wait()
 
 
-def coc_time_to_dt(value: Optional[str]) -> Optional[datetime]:
-    if not value:
-        return None
-    for fmt in ("%Y%m%dT%H%M%S.%fZ", "%Y%m%dT%H%M%SZ", "%Y%m%dT%H%M%S"):
-        try:
-            return datetime.strptime(value, fmt).replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-    return None
 _CWL_SEASON_RE = re.compile(
     r"^(?P<year>\d{4})-(?P<month>\d{2})(?:-(?P<label>[a-z0-9][a-z0-9-]*))?$"
 )

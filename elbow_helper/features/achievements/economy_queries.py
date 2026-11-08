@@ -93,8 +93,8 @@ class EconomyRulesSnapshot:
     achievement_rewards: tuple[tuple[str, int], ...]
 
 
-class AchievementEconomyQueries:
-    """Read economy state without exposing mutation internals."""
+class ReadOnlyAchievementQueries:
+    """The clock and read-only database connection both achievement readers use."""
 
     def __init__(
         self, database_path: Path,
@@ -102,6 +102,23 @@ class AchievementEconomyQueries:
     ) -> None:
         self._path = Path(database_path)
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+
+    def _observed(self) -> datetime:
+        value = self._clock()
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    def _connect(self) -> sqlite3.Connection:
+        if not self._path.is_file():
+            raise RuntimeError("Achievement data is unavailable")
+        return sqlite3.connect(
+            f"{self._path.resolve().as_uri()}?mode=ro", uri=True, timeout=5.0,
+        )
+
+
+class AchievementEconomyQueries(ReadOnlyAchievementQueries):
+    """Read economy state without exposing mutation internals."""
 
     def rules(self) -> EconomyRulesSnapshot:
         """Return configured economy rules without reading mutable member state."""
@@ -259,20 +276,6 @@ class AchievementEconomyQueries:
             total_tickets, tickets, total_winners, winners,
             total_tickets == len(tickets) and total_winners == len(winners),
         )
-
-    def _observed(self) -> datetime:
-        value = self._clock()
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
-
-    def _connect(self) -> sqlite3.Connection:
-        if not self._path.is_file():
-            raise RuntimeError("Achievement data is unavailable")
-        return sqlite3.connect(
-            f"{self._path.resolve().as_uri()}?mode=ro", uri=True, timeout=5.0,
-        )
-
 
 def _raffle_month(value: str | None, observed: datetime) -> tuple[int, str]:
     if value is None:

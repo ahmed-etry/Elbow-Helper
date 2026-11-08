@@ -6,6 +6,7 @@ from typing import Protocol
 import discord
 from discord import app_commands
 from discord.ext import commands
+from elbow_helper.infrastructure.discord.autocomplete import player_choices
 from elbow_helper.infrastructure.discord.interactions import deny, warn
 
 from elbow_helper.domain.player_tags import normalize_player_tag
@@ -43,30 +44,7 @@ class Planning(commands.Cog):
 
     async def player_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
         del interaction
-        try:
-            rows = await asyncio.wait_for(
-                asyncio.to_thread(
-                    self.clan_health.search_players,
-                    current,
-                    25,
-                ),
-                timeout=1.5,
-            )
-            return [
-                app_commands.Choice(
-                    name=(
-                        f"{row.get('player_name') or row['player_tag']} - "
-                        f"{row.get('clan_code') or '-'} - "
-                        f"TH{int(row.get('townhall') or 0)} - {row['player_tag']}"
-                    )[:100],
-                    value=str(row["player_tag"]),
-                )
-                for row in rows
-            ]
-        except TimeoutError:
-            return []
-        except (KeyError, TypeError, ValueError, sqlite3.Error):
-            return []
+        return await player_choices(self.clan_health.search_players, current)
 
     @staticmethod
     def _player_fetch_error_text(player: dict | None) -> str:

@@ -29,10 +29,14 @@ from elbow_helper.configuration.roles import REGION_ROLE_IDS
 from elbow_helper.configuration.roles import RECRUITERS
 from elbow_helper.configuration.roles import TRIAL_ROLE_ID
 
+from elbow_helper.domain.player_tags import parse_player_tag_list
+
 from .config import DECLINED_TICKET_PREFIXES
+from .config import TICKET_ACCEPTED
+from .config import TICKET_TRIAL_ENDED
 from .config import TRIAL_DAYS_DEFAULT
 from .helpers import can_rename
-from .helpers import rename_ticket_channel
+from .helpers import new_ticket_name
 from .statements import ACCEPT_TEMPLATE
 from .statements import CHECKUP_TEMPLATE
 from .statements import DECLINE_TEMPLATE
@@ -70,8 +74,8 @@ class RecruitmentCommandMixin:
         if not isinstance(channel, discord.TextChannel):
             return {"issue": "Run this command in a server text channel."}
         current_name = channel.name
-        new_name = (current_name.replace("🤔", "✅")
-                    if "🤔" in current_name else current_name)
+        new_name = (current_name.replace(TICKET_TRIAL_ENDED, TICKET_ACCEPTED)
+                    if TICKET_TRIAL_ENDED in current_name else current_name)
         trial_role = guild.get_role(TRIAL_ROLE_ID) if TRIAL_ROLE_ID else None
         member_role = guild.get_role(MEMBER_ROLE_ID) if MEMBER_ROLE_ID else None
         alliance_role = (guild.get_role(ALLIANCE_MEMBER_ROLE_ID)
@@ -135,7 +139,7 @@ class RecruitmentCommandMixin:
         message = DECLINE_TEMPLATE.format(
             user_mention=applicant.mention, additional_notes=notes,
         )
-        rename_candidate = rename_ticket_channel(channel, DECLINED_TICKET_PREFIXES)
+        rename_candidate = new_ticket_name(channel, DECLINED_TICKET_PREFIXES)
         return {"issue": None, "applicant": applicant, "channel": channel,
                 "message": message, "rename_candidate": rename_candidate}
 
@@ -274,7 +278,7 @@ class RecruitmentCommandMixin:
         if days < 1:
             return {"issue": "Enter a trial length of at least 1 day.", "warnings": ()}
         valid_clans, invalid_clans = self.parse_clan_input(clans)
-        valid_tags, invalid_tags = self.parse_player_tag_input(player_tags)
+        valid_tags, invalid_tags = parse_player_tag_list(player_tags)
         if not valid_clans:
             return {"issue": "None of those clan codes were recognized. Check the codes and try again.",
                     "warnings": ()}

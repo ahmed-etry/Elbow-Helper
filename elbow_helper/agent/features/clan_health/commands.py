@@ -5,11 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-<<<<<<< f5976790:elbow_helper/agent/features/clan_health/commands.py
-from elbow_helper.agent.safety.access import ACCESS_LEAD_PLUS, has_access_requirements
-=======
-from elbow_helper.agent.access import ACCESS_LEAD_PLUS, ACCESS_RECRUITER, has_access_requirements
->>>>>>> 917f2109:elbow_helper/agent/capabilities/clan_health/commands.py
+from elbow_helper.agent.safety.access import ACCESS_LEAD_PLUS, ACCESS_RECRUITER, has_access_requirements
 from elbow_helper.features.clan_health.ui import ClanConfigHomeView
 from elbow_helper.features.clan_health.export import PreparedHealthExport
 from elbow_helper.features.help.discovery import ParameterInfo

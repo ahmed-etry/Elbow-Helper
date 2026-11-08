@@ -25,17 +25,6 @@ def missed_attack_line(name: Optional[str], remaining: int) -> str:
 
 class HelperMixin:
 
-    def _coctime_to_dt(self, value: Optional[str]) -> Optional[datetime]:
-        # Convert CoC time string to aware datetime
-        if not value:
-            return None
-        for fmt in ("%Y%m%dT%H%M%S.%fZ", "%Y%m%dT%H%M%SZ", "%Y%m%dT%H%M%S"):
-            try:
-                return datetime.strptime(value, fmt).replace(tzinfo=timezone.utc)
-            except ValueError:
-                continue
-        return None
-
     def _extra_war_start(self, now: datetime) -> datetime:
         # Extra wars start on the last day of the month at 21:00 UTC.
         if now.month == 12:

@@ -271,8 +271,7 @@ Applicant identity: {applicant_identity}
         if getattr(channel, "category_id", None) != RECRUITMENT_TICKET_CATEGORY:
             return
         try:
-            await asyncio.sleep(3)
-            await asyncio.sleep(2)
+            await asyncio.sleep(5)
             messages = [msg async for msg in channel.history(limit=1, oldest_first=True)]
             if not messages:
                 return

@@ -154,14 +154,23 @@ class WarStatements(commands.Cog):
             return False, "That statement failed to send. Try again in a moment."
         return True, f"War message sent to {post_channel.mention}."
 
-    async def _send_statement(
+    async def _run_statement(
         self,
         interaction: discord.Interaction,
-        post_channel: discord.TextChannel,
-        message: str,
+        kind: str,
+        clan: str,
+        **fields,
     ):
-        # Relay the constructed statement and confirm to the caller.
-        _, result = await self.post_statement(post_channel, message)
+        # Check the caller, build the statement, post it, and confirm to the caller.
+        if not await self._ensure_lead(interaction):
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        prepared = self.prepare_statement(kind, interaction.guild, clan, **fields)
+        if prepared["issue"]:
+            await interaction.followup.send(prepared["issue"], ephemeral=True)
+            return
+        _, result = await self.post_statement(prepared["post_channel"], prepared["message"])
         await interaction.followup.send(result, ephemeral=True)
 
     @warstatement.command(
@@ -183,19 +192,8 @@ class WarStatements(commands.Cog):
         attacker: discord.Member,
         notes: Optional[str] = None,
     ):
-        if not await self._ensure_lead(interaction):
-            return
-        await interaction.response.defer(ephemeral=True)
-
-        prepared = self.prepare_statement(
-            "first_claim", interaction.guild, clan,
-            victim=victim, attacker=attacker, notes=notes,
-        )
-        if prepared["issue"]:
-            await interaction.followup.send(prepared["issue"], ephemeral=True)
-            return
-        await self._send_statement(
-            interaction, prepared["post_channel"], prepared["message"],
+        await self._run_statement(
+            interaction, "first_claim", clan, victim=victim, attacker=attacker, notes=notes,
         )
 
     @warstatement.command(
@@ -215,20 +213,7 @@ class WarStatements(commands.Cog):
         players: app_commands.Transform[List[discord.Member], MemberList],
         notes: Optional[str] = None,
     ):
-        if not await self._ensure_lead(interaction):
-            return
-        await interaction.response.defer(ephemeral=True)
-
-        prepared = self.prepare_statement(
-            "breaking_rules", interaction.guild, clan,
-            players=players, notes=notes,
-        )
-        if prepared["issue"]:
-            await interaction.followup.send(prepared["issue"], ephemeral=True)
-            return
-        await self._send_statement(
-            interaction, prepared["post_channel"], prepared["message"],
-        )
+        await self._run_statement(interaction, "breaking_rules", clan, players=players, notes=notes)
 
     @warstatement.command(
         name="one-attack-missed",
@@ -247,20 +232,7 @@ class WarStatements(commands.Cog):
         players: app_commands.Transform[List[discord.Member], MemberList],
         notes: Optional[str] = None,
     ):
-        if not await self._ensure_lead(interaction):
-            return
-        await interaction.response.defer(ephemeral=True)
-
-        prepared = self.prepare_statement(
-            "one_attack_missed", interaction.guild, clan,
-            players=players, notes=notes,
-        )
-        if prepared["issue"]:
-            await interaction.followup.send(prepared["issue"], ephemeral=True)
-            return
-        await self._send_statement(
-            interaction, prepared["post_channel"], prepared["message"],
-        )
+        await self._run_statement(interaction, "one_attack_missed", clan, players=players, notes=notes)
 
     @warstatement.command(
         name="war-filler",
@@ -279,20 +251,7 @@ class WarStatements(commands.Cog):
         players: app_commands.Transform[List[discord.Member], MemberList],
         notes: Optional[str] = None,
     ):
-        if not await self._ensure_lead(interaction):
-            return
-        await interaction.response.defer(ephemeral=True)
-
-        prepared = self.prepare_statement(
-            "war_filler", interaction.guild, clan,
-            players=players, notes=notes,
-        )
-        if prepared["issue"]:
-            await interaction.followup.send(prepared["issue"], ephemeral=True)
-            return
-        await self._send_statement(
-            interaction, prepared["post_channel"], prepared["message"],
-        )
+        await self._run_statement(interaction, "war_filler", clan, players=players, notes=notes)
 
     @warstatement.command(
         name="missed-attacks",
@@ -311,18 +270,5 @@ class WarStatements(commands.Cog):
         players: app_commands.Transform[List[discord.Member], MemberList],
         notes: Optional[str] = None,
     ):
-        if not await self._ensure_lead(interaction):
-            return
-        await interaction.response.defer(ephemeral=True)
-
-        prepared = self.prepare_statement(
-            "missed_attacks", interaction.guild, clan,
-            players=players, notes=notes,
-        )
-        if prepared["issue"]:
-            await interaction.followup.send(prepared["issue"], ephemeral=True)
-            return
-        await self._send_statement(
-            interaction, prepared["post_channel"], prepared["message"],
-        )
+        await self._run_statement(interaction, "missed_attacks", clan, players=players, notes=notes)
 

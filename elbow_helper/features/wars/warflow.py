@@ -11,7 +11,7 @@ import discord
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.clans import CLAN_CODES_BY_NAME
 
-from elbow_helper.infrastructure.discord.war_boards import build_war_summary_embed
+from elbow_helper.infrastructure.discord.war_boards import build_war_summary_embed, coc_time_to_datetime
 
 LOGGER = logging.getLogger(__name__)
 
@@ -124,10 +124,10 @@ class WarflowMixin:
                 in_flight.add(war_id)
                 try:
                     missed = await self._missed_attack_lines(clan, data)
-                    end_time = self._coctime_to_dt(data.get("endTime"))
-                    prep_start = self._coctime_to_dt(data.get("preparationStartTime"))
+                    end_time = coc_time_to_datetime(data.get("endTime"))
+                    prep_start = coc_time_to_datetime(data.get("preparationStartTime"))
                     if prep_start is None:
-                        start_time = self._coctime_to_dt(data.get("startTime"))
+                        start_time = coc_time_to_datetime(data.get("startTime"))
                         if start_time is not None:
                             prep_start = start_time - timedelta(hours=23)
 

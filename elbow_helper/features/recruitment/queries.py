@@ -9,6 +9,7 @@ import math
 from typing import Any
 
 from .config import TRIAL_DAYS_DEFAULT
+from elbow_helper.domain.numbers import positive_int_or_none
 
 
 MAX_ACTIVE_RECRUITMENT_TRIALS = 250
@@ -78,32 +79,32 @@ class RecruitmentQueries:
     def trial_followups(self) -> tuple[RecruitmentTrialFollowup, ...]:
         rows = []
         for raw_channel_id, value in _mapping(self._reminder_loader()).items():
-            channel_id = _positive_int(raw_channel_id)
+            channel_id = positive_int_or_none(raw_channel_id)
             if channel_id is None or not isinstance(value, Mapping):
                 continue
             rows.append(RecruitmentTrialFollowup(
-                channel_id, _positive_int(value.get("applicant_id")),
+                channel_id, positive_int_or_none(value.get("applicant_id")),
                 _optional_int(value.get("created_at")), _optional_int(value.get("resolved_at")),
-                _positive_int(value.get("message_id"))))
+                positive_int_or_none(value.get("message_id"))))
         return tuple(sorted(rows, key=lambda row: row.ticket_channel_id))
 
     def ticket_reminders(self) -> tuple[RecruitmentTicketReminder, ...]:
         rows = []
         for raw_channel_id, value in _mapping(self._ticket_activity_loader()).items():
-            channel_id = _positive_int(raw_channel_id)
+            channel_id = positive_int_or_none(raw_channel_id)
             if channel_id is None or not isinstance(value, Mapping):
                 continue
             last_at = value.get("last_reminder_at")
             rows.append(RecruitmentTicketReminder(
                 channel_id, last_at if isinstance(last_at, str) else None,
-                _positive_int(value.get("last_applicant_message_id"))))
+                positive_int_or_none(value.get("last_applicant_message_id"))))
         return tuple(sorted(rows, key=lambda row: row.ticket_channel_id))
 
     def has_open_trial(self, member_id: int) -> bool:
         """An unclosed trial owns membership roles even after its expected end."""
         return any(
             isinstance(value, Mapping)
-            and _positive_int(value.get("applicant_id")) == member_id
+            and positive_int_or_none(value.get("applicant_id")) == member_id
             for value in self._load().values()
         )
 
@@ -113,7 +114,7 @@ class RecruitmentQueries:
         data = self._load()
         registrations = []
         for raw_channel_id, value in data.items():
-            channel_id = _positive_int(raw_channel_id)
+            channel_id = positive_int_or_none(raw_channel_id)
             if channel_id is not None and isinstance(value, Mapping):
                 registrations.append(RecruitmentTrialRegistration(channel_id))
         registrations.sort(key=lambda row: row.ticket_channel_id)
@@ -142,7 +143,7 @@ class RecruitmentQueries:
 
         selected_entries: dict[int, Any] = {}
         for raw_channel_id, value in data.items():
-            channel_id = _positive_int(raw_channel_id)
+            channel_id = positive_int_or_none(raw_channel_id)
             if channel_id not in selected:
                 continue
             if channel_id in selected_entries:
@@ -181,8 +182,8 @@ def _trial(
 ) -> ActiveRecruitmentTrial | None:
     if channel_id is None or not isinstance(value, Mapping):
         return None
-    applicant_id = _positive_int(value.get("applicant_id"))
-    duration_days = _positive_int(value.get("days", TRIAL_DAYS_DEFAULT))
+    applicant_id = positive_int_or_none(value.get("applicant_id"))
+    duration_days = positive_int_or_none(value.get("days", TRIAL_DAYS_DEFAULT))
     start = _timestamp(value.get("start"))
     if applicant_id is None or duration_days is None or start is None:
         return None
@@ -222,15 +223,6 @@ def _mapping(data: Any) -> Mapping[str, Any]:
 
 def _optional_int(value: Any) -> int | None:
     return int(value) if type(value) in (int, float) and math.isfinite(value) else None
-
-
-def _positive_int(value: Any) -> int | None:
-    if type(value) is int:
-        return value if value > 0 else None
-    if isinstance(value, str) and value.isdigit():
-        parsed = int(value)
-        return parsed if parsed > 0 else None
-    return None
 
 
 def _timestamp(value: Any) -> datetime | None:

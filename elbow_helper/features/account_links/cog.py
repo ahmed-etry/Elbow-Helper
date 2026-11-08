@@ -15,7 +15,7 @@ from elbow_helper.infrastructure.discord.interactions import deny
 from elbow_helper.infrastructure.discord.interactions import fail
 from elbow_helper.infrastructure.discord.interactions import warn
 
-from elbow_helper.domain.player_tags import normalize_player_tag
+from elbow_helper.domain.player_tags import normalize_player_tag, parse_player_tag_list
 from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.data.collectors import ProfileDemand
 from elbow_helper.configuration.clans import CLANS
@@ -229,26 +229,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         return any(getattr(role, "id", None) in (CORE | RECRUITERS) for role in roles)
 
     def _parse_player_tag_input(self, raw_input: str) -> tuple[list[str], list[str]]:
-        if not raw_input:
-            return [], []
-
-        normalized = raw_input.replace(",", " ").replace(";", " ").replace("\n", " ")
-        values = [value.strip() for value in normalized.split(" ") if value.strip()]
-
-        valid: list[str] = []
-        invalid: list[str] = []
-        seen: set[str] = set()
-        for value in values:
-            tag = normalize_player_tag(value)
-            if not tag:
-                invalid.append(value.strip())
-                continue
-            if tag in seen:
-                continue
-            seen.add(tag)
-            valid.append(tag)
-
-        return valid, invalid
+        return parse_player_tag_list(raw_input)
 
     def account_board_refresh_available(self) -> bool:
         return getattr(self, "_board_refresher", None) is not None

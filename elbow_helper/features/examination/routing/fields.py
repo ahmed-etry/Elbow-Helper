@@ -9,6 +9,7 @@ import discord
 
 from elbow_helper.configuration.clans import CLAN_NAMES
 from elbow_helper.configuration.clans import CLAN_ORDER
+from elbow_helper.infrastructure.discord.message_text import normalize_message
 
 from ..availability import _clean_answer
 from ..availability import _normalize_question
@@ -38,14 +39,6 @@ QUESTION_MAP = {
     "which war should we review": "elder_war",
     "in which clan did you do your attacks": "elder_clan",
 }
-
-
-def normalize_message(content: str) -> str:
-    content = re.sub(r"<@!?\d+>", "", content)
-    content = re.sub(r"<@&\d+>", "", content)
-    content = re.sub(r"<#[0-9]+>", "", content)
-    content = re.sub(r"\|\|.*?\|\|", "", content)
-    return re.sub(r"\s+", " ", content).strip().lower()
 
 
 def infer_ticket_type(text: str) -> Optional[str]:

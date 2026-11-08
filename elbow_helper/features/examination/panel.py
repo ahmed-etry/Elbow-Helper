@@ -13,6 +13,7 @@ from elbow_helper.infrastructure.discord.pagination import format_page_footer
 from elbow_helper.infrastructure.discord.pagination import LAST_PAGE_LABEL
 from elbow_helper.infrastructure.discord.pagination import NEXT_PAGE_LABEL
 from elbow_helper.infrastructure.discord.pagination import PREV_PAGE_LABEL
+from elbow_helper.infrastructure.discord.thread_discovery import fetch_thread
 from elbow_helper.infrastructure.discord.views import BaseErrorModal
 from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
@@ -131,15 +132,6 @@ class ExaminationPanelMixin:
         await self._post_panel()
         return True
 
-    async def _get_panel_thread(self) -> Optional[discord.Thread]:
-        channel = self.bot.get_channel(EXAMINATION_PANEL_THREAD)
-        if isinstance(channel, discord.Thread):
-            return channel
-        try:
-            fetched = await self.bot.fetch_channel(EXAMINATION_PANEL_THREAD)
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            return None
-        return fetched if isinstance(fetched, discord.Thread) else None
     def _collect_examiners(self, guild: discord.Guild) -> List[discord.Member]:
         # Only include examiners that registered on the panel.
         members: List[discord.Member] = []
@@ -264,7 +256,7 @@ class ExaminationPanelMixin:
 
     async def _post_panel(self) -> None:
         # Update or create the examiner panel message.
-        thread = await self._get_panel_thread()
+        thread = await fetch_thread(self.bot, EXAMINATION_PANEL_THREAD)
         if not thread:
             return
         if thread.archived:

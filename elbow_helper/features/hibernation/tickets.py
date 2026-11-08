@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 
 import chat_exporter
 import discord
-from elbow_helper.infrastructure.discord.embeds import build_status_embed
+from elbow_helper.infrastructure.discord.embeds import build_reopened_ticket_embed, build_status_embed
+from elbow_helper.infrastructure.discord.thread_discovery import fetch_thread
 from elbow_helper.infrastructure.discord.views import TranscriptLinkPromptView
 
 from elbow_helper.configuration.channels import HIBERNATION_FALLBACK, HIBERNATION_LOG, RECRUITMENT_TICKET_CATEGORY, TICKETS_LOG
@@ -134,16 +135,6 @@ class HibernationTicketMixin:
         except (discord.Forbidden, discord.HTTPException):
             LOGGER.warning("Failed sending fallback failure log for member %s", user.id)
 
-    async def _fetch_fallback_thread(self, thread_id: int) -> discord.Thread | None:
-        channel = self.bot.get_channel(thread_id)
-        if isinstance(channel, discord.Thread):
-            return channel
-        try:
-            fetched = await self.bot.fetch_channel(thread_id)
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            return None
-        return fetched if isinstance(fetched, discord.Thread) else None
-
     async def ensure_fallback_info_message(self, guild: discord.Guild) -> discord.Message | None:
         fallback_channel = guild.get_channel(HIBERNATION_FALLBACK)
         if not isinstance(fallback_channel, discord.TextChannel):
@@ -182,7 +173,7 @@ class HibernationTicketMixin:
         if existing is not None:
             thread_id = existing.get("thread_id")
             if isinstance(thread_id, int):
-                thread = await self._fetch_fallback_thread(thread_id)
+                thread = await fetch_thread(self.bot, thread_id)
                 if thread is not None:
                     if thread.archived:
                         try:
@@ -371,7 +362,7 @@ class HibernationTicketMixin:
 
         thread_id = entry.get("thread_id")
         if isinstance(thread_id, int):
-            thread = await self._fetch_fallback_thread(thread_id)
+            thread = await fetch_thread(self.bot, thread_id)
             if thread is not None:
                 try:
                     await thread.delete()
@@ -781,19 +772,9 @@ class HibernationTicketMixin:
             owner_member, _ = await self.reopen_reactivation_ticket(guild, channel,
                                                                      interaction.user)
 
-        restored_text = (
-            f"Restored messaging access for {owner_member.mention}."
-            if owner_member is not None
-            else "Messaging access restored."
+        embed = build_reopened_ticket_embed(
+            owner_member, interaction.user, footer="Reactivation Ticket Controls",
         )
-        embed = discord.Embed(
-            title="Ticket Reopened",
-            description=restored_text,
-            color=discord.Color.green(),
-            timestamp=datetime.now(timezone.utc),
-        )
-        embed.add_field(name="Reopened By", value=interaction.user.mention, inline=True)
-        embed.set_footer(text="Reactivation Ticket Controls")
         await interaction.response.edit_message(embed=embed, view=None)
 
     def _build_close_ticket_view(self) -> discord.ui.View:

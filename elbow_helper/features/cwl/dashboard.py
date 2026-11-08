@@ -28,7 +28,8 @@ from discord.ext import commands, tasks
 from elbow_helper.configuration.clans import CLAN_NAMES
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
-from .helpers import coc_time_to_dt
+from elbow_helper.infrastructure.discord.temporary_errors import is_temporary_discord_error
+from elbow_helper.infrastructure.discord.war_boards import coc_time_to_datetime
 from .helpers import wait_for_boot_complete
 from elbow_helper.infrastructure.persistence.documents import read_document as read_json, document_exists
 from elbow_helper.infrastructure.persistence.documents import write_document as write_json_atomic
@@ -73,33 +74,6 @@ class CwlDashboardMixin:
             lock = asyncio.Lock()
             self._manual_dashboard_refresh_locks[clan_code] = lock
         return lock
-
-
-    @staticmethod
-    def _is_transient_dashboard_error(error: Exception) -> bool:
-        if isinstance(
-            error,
-            (
-                asyncio.TimeoutError,
-                OSError,
-            ),
-        ):
-            return True
-        if isinstance(error, discord.HTTPException):
-            status = getattr(error, "status", None)
-            if status in {429, 500, 502, 503, 504}:
-                return True
-        text = str(error).lower()
-        transient_markers = (
-            "temporary failure in name resolution",
-            "name or service not known",
-            "cannot connect to host",
-            "server disconnected",
-            "connection reset",
-            "timed out",
-            "timeout",
-        )
-        return any(marker in text for marker in transient_markers)
 
 
     def _log_dashboard_refresh_failure(
@@ -148,7 +122,7 @@ class CwlDashboardMixin:
                 ValueError,
                 OSError,
             ) as e:
-                transient = self._is_transient_dashboard_error(e)
+                transient = is_temporary_discord_error(e)
                 if transient and attempt < DASHBOARD_REFRESH_RETRIES:
                     await asyncio.sleep(DASHBOARD_REFRESH_BACKOFF_SECONDS * attempt)
                     continue
@@ -558,7 +532,7 @@ class CwlDashboardMixin:
             own_block, _ = self._war_blocks_for_clan(war, clan_tag)
             if not league_name:
                 league_name = str((own_block.get("warLeague") or {}).get("name") or "") or None
-            start_dt = coc_time_to_dt(war.get("startTime"))
+            start_dt = coc_time_to_datetime(war.get("startTime"))
             if start_dt:
                 period_candidates.append(start_dt)
             if self._did_clan_win_war(war, clan_tag):
@@ -703,7 +677,7 @@ class CwlDashboardMixin:
             return embed, image_file
 
         prep_wars.sort(
-            key=lambda war: coc_time_to_dt(war.get("startTime")) or (now + timedelta(days=365))
+            key=lambda war: coc_time_to_datetime(war.get("startTime")) or (now + timedelta(days=365))
         )
         selected = prep_wars[0]
         own, opp = self._war_blocks_for_clan(selected, clan_tag)
@@ -732,7 +706,7 @@ class CwlDashboardMixin:
                 str(opp_hero) if isinstance(opp_hero, int) else "--",
             ])
 
-        start_dt = coc_time_to_dt(selected.get("startTime"))
+        start_dt = coc_time_to_datetime(selected.get("startTime"))
         round_no = int(selected.get("_round") or 0)
         round_line = f"Round {round_no}"
         starts_line = f"Starts <t:{int(start_dt.timestamp())}:R>" if start_dt else "Start time unavailable"

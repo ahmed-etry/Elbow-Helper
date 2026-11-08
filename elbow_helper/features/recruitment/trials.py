@@ -24,7 +24,7 @@ from .config import TRIAL_RESOLVED_REMINDER_RETENTION_HOURS
 from .config import TRIAL_TICKET_PREFIXES_END
 from .config import TRIAL_TICKET_PREFIXES_START
 from .helpers import can_rename
-from .helpers import rename_ticket_channel
+from .helpers import new_ticket_name
 from .state import recruitment_event
 from .state import reminder_case
 from .state import trial_event
@@ -67,14 +67,14 @@ class TrialMixin:
         reminder = await self._get_trial_reminder_entry(ticket_channel_id)
         return {"channel_id": ticket_channel_id,
                 "channel_name": getattr(channel, "name", None),
-                "new_name": rename_ticket_channel(channel, TRIAL_TICKET_PREFIXES_END)
+                "new_name": new_ticket_name(channel, TRIAL_TICKET_PREFIXES_END)
                 if channel else None,
                 "trial": dict(trial) if isinstance(trial, dict) else None,
                 "reminder": reminder}
 
 
     async def _rename_trial_ticket(self, channel: discord.TextChannel) -> bool:
-        new_name = rename_ticket_channel(channel, TRIAL_TICKET_PREFIXES_START)
+        new_name = new_ticket_name(channel, TRIAL_TICKET_PREFIXES_START)
         if not new_name:
             return True
         if not can_rename(channel.guild.id):
@@ -469,7 +469,7 @@ class TrialMixin:
                     return TrialEndResult(False, "The applicant for this ticket couldn't be identified.")
 
             rename_notice: Optional[str] = None
-            new_name = rename_ticket_channel(ticket_channel, TRIAL_TICKET_PREFIXES_END)
+            new_name = new_ticket_name(ticket_channel, TRIAL_TICKET_PREFIXES_END)
             if new_name and new_name != ticket_channel.name:
                 guild_id = ticket_channel.guild.id
                 if len(new_name) > 100:
