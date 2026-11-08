@@ -5,8 +5,8 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 
-from agent.discord_actions import test_agent_direct_messages as dm_fixtures
-from agent.discord_actions import test_agent_discord_messages as fixtures
+from tests.agent.discord_actions import test_agent_direct_messages as dm_fixtures
+from tests.agent.discord_actions import test_agent_discord_messages as fixtures
 from elbow_helper.agent.discord_actions.direct_messages import (
     deliver_dms, prepare_direct_messages,
 )

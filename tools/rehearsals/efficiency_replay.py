@@ -1,6 +1,6 @@
 """Audit archived efficiency runs without a provider or writes to their directory.
 
-PYTHONPATH=tests python -m tools.rehearsals.efficiency_replay RUN_DIRECTORY
+python -m tools.rehearsals.efficiency_replay RUN_DIRECTORY
 
 The recorded usage is measured provider usage. The unchanged-schedule replay
 estimates only result-dedup savings; it does not predict new model decisions.

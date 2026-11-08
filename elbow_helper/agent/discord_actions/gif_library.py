@@ -9,7 +9,7 @@ from pathlib import Path
 import discord
 
 from elbow_helper.core.paths import ApplicationPaths
-from ..models import AgentAttachment
+from elbow_helper.agent.engine.models import AgentAttachment
 from ..files.gif_media import provider_url
 
 GROUPS = (

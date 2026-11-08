@@ -12,20 +12,13 @@ from ..plan.executor import resolve_arguments
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, audit_reason, earlier_result_label,
 )
 from ..actions.outcomes import ActionOutcome
-from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from ..wording import (
-    ACTION_THREAD_ACTIONS, ACTION_THREAD_MEMBER_ADD, ACTION_THREAD_MEMBER_REMOVE,
-    ACTION_THREAD_CREATE_LABEL, ACTION_THREAD_CREATE_LINE,
-    ACTION_THREAD_NEW_LABEL,
-    ACTION_THREAD_MEMBER_LABEL, ACTION_THREAD_MEMBER_LINE,
-    ACTION_THREAD_UPDATE_LABEL, ACTION_THREAD_UPDATE_LINE,
-    ACTION_UNDO_CHANGED,
-)
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.conversation.wording import ACTION_THREAD_ACTIONS, ACTION_THREAD_MEMBER_ADD, ACTION_THREAD_MEMBER_REMOVE, ACTION_THREAD_CREATE_LABEL, ACTION_THREAD_CREATE_LINE, ACTION_THREAD_NEW_LABEL, ACTION_THREAD_MEMBER_LABEL, ACTION_THREAD_MEMBER_LINE, ACTION_THREAD_UPDATE_LABEL, ACTION_THREAD_UPDATE_LINE, ACTION_UNDO_CHANGED
 from .safety import (DiscordActionRefused, check_member, check_view_access,
                              resolve_channel, resolve_member)
 

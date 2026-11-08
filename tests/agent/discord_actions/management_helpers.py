@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import discord
 
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 
 
 class Entity(SimpleNamespace):

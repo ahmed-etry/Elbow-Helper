@@ -11,8 +11,8 @@ from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import (
     CommandAdapter, PreparedCommandChange,
 )
-from elbow_helper.agent.models import AgentTurnState, AgentCapabilityEffect
-from elbow_helper.agent.models import AgentAttachment
+from elbow_helper.agent.engine.models import AgentTurnState, AgentCapabilityEffect
+from elbow_helper.agent.engine.models import AgentAttachment
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.agent.engine.capability_contract import compile_capability_call
 

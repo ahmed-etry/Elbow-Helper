@@ -1,4 +1,4 @@
-from agent.engine.helpers import LegacyCatalogueMixin
+from tests.agent.engine.helpers import LegacyCatalogueMixin
 
 from types import SimpleNamespace
 import unittest

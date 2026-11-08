@@ -7,7 +7,7 @@ from typing import Any
 
 import discord
 
-from ..wording import ACTION_ROLE_HIBERNATING, ACTION_ROLE_OPEN_TRIAL, ACTION_UNAVAILABLE
+from elbow_helper.agent.conversation.wording import ACTION_ROLE_HIBERNATING, ACTION_ROLE_OPEN_TRIAL, ACTION_UNAVAILABLE
 
 from elbow_helper.configuration.clans import CLAN_MEMBER_ROLE_IDS
 from elbow_helper.configuration.roles import ALLIANCE_MEMBER_ROLE_ID, MEMBER_ROLE_ID

@@ -11,11 +11,11 @@ from unittest.mock import Mock
 from elbow_helper.configuration.roles import (
     AGENT_TESTER_ROLE_ID, CORE, CWL_HELPERS, EXAMINERS, LEAD, LEAD_PLUS, RECRUITERS,
 )
-from elbow_helper.agent.access import AgentAccessLost, require_evidence_access
-from elbow_helper.agent.disclosure import can_show
+from elbow_helper.agent.safety.access import AgentAccessLost, require_evidence_access
+from elbow_helper.agent.safety.disclosure import can_show
 from elbow_helper.agent.knowledge.store import KnowledgeStore, VISIBILITIES
 from elbow_helper.agent.knowledge.tools import _section_id, search_approved_knowledge
-from elbow_helper.agent.models import AgentRequestContext, AgentTurnState
+from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState
 
 
 DEPARTMENTS = {"recruiter": RECRUITERS, "cwl_helper": CWL_HELPERS, "examiner": EXAMINERS}

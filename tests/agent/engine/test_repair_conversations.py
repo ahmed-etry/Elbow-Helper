@@ -3,7 +3,7 @@
 from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, timezone
-from agent.engine.helpers import LegacyCatalogueMixin
+from tests.agent.engine.helpers import LegacyCatalogueMixin
 
 import json
 from pathlib import Path
@@ -17,21 +17,21 @@ import discord
 
 from elbow_helper.configuration.roles import LEAD
 from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
-from elbow_helper.agent.tool_support.adapters.recruitment.report import RecruitmentTrialReport
+from elbow_helper.agent.features.recruitment.report import RecruitmentTrialReport
 from elbow_helper.agent.conversation.context import compile_context
 from elbow_helper.agent.conversation.state import ConversationRecord, ConversationTurn
-from elbow_helper.agent.tool_support.sql.query import run_query
-from elbow_helper.agent.tool_support.sql.sources import DataSource
-from elbow_helper.agent.delivery import AgentDeliveryMixin
+from elbow_helper.agent.reads.sql.query import run_query
+from elbow_helper.agent.reads.sql.sources import DataSource
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.features.recruitment.queries import RecruitmentQueries
 from elbow_helper.features.member_lifecycle.queries import MemberLifecycleQueries
-from elbow_helper.agent.tool_support.adapters.member_lifecycle.report import MemberLifecycleReport
-from agent.report_helpers import make_event_report
+from elbow_helper.agent.features.member_lifecycle.report import MemberLifecycleReport
+from tests.agent.reports.report_helpers import make_event_report
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan
+from tests.agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan
 
 
 def planned(identity, capability, arguments, *, reply=None):

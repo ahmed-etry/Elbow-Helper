@@ -1,12 +1,12 @@
 """Recover presentation mistakes without accepting different scope signals."""
 
 import json
-from elbow_helper.agent.wording import AGENT_ANSWER_UNFINISHED
+from elbow_helper.agent.conversation.wording import AGENT_ANSWER_UNFINISHED
 import unittest
 
 from elbow_helper.agent.knowledge.answers import scoped_answer
-from elbow_helper.agent.wording import FAILURE_MESSAGE
-from agent.engine.test_agent_plan_flow import _context
+from elbow_helper.agent.conversation.wording import FAILURE_MESSAGE
+from tests.agent.engine.test_agent_plan_flow import _context
 
 
 class ScopedAnswerRecoveryTests(unittest.TestCase):

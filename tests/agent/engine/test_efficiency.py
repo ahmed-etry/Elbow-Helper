@@ -1,7 +1,7 @@
 """Efficiency fixes preserve requested evidence, identities and useful answers."""
 
 from copy import deepcopy
-from agent.engine.helpers import LegacyCatalogueMixin
+from tests.agent.engine.helpers import LegacyCatalogueMixin
 
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -10,10 +10,10 @@ from elbow_helper.agent.reads.cwl import ass_ranking
 from elbow_helper.agent.engine.evidence_delta import EvidenceDelta, access_refused
 from elbow_helper.agent.engine.steps import disclosure_issue
 from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from agent.engine.test_agent_plan_flow import _context, _model_step, _plan
-from agent.engine import test_request_cost as cost
+from tests.agent.engine.test_agent_plan_flow import _context, _model_step, _plan
+from tests.agent.engine import test_request_cost as cost
 
 response = cost.response
 

@@ -2,7 +2,7 @@
 
 import re
 
-from ..member_names import member_label
+from elbow_helper.agent.conversation.member_names import member_label
 from .safety import resolve_member
 
 

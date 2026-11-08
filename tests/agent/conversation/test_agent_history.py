@@ -1,18 +1,18 @@
 from datetime import datetime, timezone
-from agent.engine.helpers import LegacyCatalogueMixin
+from tests.agent.engine.helpers import LegacyCatalogueMixin
 
 import json
 from tests.features.agent_plan_helpers import plan_call
 from types import SimpleNamespace
 import unittest
-from agent.engine.test_agent_service import _AgentModel
+from tests.agent.engine.test_agent_service import _AgentModel
 import discord
 from unittest.mock import AsyncMock
 
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.agent.access import AgentAccessLost
+from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.conversation.state import ConversationRecord, ConversationTurn
-from elbow_helper.agent.models import AgentRequestContext
+from elbow_helper.agent.engine.models import AgentRequestContext
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.plan.checker import valid_arguments
 from elbow_helper.agent.engine.registry import build_agent_tools

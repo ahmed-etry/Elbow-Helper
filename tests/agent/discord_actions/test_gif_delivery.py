@@ -5,15 +5,15 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from elbow_helper.agent.delivery import AgentDeliveryMixin
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.gifs import find_gif
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import AgentDelivery
+from elbow_helper.agent.engine.models import AgentDelivery
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
-from agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 from tests.features.agent_plan_helpers import plan_call
-from agent.engine.test_banter_gifs import gif_context
+from tests.agent.engine.test_banter_gifs import gif_context
 
 
 class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
@@ -41,9 +41,9 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
 
                 surface._send_response = AsyncMock(side_effect=record_text)
                 with (
-                    patch("elbow_helper.agent.delivery.require_evidence_access",
+                    patch("elbow_helper.agent.conversation.delivery.require_evidence_access",
                           AsyncMock()),
-                    patch("elbow_helper.agent.delivery.assert_answer_scope",
+                    patch("elbow_helper.agent.conversation.delivery.assert_answer_scope",
                           AsyncMock(return_value=True)),
                 ):
                     await surface.send_response(message, response, None, context=context,
@@ -86,8 +86,8 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
             conversation = MagicMock()
             surface._conversations = MagicMock()
             with (
-                patch("elbow_helper.agent.delivery.require_evidence_access", AsyncMock()),
-                patch("elbow_helper.agent.delivery.assert_answer_scope",
+                patch("elbow_helper.agent.conversation.delivery.require_evidence_access", AsyncMock()),
+                patch("elbow_helper.agent.conversation.delivery.assert_answer_scope",
                       AsyncMock(return_value=True)),
             ):
                 await surface.send_response(message, response, None, conversation=conversation,
@@ -116,7 +116,7 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_access_loss_before_media_sends_no_text_and_keeps_delivery_incomplete(self):
-        from elbow_helper.agent.access import AgentAccessLost
+        from elbow_helper.agent.safety.access import AgentAccessLost
         context = _context()
         context.state.gif_url = "https://tenor.com/view/synthetic"
         message = SimpleNamespace(id=300, channel=context.source_message.channel)
@@ -128,7 +128,7 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
 
         surface = AgentDeliveryMixin()
         surface._send_response = AsyncMock(side_effect=text_reply)
-        with patch("elbow_helper.agent.delivery.require_evidence_access",
+        with patch("elbow_helper.agent.conversation.delivery.require_evidence_access",
                    AsyncMock(side_effect=AgentAccessLost("Synthetic loss"))):
             with self.assertRaises(AgentAccessLost):
                 await surface.send_response(message, "Synthetic answer", None,

@@ -13,11 +13,11 @@ from dataclasses import replace
 import discord
 
 
-from ..access import accessible_message_channel, can_access_message_channel, message_channel_unavailable
-from ..models import AgentRequestContext
-from ..text import message_text
-from ..tool_support.validation import bounded_int
-from ..tool_support.validation import positive_int
+from elbow_helper.agent.safety.access import accessible_message_channel, can_access_message_channel, message_channel_unavailable
+from elbow_helper.agent.engine.models import AgentRequestContext
+from elbow_helper.agent.conversation.text import message_text
+from elbow_helper.agent.engine.validation import bounded_int
+from elbow_helper.agent.engine.validation import positive_int
 from .history_cache import history_page
 
 

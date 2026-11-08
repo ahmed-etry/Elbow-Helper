@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 from elbow_helper.agent.engine.recommended_actions import prepare_recommended_actions
 from elbow_helper.agent.plan.checker import check_plan
-from agent.engine import test_request_cost as cost
+from tests.agent.engine import test_request_cost as cost
 
 
 def decision(**overrides):

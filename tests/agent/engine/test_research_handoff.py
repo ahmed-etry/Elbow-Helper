@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock
 from elbow_helper.agent.engine.budgets import ASSESSMENT_LIMITS
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from agent.engine import test_request_cost as cost
-from agent.engine.test_writer_tables import expand
+from tests.agent.engine import test_request_cost as cost
+from tests.agent.engine.test_writer_tables import expand
 from elbow_helper.agent.conversation.context import estimate_tokens
 
 

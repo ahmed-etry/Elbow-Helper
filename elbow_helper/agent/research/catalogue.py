@@ -3,7 +3,7 @@
 from __future__ import annotations
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
-from ..models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from ..plan.input_rules import RULES
 from .history import read_discord_channel_history, find_discord_channels, read_message_context
 from .search import search_discord_messages

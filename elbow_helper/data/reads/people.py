@@ -85,7 +85,7 @@ class PeopleReads(RecordReads):
 
     @staticmethod
     def _current_links(connection, at):
-        from ..link_projection import require_links
+        from elbow_helper.data.links.selectors import require_links
         from ..store.link_state import LinkConflict
         source = signal(connection, "account_links", "current", at)
         try:

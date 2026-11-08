@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import math
 from time import monotonic
 
-from ..wording import AGENT_DAILY_LIMIT, AGENT_HOURLY_LIMIT
+from elbow_helper.agent.conversation.wording import AGENT_DAILY_LIMIT, AGENT_HOURLY_LIMIT
 
 HOUR_SECONDS = 3600
 DAY_SECONDS = 24 * HOUR_SECONDS

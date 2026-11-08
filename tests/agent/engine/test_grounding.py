@@ -13,10 +13,10 @@ from elbow_helper.agent.engine.rounds import AgentLimitReached
 from elbow_helper.agent.engine.tool_call import bound_tool_result
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.plan.results import compact_result
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage, AgentToolDefinition
-from agent.engine.test_agent_plan_flow import _context, _Model, _Session
+from tests.agent.engine.test_agent_plan_flow import _context, _Model, _Session
 
 
 MESSAGE = {"message_id": 101, "author_id": 202, "author": "Member Alpha",
@@ -167,7 +167,7 @@ class GroundingFlowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await flow.run(), GROUNDING_GAPS["source"])
 
     async def test_access_loss_during_repair_never_returns_source_text(self):
-        from elbow_helper.agent.access import AgentAccessLost
+        from elbow_helper.agent.safety.access import AgentAccessLost
         context = _context()
         context.state.grounding_evidence = {"read": {"messages": [MESSAGE]}}
         flow = AnswerFlow(context=context, session=None, registry={}, budget=None,

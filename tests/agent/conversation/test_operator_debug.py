@@ -10,15 +10,15 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.conversation.transcripts import TranscriptArchive
-from elbow_helper.agent.delivery import AgentDeliveryMixin
-from elbow_helper.agent.tool_support.sql.catalogue import SOURCES
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
+from elbow_helper.agent.reads.sql.catalogue import SOURCES
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
-from agent.engine.helpers import patch_engine
-from agent.engine.test_agent_plan_flow import _context, _model_step, _plan, _step, _Session
-from agent.engine.test_agent_service import _AgentModel
+from tests.agent.engine.helpers import patch_engine
+from tests.agent.engine.test_agent_plan_flow import _context, _model_step, _plan, _step, _Session
+from tests.agent.engine.test_agent_service import _AgentModel
 
 
 class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):

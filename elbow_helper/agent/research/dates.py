@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from ..models import AgentRequestContext
+from elbow_helper.agent.engine.models import AgentRequestContext
 
 
 def search_date(value: Any) -> datetime | None:

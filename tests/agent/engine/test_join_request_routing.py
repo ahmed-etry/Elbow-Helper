@@ -13,10 +13,10 @@ from elbow_helper.agent.reads import reference as reference_reads
 from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
 from elbow_helper.agent.plan.format import answer_instructions
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
-from elbow_helper.agent.models import EvidenceScope
+from elbow_helper.agent.engine.models import EvidenceScope
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan, _model_step
-from agent.engine.test_planner_fix2_evidence import unpack
+from tests.agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan, _model_step
+from tests.agent.engine.test_writer_delivery_evidence import unpack
 
 
 FAQ_TITLE = 'Why can I not request to rejoin after being rejected or kicked?'

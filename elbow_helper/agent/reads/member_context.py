@@ -6,7 +6,7 @@ from elbow_helper.configuration.roles import (
     MEMBERS, APPLICANT_ROLE_ID, ELDER_ROLE_ID, HIBERNATING_ROLE_ID,
     RECRUITERS, CWL_HELPERS, PLANNING_HELPERS, EXAMINERS,
 )
-from ..clan_roles import ROLE_PURPOSES, clan_role_purposes
+from elbow_helper.agent.knowledge.clan_roles import ROLE_PURPOSES, clan_role_purposes
 
 
 PROFILE_ROLE_GROUPS = {

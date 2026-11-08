@@ -8,23 +8,23 @@ import time
 from typing import Any
 
 from ..reports.base import retain_report
-from ..tool_support.core import FamilyReport
-from ..access import KNOWN_ACCESS_REQUIREMENTS
+from elbow_helper.agent.reads.snapshots import FamilyReport
+from elbow_helper.agent.safety.access import KNOWN_ACCESS_REQUIREMENTS
 from .state import (
     CONVERSATION_IDLE_SECONDS, MAX_RETAINED_BYTES, MAX_RETAINED_TURNS, MAX_REPLY_REFERENCES,
     Conversation, ConversationCheckpoint, ConversationRecord, ConversationTurn,
     checkpoint_input_hash,
 )
-from ..tool_support.adapters.achievements.report import AchievementProgressReport
-from ..tool_support.adapters.events.report import EventScheduleReport
-from elbow_helper.agent.tool_support.adapters.member_lifecycle.report import MemberLifecycleReport
-from ..tool_support.adapters.clan_reporting.report import MissingElderReport
-from ..tool_support.adapters.cwl.report import CwlPerformanceReport
-from ..tool_support.adapters.clan_transfers.report import TransferQueueReport
-from ..tool_support.adapters.hibernation.report import HibernationReport
-from ..tool_support.adapters.support_tickets.report import SupportTicketReport
-from ..tool_support.adapters.recruitment.report import RecruitmentTrialReport
-from elbow_helper.agent.tool_support.adapters.examination.report import ExaminationCaseReport
+from elbow_helper.agent.features.achievements.report import AchievementProgressReport
+from elbow_helper.agent.features.event_stats.report import EventScheduleReport
+from elbow_helper.agent.features.member_lifecycle.report import MemberLifecycleReport
+from elbow_helper.agent.features.clan_reporting.report import MissingElderReport
+from elbow_helper.agent.features.cwl.report import CwlPerformanceReport
+from elbow_helper.agent.features.clan_transfers.report import TransferQueueReport
+from elbow_helper.agent.features.hibernation.report import HibernationReport
+from elbow_helper.agent.features.support_tickets.report import SupportTicketReport
+from elbow_helper.agent.features.recruitment.report import RecruitmentTrialReport
+from elbow_helper.agent.features.examination.report import ExaminationCaseReport
 from ..files.contracts import (
     CsvImportArtifact,
     TextImportArtifact,

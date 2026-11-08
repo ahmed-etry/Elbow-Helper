@@ -10,8 +10,8 @@ from elbow_helper.features.help.discovery import discover_commands
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import ACCESS_ROLE_SETS, has_lookup_access, has_access_requirements, require_evidence_access
-from ..models import AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.safety.access import ACCESS_ROLE_SETS, has_lookup_access, has_access_requirements, require_evidence_access
+from elbow_helper.agent.engine.models import AgentRequestContext, RegisteredAgentTool
 
 
 def command_tools() -> tuple[RegisteredAgentTool, ...]:

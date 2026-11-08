@@ -9,13 +9,13 @@ from elbow_helper.agent.actions.contracts import ActionClass, ChangePreview, Pre
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.grounding import GROUNDING_GAPS
-from elbow_helper.agent.models import AgentCapabilityEffect, RegisteredAgentTool
-from elbow_helper.agent.wording import ACTION_PRIVATE_NOTE
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, RegisteredAgentTool
+from elbow_helper.agent.conversation.wording import ACTION_PRIVATE_NOTE
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
-from agent.engine.test_agent_plan_flow import _context, _plan, _step, _model_step, _Model, _Session
-from agent.engine.test_factual_answers import clan
-from agent import test_evidence_scope as scopes
-from elbow_helper.agent.access import AgentAccessLost
+from tests.agent.engine.test_agent_plan_flow import _context, _plan, _step, _model_step, _Model, _Session
+from tests.agent.engine.test_factual_answers import clan
+from tests.agent.safety import test_evidence_scope as scopes
+from elbow_helper.agent.safety.access import AgentAccessLost
 
 
 class MixedAnswerTests(unittest.IsolatedAsyncioTestCase):
@@ -103,10 +103,10 @@ class MixedDeliveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_command_outcome_does_not_bypass_read_audience_check(self):
         self.context.state.outcomes.append(ActionOutcome("complete", text="Command result"))
         self.context.state.has_read_answer = True
-        from elbow_helper.agent.delivery import AgentDeliveryMixin
+        from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
         delivery = AgentDeliveryMixin()
         delivery.bot = SimpleNamespace(user=self.bot_member)
-        with patch("elbow_helper.agent.delivery.assert_answer_scope",
+        with patch("elbow_helper.agent.conversation.delivery.assert_answer_scope",
                    new=AsyncMock(side_effect=AgentAccessLost("Out-of-scope answer citation"))) as guard:
             with self.assertRaises(AgentAccessLost):
                 await delivery.send_response(self.message, "Secret answer\n\nCommand result", None,

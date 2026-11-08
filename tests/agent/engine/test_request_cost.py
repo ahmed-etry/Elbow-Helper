@@ -3,21 +3,21 @@
 import asyncio
 from dataclasses import replace
 from types import SimpleNamespace
-from elbow_helper.agent.wording import AGENT_ANSWER_UNFINISHED
+from elbow_helper.agent.conversation.wording import AGENT_ANSWER_UNFINISHED
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDefinition, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.agent.actions.contracts import ActionClass, ChangePreview, PreparedAction
-from elbow_helper.agent.access import AgentAccessLost
+from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.engine.budgets import ContextBudget, RequestLimits, LOOKUP_LIMITS, RESEARCH_LIMITS
 from elbow_helper.agent.engine.rounds import AgentLimitReached
 from elbow_helper.agent.engine.routing import EXPAND_CONTEXT, RouteDecision
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import AgentCapabilityEffect, RegisteredAgentTool
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, RegisteredAgentTool
 from elbow_helper.agent.knowledge.store import KnowledgePrompt
-from agent.engine.test_agent_plan_flow import _context, _Session, _Model, _model_step, _plan, _step
+from tests.agent.engine.test_agent_plan_flow import _context, _Session, _Model, _model_step, _plan, _step
 
 
 class Session(_Session):

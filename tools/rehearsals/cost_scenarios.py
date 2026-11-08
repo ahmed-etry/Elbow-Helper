@@ -1,4 +1,4 @@
-"""Offline cost replay. Run with PYTHONPATH=tests from the checkout under test.
+"""Offline cost replay. Run from the checkout under test.
 
 python -m tools.rehearsals.cost_scenarios
 
@@ -20,7 +20,7 @@ from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.knowledge.store import KnowledgePrompt
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
-from agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine.test_agent_plan_flow import _context
 
 
 CLAN = {

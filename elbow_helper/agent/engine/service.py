@@ -12,18 +12,14 @@ import time
 from elbow_helper.infrastructure.ai import AgentModel
 from elbow_helper.infrastructure.ai import TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from ..models import AgentRequestContext
+from elbow_helper.agent.engine.models import AgentRequestContext
 from ..knowledge.tools import channel_knowledge_access
 from ..research.directory import scoped_channel_directory
 from ..knowledge.answers import CHANNEL_FIRST_INSTRUCTION, private_answer_pass, scoped_answer
 from ..conversation.debug import OperatorDebugRecord
 from ..actions.contracts import ActionClass
 from ..discord_actions.roles import role_change_access
-from ..access import (
-    AgentAccessLost,
-    leadership_asker,
-    require_evidence_access,
-)
+from elbow_helper.agent.safety.access import AgentAccessLost, leadership_asker, require_evidence_access
 from ..conversation.context import (
     INPUT_TARGET_TOKENS, SOCIAL_INPUT_TARGET_TOKENS, CompiledContext, compile_context, estimate_tokens,
 )
@@ -31,7 +27,7 @@ from ..conversation.reply_context import prepare_reply_context, REPLY_CONTEXT_IN
 from ..discord_actions.reactions import recent_reaction_context, server_reaction_context
 from ..discord_actions.reaction_pacing import reply_combo_due, combo_slot_context, combo_slot_status
 from ..discord_actions.meme_usage import recent_meme_context
-from ..disclosure import can_disclose_provenance, request_scope, log_scope
+from elbow_helper.agent.safety.disclosure import can_disclose_provenance, request_scope, log_scope
 from .registry import build_agent_tools
 from .self_knowledge import capability_context
 from .catalogue import discovery_tool, FAMILY_INSTRUCTION
@@ -48,7 +44,7 @@ from ..plan.format import plan_definition, system_instructions
 from ..plan.planning import PlanNotSettled
 from .adapters import enabled_adapters
 from ..commands.bridge import build_command_tools
-from ..prompts import RESEARCH_RULES, VOICE_RULES, GAME_ADVICE_RULES
+from elbow_helper.agent.engine.prompts import RESEARCH_RULES, VOICE_RULES, GAME_ADVICE_RULES
 from ..actions.preview import is_preview_reply, preview_text
 from ..research.member_provenance import member_target_issue
 from . import budgets as limits

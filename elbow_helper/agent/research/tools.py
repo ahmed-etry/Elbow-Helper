@@ -9,11 +9,11 @@ from uuid import uuid4
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import AgentAccessLost
-from ..access import accessible_message_channel
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import AgentAccessLost
+from elbow_helper.agent.safety.access import accessible_message_channel
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..reports.base import ArtifactCapacityError, retain_report
-from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from .execution import advance_discord_research_job
 from .report import DiscordResearchReport
 from .dates import message_time, search_date

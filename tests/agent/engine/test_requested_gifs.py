@@ -9,15 +9,15 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.core.paths import ApplicationPaths
-from elbow_helper.agent.delivery import AgentDeliveryMixin
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.social_reply import salvage_choice, social_plan
-from elbow_helper.agent.models import AgentDelivery
+from elbow_helper.agent.engine.models import AgentDelivery
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-from agent.engine.helpers import social_step
-from agent.engine.test_agent_service import _AgentModel, _AgentSession
-from agent.engine.test_banter_gifs import gif_context
+from tests.agent.engine.helpers import social_step
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession
+from tests.agent.engine.test_banter_gifs import gif_context
 
 
 class RequestedGifTests(unittest.IsolatedAsyncioTestCase):
@@ -81,8 +81,8 @@ class RequestedGifTests(unittest.IsolatedAsyncioTestCase):
                         delivery = AgentDelivery()
                         surface = AgentDeliveryMixin()
                         surface._send_response = AsyncMock()
-                        with (patch("elbow_helper.agent.delivery.require_evidence_access", AsyncMock()),
-                              patch("elbow_helper.agent.delivery.assert_answer_scope", AsyncMock())):
+                        with (patch("elbow_helper.agent.conversation.delivery.require_evidence_access", AsyncMock()),
+                              patch("elbow_helper.agent.conversation.delivery.assert_answer_scope", AsyncMock())):
                             await surface.send_response(self.context.source_message, answer, None,
                                                         context=self.context, delivery=delivery)
                         sent = self.context.source_message.reply

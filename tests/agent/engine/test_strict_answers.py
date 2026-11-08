@@ -6,8 +6,8 @@ import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.agent.engine.flow import AnswerFlow
-from agent.engine.test_agent_plan_flow import _context
-from agent.discord_actions import test_current_channel_posts as posts
+from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.discord_actions import test_current_channel_posts as posts
 from elbow_helper.agent.discord_actions.messages import prepare_post
 
 

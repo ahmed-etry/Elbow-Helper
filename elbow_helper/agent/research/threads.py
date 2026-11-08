@@ -12,9 +12,9 @@ import discord
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import accessible_message_channel, can_access_message_channel
-from ..models import AgentRequestContext, RegisteredAgentTool
-from ..tool_support.validation import bounded_int, positive_int
+from elbow_helper.agent.safety.access import accessible_message_channel, can_access_message_channel
+from elbow_helper.agent.engine.models import AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.engine.validation import bounded_int, positive_int
 
 
 THREAD_RESULT_LIMIT = 10

@@ -6,14 +6,14 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.roles import CORE, RECRUITERS
-from elbow_helper.agent.access import ACCESS_ROLE_SETS, AgentAccessLost, has_access_requirements
+from elbow_helper.agent.safety.access import ACCESS_ROLE_SETS, AgentAccessLost, has_access_requirements
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import AgentTurnState
-from elbow_helper.agent.wording import ACTION_UNAVAILABLE
+from elbow_helper.agent.engine.models import AgentTurnState
+from elbow_helper.agent.conversation.wording import ACTION_UNAVAILABLE
 
 
 class LookupAccessTests(unittest.IsolatedAsyncioTestCase):
-<<<<<<< 564beefb
+<<<<<<< f5976790
 =======
     def test_levels_equal_help_access_groups(self):
         mirrors = {

@@ -8,7 +8,7 @@ from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.agent.actions.log_tools import (
     read_agent_action_log, undo_agent_action,
 )
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 
 
 class ActionLogToolTests(unittest.IsolatedAsyncioTestCase):

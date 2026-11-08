@@ -5,10 +5,10 @@ import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.agent.reports import tools as saved_reports
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine.test_agent_plan_flow import _context
 
 
 class SavedReportRoutingTests(unittest.IsolatedAsyncioTestCase):

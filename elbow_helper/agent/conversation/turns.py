@@ -9,7 +9,7 @@ from dataclasses import replace
 
 from .state import ConversationRecord, ConversationTurn
 from .instructions import WorkingState
-from ..models import AgentRequestContext, AgentTurnState
+from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState
 from ..actions.targets import target_links
 
 LOGGER = logging.getLogger(__name__)

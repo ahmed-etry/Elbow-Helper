@@ -1,7 +1,7 @@
 """Current structured CWL signup and assigned-roster cohorts."""
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.features.rosters.config import CWL_SIGNUP_ROSTER_ID
-from ..access import accessible_message_channel
+from elbow_helper.agent.safety.access import accessible_message_channel
 
 
 async def cwl_rosters(context, arguments):

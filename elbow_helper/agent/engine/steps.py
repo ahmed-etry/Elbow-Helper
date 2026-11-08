@@ -13,13 +13,13 @@ import json
 import time
 from typing import Any
 from elbow_helper.infrastructure.ai import AgentToolResult
-from ..models import AgentCapabilityEffect, AgentRequestContext
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext
 from ..actions.contracts import ActionClass, PreparedAction
-from ..wording import ACTION_UNAVAILABLE
-from ..access import AgentAccessLost
-from ..access import require_access, accessible_message_channel, has_lookup_access
-from ..access import message_channel_unavailable
-from ..access import require_evidence_access
+from elbow_helper.agent.conversation.wording import ACTION_UNAVAILABLE
+from elbow_helper.agent.safety.access import AgentAccessLost
+from elbow_helper.agent.safety.access import require_access, accessible_message_channel, has_lookup_access
+from elbow_helper.agent.safety.access import message_channel_unavailable
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..reports.tools import original_tool
 from ..plan.checker import check_plan, check_step
 from ..plan.executor import execute_plan, referenced_report_ids
@@ -30,7 +30,7 @@ from functools import partial
 from .rounds import ModelRounds
 from .budgets import ContextBudget
 from .capability_contract import CapabilityBindError, compile_capability_call
-from ..models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from ..discord_actions.gif_ownership import consume_gifs
 from ..commands.registry import CommandCapability
 from typing import TYPE_CHECKING

@@ -10,10 +10,10 @@ from unittest.mock import patch
 from elbow_helper.configuration.roles import (
     AGENT_TESTER_ROLE_ID, CORE, CWL_HELPERS, EXAMINERS, LEAD, LEAD_PLUS, RECRUITERS,
 )
-from elbow_helper.agent.access import AgentAccessLost, LookupAccessDenied
+from elbow_helper.agent.safety.access import AgentAccessLost, LookupAccessDenied
 from elbow_helper.agent.knowledge.store import KnowledgeStore
 from elbow_helper.agent.knowledge.tools import search_approved_knowledge
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 
 
 class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):

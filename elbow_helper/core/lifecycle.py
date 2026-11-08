@@ -40,7 +40,7 @@ REQUIRED_EXTENSIONS = (
     "elbow_helper.features.diagnostics",
     "elbow_helper.features.leadership_news",
     "elbow_helper.features.clan_transfers",
-    "elbow_helper.features.message_automation",
+    "elbow_helper.features.auto_reactions",
     "elbow_helper.features.role_connections",
     "elbow_helper.features.account_links",
     "elbow_helper.features.recruitment",

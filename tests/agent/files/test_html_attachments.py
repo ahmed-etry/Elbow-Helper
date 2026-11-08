@@ -4,14 +4,14 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from elbow_helper.agent.access import AgentAccessLost
+from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.files.attachments import parse_text
 from elbow_helper.agent.files.attachment_tools import (
     import_text_attachment, list_supported_attachments, read_text_import,
 )
 from elbow_helper.agent.files.contracts import AttachmentValidationError
-from agent.files.test_agent_attachments import _attachment
-from agent.files.test_agent_spreadsheets import _context
+from tests.agent.files.test_agent_attachments import _attachment
+from tests.agent.files.test_agent_spreadsheets import _context
 
 
 class HtmlParserTests(unittest.TestCase):

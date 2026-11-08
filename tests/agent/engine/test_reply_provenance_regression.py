@@ -6,10 +6,10 @@ from types import SimpleNamespace
 import unittest
 
 from elbow_helper.agent.engine.service import AgentService
-from agent.conversation.test_agent_context import _turn
-from agent.engine.helpers import social_step
-from agent.engine.test_agent_plan_flow import _context
-from agent.engine.test_agent_service import _AgentModel, _AgentSession
+from tests.agent.conversation.test_agent_context import _turn
+from tests.agent.engine.helpers import social_step
+from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession
 
 
 class ReplyProvenanceRegressionTests(unittest.IsolatedAsyncioTestCase):

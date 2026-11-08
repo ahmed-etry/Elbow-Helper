@@ -7,7 +7,7 @@ from typing import Any, Mapping, Protocol
 
 from elbow_helper.domain.player_tags import normalize_player_tag
 
-from ..access import KNOWN_ACCESS_REQUIREMENTS
+from elbow_helper.agent.safety.access import KNOWN_ACCESS_REQUIREMENTS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 

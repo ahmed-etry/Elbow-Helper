@@ -6,11 +6,11 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.discord_actions.threads import (
     prepare_create_thread, prepare_thread_members, prepare_update_thread,
 )
-from agent.discord_actions.helpers import register_requester
+from tests.agent.discord_actions.helpers import register_requester
 
 
 class FakeThread:

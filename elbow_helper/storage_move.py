@@ -184,7 +184,7 @@ def _prepare(root, stage, sources):
     from elbow_helper.data.events.schema import SCHEMA_VERSION as events_version, create_schema as events_schema
     from elbow_helper.features.achievements.schema import DATABASE as economy
     from elbow_helper.features.rosters.repository.migrations import initialize_roster_schema
-    from elbow_helper.agent.storage import initialize_agent
+    from elbow_helper.agent.persistence.schema import initialize_agent
 
     counts = {}
     for old in OLD_DATABASES:
@@ -270,7 +270,7 @@ def _prepare(root, stage, sources):
     with closing(sqlite3.connect(stage / "agent.sqlite3")) as connection:
         initialize_agent(connection)
     # Each source uses its own former chain, validated on the disposable copy.
-    from elbow_helper.agent.storage import migrations
+    from elbow_helper.agent.persistence.schema import migrations
     steps = migrations()
     for old, selected in (("agent/agent.sqlite3", steps[:1]),
                           ("agent/transcripts.sqlite3", steps[1:4]),

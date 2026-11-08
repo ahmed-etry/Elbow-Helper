@@ -7,9 +7,9 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.channels import HIBERNATION_LOG
-from elbow_helper.agent.tool_support.adapters.hibernation.reads import read_active_hibernation
-from elbow_helper.agent.member_names import member_label
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.features.hibernation.reads import read_active_hibernation
+from elbow_helper.agent.conversation.member_names import member_label
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.research.members import find_discord_members, read_discord_members
 from elbow_helper.features.hibernation.queries import HibernationQueries
 
@@ -43,8 +43,8 @@ class IntentCohortTests(unittest.IsolatedAsyncioTestCase):
         self.guards = [
             patch("elbow_helper.agent.research.members.require_evidence_access", AsyncMock()),
             patch("elbow_helper.agent.research.members.accessible_message_channel", AsyncMock(return_value=object())),
-            patch('elbow_helper.agent.tool_support.adapters.hibernation.reads.require_evidence_access', AsyncMock()),
-            patch('elbow_helper.agent.tool_support.adapters.hibernation.reads.accessible_message_channel', AsyncMock(return_value=object())),
+            patch('elbow_helper.agent.features.hibernation.reads.require_evidence_access', AsyncMock()),
+            patch('elbow_helper.agent.features.hibernation.reads.accessible_message_channel', AsyncMock(return_value=object())),
         ]
         for guard in self.guards:
             guard.start()

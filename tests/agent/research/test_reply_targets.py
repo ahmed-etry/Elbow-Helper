@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import discord
 
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.research.history import read_message_context
 
 

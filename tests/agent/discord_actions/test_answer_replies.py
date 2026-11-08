@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, patch
 
 import discord
 
-from elbow_helper.agent.delivery import AgentDeliveryMixin
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.reply_targets import set_reply_target
-from elbow_helper.agent.models import AgentDelivery, AgentRequestContext
+from elbow_helper.agent.engine.models import AgentDelivery, AgentRequestContext
 from . import test_agent_discord_messages as fixtures
 
 
@@ -37,7 +37,7 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
         self.guard.start()
         self.addCleanup(self.guard.stop)
         delivery_guard = patch(
-            "elbow_helper.agent.delivery.require_evidence_access", new_callable=AsyncMock,
+            "elbow_helper.agent.conversation.delivery.require_evidence_access", new_callable=AsyncMock,
         )
         delivery_guard.start()
         self.addCleanup(delivery_guard.stop)
@@ -125,7 +125,7 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
         url = "https://tenor.com/view/synthetic"
         context.state.gif_url = url
         with patch(
-            "elbow_helper.agent.delivery.assert_answer_scope", new_callable=AsyncMock,
+            "elbow_helper.agent.conversation.delivery.assert_answer_scope", new_callable=AsyncMock,
             return_value=True,
         ):
             result = await self.surface.send_post_reply(
@@ -159,7 +159,7 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
         context.state.reply_to = 55
         context.state.request_text = "Post to <@12345> and <@54321>."
         context.source_message.raw_mentions = [12345, 54321]
-        with patch("elbow_helper.agent.delivery.assert_answer_scope", new_callable=AsyncMock,
+        with patch("elbow_helper.agent.conversation.delivery.assert_answer_scope", new_callable=AsyncMock,
                    return_value=True):
             await self.surface.send_post_reply(
                 self.request, "Synthetic answer <@12345> <@!54321>", None, context, None,

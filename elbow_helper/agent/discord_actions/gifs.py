@@ -1,7 +1,7 @@
 """Deliver the library meme the agent chose for a reply."""
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from ..models import AgentAttachment, RegisteredAgentTool, AgentCapabilityEffect
+from elbow_helper.agent.engine.models import AgentAttachment, RegisteredAgentTool, AgentCapabilityEffect
 from ..actions.contracts import ActionClass
 from ..engine.capability_contract import CapabilityContract
 from ..files.gif_media import gif_embed, gif_links

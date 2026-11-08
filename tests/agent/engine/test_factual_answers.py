@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 from elbow_helper.agent.engine.factual_answers import numeric_conflicts, ranked_conflicts
 from elbow_helper.agent.reads.ranked_measures import metrics
 from elbow_helper.agent.engine.flow import AnswerFlow
-from agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine.test_agent_plan_flow import _context
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 

@@ -13,7 +13,7 @@ from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.agent.cog import AgentCog
 from elbow_helper.agent.files.images import request_images
 from elbow_helper.agent.files.gif_media import PROVIDERS
-from agent.files.image_helpers import png
+from tests.agent.files.image_helpers import png
 
 
 def animation():

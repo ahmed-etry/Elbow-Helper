@@ -7,7 +7,7 @@ from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
 from elbow_helper.agent.reads.reference import community_reference
 from elbow_helper.agent.plan.format import answer_instructions
-from agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine.test_agent_plan_flow import _context
 
 
 class RoleMeaningTests(unittest.IsolatedAsyncioTestCase):

@@ -15,7 +15,7 @@ from elbow_helper.infrastructure.persistence import (
 from .codec import encode_record
 from ..scheduled.store import ScheduledStore
 from ..discord_actions.meme_usage import MemeUsageStore
-from ..storage import initialize_agent
+from elbow_helper.agent.persistence.schema import initialize_agent
 
 ACTION_LOG_RETENTION_SECONDS = 90 * 24 * 60 * 60
 

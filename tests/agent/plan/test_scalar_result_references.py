@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.plan.checker import check_plan, valid_arguments
 from elbow_helper.agent.plan.executor import (
     SingleValueReferenceError, execute_plan, resolve_arguments,

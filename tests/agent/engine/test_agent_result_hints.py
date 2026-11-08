@@ -10,29 +10,29 @@ import unittest
 
 from openpyxl import load_workbook
 
-from agent.files.test_agent_spreadsheets import _context
+from tests.agent.files.test_agent_spreadsheets import _context
 
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.plan.executor import execute_plan
 from elbow_helper.agent.plan.results import model_result
-from elbow_helper.agent.tool_support.adapters.achievements.report import AchievementProgressReport
-from elbow_helper.agent.tool_support.adapters.clan_reporting.report import MissingElderReport
-from elbow_helper.agent.tool_support.adapters.clan_transfers.report import TransferQueueReport
-from elbow_helper.agent.tool_support.adapters.cwl.report import CwlPerformanceReport
-from elbow_helper.agent.tool_support.adapters.events.report import EventScheduleReport
-from elbow_helper.agent.tool_support.adapters.examination.report import ExaminationCaseReport
-from elbow_helper.agent.tool_support.adapters.hibernation.report import HibernationReport
-from elbow_helper.agent.tool_support.adapters.member_lifecycle.report import MemberLifecycleReport
-from elbow_helper.agent.tool_support.adapters.recruitment.report import RecruitmentTrialReport
-from elbow_helper.agent.tool_support.adapters.support_tickets.report import SupportTicketReport
+from elbow_helper.agent.features.achievements.report import AchievementProgressReport
+from elbow_helper.agent.features.clan_reporting.report import MissingElderReport
+from elbow_helper.agent.features.clan_transfers.report import TransferQueueReport
+from elbow_helper.agent.features.cwl.report import CwlPerformanceReport
+from elbow_helper.agent.features.event_stats.report import EventScheduleReport
+from elbow_helper.agent.features.examination.report import ExaminationCaseReport
+from elbow_helper.agent.features.hibernation.report import HibernationReport
+from elbow_helper.agent.features.member_lifecycle.report import MemberLifecycleReport
+from elbow_helper.agent.features.recruitment.report import RecruitmentTrialReport
+from elbow_helper.agent.features.support_tickets.report import SupportTicketReport
 from elbow_helper.agent.files.contracts import (
     CsvImportArtifact, TextImportArtifact, XlsxImportArtifact,
 )
 from elbow_helper.agent.research.contracts import DiscordResearchJob
 from elbow_helper.agent.research.report import DiscordResearchReport
 from elbow_helper.agent.research.threads import _thread_result
-from elbow_helper.agent.tool_support.adapters.role_connections.reads import _render_rule
+from elbow_helper.agent.features.role_connections.reads import _render_rule
 from elbow_helper.agent.conversation.instructions import TaskInstruction
 from elbow_helper.features.cwl.queries import (
     CwlAssWarsSnapshot, CwlBonusWarsSnapshot, CwlThreadRegistration,

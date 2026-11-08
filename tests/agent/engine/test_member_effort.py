@@ -12,10 +12,10 @@ from elbow_helper.configuration.roles import (
 )
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from agent.engine.test_agent_plan_flow import (
+from tests.agent.engine.test_agent_plan_flow import (
     _context, _Model, _Session, _model_step, _plan, _step,
 )
 

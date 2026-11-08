@@ -4,12 +4,12 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.access import AgentAccessLost
+from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.engine.budgets import ASSESSMENT_LIMITS
 from elbow_helper.agent.engine.routing import RouteDecision
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage, TextGenerationError
-from agent.engine import test_request_cost as cost
+from tests.agent.engine import test_request_cost as cost
 
 
 def decision(*, workbook=False):

@@ -4,8 +4,8 @@ import unittest
 
 from elbow_helper.agent.engine.role_claims import role_conflicts
 from elbow_helper.agent.engine.budgets import RequestLimits
-from agent.engine import test_request_cost as cost
-from elbow_helper.agent.models import RegisteredAgentTool
+from tests.agent.engine import test_request_cost as cost
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from unittest.mock import AsyncMock
 

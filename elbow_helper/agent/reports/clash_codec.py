@@ -12,9 +12,9 @@ from elbow_helper.features.cwl.queries import (
 from elbow_helper.features.clan_transfers.queries import (
     PendingTransferRequest, TransferQueueSnapshot,
 )
-from ..tool_support.adapters.clan_reporting.report import MissingElderReport
-from ..tool_support.adapters.cwl.report import CwlPerformanceReport
-from ..tool_support.adapters.clan_transfers.report import TransferQueueReport
+from elbow_helper.agent.features.clan_reporting.report import MissingElderReport
+from elbow_helper.agent.features.cwl.report import CwlPerformanceReport
+from elbow_helper.agent.features.clan_transfers.report import TransferQueueReport
 from .guild_boundary import require_guild
 
 

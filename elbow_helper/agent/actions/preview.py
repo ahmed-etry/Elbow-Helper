@@ -11,18 +11,9 @@ import discord
 
 from .contracts import ActionClass, PreparedAction, check_bundle
 from .details import detail_lines
-from ..access import AgentAccessLost, accessible_message_channel, require_access, require_access_requirements
-from ..text import chunk_response
-from ..wording import (
-    ACTION_CANNOT_UNDO, ACTION_PREVIEW_SUMMARY, ACTION_PREVIEW_BLANK,
-    ACTION_PREVIEW_UNIT_MANY, ACTION_PREVIEW_UNIT_ONE,
-    ACTION_CANCEL_BUTTON, ACTION_CANCELLED, ACTION_CONFIRM_BUTTON,
-    ACTION_PREVIEW_EXPIRED,
-    ACTION_PREVIEW_HEADER, ACTION_PREVIEW_OWNER,
-    ACTION_PREVIEW_USED, ACTION_UNAVAILABLE,
-    ACTION_PREVIEW_DETAILS_HIDDEN, ACTION_PREVIEW_DETAILS_BUTTON,
-    ACTION_RESULT_OWNER, ACTION_RESULT_EXPIRED,
-)
+from elbow_helper.agent.safety.access import AgentAccessLost, accessible_message_channel, require_access, require_access_requirements
+from elbow_helper.agent.conversation.text import chunk_response
+from elbow_helper.agent.conversation.wording import ACTION_CANNOT_UNDO, ACTION_PREVIEW_SUMMARY, ACTION_PREVIEW_BLANK, ACTION_PREVIEW_UNIT_MANY, ACTION_PREVIEW_UNIT_ONE, ACTION_CANCEL_BUTTON, ACTION_CANCELLED, ACTION_CONFIRM_BUTTON, ACTION_PREVIEW_EXPIRED, ACTION_PREVIEW_HEADER, ACTION_PREVIEW_OWNER, ACTION_PREVIEW_USED, ACTION_UNAVAILABLE, ACTION_PREVIEW_DETAILS_HIDDEN, ACTION_PREVIEW_DETAILS_BUTTON, ACTION_RESULT_OWNER, ACTION_RESULT_EXPIRED
 from .private_view import PrivateResultView
 from .message_cleanup import log_cleanup_failure
 

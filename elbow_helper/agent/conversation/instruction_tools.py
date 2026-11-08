@@ -6,8 +6,8 @@ from typing import Any, Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import require_evidence_access
-from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.safety.access import require_evidence_access
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 
 
 def working_state_tools() -> tuple[RegisteredAgentTool, ...]:

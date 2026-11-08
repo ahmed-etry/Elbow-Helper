@@ -7,19 +7,12 @@ import json
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..models import AgentCapabilityEffect, RegisteredAgentTool
-from ..prompts import (
-    COMMON_SYSTEM_PROMPT, READ_ONLY_CAPABILITY_PARAGRAPH, ACTION_CAPABILITY_PARAGRAPH,
-    BANTER_RULES, RESPONSE_RULES, FACT_RULES,
-    VOICE_RULES, ANSWER_RULES, DISCORD_REPLY_RULES, LIMIT_ANSWER_INSTRUCTION,
-    SOCIAL_PLANNING_RULES, CONVERSATION_RULES, GAME_ADVICE_RULES,
-    RESULT_ANSWER_INSTRUCTION,
-    ACTION_PLANNING_RULES, STANDING_RULE_RULES,
-)
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, RegisteredAgentTool
+from elbow_helper.agent.engine.prompts import COMMON_SYSTEM_PROMPT, READ_ONLY_CAPABILITY_PARAGRAPH, ACTION_CAPABILITY_PARAGRAPH, BANTER_RULES, RESPONSE_RULES, FACT_RULES, VOICE_RULES, ANSWER_RULES, DISCORD_REPLY_RULES, LIMIT_ANSWER_INSTRUCTION, SOCIAL_PLANNING_RULES, CONVERSATION_RULES, GAME_ADVICE_RULES, RESULT_ANSWER_INSTRUCTION, ACTION_PLANNING_RULES, STANDING_RULE_RULES
 from ..actions.contracts import ActionClass
 from ..engine.grounding import GROUNDING_INSTRUCTION
 from ..research.member_provenance import MEMBER_PROVENANCE_INSTRUCTION, ACCOUNT_MEMBER_PROVENANCE_INSTRUCTION
-from ..community_data import COMMUNITY_DATA_CONTEXT
+from elbow_helper.agent.knowledge.community_data import COMMUNITY_DATA_CONTEXT
 
 
 PLAN_TOOL_NAME = "submit_request_plan"
@@ -280,7 +273,7 @@ def output_forms(registry: Mapping[str, RegisteredAgentTool]) -> tuple[str, ...]
 def capability_list(registry: Mapping[str, RegisteredAgentTool], *, include_returns: bool = True,
                     descriptions: bool = True) -> str:
     """Return the same compact catalogue for every request."""
-    from ..tool_support.core import COMMON
+    from elbow_helper.agent.reads.snapshots import COMMON
 
     entries = []
     common_used = False

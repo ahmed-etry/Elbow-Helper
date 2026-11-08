@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.engine.helpers import patch_engine
+from tests.agent.engine.helpers import patch_engine
 
 import asyncio
 
@@ -14,16 +14,16 @@ import discord
 from unittest.mock import AsyncMock
 from unittest.mock import patch
 
-from elbow_helper.agent.models import AgentAttachment, RegisteredAgentTool
-from elbow_helper.agent.models import AgentRequestContext
+from elbow_helper.agent.engine.models import AgentAttachment, RegisteredAgentTool
+from elbow_helper.agent.engine.models import AgentRequestContext
 from elbow_helper.configuration.roles import CORE, LEAD, LEAD_PLUS
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.capability_contract import compile_capability_call
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.plan.checker import valid_arguments
 from elbow_helper.agent.engine.tool_call import evidence_record as _evidence_record
-from elbow_helper.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
-from agent.report_helpers import make_event_report
+from elbow_helper.agent.safety.access import ACCESS_LEAD_PLUS, AgentAccessLost
+from tests.agent.reports.report_helpers import make_event_report
 from elbow_helper.infrastructure.ai import AgentStep
 from elbow_helper.infrastructure.ai import AgentToolCall
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -67,7 +67,7 @@ class _AgentModel:
 
     def create_agent_session(self, **kwargs):
         from elbow_helper.agent.engine.routing import ROUTE_INSTRUCTION
-        from agent.engine.helpers import RoutingSession
+        from tests.agent.engine.helpers import RoutingSession
         if kwargs["system_prompt"] == ROUTE_INSTRUCTION:
             self.routing_request = kwargs
             self.routing_session = RoutingSession(self.route)
@@ -258,7 +258,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         ])
         with (
             patch("elbow_helper.agent.engine.service.build_agent_tools", return_value={"lookup": tool}),
-            patch("elbow_helper.agent.access.accessible_message_channel", return_value=object()),
+            patch("elbow_helper.agent.safety.access.accessible_message_channel", return_value=object()),
             patch_engine("require_evidence_access"),
 
         ):

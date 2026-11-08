@@ -11,14 +11,14 @@ from elbow_helper.agent.actions.preview import ConfirmationView, preview_text
 from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.actions.private_view import PrivateResultView
-from elbow_helper.agent.delivery import AgentDeliveryMixin
-from elbow_helper.agent.models import AgentDelivery, AgentTurnState
-from elbow_helper.agent.wording import ACTION_CANCELLED, ACTION_PREVIEW_EXPIRED, ACTION_PREVIEW_OWNER
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
+from elbow_helper.agent.engine.models import AgentDelivery, AgentTurnState
+from elbow_helper.agent.conversation.wording import ACTION_CANCELLED, ACTION_PREVIEW_EXPIRED, ACTION_PREVIEW_OWNER
 
 
 class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        guard = patch("elbow_helper.agent.delivery.require_evidence_access", new_callable=AsyncMock)
+        guard = patch("elbow_helper.agent.conversation.delivery.require_evidence_access", new_callable=AsyncMock)
         guard.start()
         self.addCleanup(guard.stop)
 
@@ -172,7 +172,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
             "complete", "private", private_parts=("synthetic private result",),
         ))
         context = SimpleNamespace(state=state)
-        with patch("elbow_helper.agent.delivery.assert_answer_scope",
+        with patch("elbow_helper.agent.conversation.delivery.assert_answer_scope",
                    new_callable=AsyncMock):
             await delivery_surface.send_response(
                 message, preview_text(state.proposed_changes), None,

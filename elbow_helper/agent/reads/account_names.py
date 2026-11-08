@@ -8,7 +8,7 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.domain.identity import (matching_accounts, normalized_name, edit_distance,
                                           name_segments, word_prefix, small_spelling_edit)
 
-from elbow_helper.agent.access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from elbow_helper.agent.reads.clash import read_clash
 from elbow_helper.agent.research.member_identity import matching_members, matches_discord_identity
 from elbow_helper.agent.reads import people as record_identity

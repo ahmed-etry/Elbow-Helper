@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import discord
 
-from tests.data.link_fixtures import attach_links
+from tests.data.links.link_fixtures import attach_links
 from tests.features.profile_source import profile_demand
 from elbow_helper.data.events.testing import MemoryEventsStore
 from elbow_helper.features.account_links.cog import AccountLinks

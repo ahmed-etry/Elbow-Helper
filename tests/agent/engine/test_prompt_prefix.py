@@ -3,8 +3,8 @@ import unittest
 
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.routing import RouteDecision
-from agent.engine.test_agent_plan_flow import _context, _Model, _Session
-from agent.discord_actions.test_agent_reactions import _server_emoji
+from tests.agent.engine.test_agent_plan_flow import _context, _Model, _Session
+from tests.agent.discord_actions.test_agent_reactions import _server_emoji
 
 
 class PromptPrefixTests(unittest.TestCase):

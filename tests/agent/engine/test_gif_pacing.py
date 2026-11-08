@@ -3,13 +3,13 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.delivery import AgentDeliveryMixin
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.gifs import channel_gif_history
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import AgentDelivery
-from agent.engine.helpers import social_step
-from agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
+from elbow_helper.agent.engine.models import AgentDelivery
+from tests.agent.engine.helpers import social_step
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 
 
 class GifMatchTests(unittest.IsolatedAsyncioTestCase):
@@ -45,8 +45,8 @@ class GifMatchTests(unittest.IsolatedAsyncioTestCase):
                         delivery = AgentDelivery()
                         surface = AgentDeliveryMixin()
                         surface._send_response = AsyncMock()
-                        with (patch('elbow_helper.agent.delivery.require_evidence_access', AsyncMock()),
-                              patch('elbow_helper.agent.delivery.assert_answer_scope', AsyncMock())):
+                        with (patch('elbow_helper.agent.conversation.delivery.require_evidence_access', AsyncMock()),
+                              patch('elbow_helper.agent.conversation.delivery.assert_answer_scope', AsyncMock())):
                             await surface.send_response(message, answer, None, context=context, delivery=delivery)
                         self.assertEqual(delivery.text_parts, [url] if sent else [])
                         self.assertEqual(surface._send_response.await_count, int(not sent))

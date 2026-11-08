@@ -6,11 +6,11 @@ import discord
 from elbow_helper.infrastructure.ai import AgentToolDefinition, TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..actions.contracts import ActionClass
 from ..conversation.context import estimate_tokens
-from ..tool_support.model_view import record_rows
-from ..models import AgentCapabilityEffect
+from elbow_helper.agent.reads.evidence import record_rows
+from elbow_helper.agent.engine.models import AgentCapabilityEffect
 from ..plan.checker import step_dependencies, valid_arguments
 from ..plan.executor import resolve_arguments, UnresolvedReferenceError
 from ..research.directory import scoped_channel_directory

@@ -12,9 +12,9 @@ from elbow_helper.agent.engine.routing import judge_route
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage, TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentImage
-from agent.files.image_helpers import png
-from agent.engine.helpers import social_step
-from agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
+from tests.agent.files.image_helpers import png
+from tests.agent.engine.helpers import social_step
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 
 
 class SocialImageTests(unittest.IsolatedAsyncioTestCase):

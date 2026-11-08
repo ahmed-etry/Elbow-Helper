@@ -3,10 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from ..wording import (
-    ACTION_VALUE_HIDDEN, ACTION_VALUE_NO, ACTION_VALUE_NOT_SET,
-    ACTION_VALUE_VISIBLE, ACTION_VALUE_YES,
-)
+from elbow_helper.agent.conversation.wording import ACTION_VALUE_HIDDEN, ACTION_VALUE_NO, ACTION_VALUE_NOT_SET, ACTION_VALUE_VISIBLE, ACTION_VALUE_YES
 
 
 def display_value(value: Any, *, visibility: bool = False) -> str:

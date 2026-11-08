@@ -14,7 +14,7 @@ from elbow_helper.agent.actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, check_bundle,
 )
 from elbow_helper.agent.actions.store import AgentActionRepository
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.actions.runner import AgentActionRunner, StopActionRunView
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.actions.preview import preview_text

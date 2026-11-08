@@ -9,6 +9,7 @@ class FixtureDirectoryTests(unittest.TestCase):
     def test_files_are_accessible_and_context_cleanup_removes_them(self):
         with TemporaryDirectory() as name:
             path = Path(name)
+            self.assertEqual(path.parent, Path(__file__).resolve().parents[2] / "tmp-tests")
             (path / "fixture").write_text("synthetic", encoding="utf-8")
             self.assertEqual((path / "fixture").read_text(encoding="utf-8"), "synthetic")
         self.assertFalse(path.exists())

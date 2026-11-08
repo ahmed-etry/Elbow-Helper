@@ -6,10 +6,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
-from ..models import AgentCapabilityEffect, RegisteredAgentTool
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, RegisteredAgentTool
 from ..actions.outcomes import ActionOutcome, command_reply
 from ..actions.contracts import ChangePreview, PreparedAction
-from ..wording import ACTION_UNAVAILABLE
+from elbow_helper.agent.conversation.wording import ACTION_UNAVAILABLE
 from .registry import (
     CommandAdapter, CommandCapability, PreparedCommandChange,
     build_command_capabilities,

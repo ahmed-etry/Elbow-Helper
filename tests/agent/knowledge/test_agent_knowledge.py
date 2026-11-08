@@ -10,10 +10,10 @@ from elbow_helper.agent.knowledge.store import (
 )
 from elbow_helper.agent.knowledge import store as knowledge_store
 from elbow_helper.agent.knowledge.tools import channel_knowledge_access, search_approved_knowledge
-from elbow_helper.agent.models import AgentRequestContext, AgentTurnState, EvidenceScope
+from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState, EvidenceScope
 from elbow_helper.agent.conversation.context import estimate_tokens
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.access import AgentAccessLost, require_evidence_access
+from elbow_helper.agent.safety.access import AgentAccessLost, require_evidence_access
 from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID, LEAD
 from elbow_helper.agent.plan.results import model_result
 

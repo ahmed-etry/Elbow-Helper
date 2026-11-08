@@ -6,8 +6,8 @@ from unittest.mock import patch
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.agent.discord_actions.gifs import find_gif
 from elbow_helper.agent.engine.service import AgentService
-from agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
-from agent.engine.helpers import social_step
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
+from tests.agent.engine.helpers import social_step
 
 
 def gif_context(context=None, *, recent=()):

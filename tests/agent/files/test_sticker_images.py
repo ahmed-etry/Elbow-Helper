@@ -11,12 +11,12 @@ from PIL import Image
 
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.files.images import MAX_IMAGE_BYTES, request_images
-from elbow_helper.agent.text import message_text
+from elbow_helper.agent.conversation.text import message_text
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-from agent.discord_actions.management_helpers import fixture
-from agent.files.image_helpers import png
-from agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
-from agent.files.test_gif_images import animation
+from tests.agent.discord_actions.management_helpers import fixture
+from tests.agent.files.image_helpers import png
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
+from tests.agent.files.test_gif_images import animation
 
 
 def sticker(format=discord.StickerFormatType.png, data=None):

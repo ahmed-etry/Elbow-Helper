@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import discord
 
 from elbow_helper.agent.discord_actions.timeouts import prepare_timeout, undo_timeout
-from agent.discord_actions.management_helpers import fixture
+from tests.agent.discord_actions.management_helpers import fixture
 
 
 class TimeoutTests(unittest.IsolatedAsyncioTestCase):

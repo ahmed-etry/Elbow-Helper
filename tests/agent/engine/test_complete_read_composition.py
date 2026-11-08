@@ -5,11 +5,11 @@ import unittest
 from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.conversation.context import estimate_tokens
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.tool_support.core import family_tool
+from elbow_helper.agent.reads.snapshots import family_tool
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan, _model_step
-from agent.engine.test_planner_fix2_evidence import unpack
+from tests.agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan, _model_step
+from tests.agent.engine.test_writer_delivery_evidence import unpack
 
 
 class CaptureModel(_Model):
@@ -29,8 +29,8 @@ class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):
     async def test_final_instruction_boundary_still_calls_provider_and_retains_citation_sources(self):
         from elbow_helper.agent.engine.assessment import discussion_ids
         from elbow_helper.agent.engine.budgets import ASSESSMENT_LIMITS
-        from elbow_helper.agent.tool_support.core import FamilyReport
-        from elbow_helper.agent.prompts import LIMIT_ANSWER_INSTRUCTION
+        from elbow_helper.agent.reads.snapshots import FamilyReport
+        from elbow_helper.agent.engine.prompts import LIMIT_ANSWER_INSTRUCTION
         context = _context()
         tool = family_tool('read_conversation_evidence', 'Read discussion.', {}, AsyncMock())
         with patch('elbow_helper.agent.engine.service.build_agent_tools',

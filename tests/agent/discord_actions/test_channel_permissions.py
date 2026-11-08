@@ -9,7 +9,7 @@ from elbow_helper.agent.discord_actions.channel_permissions import (
     channel_permission_tools, prepare_permissions, undo_permissions,
 )
 from elbow_helper.agent.plan.checker import valid_arguments
-from agent.discord_actions.management_helpers import fixture
+from tests.agent.discord_actions.management_helpers import fixture
 
 
 class ChannelPermissionTests(unittest.IsolatedAsyncioTestCase):

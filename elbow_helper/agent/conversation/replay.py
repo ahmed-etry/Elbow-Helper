@@ -2,8 +2,8 @@
 
 from dataclasses import replace
 
-from ..access import require_evidence_access
-from ..wording import ACTION_EMPTY, ACTION_PRIVATE_ANSWER
+from elbow_helper.agent.safety.access import require_evidence_access
+from elbow_helper.agent.conversation.wording import ACTION_EMPTY, ACTION_PRIVATE_ANSWER
 from .context import retained_knowledge_sources
 
 

@@ -14,14 +14,14 @@ from elbow_helper.infrastructure.discord.message_search import (
     DiscordHistoryPage, DiscordSearchMessage, DiscordSearchPage,
 )
 import elbow_helper.agent.research.transitions as research_job_transitions
-from elbow_helper.agent.access import AgentAccessLost
+from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.research.repository import (
     ResearchJobBusy, ResearchJobConflict, ResearchJobRepository,
     ResearchJobScope,
 )
 from elbow_helper.agent.research.contracts import ResearchJobDefinition
 from elbow_helper.agent.research.runner import ResearchJobRunner
-from elbow_helper.agent.models import AgentRequestContext
+from elbow_helper.agent.engine.models import AgentRequestContext
 from elbow_helper.agent.research.tools import cancel_discord_research_job, continue_discord_research_job, read_discord_research_job, retain_discord_research_report, start_discord_history_job, start_discord_research_job
 from elbow_helper.agent.research.batches import read_discord_research_jobs, start_discord_research_batch
 

@@ -2,14 +2,14 @@
 import unittest
 from types import SimpleNamespace
 
-from elbow_helper.agent.models import AgentRequestContext
+from elbow_helper.agent.engine.models import AgentRequestContext
 from unittest.mock import AsyncMock, patch
 
-from agent.scheduled import test_agent_scheduled_runner as fixtures
-from elbow_helper.agent.models import AgentTurnState
+from tests.agent.scheduled import test_agent_scheduled_runner as fixtures
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.scheduled.tools import prepare_save
 from elbow_helper.agent.scheduled.requests import run_saved_request, StandingDMUnavailable
-from elbow_helper.agent.wording import ACTION_STANDING_DM_PAUSED
+from elbow_helper.agent.conversation.wording import ACTION_STANDING_DM_PAUSED
 from elbow_helper.agent.actions.contracts import ActionRefused
 
 

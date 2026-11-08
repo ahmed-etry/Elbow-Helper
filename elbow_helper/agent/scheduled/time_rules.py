@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 from ..actions.contracts import ActionRefused
-from ..wording import (
-    ACTION_SCHEDULE_END_AFTER_FIRST, ACTION_SCHEDULE_END_CHOICE,
-    ACTION_SCHEDULE_RUN_COUNT, ACTION_SCHEDULE_ONCE_END,
-    ACTION_SCHEDULE_DESTINATION_LIMIT,
-)
+from elbow_helper.agent.conversation.wording import ACTION_SCHEDULE_END_AFTER_FIRST, ACTION_SCHEDULE_END_CHOICE, ACTION_SCHEDULE_RUN_COUNT, ACTION_SCHEDULE_ONCE_END, ACTION_SCHEDULE_DESTINATION_LIMIT
 
 import calendar
 from datetime import datetime, timedelta, timezone

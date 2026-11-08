@@ -11,12 +11,12 @@ from unittest.mock import AsyncMock, patch
 
 from openpyxl import load_workbook
 
-from agent.files.test_agent_spreadsheets import _context
-from elbow_helper.agent.access import AgentAccessLost
+from tests.agent.files.test_agent_spreadsheets import _context
+from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.engine.tool_call import (
     clone_tool_state, merge_tool_state, tool_state_snapshot,
 )
-from elbow_helper.agent.delivery import AgentDeliveryMixin
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.files.delivery import delivery_manifest
 from elbow_helper.agent.files.spreadsheet_tools import prepare_spreadsheet
 
@@ -60,7 +60,7 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             context.bot.google_publisher = SimpleNamespace(
                 upload_workbook=AsyncMock(return_value=(GOOGLE_LINK, None)),
             )
-            from elbow_helper.agent.models import AgentAttachment
+            from elbow_helper.agent.engine.models import AgentAttachment
             feature_file = AgentAttachment("synthetic-feature.txt", b"Synthetic feature result")
             context.state.attachments.append(feature_file)
             for index in range(3):
@@ -89,7 +89,7 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
 
             context.bot.google_publisher.upload_workbook.side_effect = upload
             surface, message, _, context = self.surface(context)
-            with patch("elbow_helper.agent.delivery.assert_answer_scope",
+            with patch("elbow_helper.agent.conversation.delivery.assert_answer_scope",
                        AsyncMock(return_value=True)):
                 await surface.send_response(message, "Synthetic export", None,
                                             context.state.attachments, context=context)
@@ -135,7 +135,7 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             context.bot.google_publisher.upload_workbook.assert_not_called()
 
             surface, message, _, context = self.surface(context)
-            with patch("elbow_helper.agent.delivery.assert_answer_scope",
+            with patch("elbow_helper.agent.conversation.delivery.assert_answer_scope",
                        AsyncMock(return_value=True)):
                 await surface.send_response(message, "Synthetic workbook ready", None,
                                             context.state.attachments, context=context)
@@ -149,7 +149,7 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("files", call.kwargs)
             self.assert_links(call.kwargs["view"])
             message.reply.reset_mock()
-            with patch("elbow_helper.agent.delivery.assert_answer_scope",
+            with patch("elbow_helper.agent.conversation.delivery.assert_answer_scope",
                        AsyncMock(return_value=True)):
                 await surface.send_response(message, "", None,
                                             context.state.attachments, context=context)
@@ -171,7 +171,7 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             context.bot.google_publisher.upload_workbook.assert_not_called()
             self.assertEqual(list(Path(directory).iterdir()), [])
             surface, message, _, context = self.surface(context)
-            with patch("elbow_helper.agent.delivery.assert_answer_scope",
+            with patch("elbow_helper.agent.conversation.delivery.assert_answer_scope",
                        AsyncMock(return_value=True)):
                 await surface.send_response(message, "Synthetic workbook ready", None,
                                             context.state.attachments, context=context)

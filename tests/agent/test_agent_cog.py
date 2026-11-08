@@ -16,11 +16,11 @@ from unittest.mock import patch
 
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import CORE, LEAD_PLUS
-from elbow_helper.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
+from elbow_helper.agent.safety.access import ACCESS_LEAD_PLUS, AgentAccessLost
 from elbow_helper.agent.cog import AgentCog
-from elbow_helper.agent.delivery import _delivery_nonce, _needs_file
+from elbow_helper.agent.conversation.delivery import _delivery_nonce, _needs_file
 from elbow_helper.agent.conversation.state import ConversationTurn
-from elbow_helper.agent.models import AgentDelivery, AgentTurnState
+from elbow_helper.agent.engine.models import AgentDelivery, AgentTurnState
 from elbow_helper.agent.conversation.context import compile_context
 from elbow_helper.agent.conversation.instructions import WorkingState
 from elbow_helper.agent.conversation.transcripts import TranscriptArchive
@@ -31,10 +31,10 @@ from elbow_helper.agent.conversation.context import build_history_checkpoint
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.infrastructure.ai.client import DeepSeekTextClient
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 
-from agent.engine.helpers import patch_contracts
+from tests.agent.engine.helpers import patch_contracts
 
 
 class _Member:
@@ -102,7 +102,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
 
                 self.cog._record_turn = record
                 with (patch("elbow_helper.agent.cog.discord.Member", _Member),
-                      patch("elbow_helper.agent.delivery.assert_answer_scope", AsyncMock())):
+                      patch("elbow_helper.agent.conversation.delivery.assert_answer_scope", AsyncMock())):
                     task = asyncio.create_task(self.cog.on_message(message))
                     await asyncio.wait_for(recording.wait(), 2)
                     self.assertTrue(typing.task.done())
@@ -192,7 +192,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
 
                 self.cog.service.answer.side_effect = answer
                 with (patch("elbow_helper.agent.cog.discord.Member", _Member),
-                      patch("elbow_helper.agent.delivery.assert_answer_scope", AsyncMock(return_value=allowed))):
+                      patch("elbow_helper.agent.conversation.delivery.assert_answer_scope", AsyncMock(return_value=allowed))):
                     await self.cog.on_message(message)
                 calls = message.reply.await_args_list
                 self.assertEqual(len(calls), 1)
@@ -252,7 +252,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(error=type(error).__name__):
                 message = SimpleNamespace(id=1, channel=SimpleNamespace(id=100), reply=AsyncMock(side_effect=error))
-                with self.assertLogs("elbow_helper.agent.delivery", level="WARNING") as logs:
+                with self.assertLogs("elbow_helper.agent.conversation.delivery", level="WARNING") as logs:
                     await self.cog._send_failure(message)
                 message.reply.assert_awaited_once()
                 self.assertTrue(any("request=1 channel=100" in line for line in logs.output))

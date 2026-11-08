@@ -6,16 +6,16 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.agent.access import ACCESS_VIEW_AUDIT_LOG
+from elbow_helper.agent.safety.access import ACCESS_VIEW_AUDIT_LOG
 from elbow_helper.agent.actions.answer_view import PostAnswerView
 from elbow_helper.agent.actions.combined_reply import CombinedReplyView
 from elbow_helper.agent.conversation.state import (
     ConversationRecord, ConversationStore, ConversationTurn,
 )
-from elbow_helper.agent.models import AgentAttachment, AgentDelivery, AgentTurnState
+from elbow_helper.agent.engine.models import AgentAttachment, AgentDelivery, AgentTurnState
 from elbow_helper.agent.research.history import read_message_context
-from elbow_helper.agent.wording import ACTION_POST_HERE_BUTTON, ACTION_PRIVATE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_UNAVAILABLE, AGENT_PRIVATE_CHECK_BUTTON, AGENT_PRIVATE_OFFER, AGENT_SCOPE_EMPTY, LONG_REPLY_FILENAME
-from .. import test_evidence_scope as fixtures
+from elbow_helper.agent.conversation.wording import ACTION_POST_HERE_BUTTON, ACTION_PRIVATE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_UNAVAILABLE, AGENT_PRIVATE_CHECK_BUTTON, AGENT_PRIVATE_OFFER, AGENT_SCOPE_EMPTY, LONG_REPLY_FILENAME
+from tests.agent.safety import test_evidence_scope as fixtures
 
 
 class PostHereTests(unittest.IsolatedAsyncioTestCase):
@@ -88,7 +88,7 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(AGENT_PRIVATE_OFFER, self.sent.content)
                 self.assertEqual(parent.children[0].label, AGENT_PRIVATE_CHECK_BUTTON)
                 before = self.message.reply.await_count
-                with self.assertLogs("elbow_helper.agent.disclosure", level="INFO") as audit:
+                with self.assertLogs("elbow_helper.agent.safety.disclosure", level="INFO") as audit:
                     await post.post_here(self.interaction())
                 self.assertEqual(self.sent.content, "Full recruitment and support facts")
                 self.assertIsNone(self.sent.view)
@@ -127,7 +127,7 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
         await parent.check_privately(check)
         second = check.followup.send.await_args.kwargs["view"]
         self.addCleanup(second.stop)
-        with self.assertLogs("elbow_helper.agent.disclosure", level="INFO") as audit:
+        with self.assertLogs("elbow_helper.agent.safety.disclosure", level="INFO") as audit:
             await asyncio.gather(first.post_here(self.interaction()), second.post_here(self.interaction()))
         self.sent.edit.assert_awaited_once()
         self.assertEqual(len(audit.output), 1)
@@ -139,13 +139,13 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
         self.sent.edit.side_effect = RuntimeError("Synthetic edit failure")
         interaction = self.interaction()
         with self.assertLogs("elbow_helper.agent.actions.answer_view", level="ERROR"), \
-                self.assertNoLogs("elbow_helper.agent.disclosure", level="INFO"):
+                self.assertNoLogs("elbow_helper.agent.safety.disclosure", level="INFO"):
             await post.post_here(interaction)
         self.assertTrue(parent.posted)
         interaction.followup.send.assert_awaited_once_with(
             "I couldn't confirm that the answer was posted.", ephemeral=True)
         self.sent.edit.side_effect = edit
-        with self.assertNoLogs("elbow_helper.agent.disclosure", level="INFO"):
+        with self.assertNoLogs("elbow_helper.agent.safety.disclosure", level="INFO"):
             await post.post_here(self.interaction())
         self.sent.edit.assert_awaited_once()
         self.assertTrue(parent.posted)
@@ -161,7 +161,7 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
             return await edit(**changes)
 
         self.sent.edit.side_effect = paused_edit
-        with self.assertLogs("elbow_helper.agent.disclosure", level="INFO"):
+        with self.assertLogs("elbow_helper.agent.safety.disclosure", level="INFO"):
             posting = asyncio.create_task(post.post_here(self.interaction()))
             await editing.wait()
             expiry = asyncio.create_task(parent.on_timeout())
@@ -190,7 +190,7 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
             attachments=(AgentAttachment("full.csv", b"Synthetic full export"),),
         )
         self.assertEqual(self.sent.files[0][0], LONG_REPLY_FILENAME)
-        with self.assertLogs("elbow_helper.agent.disclosure", level="INFO"):
+        with self.assertLogs("elbow_helper.agent.safety.disclosure", level="INFO"):
             await post.post_here(self.interaction())
         self.assertEqual(self.sent.content, "")
         self.assertEqual(self.sent.files, [
@@ -205,7 +205,7 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
             private_panel=None,
         ))
         _, post, _, _ = await self.deliver(full="Full facts, <@11> @everyone")
-        with self.assertLogs("elbow_helper.agent.disclosure", level="INFO"):
+        with self.assertLogs("elbow_helper.agent.safety.disclosure", level="INFO"):
             await post.post_here(self.interaction())
         self.addCleanup(self.sent.view.stop)
         self.assertEqual([item.label for item in self.sent.view.children], [ACTION_PRIVATE_BUTTON])
@@ -231,7 +231,7 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
                 delivery_complete=True, generated_parts=tuple(active.generated_parts),
             ),
         ))
-        with self.assertLogs("elbow_helper.agent.disclosure", level="INFO"):
+        with self.assertLogs("elbow_helper.agent.safety.disclosure", level="INFO"):
             await post.post_here(self.interaction())
         self.delivery._archive_reply.assert_awaited_with(
             1000, 999, self.sent.content, previous_content=previous,

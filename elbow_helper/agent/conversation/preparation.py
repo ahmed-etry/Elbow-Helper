@@ -3,10 +3,10 @@
 from __future__ import annotations
 import logging
 
-from ..access import accessible_message_channel
-from ..access import has_lookup_access
-from ..models import AgentRequestContext, AgentTurnState
-from ..disclosure import request_scope
+from elbow_helper.agent.safety.access import accessible_message_channel
+from elbow_helper.agent.safety.access import has_lookup_access
+from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState
+from elbow_helper.agent.safety.disclosure import request_scope
 from ..reports.base import retain_report
 from .state import Conversation
 from .history_tool import _document

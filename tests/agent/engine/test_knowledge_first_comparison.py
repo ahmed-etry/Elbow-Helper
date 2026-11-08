@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock
 
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
 from elbow_helper.agent.knowledge.tools import knowledge_tools
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from agent.engine import test_request_cost as cost
-from agent.engine.test_agent_plan_flow import _context, _model_step, _plan, _step
+from tests.agent.engine import test_request_cost as cost
+from tests.agent.engine.test_agent_plan_flow import _context, _model_step, _plan, _step
 
 
 class KnowledgeFirstComparisonTests(unittest.IsolatedAsyncioTestCase):

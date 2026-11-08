@@ -12,13 +12,13 @@ from elbow_helper.configuration.clans import CLANS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import accessible_message_channel, require_evidence_access
-from ..models import AgentRequestContext, RegisteredAgentTool
-from ..member_names import duplicate_names, identity_fields
-from ..tool_support.validation import invalid_arguments
+from elbow_helper.agent.safety.access import accessible_message_channel, require_evidence_access
+from elbow_helper.agent.engine.models import AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.conversation.member_names import duplicate_names, identity_fields
+from elbow_helper.agent.engine.validation import invalid_arguments
 from ..plan.input_rules import RULES
-from ..tool_support.adapters.hibernation.report import HibernationReport
-from ..clan_roles import clan_role_purposes
+from elbow_helper.agent.features.hibernation.report import HibernationReport
+from elbow_helper.agent.knowledge.clan_roles import clan_role_purposes
 from .member_identity import clarification, matching_members
 MEMBER_RESULT_LIMIT = 8
 MEMBER_DETAILS_LIMIT = 1000

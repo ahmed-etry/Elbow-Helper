@@ -6,11 +6,11 @@ import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audit_reason
 from ..actions.outcomes import ActionOutcome
 from ..engine.capability_contract import CapabilityContract
-from ..models import AgentCapabilityEffect, RegisteredAgentTool
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, RegisteredAgentTool
 from .permission_checks import below_both_roles, missing_permissions, unheld_permissions
 from .safety import DiscordActionRefused
 

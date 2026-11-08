@@ -9,9 +9,9 @@ from elbow_helper.agent.discord_actions.reaction_pacing import channel_combo_his
 from elbow_helper.agent.discord_actions.reactions import react_to_request
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.social_reply import salvage_choice, social_reply_definition
-from elbow_helper.agent.models import ChannelReactions
-from agent.engine.helpers import social_step
-from agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
+from elbow_helper.agent.engine.models import ChannelReactions
+from tests.agent.engine.helpers import social_step
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 
 
 class ReactionComboPacingTests(unittest.IsolatedAsyncioTestCase):

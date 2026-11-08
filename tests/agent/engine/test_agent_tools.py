@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 from elbow_helper.infrastructure.discord.message_search import DiscordSearchMessage, DiscordSearchPage
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.plan import check_plan
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 
 
 class _Channel:

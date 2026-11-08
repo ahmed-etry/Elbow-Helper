@@ -8,11 +8,11 @@ from typing import Any, Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import require_evidence_access
-from ..tool_support.sql.query import query_context
+from elbow_helper.agent.safety.access import require_evidence_access
+from elbow_helper.agent.reads.sql.query import query_context
 from .workbooks import render_workbook_bytes
 from .report_tables import materialize_report_table
-from ..models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.engine.models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from .spreadsheets import (
     AgentSpreadsheet, AgentSpreadsheetSheet, valid_sheet_name, valid_text,
     parse_agent_spreadsheet,

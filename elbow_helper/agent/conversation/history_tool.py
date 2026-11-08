@@ -8,10 +8,10 @@ from typing import Any, Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import accessible_message_channel, require_evidence_access, has_lookup_access
+from elbow_helper.agent.safety.access import accessible_message_channel, require_evidence_access, has_lookup_access
 from .context import retained_knowledge_sources, model_evidence
 from .state import ConversationTurn
-from ..models import AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.engine.models import AgentRequestContext, RegisteredAgentTool
 
 
 HISTORY_EXCERPT_CHARACTERS = 2_000

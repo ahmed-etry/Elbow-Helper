@@ -9,12 +9,12 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.engine.routing import ROUTE_INSTRUCTION
 from elbow_helper.agent.engine.rounds import SHORT_REPLY_REWRITE_INSTRUCTION
 from elbow_helper.agent.engine.service import AgentService, AgentUnavailableError
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.plan.format import answer_instructions
-from elbow_helper.agent.prompts import GAME_ADVICE_RULES
+from elbow_helper.agent.engine.prompts import GAME_ADVICE_RULES
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from agent.engine.test_agent_plan_flow import _context, _plan
-from agent.engine.test_answer_composition import client, provider_response, call
+from tests.agent.engine.test_agent_plan_flow import _context, _plan
+from tests.agent.engine.test_answer_composition import client, provider_response, call
 
 
 class GameAdviceRouteTests(unittest.IsolatedAsyncioTestCase):

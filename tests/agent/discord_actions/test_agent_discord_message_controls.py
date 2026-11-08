@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.discord_actions.message_controls import (
     prepare_control_undo, prepare_pin, prepare_reaction,
 )

@@ -10,8 +10,8 @@ from typing import Any
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..models import RegisteredAgentTool
-from ..access import require_evidence_access, require_lookup_access, accessible_message_channel
+from elbow_helper.agent.engine.models import RegisteredAgentTool
+from elbow_helper.agent.safety.access import require_evidence_access, require_lookup_access, accessible_message_channel
 from ..conversation.context import retained_knowledge_sources
 
 

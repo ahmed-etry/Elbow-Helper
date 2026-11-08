@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 import discord
 
 from elbow_helper.agent.discord_actions.message_moves import prepare_move
-from agent.discord_actions.management_helpers import Entity, fixture
-from agent.discord_actions.test_message_cleanup import add_messages
+from tests.agent.discord_actions.management_helpers import Entity, fixture
+from tests.agent.discord_actions.test_message_cleanup import add_messages
 
 
 class MessageMoveTests(unittest.IsolatedAsyncioTestCase):

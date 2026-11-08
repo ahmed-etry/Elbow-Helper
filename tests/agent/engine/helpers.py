@@ -6,7 +6,7 @@ from unittest.mock import patch
 from dataclasses import replace
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.agent.engine.social_reply import MEME_SEND_FIT
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 
@@ -75,6 +75,6 @@ class LegacyCatalogueMixin:
         with ExitStack() as stack:
             stack.enter_context(patch.object(service, 'build_agent_tools', installed))
             for name, module in tuple(sys.modules.items()):
-                if name.startswith('agent.') and getattr(module, 'build_agent_tools', None) is original:
+                if name.startswith(('agent.', 'tests.agent.')) and getattr(module, 'build_agent_tools', None) is original:
                     stack.enter_context(patch.object(module, 'build_agent_tools', installed))
             return super().run(result)

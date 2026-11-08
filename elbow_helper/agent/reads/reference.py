@@ -3,19 +3,19 @@ import asyncio
 from dataclasses import replace
 import discord
 from elbow_helper.agent.knowledge.store import VISIBILITIES
-from ..tool_support.core import family_tool, IDS, DATE
-from ..access import READ_ACCESS_ROLE_SETS, has_reader_access_requirements, require_lookup_access, accessible_message_channel, require_evidence_access
+from elbow_helper.agent.reads.snapshots import family_tool, IDS, DATE
+from elbow_helper.agent.safety.access import READ_ACCESS_ROLE_SETS, has_reader_access_requirements, require_lookup_access, accessible_message_channel, require_evidence_access
 from ..files.attachment_tools import list_supported_attachments, import_text_attachment
 from ..files.attachments import attachment_metadata
 from .domain_facts import domain_reference
 from .war_tools import CLANS_INPUT
-from ..disclosure import request_scope, exclude_source
+from elbow_helper.agent.safety.disclosure import request_scope, exclude_source
 from ..knowledge.tools import _section_id
 from ..conversation.replay import replay_answer
-from ..wording import ACTION_EMPTY
+from elbow_helper.agent.conversation.wording import ACTION_EMPTY
 from ..research.history import read_discord_channel_history, read_message_context
 from ..research.search import search_discord_messages
-from ..clan_roles import configured_clan_roles
+from elbow_helper.agent.knowledge.clan_roles import configured_clan_roles
 
 
 async def community_reference(context, arguments):

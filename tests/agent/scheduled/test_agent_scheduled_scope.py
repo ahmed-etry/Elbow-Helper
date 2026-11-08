@@ -15,10 +15,10 @@ from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.agent.scheduled.scope import validate_scope, within_scope
 from elbow_helper.agent.scheduled.tools import watcher_reads
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
-from elbow_helper.agent.models import RegisteredAgentTool, AgentCapabilityEffect
+from elbow_helper.agent.engine.models import RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.infrastructure.ai.agent import AgentToolDefinition
 from unittest.mock import patch
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 
 
 async def _unchanged():

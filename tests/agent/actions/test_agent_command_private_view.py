@@ -6,15 +6,13 @@ from unittest.mock import AsyncMock, patch
 
 
 from elbow_helper.agent.actions.private_view import PrivateResultView
-from elbow_helper.agent.models import AgentAttachment
-from elbow_helper.agent.wording import (
-    ACTION_PRIVATE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER,
-)
+from elbow_helper.agent.engine.models import AgentAttachment
+from elbow_helper.agent.conversation.wording import ACTION_PRIVATE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER
 
 
 class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        guard = patch("elbow_helper.agent.delivery.assert_answer_scope", new_callable=AsyncMock)
+        guard = patch("elbow_helper.agent.conversation.delivery.assert_answer_scope", new_callable=AsyncMock)
         guard.start()
         self.addCleanup(guard.stop)
 

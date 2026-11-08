@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from agent.research.test_agent_search import _context
+from tests.agent.research.test_agent_search import _context
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.plan.results import plan_feedback

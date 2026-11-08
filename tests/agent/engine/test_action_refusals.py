@@ -3,16 +3,16 @@
 import json
 from dataclasses import replace
 from types import SimpleNamespace
-from elbow_helper.agent.prompts import RESULT_ANSWER_INSTRUCTION
+from elbow_helper.agent.engine.prompts import RESULT_ANSWER_INSTRUCTION
 import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.actions import contracts
 from elbow_helper.agent.actions.contracts import ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import AgentCapabilityEffect, RegisteredAgentTool
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
-from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan, _step, _model_step
+from tests.agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan, _step, _model_step
 
 
 class ActionRefusalTests(unittest.IsolatedAsyncioTestCase):

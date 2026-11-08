@@ -8,11 +8,11 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..reports.base import ArtifactCapacityError, retain_report
-from ..tool_support.adapters.cwl.report import CwlPerformanceReport
-from ..models import AgentRequestContext, RegisteredAgentTool
-from ..read_cache import stored_read
+from elbow_helper.agent.features.cwl.report import CwlPerformanceReport
+from elbow_helper.agent.engine.models import AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.reads.cache import stored_read
 
 
 SCORING_CONTRACTS = {

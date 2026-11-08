@@ -10,15 +10,15 @@ from unittest.mock import AsyncMock, patch
 from openpyxl import load_workbook
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.access import AgentAccessLost
+from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.engine.account_lists import account_index
 from elbow_helper.agent.engine.assessment import decision_answer, deliver_decision_answer
 from elbow_helper.agent.files.delivery import delivery_manifest, publish_spreadsheet
 from elbow_helper.agent.files.spreadsheet_tools import prepare_spreadsheet
 from elbow_helper.agent.knowledge.answers import scoped_answer
-from elbow_helper.agent.models import AgentAttachment
-from agent.files.test_agent_spreadsheets import _context
-from agent.engine import test_request_cost as cost
+from elbow_helper.agent.engine.models import AgentAttachment
+from tests.agent.files.test_agent_spreadsheets import _context
+from tests.agent.engine import test_request_cost as cost
 
 
 def columns():

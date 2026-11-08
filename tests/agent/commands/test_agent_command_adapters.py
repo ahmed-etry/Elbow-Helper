@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.agent.engine.adapters import run_health_player
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.features.clan_health.commands.player import PlayerHealthCommandResult
 from elbow_helper.features.clan_health.export import PreparedHealthExport
 
@@ -51,7 +51,7 @@ class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.attachments[0].data, b"synthetic workbook")
         self.assertEqual(result.text, "Synthetic summary")
 
-<<<<<<< 564beefb
+<<<<<<< f5976790
 =======
     async def test_player_health_operation_builds_and_prepares_one_export(self):
         workflow = ClanHealthPlayerCommandMixin()

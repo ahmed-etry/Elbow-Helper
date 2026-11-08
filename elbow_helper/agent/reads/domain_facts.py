@@ -87,7 +87,7 @@ def domain_reference(kind, clan_codes=None):
     rows = ([clan_profile(code) for code in (clan_codes or CLAN_ORDER)] if kind=='clans'
             else role_semantics() if kind=='roles' else workflow_meanings())
     return {'rows':rows,'mode':'domain_facts','reference_kind':kind,
-        'permission_authority':'elbow_helper/agent/access.py',
+        'permission_authority':'elbow_helper/agent/safety/access.py',
         'semantic_facts_grant_permissions':False,
         'coverage':'Descriptive sourced facts. Check actual held role IDs and current access for every read or action. '
                    'Restricted narrative policies still require scoped approved knowledge reads.'}

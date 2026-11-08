@@ -6,7 +6,7 @@ from tests.temp_directory import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from tests.data.link_fixtures import attach_links
+from tests.data.links.link_fixtures import attach_links
 from elbow_helper.features.account_links.database import AccountLinksDbMixin
 
 

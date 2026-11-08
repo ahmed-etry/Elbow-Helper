@@ -7,9 +7,7 @@ import json
 from functools import wraps
 from collections.abc import Mapping
 from typing import Any
-from ..prompts import (
-    PLAN_CORRECTION_INSTRUCTION,
-)
+from elbow_helper.agent.engine.prompts import PLAN_CORRECTION_INSTRUCTION
 
 
 LIMIT_FIELDS = frozenset({
@@ -52,7 +50,7 @@ def model_view(
     """Omit an unchanged retained page summary already included in this request."""
     data = dict(payload)
     if data.get('kind') == 'family':
-        from ..tool_support.model_view import family_model_view
+        from elbow_helper.agent.reads.evidence import family_model_view
         data = family_model_view(data)
     if data.get("kind") == "active_hibernation" and isinstance(data.get("records"), list):
         # The ISO timestamp and status repeat started_ts (null means unavailable).

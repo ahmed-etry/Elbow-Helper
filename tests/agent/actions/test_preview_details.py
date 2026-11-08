@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.roles import CORE, LEAD
-from elbow_helper.agent.access import ACCESS_LEAD
+from elbow_helper.agent.safety.access import ACCESS_LEAD
 from elbow_helper.agent.actions.contracts import (
     ActionClass, ActionRefused, ChangePreview, PreparedAction,
 )
@@ -17,15 +17,15 @@ from elbow_helper.agent.actions.details import prepare_preview
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.actions.preview import ConfirmationView, preview_text
 from elbow_helper.agent.actions.store import AgentActionRepository
-from elbow_helper.agent.delivery import AgentDeliveryMixin
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import AgentRequestContext
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import AgentRequestContext
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.agent.scheduled.tools import prepare_manage, prepare_save
-from elbow_helper.agent.wording import ACTION_PREVIEW_DETAILS_HIDDEN
-from tests.agent.test_agent_audiences import Channel, Member, Role
+from elbow_helper.agent.conversation.wording import ACTION_PREVIEW_DETAILS_HIDDEN
+from tests.agent.safety.test_agent_audiences import Channel, Member, Role
 
 
 SECRET = "Synthetic private content"
@@ -203,7 +203,7 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(proposal.preview.detail_access, frozenset({ACCESS_LEAD}))
 
     async def test_model_cannot_reuse_out_of_scope_titles_in_preview(self):
-        from elbow_helper.agent.access import AgentAccessLost
+        from elbow_helper.agent.safety.access import AgentAccessLost
         self.context.state.proposed_changes.clear()
         self.context.state.knowledge_title_access = {"recruiter"}
         prepare = AsyncMock()

@@ -15,7 +15,7 @@ from elbow_helper.agent.scheduled.destination_limits import (
     Progression, progressions_conflict, schedules_conflict,
 )
 from elbow_helper.agent.scheduled.tools import prepare_manage, prepare_save
-from agent.discord_actions.management_helpers import fixture
+from tests.agent.discord_actions.management_helpers import fixture
 
 START = datetime(2099, 1, 1, tzinfo=timezone.utc)
 

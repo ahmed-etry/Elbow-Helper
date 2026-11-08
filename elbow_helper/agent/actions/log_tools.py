@@ -9,10 +9,10 @@ from typing import Any, Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import require_evidence_access
-from ..disclosure import can_disclose_provenance
-from ..models import AgentRequestContext, RegisteredAgentTool
-from ..models import AgentCapabilityEffect
+from elbow_helper.agent.safety.access import require_evidence_access
+from elbow_helper.agent.safety.disclosure import can_disclose_provenance
+from elbow_helper.agent.engine.models import AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.engine.models import AgentCapabilityEffect
 from .contracts import ActionClass
 from .targets import target_channel_ids, target_links
 

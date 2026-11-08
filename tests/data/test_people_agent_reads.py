@@ -10,7 +10,7 @@ from elbow_helper.agent.reads.people import (
 )
 from elbow_helper.data.reads import PeopleReads
 from elbow_helper.infrastructure.persistence.migrations import UnsupportedSQLiteVersionError
-from agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine.test_agent_plan_flow import _context
 from .record_fixtures import PeopleFixture, row
 
 

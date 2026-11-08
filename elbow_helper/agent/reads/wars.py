@@ -15,7 +15,7 @@ from elbow_helper.domain.war_attendance import aggregate_attendance
 from elbow_helper.domain.war_views import board_payload, record_fresh
 from . import record_wars
 from .member_context import owner_context
-from ..read_cache import source_revision, stored_read
+from elbow_helper.agent.reads.cache import source_revision, stored_read
 from .war_measures import aggregate_performance, clan_participation, participation_status
 
 

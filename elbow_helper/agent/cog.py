@@ -17,15 +17,15 @@ from elbow_helper.configuration.guild import GUILD_ID
 
 from .conversation.preparation import ConversationContextMixin
 from .conversation.turns import AgentTurnMixin
-from .delivery import AgentDeliveryMixin, AgentDeliveryUnknown
-from .activity import reply_typing
-from .access import AgentAccessLost, require_evidence_access
-from .access import has_agent_entry_access
-from .access import require_access
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin, AgentDeliveryUnknown
+from elbow_helper.agent.conversation.typing import reply_typing
+from elbow_helper.agent.safety.access import AgentAccessLost, require_evidence_access
+from elbow_helper.agent.safety.access import has_agent_entry_access
+from elbow_helper.agent.safety.access import require_access
 from .conversation.state import Conversation, ConversationStore
-from .text import message_text
-from .models import AgentRequestContext, AgentIdentity, ChannelReactions
-from .identity import agent_identity, member_identity
+from elbow_helper.agent.conversation.text import message_text
+from elbow_helper.agent.engine.models import AgentRequestContext, AgentIdentity, ChannelReactions
+from elbow_helper.agent.conversation.identity import agent_identity, member_identity
 from .engine.service import AgentUnavailableError
 from .engine.service import AgentService
 from .discord_actions.gifs import GIF_CONTEXT_MESSAGES, channel_gif_history
@@ -34,8 +34,8 @@ from .discord_actions.reactions import channel_reaction_history
 from .discord_actions.reaction_pacing import channel_combo_history
 from .conversation.transcripts import TranscriptArchive
 from .conversation.persistence import ConversationPersistence
-from .feedback import AgentFeedbackMixin
-from .read_cache import ReadCache
+from elbow_helper.agent.reports.feedback import AgentFeedbackMixin
+from elbow_helper.agent.reads.cache import ReadCache
 
 
 LOGGER = logging.getLogger(__name__)
@@ -432,7 +432,7 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
             context, root_id = self._request_context(
                 message, member, None, conversation, deadline_monotonic,
             )
-            from .disclosure import request_scope
+            from elbow_helper.agent.safety.disclosure import request_scope
             await request_scope(context)
             referenced = await self._resolve_referenced_message(message)
             context = replace(context, attachment_sources=tuple(

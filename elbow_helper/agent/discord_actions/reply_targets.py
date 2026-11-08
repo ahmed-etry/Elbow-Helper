@@ -2,10 +2,10 @@
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..actions.contracts import ActionClass
 from ..engine.capability_contract import CapabilityContract
-from ..models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from .messages import _reply_target
 from .safety import DiscordActionRefused
 from ..research.member_provenance import member_target_issue

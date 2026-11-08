@@ -1,14 +1,14 @@
 from datetime import datetime, timezone
-from agent.engine.helpers import LegacyCatalogueMixin
+from tests.agent.engine.helpers import LegacyCatalogueMixin
 
 import json
 from types import SimpleNamespace
 import unittest
-from agent.engine.test_agent_service import _AgentModel
+from tests.agent.engine.test_agent_service import _AgentModel
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.agent.models import AgentRequestContext
+from elbow_helper.agent.engine.models import AgentRequestContext
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.conversation.instructions import WorkingState
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage

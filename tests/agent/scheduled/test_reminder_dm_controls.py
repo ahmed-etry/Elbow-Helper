@@ -4,9 +4,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from agent.scheduled import test_agent_scheduled_runner as fixtures
+from tests.agent.scheduled import test_agent_scheduled_runner as fixtures
 from elbow_helper.agent.actions.store import AgentActionRepository
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.scheduled.dm_controls import ReminderStopButton, reminder_stop_view
 from elbow_helper.agent.scheduled.tools import list_standing
 

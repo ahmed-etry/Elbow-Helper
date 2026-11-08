@@ -5,9 +5,9 @@ import json
 import re
 import time
 
-from ..access import assert_answer_scope, require_evidence_access
-from ..models import AgentTurnState
-from ..wording import ACTION_PRIVATE_NOTE, AGENT_SCOPE_EMPTY, FAILURE_MESSAGE
+from elbow_helper.agent.safety.access import assert_answer_scope, require_evidence_access
+from elbow_helper.agent.engine.models import AgentTurnState
+from elbow_helper.agent.conversation.wording import ACTION_PRIVATE_NOTE, AGENT_SCOPE_EMPTY, FAILURE_MESSAGE
 
 
 CHANNEL_FIRST_INSTRUCTION = (

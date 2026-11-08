@@ -4,8 +4,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.agent.delivery import AgentDeliveryMixin
-from elbow_helper.agent.models import AgentDelivery
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
+from elbow_helper.agent.engine.models import AgentDelivery
 
 
 class EmptyDeliveryTests(unittest.IsolatedAsyncioTestCase):

@@ -13,7 +13,7 @@ from elbow_helper.agent.engine.routing import RouteDecision
 from elbow_helper.agent.engine.self_knowledge import capability_index
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
-from agent.engine.test_agent_plan_flow import _context, _Model, _Session
+from tests.agent.engine.test_agent_plan_flow import _context, _Model, _Session
 
 
 QUESTION = "Can you edit channel permissions for a channel and clean up a category's permissions?"

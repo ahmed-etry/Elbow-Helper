@@ -2,7 +2,7 @@
 
 import unittest
 
-from features.test_cwl_record import LeagueFixture, NOV, SECOND, now
+from tests.features.test_cwl_record import LeagueFixture, NOV, SECOND, now
 from tests.data.test_wars import group
 
 

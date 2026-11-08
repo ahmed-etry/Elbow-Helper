@@ -13,16 +13,12 @@ from uuid import uuid4
 import discord
 from elbow_helper.infrastructure.discord.application_emojis import loading_status
 
-from ..access import require_access, require_access_requirements, accessible_message_channel, AgentAccessLost, require_evidence_access
-from ..disclosure import can_disclose_provenance
+from elbow_helper.agent.safety.access import require_access, require_access_requirements, accessible_message_channel, AgentAccessLost, require_evidence_access
+from elbow_helper.agent.safety.disclosure import can_disclose_provenance
 from .outcomes import ActionOutcome
 from .private_view import PrivateResultView
-from ..text import chunk_response
-from ..wording import (
-    action_progress_status,
-    ACTION_STOP_BUTTON, ACTION_STOP_OWNER,
-    ACTION_POST_LABEL,
-)
+from elbow_helper.agent.conversation.text import chunk_response
+from elbow_helper.agent.conversation.wording import action_progress_status, ACTION_STOP_BUTTON, ACTION_STOP_OWNER, ACTION_POST_LABEL
 from .contracts import ActionClass, PreparedAction, check_bundle
 from .store import AgentActionRepository
 from .report import format_run_report

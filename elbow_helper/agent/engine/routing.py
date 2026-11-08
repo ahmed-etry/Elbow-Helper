@@ -10,7 +10,7 @@ import time
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition, AgentUsage, TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..conversation.context import estimate_tokens
 from .budgets import DELIVERY_TIME_RESERVE_SECONDS, FINAL_ANSWER_TIME_RESERVE_SECONDS
 

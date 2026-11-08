@@ -14,7 +14,7 @@ from elbow_helper.features.clan_transfers.config import CLAN_TRANSFER_QUEUES, CW
 
 
 def bot_workflows(context=None):
-    from ..automatic_workflows import automatic_workflows
+    from elbow_helper.agent.knowledge.automatic_workflows import automatic_workflows
     roster_permission = {'role_group': 'LEAD_PLUS', 'any_role_ids': sorted(LEAD_PLUS)}
     if context is not None:
         roster_permission.update(

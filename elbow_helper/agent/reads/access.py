@@ -2,9 +2,9 @@
 
 import discord
 
-from ..access import accessible_message_channel
+from elbow_helper.agent.safety.access import accessible_message_channel
 from ..engine.capability_contract import CapabilityContract
-from ..tool_support.core import IDS, family_tool
+from elbow_helper.agent.reads.snapshots import IDS, family_tool
 
 
 def allowed(permissions):

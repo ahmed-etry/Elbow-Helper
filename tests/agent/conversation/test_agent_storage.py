@@ -8,10 +8,10 @@ import unittest
 from unittest.mock import patch
 
 from elbow_helper.agent.conversation.state import Conversation, ConversationRecord, ConversationTurn
-from agent.report_helpers import make_event_report
-from elbow_helper.agent.tool_support.adapters.events.report import EventScheduleReport
-from elbow_helper.agent.tool_support.adapters.member_lifecycle.report import MemberLifecycleReport
-from elbow_helper.agent.tool_support.adapters.hibernation.report import HibernationReport
+from tests.agent.reports.report_helpers import make_event_report
+from elbow_helper.agent.features.event_stats.report import EventScheduleReport
+from elbow_helper.agent.features.member_lifecycle.report import MemberLifecycleReport
+from elbow_helper.agent.features.hibernation.report import HibernationReport
 from elbow_helper.configuration.channels import HIBERNATION_LOG
 from elbow_helper.features.hibernation.queries import (
     ActiveHibernationRecord, ActiveHibernationSnapshot,
@@ -28,7 +28,7 @@ from elbow_helper.agent.conversation.codec import (
     encode_conversation as _encode_conversation, decode_conversation,
 )
 from elbow_helper.agent.conversation.context import build_history_checkpoint
-from elbow_helper.agent.access import ACCESS_LEAD, ACCESS_LEAD_PLUS
+from elbow_helper.agent.safety.access import ACCESS_LEAD, ACCESS_LEAD_PLUS
 from elbow_helper.agent.conversation.instructions import WorkingState
 from elbow_helper.infrastructure.persistence import UnsupportedSQLiteVersionError
 
