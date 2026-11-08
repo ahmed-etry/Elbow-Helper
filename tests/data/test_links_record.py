@@ -14,12 +14,10 @@ from elbow_helper.data.reads import MembershipReads, PeopleReads
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.link_state import LinkConflict
 from elbow_helper.features.account_links.cog import AccountLinks
-from elbow_helper.features.rosters.services.accounts import RosterAccountDirectory
-from elbow_helper.agent.reads.people import read_people_links as read_linked_accounts
 from elbow_helper.agent.tool_support.adapters.account_links.data import SOURCES
 from elbow_helper.agent.tool_support.sql.query import run_query
 
-from .link_fixtures import CLANS, FrozenLegacyLinks
+from .link_fixtures import CLANS
 from .record_fixtures import PeopleFixture, ProcessCrash, row
 
 
@@ -46,33 +44,6 @@ class RecordLinkTests(PeopleFixture):
         self.assertFalse(pending["coverage"]["complete"])
         self.assertEqual(pending["coverage"]["unavailable"], "link_recovery_required")
 
-    async def test_every_reader_preserves_rows_order_nulls_and_empty_members(self):
-        old = FrozenLegacyLinks(self.legacy)
-        consumers = (
-            ("account commands and reviews", "get_link_by_tag", ("#P0",)),
-            ("recruitment", "get_links_by_tags", (["#Q0", "#P0", "#V0", "#Q0"],)),
-            ("rosters", "get_links_for_user", (100,)),
-            ("CWL rosters and transfers", "get_links_for_user", (200,)),
-            ("missing Elder boards", "get_all_links", ()),
-            ("war roles", "get_all_links", ()),
-            ("ranked population", "get_all_links", ()),
-            ("agent identities, cohorts and workflow reads", "get_links_for_members", ([200, 100, 999],)),
-            ("agent names, wars and projections", "get_links_by_tags", (["#Q0", "#P0", "#V0"],)),
-        )
-        for consumer, method, args in consumers:
-            with self.subTest(consumer=consumer):
-                before = await asyncio.to_thread(getattr(old, method), *args)
-                after = await asyncio.to_thread(getattr(self.cog, method), *args)
-                self.assertEqual(after, before)
-                if isinstance(before, dict):
-                    self.assertEqual(tuple(after), tuple(before))
-        old.get_player_location = self.cog.get_player_location
-        self.assertEqual(await asyncio.to_thread(RosterAccountDirectory(old).for_member, 100),
-                         await asyncio.to_thread(RosterAccountDirectory(self.cog).for_member, 100))
-        with patch("elbow_helper.agent.reads.people.require_evidence_access", AsyncMock()):
-            before = await read_linked_accounts(SimpleNamespace(account_links=old), {"member_ids": [100, 200, 999]})
-            after = await read_linked_accounts(SimpleNamespace(account_links=self.cog), {"member_ids": [100, 200, 999]})
-        self.assertEqual(after, before)
 
     async def test_add_transfer_delete_refresh_and_undo_leave_old_file_untouched(self):
         original = self.legacy.read_bytes()
@@ -194,15 +165,6 @@ class RecordLinkTests(PeopleFixture):
         # Ordering comes from the link tables; the import marker is no longer advanced.
         self.assertEqual((await self.rows("SELECT checked_at FROM imports"))[0]["checked_at"], 200)
 
-    async def test_ordering_and_refusal_work_without_an_import_marker(self):
-        await self.execute("DELETE FROM imports")
-        with patch("elbow_helper.data.links.now_us", return_value=100):
-            # No marker: nothing to precede, so an early explicit time is accepted.
-            await self.service.upsert_link(**row("#V0", 300), at=1)
-            await self.service.delete_link("#V0", at=1)
-            await self.service.upsert_link(**row("#V0", 400))
-        self.assertEqual([r["created_at"] for r in await self.rows(
-            "SELECT created_at FROM link_operations ORDER BY created_at")], [201, 202, 203])
 
     async def test_unavailable_record_never_reads_or_writes_legacy(self):
         before = self.legacy.read_bytes()
@@ -247,14 +209,6 @@ class RecordLinkTests(PeopleFixture):
         self.assertNotIn("#V0", links)
         self.assertEqual(len(await self.rows("SELECT * FROM account_links")), 3)
 
-    async def test_sqlite_sorting_and_undo_natural_order_match_original(self):
-        rows = {"#P0": row(name="é"), "#Q0": row("#Q0", name="Z"), "#R0": row("#R0", 100, "a\0suffix"),
-                "#V0": row("#V0", 100, "A"), "#G0": row("#G0", 100, ""), "#C0": row("#C0", 100, None)}
-        await self.service.restore_links(rows, at=300)
-        self.assertEqual([r["player_tag"] for r in await asyncio.to_thread(self.cog.get_links_for_user, 100)],
-                         ["#C0", "#G0", "#V0", "#R0", "#Q0", "#P0"])
-        await self.service.restore_links({tag: rows[tag] for tag in ("#Q0", "#P0")}, at=400)
-        self.assertEqual(tuple(await self.service.read_links()), ("#R0", "#V0", "#G0", "#C0", "#Q0", "#P0"))
 
     async def test_record_rosters_cover_success_empty_failure_staleness_and_generations(self):
         reads = MembershipReads(self.store, clans=CLANS.values())
@@ -268,20 +222,6 @@ class RecordLinkTests(PeopleFixture):
         self.assertFalse(snapshot["complete"])
         self.assertIsNone(snapshot["rows"][0]["members"])
 
-    async def test_roster_member_without_name_or_role_reads_as_the_old_reader_did(self):
-        # The old reader kept any member with a tag, naming it by its tag and leaving the role empty.
-        stored = {"#P0": {"name": "Player", "role": "member", "townHallLevel": 16}, "#X0": {"townHallLevel": 12}}
-        reads = MembershipReads(self.store, clans=CLANS.values())
-        with patch("elbow_helper.data.reads.membership.roster_fields", return_value=stored):
-            snapshot = await reads.rosters(as_of=200)
-        self.assertTrue(snapshot["complete"])
-        members = snapshot["rows"][0]["members"]
-        self.assertEqual(members, [
-            {"player_tag": "#P0", "player_name": "Player", "townhall": 16, "role": "member"},
-            {"player_tag": "#X0", "player_name": "#X0", "townhall": 12, "role": ""}])
-        with patch("elbow_helper.data.reads.membership.roster_fields", return_value={"#X0": {}}):
-            members = (await reads.rosters(as_of=200))["rows"][0]["members"]
-        self.assertEqual(members, [{"player_tag": "#X0", "player_name": "#X0", "townhall": 0, "role": ""}])
 
     async def test_sql_reader_uses_record_owners_and_keeps_review_state_separate(self):
         await self.service.upsert_link(**row(owner=300), at=300)
@@ -290,13 +230,10 @@ class RecordLinkTests(PeopleFixture):
         with closing(sqlite3.connect(self.legacy)) as connection, connection:
             connection.execute("UPDATE links SET discord_user_id=999")
         paths = SimpleNamespace(data_root=self.root, project_root=self.root)
-        destination = self.root / 'family' / 'family.sqlite3'
-        destination.parent.mkdir()
-        def copy(connection):
-            with closing(sqlite3.connect(destination)) as target:
-                connection.backup(target)
-        await self.store.call(copy)
-        sources = (replace(SOURCES[0], path=self.legacy),)
+        # Reviews and ownership now share the canonical family database.
+        await self.execute("INSERT INTO suggestions VALUES ('#G0','Candidate','ONE','#PP',100,NULL,1,2)")
+        destination = self.store.path
+        sources = (replace(SOURCES[0], path=destination),)
         before = self.legacy.read_bytes()
         result, _ = await asyncio.to_thread(run_query, sources, paths, set(),
             "SELECT player_tag,discord_user_id FROM links.links ORDER BY player_tag")

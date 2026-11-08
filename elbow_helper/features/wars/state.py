@@ -8,8 +8,8 @@ import logging
 import threading
 from typing import Any, Dict
 
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic
+from elbow_helper.infrastructure.persistence.documents import read_document as read_json
+from elbow_helper.infrastructure.persistence.documents import write_document as write_json_atomic
 from .config import CACHE_FILE, PROCESSED_WAR_RETENTION
 
 LOGGER = logging.getLogger(__name__)

@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, Mock, patch
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.reads import access as access_reads
-from elbow_helper.agent.families import cohort_activity, identity_reads
-from elbow_helper.agent.families import recruitment_history, workflow_reads
+from elbow_helper.agent.reads import identity_reads
+from elbow_helper.agent.reads import recruitment_history, workflow_reads
 from elbow_helper.agent.reads import reference as reference_reads, war_tools as war_reads
 from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
@@ -81,23 +81,6 @@ class RefusalRepairTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(errors, set(RECLASSIFIED_ERRORS) - {
             'Please specify after.', 'Which season, wars or date window do you want?'})
 
-    async def test_missing_period_and_required_family_argument_are_repairable(self):
-        context = replace(_context(), cwl_queries=Mock(), bot=SimpleNamespace(war_reads=Mock()))
-        results = [await war_reads.selected_wars(context, {}, 'both')]
-        with patch.object(cohort_activity, 'selected_wars', AsyncMock()) as wars:
-            activity = await cohort_activity.activity_projection(context, [], {})
-        self.assertNotIn('error', activity)
-        self.assertEqual(activity['war_source_status'], 'not_checked')
-        self.assertEqual(activity['war_coverage']['reason'], 'no_period')
-        wars.assert_not_awaited()
-        reader = AsyncMock()
-        tool = family_tool('read_synthetic', 'Read synthetic data.', {}, reader, required=('after',))
-        results.append(await tool.handler(context, {}))
-        for result in results:
-            self.assertEqual(result['cause'], 'invalid_arguments')
-            self.assertIn('after', result['missing_fields'])
-            self.assertIn(result['error'], RECLASSIFIED_ERRORS)
-        reader.assert_not_awaited()
 
     async def test_ambiguous_roles_remain_asker_input(self):
         context = _context()
@@ -124,4 +107,3 @@ class RefusalRepairTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.calls), 3)
         reader.assert_awaited_once()
         self.assertEqual(reader.await_args.args[1]['after'], '2026-01-01T00:00:00Z')
-

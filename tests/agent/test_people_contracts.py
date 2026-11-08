@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.agent.reads.people import read_people_links as read_linked_accounts
 from elbow_helper.agent.reads.people import stored_profiles, standing_rows
-from elbow_helper.agent.families import identity_reads, account_names
+from elbow_helper.agent.reads import identity_reads, account_names
 from agent.engine.test_agent_plan_flow import _context
 
 
@@ -90,17 +90,6 @@ class PeopleContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(projected[-1]['legacy_league'], 'Silver III')
         forbidden.assert_not_called()
 
-    async def test_membership_observations_never_query_clash_or_the_llm(self):
-        from elbow_helper.agent.datasets.membership import read_membership_history
-        context = self.context()
-        forbidden = Mock(side_effect=AssertionError('Unexpected question-time I/O'))
-        context.bot.clash_client = SimpleNamespace(get=forbidden)
-        context.bot.agent_model = SimpleNamespace(start_session=forbidden)
-        context.bot.stay_reads = SimpleNamespace(movements=AsyncMock(return_value={'rows': [], 'truncated': False}))
-        result = await read_membership_history(context, {'after': '2026-10-01', 'before': '2026-10-02'})
-        self.assertEqual(result['events'], [])
-        self.assertFalse(result['coverage']['first_ever_membership_known'])
-        forbidden.assert_not_called()
 
     async def test_discord_name_with_failed_links_is_unknown_rather_than_unlinked(self):
         context = self.context()

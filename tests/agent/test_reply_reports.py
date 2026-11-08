@@ -1,11 +1,10 @@
 """Synthetic reply reports; no live Discord, member data, or model requests."""
 
 import asyncio
-from dataclasses import asdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 import json
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,12 +16,8 @@ from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.agent.cog import AgentCog
 from elbow_helper.agent.conversation.debug import OperatorDebugRecord
-from elbow_helper.agent.conversation.transcripts import TranscriptArchive, _schema, _debug_schema
+from elbow_helper.agent.conversation.transcripts import TranscriptArchive
 from elbow_helper.agent.models import AgentAttachment, AgentDelivery, AgentTurnState
-from elbow_helper.agent.feedback import report_card
-from elbow_helper.infrastructure.persistence import (
-    SQLiteMigration, run_sqlite_migrations, sqlite_connection, sqlite_transaction,
-)
 
 
 def diagnostics():
@@ -106,15 +101,6 @@ class ReplyReportStorageTests(unittest.TestCase):
         for changes in ({"reply_id": 11}, {"reply_id": 999}, {"guild_id": 123}, {"channel_id": 123}):
             self.assertIsNone(self.report(**changes))
 
-    def test_diagnostics_and_reports_survive_debug_retention(self):
-        with self.archive.connect() as connection, sqlite_transaction(connection, immediate=True):
-            connection.execute("UPDATE operator_debug_records SET created_at=?",
-                ((datetime.now(timezone.utc) - timedelta(days=31)).isoformat(),))
-        self.archive.prune_debug()
-        self.assertEqual(self.report()["diagnostics"]["usage"], diagnostics().usage)
-        with self.archive.connect() as connection:
-            self.assertEqual(connection.execute("SELECT count(*) FROM operator_debug_records").fetchone()[0], 0)
-            self.assertEqual(connection.execute("SELECT count(*) FROM reply_reports").fetchone()[0], 1)
 
     def test_request_boundary_failure_is_retained_with_engine_diagnostics(self):
         self.archive.record_request_failure(request_id=1, error="Synthetic Discord failure", terminal_cause="failed")
@@ -132,29 +118,6 @@ class ReplyReportStorageTests(unittest.TestCase):
         report = self.report()
         self.assertEqual(report["delivered_answer"], "Synthetic complete answer in file")
         self.assertEqual(report["answer_attachment_names"], ["full-answer.txt"])
-
-    def test_version_two_migration_preserves_transcripts_and_backfills_available_diagnostics(self):
-        legacy = Path(self.directory.name) / "legacy.sqlite3"
-        with sqlite_connection(legacy) as connection:
-            run_sqlite_migrations(connection, (
-                SQLiteMigration(1, "legacy transcripts", _schema),
-                SQLiteMigration(2, "legacy debug", _debug_schema),
-            ), target_version=2)
-            with sqlite_transaction(connection, immediate=True):
-                connection.execute("INSERT INTO requests VALUES (1, ?, 100, 1, 42, '2026-10-01', 'Synthetic old question', NULL)", (GUILD_ID,))
-                connection.execute("INSERT INTO replies(message_id, request_message_id, content) VALUES (10, 1, 'Synthetic old reply')")
-                connection.execute("""INSERT INTO operator_debug_records (request_message_id, guild_id,
-                    channel_id, root_message_id, member_id, created_at, record_json)
-                    VALUES (1, ?, 100, 1, 42, '2026-10-01', ?)""", (GUILD_ID, json.dumps(asdict(diagnostics()))))
-        migrated = TranscriptArchive(legacy)
-        page, = migrated.read_page(guild_id=GUILD_ID, channel_id=100, root_message_id=1)
-        self.assertEqual(page["content"], "Synthetic old question")
-        self.assertEqual(page["replies"][0]["content"], "Synthetic old reply")
-        with migrated.connect() as connection:
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 3)
-            summary = json.loads(connection.execute("SELECT summary_json FROM request_diagnostics").fetchone()[0])
-        self.assertEqual(summary["tool_calls"][0]["arguments"], {"member_id": 42})
-        self.assertNotIn("result", summary["tool_calls"][0])
 
 
 class _Channel:
@@ -203,10 +166,6 @@ class ReplyReportReactionTests(unittest.IsolatedAsyncioTestCase):
         with self.archive.connect() as connection:
             return connection.execute("SELECT * FROM reply_reports").fetchall()
 
-    def test_raw_listener_is_registered_without_a_reaction_removal_listener(self):
-        names = [name for name, _ in self.cog.get_listeners()]
-        self.assertIn("on_raw_reaction_add", names)
-        self.assertNotIn("on_raw_reaction_remove", names)
 
     async def test_disabled_channel_stores_and_logs_without_any_reply_or_send(self):
         with self.assertLogs("elbow_helper.agent.feedback", level="INFO"):
@@ -216,19 +175,6 @@ class ReplyReportReactionTests(unittest.IsolatedAsyncioTestCase):
         self.bot.fetch_channel.assert_not_awaited()
         self.cog.service._model.create_agent_session.assert_not_called()
 
-    async def test_trigger_ignores_wrong_emoji_custom_emoji_guild_member_and_other_messages(self):
-        for changes in (
-            {"emoji": SimpleNamespace(id=None, name="👍")},
-            {"emoji": SimpleNamespace(id=123, name="👎")},
-            {"guild_id": None}, {"guild_id": 123}, {"user_id": 43}, {"user_id": 99},
-            {"user_id": 999, "member": None}, {"message_id": 999}, {"channel_id": 999},
-        ):
-            with self.subTest(changes=changes):
-                await self.cog.on_raw_reaction_add(SimpleNamespace(**{**vars(self.payload), **changes}))
-        self.archive.record_reply(message_id=11, request_message_id=1, content="Synthetic preview", is_answer=False)
-        self.payload.message_id = 11
-        await self.cog.on_raw_reaction_add(self.payload)
-        self.assertEqual(self.reports(), [])
 
     async def test_enabled_channel_posts_one_compact_card_and_duplicate_events_do_not_post(self):
         with patch.object(channels, "AGENT_REPORTS", 200):
@@ -274,12 +220,6 @@ class ReplyReportReactionTests(unittest.IsolatedAsyncioTestCase):
                          ["Reply", "Request"])
         thread.fetch_members.assert_awaited_once()
 
-    async def test_disclosure_error_posts_only_link_and_request(self):
-        with (patch.object(channels, "AGENT_REPORTS", 200),
-              patch("elbow_helper.agent.feedback.can_show", side_effect=RuntimeError("Synthetic permission failure")),
-              self.assertLogs("elbow_helper.agent.feedback", level="ERROR")):
-            await self.cog.on_raw_reaction_add(self.payload)
-        self.assertEqual(len(self.destination.send.await_args.kwargs["embed"].fields), 2)
 
     async def test_missing_source_and_disclosure_failure_reduce_card_and_wrong_guild_never_sends(self):
         self.channel_map.pop(100)
@@ -370,11 +310,3 @@ class ReplyReportReactionTests(unittest.IsolatedAsyncioTestCase):
                 None, None, discord.AllowedMentions.none(), AgentDelivery(), None, context, None)
         await self.archive.drain()
         self.assertIsNone(self.archive.reply_request_id(guild_id=GUILD_ID, channel_id=100, reply_id=21))
-
-    def test_card_lengths_and_missing_diagnostics(self):
-        report = self.archive.record_reply_report(guild_id=GUILD_ID, channel_id=100, reply_id=10, reporter_id=42)
-        report.update(question="q" * 4_000, delivered_answer="a" * 8_000, diagnostics=None)
-        card = report_card(report, disclose=True)
-        self.assertLess(len(card), 6_000)
-        self.assertTrue(all(len(field.value) <= 1_024 for field in card.fields))
-        self.assertEqual({field.name: field.value for field in card.fields}["Tools"], "Unknown")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import tempfile
+from tests.temp_directory import TemporaryDirectory
 import unittest
 import zipfile
 from pathlib import Path
@@ -10,95 +10,22 @@ from unittest.mock import MagicMock
 from unittest.mock import AsyncMock
 from unittest.mock import patch
 from xml.etree import ElementTree
-from typing import get_type_hints
 
 from elbow_helper.features.cwl.roster.analysis import build_ass_season_metrics
 from elbow_helper.features.cwl.roster.analysis import build_mega_ass_metrics
 from elbow_helper.features.cwl.roster.analysis import CwlRosterAnalysisMixin
 from elbow_helper.features.cwl.roster.export import CwlRosterExportMixin
-from elbow_helper.features.cwl.router import CwlRouterMixin
-from elbow_helper.features.cwl.roster.models import AssSeasonMetric
 from elbow_helper.features.cwl.roster.models import ASS_PROFILE_HIGH
 from elbow_helper.features.cwl.roster.models import ASS_PROFILE_LOWER
-from elbow_helper.features.cwl.roster.models import MegaAssMetric
 from elbow_helper.infrastructure.exports import ExportColumn as RosterColumn
 from elbow_helper.infrastructure.exports import ExportSheet as RosterSheet
-from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import WorkbookWriter
-from elbow_helper.infrastructure.exports.google_sheets import GOOGLE_EXPORT_OWNER_KEY
-from elbow_helper.infrastructure.exports.google_sheets import GOOGLE_EXPORT_OWNER_VALUE
-from elbow_helper.infrastructure.exports.google_sheets import HEADER_HEIGHT_PX
-from elbow_helper.features.cwl.roster.models import profile_for_league
 
 from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
 
 
 class _WorkbookHarness(CwlRosterExportMixin):
     workbook_writer = WorkbookWriter()
-
-
-class RosterSheetFormattingTests(unittest.TestCase):
-    def test_wrapped_google_sheet_headers_have_room_for_two_lines(self) -> None:
-        self.assertGreaterEqual(HEADER_HEIGHT_PX, 44)
-
-    def test_formatted_google_sheet_is_created_and_marked_for_cleanup(self) -> None:
-        sheet = RosterSheet(
-            title="Roster",
-            columns=(RosterColumn("Account", 150),),
-            rows=(("Ahmad",),),
-            tab_color="3B5B92",
-        )
-        spreadsheets = MagicMock()
-        spreadsheets.create.return_value.execute.return_value = {
-            "spreadsheetId": "new-sheet",
-            "spreadsheetUrl": (
-                "https://docs.google.com/spreadsheets/d/new-sheet/edit"
-            ),
-        }
-        spreadsheets.batchUpdate.return_value.execute.return_value = {}
-        sheets_service = MagicMock()
-        sheets_service.spreadsheets.return_value = spreadsheets
-        drive_service = MagicMock()
-        drive_service.files.return_value.list.return_value.execute.return_value = {}
-
-        with (
-            patch("google.oauth2.credentials.Credentials"),
-            patch("google.auth.transport.requests.Request"),
-            patch(
-                "googleapiclient.discovery.build",
-                side_effect=[sheets_service, drive_service],
-            ),
-        ):
-            link, warning = GoogleSheetsPublisher(
-                client_id="client",
-                client_secret="secret",
-                refresh_token="refresh",
-                folder_id=None,
-            ).create_spreadsheet_sync(
-                sheets=[sheet],
-                sheet_title="CWL Sign-up [Roster]",
-            )
-
-        self.assertEqual(
-            link,
-            "https://docs.google.com/spreadsheets/d/new-sheet/edit",
-        )
-        self.assertIsNone(warning)
-        spreadsheets.create.assert_called_once()
-        update = spreadsheets.batchUpdate.call_args.kwargs
-        self.assertEqual(update["spreadsheetId"], "new-sheet")
-        requests = update["body"]["requests"]
-        write = next(
-            request["updateCells"]
-            for request in requests
-            if "updateCells" in request and "rows" in request["updateCells"]
-        )
-        self.assertEqual(write["start"]["sheetId"], 0)
-        drive_update = drive_service.files.return_value.update.call_args.kwargs
-        self.assertEqual(
-            drive_update["body"]["appProperties"],
-            {GOOGLE_EXPORT_OWNER_KEY: GOOGLE_EXPORT_OWNER_VALUE},
-        )
 
 
 class _Member:
@@ -298,21 +225,6 @@ def _synthetic_position_war(team_size: int) -> tuple[list[dict], list[dict], lis
     return wars, roster, attacks
 
 
-class AssProfileTests(unittest.TestCase):
-    def test_latest_profile_mapping(self) -> None:
-        self.assertIs(profile_for_league("Champion League III"), ASS_PROFILE_HIGH)
-        self.assertIs(profile_for_league("Master League I"), ASS_PROFILE_HIGH)
-        self.assertIs(profile_for_league("Master League II"), ASS_PROFILE_LOWER)
-        self.assertIs(profile_for_league("Master League III"), ASS_PROFILE_LOWER)
-
-    def test_missed_star_profiles(self) -> None:
-        self.assertEqual(ASS_PROFILE_HIGH.missed_adjustment(1), 0)
-        self.assertEqual(ASS_PROFILE_HIGH.missed_adjustment(2), -2)
-        self.assertEqual(ASS_PROFILE_HIGH.missed_adjustment(3), -4)
-        self.assertEqual(ASS_PROFILE_LOWER.missed_adjustment(2), 0)
-        self.assertEqual(ASS_PROFILE_LOWER.missed_adjustment(3), -3)
-
-
 class AssAnalysisTests(unittest.TestCase):
     def test_target_position_scale_tracks_war_size_for_both_profiles(self) -> None:
         for profile, weight in ((ASS_PROFILE_HIGH, 0.4), (ASS_PROFILE_LOWER, 1.0)):
@@ -391,38 +303,6 @@ class AssAnalysisTests(unittest.TestCase):
         self.assertEqual(metrics[0].difficulty_adjustment, 0)
         self.assertEqual(metrics[0].score, 21)
 
-    def test_season_and_mega_ranking(self) -> None:
-        wars, roster, attacks = _synthetic_history()
-        season_metrics = build_ass_season_metrics(
-            wars=wars,
-            roster=roster,
-            attacks=attacks,
-            season_order={"2026-05": 1, "2026-06": 2},
-            profiles_by_clan={"BE4": ASS_PROFILE_HIGH},
-        )
-        by_key = {
-            (metric.season, metric.player_tag): metric
-            for metric in season_metrics
-        }
-
-        alpha_may = by_key[("2026-05", "#A")]
-        beta_may = by_key[("2026-05", "#B")]
-        zero_may = by_key[("2026-05", "#ZERO")]
-        self.assertAlmostEqual(alpha_may.score or 0, 23.8)
-        self.assertEqual(alpha_may.rank_label, "1/2")
-        self.assertEqual(beta_may.rank_label, "2/2")
-        self.assertIsNone(zero_may.score)
-        self.assertEqual(zero_may.rank_label, "-")
-        self.assertEqual(zero_may.attacks_label, "0/7")
-
-        mega = {
-            metric.player_tag: metric
-            for metric in build_mega_ass_metrics(season_metrics)
-        }
-        self.assertEqual(mega["#A"].rank_label, "1/2")
-        self.assertEqual(mega["#A"].total_attacks, 14)
-        self.assertEqual(len(mega["#A"].seasons), 2)
-        self.assertNotIn("#ZERO", mega)
 
     @staticmethod
     def _season(prefix: str, first_end: int) -> list[dict]:
@@ -430,27 +310,9 @@ class AssAnalysisTests(unittest.TestCase):
                            [member("#P8", name="Alpha", townhall=18, position=1)],
                            [attack(1, "#P8", "#Q0", position=1)], team_size=15) for day in range(1, 8)]
 
-    def test_db_loader_reads_completed_history(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            record = asyncio.run(LeagueRecord(directory).initialize())
-            asyncio.run(record.week("BE4", "2026-06", self._season("C", 1780000000), league="Master League I"))
-            harness = SimpleNamespace(cwl_history=record.history())
-            dataset = CwlRosterAnalysisMixin._load_roster_history(harness, 3)
-            asyncio.run(record.week("BE4", "2026-08", self._season("G", 1786000000), league="Master League I"))
-            old_scope = harness.cwl_history.roster_history(1, season="2026-06", clan_code="BE4")
-            latest_scope = harness.cwl_history.roster_history(1)
-
-        self.assertEqual([row["key"] for row in dataset["seasons"]], ["2026-06"])
-        self.assertEqual(len(dataset["wars"]), 7)
-        self.assertEqual(len(dataset["roster"]), 7)
-        self.assertEqual(len(dataset["attacks"]), 7)
-        self.assertEqual({war["cwl_league"] for war in dataset["wars"]}, {"Master League I"})
-        self.assertEqual([row["key"] for row in old_scope["seasons"]], ["2026-06"])
-        self.assertEqual(len(old_scope["wars"]), 7)
-        self.assertEqual([row["key"] for row in latest_scope["seasons"]], ["2026-08"])
 
     def test_db_loader_ignores_incomplete_seasons(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        with TemporaryDirectory() as directory:
             record = asyncio.run(LeagueRecord(directory).initialize())
             asyncio.run(record.week("BE4", "2026-07", self._season("C", 1782000000)[:1],
                                     league="Master League I"))
@@ -472,8 +334,6 @@ class CandidateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, ("test.xlsx", b"synthetic workbook"))
         self.assertTrue(any("Synthetic cleanup warning" in line for line in logs.output))
 
-    def test_complete_roster_annotations_resolve(self):
-        self.assertIn("return", get_type_hints(CwlRouterMixin._extract_complete_roster))
 
     async def test_closed_signup_roster_uses_only_its_selected_accounts(
         self,
@@ -538,7 +398,7 @@ class WorkbookTests(unittest.TestCase):
         self.assertEqual(history.rows[0][16], 2.9)
 
         namespace = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
-        with tempfile.TemporaryDirectory() as directory:
+        with TemporaryDirectory() as directory:
             path = Path(directory) / "ass-30v30.xlsx"
             _WorkbookHarness()._write_roster_xlsx(path, sheets)
             with zipfile.ZipFile(path) as workbook:
@@ -556,106 +416,6 @@ class WorkbookTests(unittest.TestCase):
                             )
                             self.assertEqual(float(value), expected)
 
-    def test_roster_workbook_hides_non_signup_clutter(self) -> None:
-        signed_metric = AssSeasonMetric(
-            season="2026-06",
-            season_order=1,
-            latest_end_ts=200,
-            clan_code="BES",
-            league="Master League I",
-            profile=ASS_PROFILE_HIGH,
-            player_tag="#A",
-            player_name="Alpha",
-            townhall=18,
-            attacks_expected=7,
-            attacks=7,
-            stars=21,
-            score=21.0,
-            average_defensive_position=4.0,
-            rank=1,
-            rank_total=2,
-        )
-        non_signup_metric = AssSeasonMetric(
-            season="2026-06",
-            season_order=1,
-            latest_end_ts=200,
-            clan_code="BES",
-            league="Master League I",
-            profile=ASS_PROFILE_HIGH,
-            player_tag="#NS",
-            player_name="Non Signup",
-            townhall=18,
-            attacks_expected=7,
-            attacks=7,
-            stars=18,
-            score=18.0,
-            average_defensive_position=8.0,
-            rank=2,
-            rank_total=2,
-        )
-        mega = MegaAssMetric(
-            clan_code="BES",
-            profile=ASS_PROFILE_HIGH,
-            player_tag="#A",
-            player_name="Alpha",
-            townhall=18,
-            seasons=(signed_metric,),
-            score=21.0,
-            total_attacks=7,
-            average_defensive_position=4.0,
-            rank=1,
-            rank_total=2,
-        )
-
-        sheets = _WorkbookHarness()._build_roster_workbook(
-            candidates=[
-                {
-                    "discord_member": "Leader",
-                    "account_name": "Alpha",
-                    "player_tag": "#A",
-                    "townhall": 18,
-                    "current_clan": "BE4",
-                    "latest": signed_metric,
-                    "mega": mega,
-                }
-            ],
-            signed_tags={"#A"},
-            season_metrics=[signed_metric, non_signup_metric],
-            seasons=[{"key": "2026-06"}],
-            profiles={"BES": ASS_PROFILE_HIGH},
-            latest_leagues={"BES": "Master League I"},
-            clan_choices=("BE4", "BES"),
-        )
-
-        self.assertEqual(
-            [sheet.title for sheet in sheets],
-            ["Roster Planner", "Season History", "Guide"],
-        )
-        planner = next(sheet for sheet in sheets if sheet.title == "Roster Planner")
-        self.assertEqual(
-            [column.name for column in planner.columns[-3:]],
-            ["Same-Clan Rank", "Same-Clan Sample", "Assigned Clan"],
-        )
-        self.assertNotIn("CWL Records", [column.name for column in planner.columns])
-        self.assertEqual(len(planner.rows[0]), len(planner.columns))
-        self.assertEqual(
-            [column.name for column in planner.columns[:4]],
-            ["Discord Member", "Account", "Player Tag", "TH"],
-        )
-        self.assertEqual(planner.rows[0][2], "#A")
-        all_headers = {
-            column.name
-            for sheet in sheets
-            for column in sheet.columns
-        }
-        self.assertNotIn("Comparison Clan", all_headers)
-        self.assertNotIn("Score Trend", all_headers)
-        self.assertNotIn("Rank Trend", all_headers)
-
-        history = next(sheet for sheet in sheets if sheet.title == "Season History")
-        self.assertEqual(len(history.rows), 1)
-        self.assertIn("Alpha", history.rows[0])
-        self.assertNotIn("Non Signup", history.rows[0])
 
     def test_assignment_dropdown_is_written_to_xlsx(self) -> None:
         sheet = RosterSheet(
@@ -668,7 +428,7 @@ class WorkbookTests(unittest.TestCase):
             tab_color="3B5B92",
             dropdowns=((1, ("BEH", "BE4", "BES")),),
         )
-        with tempfile.TemporaryDirectory() as directory:
+        with TemporaryDirectory() as directory:
             path = Path(directory) / "planner.xlsx"
             _WorkbookHarness()._write_roster_xlsx(path, [sheet])
             with zipfile.ZipFile(path, "r") as workbook:

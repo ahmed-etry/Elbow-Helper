@@ -9,15 +9,13 @@ from typing import Any
 from uuid import uuid4
 
 from elbow_helper.infrastructure.persistence import (
-    SQLiteMigration,
-    run_sqlite_migrations,
     sqlite_transaction,
 )
 
 from .codec import encode_record
-from .schema import create_schema
 from ..scheduled.store import ScheduledStore
-from ..discord_actions.meme_usage import MemeUsageStore, create_meme_usage
+from ..discord_actions.meme_usage import MemeUsageStore
+from ..storage import initialize_agent
 
 ACTION_LOG_RETENTION_SECONDS = 90 * 24 * 60 * 60
 
@@ -28,12 +26,7 @@ class AgentActionRepository(ScheduledStore, MemeUsageStore):
     def __init__(self, path: Path) -> None:
         super().__init__(path)
         with self.connect() as connection:
-            run_sqlite_migrations(
-                connection,
-                (SQLiteMigration(1, "Agent action state", create_schema),
-                 SQLiteMigration(2, "Delivered meme usage", create_meme_usage)),
-                target_version=2,
-            )
+            initialize_agent(connection)
 
     def record_message(
         self,

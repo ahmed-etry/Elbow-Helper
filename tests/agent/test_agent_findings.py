@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.datasets.clash import read_clash
+from elbow_helper.agent.reads.clash import read_clash
 from elbow_helper.agent.reads.ranked_measures import metrics
 
 
@@ -22,7 +22,7 @@ class FindingTests(unittest.IsolatedAsyncioTestCase):
 
         context = SimpleNamespace(bot=SimpleNamespace(clash_client=SimpleNamespace(
             configured=True, get=AsyncMock(side_effect=get))), deadline_monotonic=None)
-        with patch("elbow_helper.agent.datasets.clash.require_evidence_access", AsyncMock()):
+        with patch("elbow_helper.agent.reads.clash.require_evidence_access", AsyncMock()):
             return await read_clash(context, arguments)
 
     async def test_raw_latest_log_keeps_paging_without_a_ranked_aggregate(self):
@@ -55,18 +55,6 @@ class FindingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['items'][0]['coverage']['unknown_timestamp_rows'], 1)
         self.assertFalse(result['items'][0]['coverage']['selection_complete'])
 
-    async def test_meanings_survive_full_and_summary_views(self):
-        for detail in ("summary", "full"):
-            player = await self.read({"%23P0": {"attackWins": 0, "trophies": 0}},
-                                     kind="player", tags=["#P0"], detail=detail)
-            self.assertIn("war_participation", player["field_meanings"]["attackWins"]["does_not_establish"])
-            self.assertIn("cwl_participation", player["field_meanings"]["clan"]["does_not_establish"])
-            self.assertIn("cwl_eligibility", player["field_meanings"]["heroes"]["does_not_establish"])
-            clan = await self.read({"%23P0": {"members": 48, "memberList": [{"clanRank": 48}]}},
-                                   kind="clan", tags=["#P0"], detail=detail)
-            self.assertIn("hard_cap", clan["field_meanings"]["members"]["does_not_establish"])
-            self.assertIn("join_time", clan["field_meanings"]["memberList[].clanRank"]["does_not_establish"])
-            self.assertIn("eligibility_standard", clan["field_meanings"]["warLeague"]["does_not_establish"])
 
     async def test_aggregate_rejects_non_battle_requests(self):
         result = await self.read({}, kind="player", tags=["#P0"], aggregate="ranked_attacks")

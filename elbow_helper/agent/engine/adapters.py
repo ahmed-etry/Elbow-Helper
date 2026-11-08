@@ -17,8 +17,8 @@ from ..tool_support.adapters import (
     support_tickets,
     wars,
 )
-from ..capabilities import clan_health, examination, member_lifecycle
-from ..capabilities.clan_health.commands import run_health_player
+from elbow_helper.agent.tool_support.adapters import clan_health, examination, member_lifecycle
+from elbow_helper.agent.tool_support.adapters.clan_health.commands import run_health_player
 from ..tool_support.adapters.recruitment.commands import run_opinion
 FEATURES = {
     "clan_health": clan_health,

@@ -13,7 +13,7 @@ from elbow_helper.infrastructure.persistence import read_json
 from .config import CLAN_PROFILE_BY_CODE, PROFILE_NAMES, PROFILE_NAMES_ORDERED
 
 LOGGER = logging.getLogger(__name__)
-PLAYER_HEALTH_CONFIG_FILE = Path("data/clan_health/player_health_config.json")
+PLAYER_HEALTH_CONFIG_FILE = Path("data/settings/health-defaults.json")
 
 _CACHE_DATA: Optional[Dict[str, Any]] = None
 _CACHE_MTIME: Optional[float] = None

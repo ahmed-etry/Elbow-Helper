@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -37,13 +37,13 @@ class ExportDeliveryTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-            await export._write_and_send_export(
-                interaction=interaction,
+            prepared = await export.prepare_health_export(
                 workbook_name="clan_health.xlsx",
                 workbook_title="Clan Health",
                 summary_lines=["Clan Health"],
                 sheets=[("Overview", [["Clan", "Members"], ["BEH", 50]])],
             )
+            await export.send_prepared_health_export(interaction, prepared)
 
             self.assertEqual(list(Path(directory).glob("*.xlsx")), [])
 

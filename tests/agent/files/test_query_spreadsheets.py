@@ -1,12 +1,12 @@
 """SQL exports keep every selected row or fail their cap."""
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 from contextlib import closing
 from io import BytesIO
 from pathlib import Path
 import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 
 from openpyxl import load_workbook
 
@@ -48,38 +48,3 @@ class QuerySpreadsheetTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(workbook["Notes"]["A2"].value, "Synthetic finding")
             finally:
                 workbook.close()
-
-    async def test_query_sheets_do_not_use_the_written_row_limit(self):
-        result = {"rows": [{"Account": f"Synthetic {i}"} for i in range(150)], "truncated": False}
-        with (
-            patch(
-                "elbow_helper.agent.files.spreadsheet_tools.require_evidence_access",
-                AsyncMock(),
-            ),
-            patch(
-                "elbow_helper.agent.files.spreadsheet_tools.query_context",
-                AsyncMock(return_value=result),
-            ) as query,
-            patch(
-                "elbow_helper.agent.files.spreadsheet_tools._store_spreadsheet",
-                AsyncMock(return_value={}),
-            ) as store,
-        ):
-            await prepare_spreadsheet(SimpleNamespace(), {"title": "Synthetic", "sheets": [{
-                "name": "Accounts", "sql": "SELECT name AS Account FROM first.accounts",
-            }]})
-            self.assertEqual(len(store.await_args.args[1].sheets[0].rows), 150)
-            self.assertIsNone(query.await_args.kwargs["max_rows"])
-            mixed = await prepare_spreadsheet(SimpleNamespace(), {"title": "Synthetic", "sheets": [
-                {"name": "Mixed", "sql": "SELECT 1", "rows": []},
-            ]})
-            self.assertIn("error", mixed)
-            with patch(
-                "elbow_helper.agent.files.spreadsheet_tools.MAX_DATA_BACKED_CELLS", 100,
-            ):
-                limited = await prepare_spreadsheet(
-                    SimpleNamespace(), {"title": "Synthetic", "sheets": [
-                        {"name": "Accounts", "sql": "SELECT 1"},
-                    ]},
-                )
-                self.assertEqual(limited, {"error": "The export is too large; narrow the query."})

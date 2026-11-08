@@ -1,17 +1,12 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
-import logging
 import re
 from typing import Any
 
-from elbow_helper.data.events import Event, finish_on_cancel, load_state, now_us, record, save_state
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic
-from .config import STATE_FILE
+from elbow_helper.data.events import Event, finish_on_cancel, initialize_state, load_state, now_us, record, save_state
 
-LOGGER = logging.getLogger(__name__)
 FALLBACK_THREADS_KEY = "_fallback_threads"
 FALLBACK_INFO_MESSAGE_KEY = "_fallback_info_message_id"
 
@@ -25,16 +20,6 @@ class HibernationStateReader:
     def get_member(self, member_id: int) -> dict[str, Any] | None:
         entry = self.state.snapshot().get(str(member_id))
         return entry if isinstance(entry, dict) else None
-
-
-def _legacy_state(path) -> dict[str, Any]:
-    try:
-        payload = read_json(path)
-        if isinstance(payload, dict):
-            return payload
-        raise ValueError("Invalid hibernation state")
-    except FileNotFoundError:
-        return {}
 
 
 def hibernation_event(member_id, info, kind, *, actor_id=None, via="command", forced=False, ticket_id=None):
@@ -51,11 +36,10 @@ def hibernation_event(member_id, info, kind, *, actor_id=None, via="command", fo
 
 
 class HibernationState:
-    """Checkpoint each step with its events, then mirror JSON for one update."""
+    """Checkpoint each step with its events in SQLite."""
 
-    def __init__(self, events, path=None):
+    def __init__(self, events):
         self.events = events
-        self.path = STATE_FILE if path is None else path
         self.state = {}
         self._lock = asyncio.Lock()
         self._members = {}
@@ -69,28 +53,12 @@ class HibernationState:
     async def startup(self):
         async with self._lock:
             async def complete():
-                self.state = await self.events.call(self._import)
-                await self._mirror()
+                self.state = await self.events.call(self._load)
             await finish_on_cancel(complete())
         self.events.register_member_deletion("hibernation", self.refresh_after_deletion)
 
-    def _import(self, connection):
-        # Import locally: queries uses the metadata constants in this module.
-        from .queries import _start_timestamp
-        state = load_state(connection, "hibernation")
-        if state is not None:
-            return state
-        state = _legacy_state(self.path)
-        for member, info in state.items():
-            if member.startswith("_"):
-                continue
-            member_id = int(member)
-            started = _start_timestamp(info.get("hibernation_date"))
-            info.setdefault("_case_started_at", started * 1_000_000 if started else now_us())
-            if "hibernation_progress" not in info:
-                record(connection, hibernation_event(member_id, info, "hibernated", via="import"))
-        save_state(connection, "hibernation", state)
-        return state
+    def _load(self, connection):
+        return initialize_state(connection, 'hibernation', dict)
 
     async def change(self, edit, events=()):
         async with self._lock:
@@ -103,7 +71,6 @@ class HibernationState:
                         record(connection, event)
                     return state
                 self.state = await self.events.call(write)
-                await self._mirror()
             await finish_on_cancel(complete())
 
     async def save_member(self, member_id, info, *, events=()):
@@ -130,13 +97,6 @@ class HibernationState:
     async def refresh_after_deletion(self, discord_id):
         async with self._lock:
             self.state = await self.events.call(load_state, "hibernation")
-            await self._mirror()
-
-    async def _mirror(self):
-        try:
-            await asyncio.to_thread(write_json_atomic, self.path, self.state, indent=2)
-        except (OSError, TypeError) as exc:
-            LOGGER.error("Failed saving %s: %s", self.path, exc)
 
 
 def get_fallback_info_message_id(data: dict[str, Any]) -> int | None:

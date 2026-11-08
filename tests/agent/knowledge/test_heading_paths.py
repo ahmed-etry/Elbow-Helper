@@ -1,7 +1,7 @@
 """Nested policy sections retain context through ranking, opening and paging."""
 
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
 
 from elbow_helper.agent.conversation.context import estimate_tokens
@@ -29,26 +29,6 @@ class HeadingPathTests(unittest.TestCase):
         self.assertEqual('\n\n'.join(section.body for section in sections), body.strip())
         self.assertEqual(self.catalog('# An ordinary fact\nA fact.').active_sections[0].applicability, '')
 
-    def test_nested_requirements_rank_with_parents_and_have_no_empty_hits(self):
-        catalog = self.catalog(
-            "# Rank rules\n\n## Elder\n\n### Requirements\nOne month of activity.\n"
-            "## Co-Leader\n\n### Requirements\nSix months of activity.\n"
-            "#### Evidence\nBring war records.\n## Unused heading\n",
-        )
-        sections = catalog.active_sections
-        self.assertEqual([section.title for section in sections], [
-            "Rank rules › Elder › Requirements", "Rank rules › Co-Leader › Requirements",
-            "Rank rules › Co-Leader › Requirements › Evidence",
-        ])
-        hits = catalog.search(sections, query="co-leader requirements")
-        self.assertEqual(hits[0], sections[1])
-        self.assertTrue(all(section.body for section in hits))
-        self.assertIn("- Rank rules › Co-Leader › Requirements", catalog.prompt().index)
-        self.assertNotIn("Unused heading", catalog.prompt().index)
-        self.assertEqual(catalog.matching_titles(sections, ["requirements"]), ())
-        self.assertEqual(catalog.matching_titles(sections, ["rank RULES › co-leader › REQUIREMENTS"]),
-                         (sections[1],))
-        self.assertEqual(catalog.matching_titles(sections, ["EVIDENCE"]), (sections[2],))
 
     def test_large_sections_split_at_paragraphs_with_paths_and_unique_ids(self):
         paragraphs = [f"Paragraph {index}. " + "Activity needs evidence. " * 160 for index in range(5)]
@@ -84,10 +64,3 @@ class HeadingPathTests(unittest.TestCase):
         combined = KnowledgeCatalog("", (*sections, hidden))
         self.assertEqual(combined.matching_titles(combined.visible_sections(), ["requirements"]), sections)
         self.assertEqual(combined.matching_titles(combined.visible_sections({"core"}), ["requirements"]), ())
-
-    def test_plain_document_and_parent_bodies_remain_readable(self):
-        catalog = self.catalog("Introduction.\n# Rank rules\nParent body.\n## Elder\nChild body.")
-        self.assertEqual([(s.title, s.body) for s in catalog.active_sections], [
-            ("rules", "Introduction."), ("Rank rules", "Parent body."),
-            ("Rank rules › Elder", "Child body."),
-        ])

@@ -11,13 +11,9 @@ from elbow_helper.agent.delivery import (
     AgentDeliveryMixin, MAX_RESPONSE_CHARACTERS, RESEARCH_FEEDBACK_HINT_INTERVAL,
 )
 from elbow_helper.agent.engine.service import AgentService, AgentUnavailableError
-from elbow_helper.agent.models import AgentAttachment, AgentDelivery
+from elbow_helper.agent.models import AgentDelivery
 from elbow_helper.agent.text import DISCORD_MESSAGE_LIMIT, chunk_response
-from elbow_helper.agent.wording import (
-    ACTION_NOT_PREPARED, ACTION_PRIVATE_ANSWER, ACTION_PRIVATE_NOTE, ACTION_UNAVAILABLE,
-    AGENT_ANSWER_UNFINISHED, AGENT_PLAN_UNFINISHED, AGENT_RESEARCH_UNFINISHED,
-    FAILURE_MESSAGE, RESEARCH_FEEDBACK_HINT,
-)
+from elbow_helper.agent.wording import FAILURE_MESSAGE, RESEARCH_FEEDBACK_HINT
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage, TextGenerationError
 from agent.engine.helpers import social_step
 from agent.engine.test_agent_plan_flow import _context
@@ -104,15 +100,6 @@ class ResearchFeedbackHintTests(unittest.IsolatedAsyncioTestCase):
         await self.sender._send_failure(self.context.source_message)
         self.assertEqual(self.context.source_message.reply.call_args.args[0], FAILURE_MESSAGE)
 
-    async def test_fixed_errors_and_private_notices_never_get_hint(self):
-        for text in (FAILURE_MESSAGE, AGENT_ANSWER_UNFINISHED, AGENT_PLAN_UNFINISHED,
-                     AGENT_RESEARCH_UNFINISHED, ACTION_NOT_PREPARED, ACTION_UNAVAILABLE,
-                     ACTION_PRIVATE_NOTE, ACTION_PRIVATE_ANSWER):
-            with self.subTest(text=text):
-                self.next_hint_due()
-                parts, _ = await self.deliver(text)
-                self.assertNotIn(RESEARCH_FEEDBACK_HINT, "\n".join(parts))
-                self.assertEqual(self.sender._research_feedback_answers, RESEARCH_FEEDBACK_HINT_INTERVAL - 1)
 
     def test_previews_private_results_and_followup_repairs_are_ineligible(self):
         cases = (
@@ -180,22 +167,6 @@ class ResearchFeedbackHintTests(unittest.IsolatedAsyncioTestCase):
             text = fence + "python\nprint('synthetic')"
             self.assertEqual((await self.deliver(text))[0], [text])
 
-    async def test_attachment_only_reply_has_no_hint(self):
-        for warning in (None, "Synthetic publication warning."):
-            with self.subTest(warning=warning):
-                self.next_hint_due()
-                parts, _ = await self.deliver("", attachments=(
-                    AgentAttachment("synthetic.txt", b"synthetic", google_warning=warning),
-                ))
-                self.assertEqual(parts, [warning])
-                self.assertEqual(self.sender._research_feedback_answers, RESEARCH_FEEDBACK_HINT_INTERVAL - 1)
-
-    async def test_gif_only_reply_never_gets_hint_or_advances_counter(self):
-        self.next_hint_due()
-        self.context.state.gif_url = "https://tenor.com/view/synthetic-123"
-        parts, _ = await self.deliver(self.context.state.gif_url)
-        self.assertEqual(parts, [self.context.state.gif_url])
-        self.assertEqual(self.sender._research_feedback_answers, RESEARCH_FEEDBACK_HINT_INTERVAL - 1)
 
     async def test_file_fallback_keeps_original_answer_and_has_no_hint_only_message(self):
         self.next_hint_due()

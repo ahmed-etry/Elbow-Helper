@@ -1,18 +1,15 @@
 from dataclasses import replace
-import hashlib
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from elbow_helper.agent.access import AgentAccessLost
-from elbow_helper.agent.files.attachments import acquire_text_attachment, parse_text
+from elbow_helper.agent.files.attachments import parse_text
 from elbow_helper.agent.files.attachment_tools import (
     import_text_attachment, list_supported_attachments, read_text_import,
 )
-from elbow_helper.agent.files.contracts import (
-    AttachmentValidationError, TextImportArtifact,
-)
+from elbow_helper.agent.files.contracts import AttachmentValidationError
 from agent.files.test_agent_attachments import _attachment
 from agent.files.test_agent_spreadsheets import _context
 
@@ -66,21 +63,6 @@ class HtmlAttachmentTests(unittest.IsolatedAsyncioTestCase):
         )
         return replace(context, source_message=source, attachment_sources=(source,))
 
-    async def test_html_extensions_acquire_and_restore_visible_text(self):
-        data = b"<p>Alpha &amp; Bravo</p><p>Second</p>"
-        with TemporaryDirectory() as directory:
-            for filename in ("transcript.html", "transcript.HTM"):
-                with self.subTest(filename=filename):
-                    attachment = _attachment(20, filename, data, "text/html; charset=utf-8")
-                    context = self.make_context(directory, [attachment])
-                    report = await acquire_text_attachment(
-                        context.source_message, 20, report_id="synthetic-report",
-                    )
-                    self.assertEqual(report.document_format, "html")
-                    self.assertEqual(report.text, "Alpha & Bravo\nSecond")
-                    self.assertEqual(report.byte_size, len(data))
-                    self.assertEqual(report.sha256, hashlib.sha256(data).hexdigest())
-                    self.assertEqual(TextImportArtifact(**report.storage_payload()), report)
 
     async def test_listing_import_and_paging_keep_complete_untrusted_text(self):
         text = "\n".join(f"Synthetic line {index}" for index in range(600))

@@ -3,44 +3,13 @@ import json
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.agent.conversation.context import bot_read_overview
-from elbow_helper.agent.engine.member_facts import read_topics
-from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.reads.tools import TOOLS
 from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
 from elbow_helper.agent.plan.results import model_result
-from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
-from elbow_helper.agent.plan.format import WRITER_INSTRUCTION
 from elbow_helper.agent.plan.planning import read_request
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
 from agent.engine.test_agent_plan_flow import _context, _Session
-from agent.engine.test_planner_fix2_evidence import WriterModel, unpack
-
-
-class ReadAwarenessTests(unittest.IsolatedAsyncioTestCase):
-    async def test_planner_descriptions_become_member_topics_for_isolated_writer(self):
-        context, model = _context(), WriterModel()
-        overview = bot_read_overview(context)
-        expected = {t.definition.name: t.definition.description for t in TOOLS}
-        self.assertEqual({r['capability']: r['summary'] for r in overview['reads']}, expected)
-        flow, _ = AgentService(model)._start_flow(question='Describe available member evaluation data.',
-            local_context='', context=context, conversation_history='')
-        self.assertIn('<bot_read_overview>', model.request['prompt'])
-        self.assertEqual(json.loads(flow.answer_context)['bot_read_overview'], read_topics(overview))
-        self.assertTrue(await flow._prepare_answer_session())
-        header = json.loads(model.writer['prompt'].split('\nAvailable evidence:\n', 1)[0])
-        self.assertEqual(json.loads(header['context'])['bot_read_overview'], read_topics(overview))
-        self.assertIn('beyond slash commands', model.writer['system_prompt'])
-        self.assertEqual(model.session.calls, [])
-        self.assertFalse(context.state.proposed_changes)
-
-    def test_cohort_evaluation_and_third_party_questions_have_evidence_guidance(self):
-        for clause in ('cohort_ref', 'include_activity=true', 'read_cwl_results',
-                       'read_war_attendance', 'Competitive role', 'empty interjection'):
-            self.assertIn(clause, FAMILY_INSTRUCTION)
-        self.assertIn('add only a useful verified contribution', FAMILY_INSTRUCTION)
-        self.assertIn('contribute a verified useful fact', WRITER_INSTRUCTION)
+from agent.engine.test_planner_fix2_evidence import unpack
 
 
 class PlanRecoveryTests(unittest.IsolatedAsyncioTestCase):

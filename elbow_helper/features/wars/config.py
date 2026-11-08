@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from elbow_helper.infrastructure.persistence.documents import Document
+
 from elbow_helper.configuration.channels import CLAN_LEADERSHIP_CHANNELS
 from elbow_helper.configuration.channels import CLAN_WAR_CHANNELS
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.clans import CLAN_LEADERSHIP_ROLE_IDS
 from elbow_helper.configuration.clans import CLAN_NAMES
 
-CACHE_FILE = "data/war/war_cache.json"
+CACHE_FILE = Document("wars")
 NOTICE_TTL = 48 * 60 * 60  # Fallback cleanup when no newer summary replaces it.
 PROCESSED_WAR_RETENTION = 1500
 WAR_BOARD_CLAN_CODES = ("BEH", "BE4", "BES", "BE1", "BEM", "BEC", "BEE")

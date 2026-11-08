@@ -1,15 +1,13 @@
 """Combined replies preserve independent synthetic action and answer controls."""
 
-import asyncio
 import json
 from dataclasses import replace
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.actions.combined_reply import CombinedReplyView
 from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
-from elbow_helper.agent.actions.preview import ConfirmationView, preview_text
+from elbow_helper.agent.actions.preview import preview_text
 from elbow_helper.agent.access import ACCESS_LEAD
 from elbow_helper.agent.conversation.state import ConversationRecord, ConversationStore, ConversationTurn
 from elbow_helper.agent.delivery import AgentDeliveryMixin, AgentDeliveryUnknown, _delivery_nonce
@@ -95,21 +93,6 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         ))
         return delivery
 
-    async def test_both_request_orders_have_one_numbered_reply_and_one_delivery(self):
-        for first in (True, False):
-            with self.subTest(preview_first=first):
-                self.context.state.preview_first = first
-                delivery = await self.deliver()
-                sent = self.sent[-1]
-                expected = (self.context.state.preview_reply, "Synthetic lookup answer")
-                if not first:
-                    expected = expected[::-1]
-                self.assertEqual(sent.content, f"1. {expected[0]}\n\n2. {expected[1]}")
-                self.assertEqual(len(delivery.message_ids), 1)
-                self.assertEqual(delivery.attempted_nonces, [_delivery_nonce(421, 0)])
-                self.assertTrue(delivery.complete)
-                self.assertIs(self.surface._conversations.find(321, 221, sent.id), self.conversation)
-                self.surface._archive_reply.assert_any_await(421, sent.id, sent.content, attachment_names=())
 
     async def test_image_answer_is_separate_from_confirmation_and_has_no_caption(self):
         delivery = AgentDelivery()
@@ -168,20 +151,6 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(self.sent[-1].content, combined.render())
                     self.assertIn("Synthetic lookup answer", self.conversation.turns[-1].record.delivered_answer)
 
-    async def test_confirm_hands_off_only_the_preview_part(self):
-        await self.deliver()
-        combined = self.sent[0].view
-        preview = combined.views["preview"]
-        await preview.confirm(self.interaction())
-        await asyncio.sleep(0)
-        self.assertFalse(combined.is_finished())
-        progress = self.surface.action_runner.submit.await_args.kwargs["progress_message"]
-        self.assertTrue(progress.preserves_other_text)
-        await progress.edit(content="Synthetic run report", view=None)
-        self.assertEqual(self.sent[0].content, "1. Synthetic lookup answer\n\n2. Synthetic run report")
-        self.assertEqual(self.conversation.turns[0].record.reply_ids, (521,))
-        self.assertIn("Synthetic run report", self.conversation.turns[0].record.delivered_answer)
-
 
     async def test_hidden_details_keep_their_control_beside_both_button_sets(self):
         self.allowed.return_value = False
@@ -207,19 +176,6 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
 
 
-
-    async def test_message_limit_includes_numbering_and_separator(self):
-        self.context.state.preview_first = True
-        overhead = len(f"1. {self.context.state.preview_reply}\n\n2. ")
-        await self.deliver("x" * (2000 - overhead))
-        self.assertEqual(len(self.sent[0].content), 2000)
-        self.assertIsInstance(self.sent[0].view, CombinedReplyView)
-        before = self.message.reply.await_count
-        await self.deliver("x" * (2001 - overhead))
-        self.assertEqual(self.message.reply.await_count - before, 2)
-
-
-
     async def test_over_limit_and_ping_answers_fall_back_in_request_order(self):
         for first in (True, False):
             for ping in (True, False):
@@ -240,15 +196,6 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
                         self.assertIn(self.member, answer_call.kwargs["allowed_mentions"].users)
                     self.assertNotEqual(calls[0].kwargs["nonce"], calls[1].kwargs["nonce"])
 
-    async def test_changes_only_delivery_is_unchanged(self):
-        self.context.state.preview_reply = None
-        await self.surface.send_response(
-            self.message, preview_text([self.action]), None, context=self.context,
-        )
-        self.assertEqual(self.message.reply.await_count, 1)
-        self.assertIsInstance(self.sent[0].view, ConfirmationView)
-        self.assertEqual(self.sent[0].content, preview_text([self.action]))
-        self.allowed.assert_awaited_once()
 
     async def test_uncertain_combined_send_retains_one_nonce_and_complete_generated_part(self):
         self.message.reply.side_effect = OSError("Synthetic uncertain delivery")

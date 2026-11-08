@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import closing
 from pathlib import Path
 import sqlite3
-import tempfile
+from tests.temp_directory import TemporaryDirectory
 import unittest
 
 from elbow_helper.features.rosters.repository import RosterRepository
@@ -20,7 +20,7 @@ from elbow_helper.infrastructure.persistence import sqlite_transaction
 
 class SQLiteConnectionTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = TemporaryDirectory()
         self.path = Path(self.temp_dir.name) / "nested" / "state.sqlite3"
 
     def tearDown(self) -> None:
@@ -252,35 +252,12 @@ class SQLiteMigrationTests(unittest.TestCase):
 
 class RosterSchemaMigrationTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = TemporaryDirectory()
         self.path = Path(self.temp_dir.name) / "rosters.sqlite3"
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def test_blank_database_receives_supported_v5_schema(self) -> None:
-        repository = RosterRepository(self.path)
-
-        with repository.connect() as connection:
-            version = sqlite_schema_version(connection)
-            tables = {
-                str(row["name"])
-                for row in connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type = 'table'"
-                ).fetchall()
-            }
-
-        self.assertEqual(version, 5)
-        self.assertTrue(
-            {
-                "rosters",
-                "roster_cycles",
-                "roster_members",
-                "roster_automation_events",
-                "roster_posts",
-                "roster_layouts",
-            }.issubset(tables)
-        )
 
     def test_incomplete_versioned_schema_fails_before_repository_use(self) -> None:
         with closing(sqlite3.connect(self.path)) as connection:

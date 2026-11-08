@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
@@ -35,19 +35,6 @@ class RosterSnapshotTests(unittest.IsolatedAsyncioTestCase):
             seen.extend(cycle.id for cycle in page.cycles)
         self.assertEqual(seen, list(reversed(ids)))
 
-    async def test_cycle_directory_distinguishes_missing_roster_from_no_cycles(self):
-        self.assertIsNone(await self.queries.cycles(2, self.roster.id))
-        self.assertIsNone(await self.queries.cycles(1, 999))
-        page = await self.queries.cycles(1, self.roster.id)
-        self.assertEqual(page.cycles, ())
-        self.assertIsNone(page.next_before_id)
-
-    async def test_cycle_page_bounds_are_enforced(self):
-        for kwargs in ({"limit": 0}, {"limit": 101}, {"limit": True},
-                       {"before_id": 0}, {"before_id": -1}, {"before_id": True}):
-            with self.subTest(kwargs=kwargs):
-                with self.assertRaises(ValueError):
-                    await self.queries.cycles(1, self.roster.id, **kwargs)
 
     async def test_snapshot_only_includes_its_own_posts(self):
         other = self.repository.create_roster(

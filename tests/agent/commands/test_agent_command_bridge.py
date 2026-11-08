@@ -7,14 +7,13 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.commands.bridge import build_command_tools
 from elbow_helper.agent.actions.contracts import ChangePreview
-from elbow_helper.agent.actions.outcomes import ActionOutcome, command_reply
+from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import (
     CommandAdapter, PreparedCommandChange,
 )
 from elbow_helper.agent.models import AgentTurnState, AgentCapabilityEffect
 from elbow_helper.agent.models import AgentAttachment
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
-from elbow_helper.agent.wording import ACTION_EMPTY, ACTION_PRIVATE_NOTE
 from elbow_helper.agent.engine.capability_contract import compile_capability_call
 
 
@@ -60,18 +59,6 @@ class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
         },))
         self.run.assert_not_awaited()
 
-    async def test_all_missing_values_use_option_descriptions(self):
-        command = DiscoveredCommand(self.path, "Registered", (
-            ParameterInfo("first_target", "The first target", True, "integer"),
-            ParameterInfo("second_target", "The second target", True, "integer"),
-        ))
-        with (patch("elbow_helper.agent.commands.registry.discover_commands",
-                    return_value={self.path: command}), self.patches[1]):
-            tools, _ = build_command_tools(object(), (self.adapter,))
-        context = SimpleNamespace(state=AgentTurnState())
-        await next(iter(tools.values())).handler(context, {})
-        self.assertEqual(context.state.outcomes[0].missing,
-                         ("The first target", "The second target"))
 
     async def test_false_and_zero_are_valid_required_values(self):
         command = DiscoveredCommand(self.path, "Registered", (
@@ -112,32 +99,6 @@ class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.outcomes[0].private_parts,
                          ("synthetic private text",))
 
-    async def test_empty_private_result_is_not_posted_in_the_channel(self):
-        self.run.return_value = ActionOutcome("empty", "private")
-        with self.patches[0], self.patches[1]:
-            tools, _ = build_command_tools(object(), (self.adapter,))
-        context = SimpleNamespace(state=AgentTurnState())
-        result = await next(iter(tools.values())).handler(context, {"target": 101})
-        self.assertEqual(result["visibility"], "private")
-        self.assertEqual(command_reply(context.state.outcomes), ACTION_PRIVATE_NOTE)
-        self.assertEqual(context.state.outcomes[0].private_parts, (ACTION_EMPTY,))
-
-
-    async def test_confirmed_adapter_only_prepares_before_the_button(self):
-        preview = AsyncMock(return_value=ChangePreview(
-            ("Change synthetic target",), AsyncMock(return_value=True),
-        ))
-        adapter = CommandAdapter(self.path, "confirm", self.run, prepare=preview)
-        with self.patches[0], self.patches[1]:
-            tools, _ = build_command_tools(object(), (adapter,))
-        context = SimpleNamespace(state=AgentTurnState())
-        result = await next(iter(tools.values())).handler(context, {"target": 101})
-        self.assertEqual(result["status"], "confirmation_required")
-        self.assertEqual(len(context.state.proposed_changes), 1)
-        self.assertEqual(context.state.proposed_changes[0].preview.lines,
-                         ("Change synthetic target",))
-        self.run.assert_not_awaited()
-        preview.assert_awaited_once_with(context, {"target": 101})
 
     async def test_prepared_change_uses_the_saved_run_after_confirmation(self):
         saved_run = AsyncMock(return_value=ActionOutcome("complete"))

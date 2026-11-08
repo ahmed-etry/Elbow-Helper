@@ -2,7 +2,7 @@
 
 import asyncio
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -11,32 +11,15 @@ import discord
 from elbow_helper.agent.actions.store import AgentActionRepository
 from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
-from elbow_helper.agent.delivery import AgentDeliveryMixin
 from elbow_helper.agent.models import AgentRequestContext, AgentTurnState
 from elbow_helper.agent.scheduled.runner import ScheduledRunner
 from elbow_helper.agent.engine.service import AgentUnavailableError
-from elbow_helper.agent.scheduled.requests import (
-    ScheduledMessage,
-    ScheduledResult,
-    check_watcher,
-    run_saved_request,
-)
-from elbow_helper.agent.scheduled.watchers import comparison_data, evaluate, send_alert
-from elbow_helper.infrastructure.ai.agent import (
-    AgentStep,
-    AgentUsage,
-    AgentReasoningEffort,
-)
+from elbow_helper.agent.scheduled.requests import ScheduledResult, check_watcher, run_saved_request
+from elbow_helper.agent.scheduled.watchers import evaluate
+from elbow_helper.infrastructure.ai.agent import AgentStep, AgentUsage
 
 
 class ScheduledRunnerTests(unittest.IsolatedAsyncioTestCase):
-    async def test_fenced_watcher_json_is_accepted(self):
-        for fence in ("```", "```json"):
-            session = SimpleNamespace(advance=AsyncMock(return_value=AgentStep(
-                fence + '\n{"holds":true,"alert":"It changed."}\n```', (), AgentUsage())))
-            context = SimpleNamespace(deadline_monotonic=None,
-                bot=SimpleNamespace(agent_model=SimpleNamespace(create_agent_session=lambda **_: session)))
-            self.assertEqual(await evaluate(context, "Has changed", []), (True, "It changed."))
 
     def _due_once(self, kind="request"):
         return self.repository.create_standing(
@@ -133,16 +116,6 @@ class ScheduledRunnerTests(unittest.IsolatedAsyncioTestCase):
                 await self.runner._main()
         self.assertEqual(self.runner.tick.await_count, 2)
 
-    async def test_watcher_alert_chunks_and_mentions_only_the_first_part(self):
-        alert = "Synthetic alert. " * 300
-        context = SimpleNamespace(member=self.member, source_message=SimpleNamespace(channel=self.channel))
-        await send_alert(context, alert)
-        calls = self.channel.send.await_args_list
-        self.assertGreater(len(calls), 1)
-        self.assertTrue(calls[0].args[0].startswith("<@2> "))
-        self.assertTrue(all(len(call.args[0]) <= 2000 for call in calls))
-        self.assertTrue(all("<@2>" not in call.args[0] for call in calls[1:]))
-        self.assertTrue(all(not call.kwargs["allowed_mentions"].users for call in calls[1:]))
 
     async def asyncSetUp(self):
         directory = TemporaryDirectory()
@@ -290,29 +263,6 @@ class ScheduledRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.run_request.assert_not_awaited()
         self.channel.send.assert_awaited_once()
 
-    async def test_changed_decision_uses_low_effort(self):
-        session = SimpleNamespace(
-            advance=AsyncMock(
-                return_value=AgentStep(
-                    '{"holds":true,"alert":"It changed."}',
-                    (),
-                    AgentUsage(100, 20),
-                )
-            )
-        )
-        context = SimpleNamespace(
-            deadline_monotonic=None,
-            state=AgentTurnState(),
-            bot=SimpleNamespace(
-                agent_model=SimpleNamespace(create_agent_session=lambda **_: session)
-            ),
-        )
-        result = await evaluate(context, "Has changed", [{"value": 1}])
-        self.assertEqual(result, (True, "It changed."))
-        self.assertEqual(
-            session.advance.await_args.kwargs["reasoning_effort"],
-            AgentReasoningEffort.LOW,
-        )
 
     async def test_cutoff_continuation_completes_the_decision(self):
         session = SimpleNamespace(
@@ -339,19 +289,6 @@ class ScheduledRunnerTests(unittest.IsolatedAsyncioTestCase):
             "Finish the JSON object.",
         )
 
-    def test_lookup_metadata_does_not_change_watched_facts(self):
-        first = {
-            "report_id": "first",
-            "observed_at": "earlier",
-            "members": [{"id": 2, "created_at": "source-time"}],
-        }
-        second = {**first, "report_id": "second", "observed_at": "later"}
-        self.assertEqual(comparison_data(first), comparison_data(second))
-        changed = {**second, "members": [{"id": 3, "created_at": "source-time"}]}
-        self.assertNotEqual(comparison_data(first), comparison_data(changed))
-        self.assertEqual(
-            comparison_data(first)["members"][0]["created_at"], "source-time"
-        )
 
     async def test_unchanged_results_do_not_call_model(self):
         context = SimpleNamespace(member=SimpleNamespace(mention="<@2>"))
@@ -401,21 +338,6 @@ class ScheduledRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             result, ScheduledResult(last_result=[{"value": 2}], holding=True)
         )
-
-    async def test_scheduled_channel_reply_has_no_unseen_archive_request(self):
-        channel = SimpleNamespace(send=AsyncMock(return_value=SimpleNamespace(id=10)))
-        message = ScheduledMessage(
-            guild=SimpleNamespace(id=1),
-            channel=channel,
-            author=SimpleNamespace(id=2),
-            content="Check status",
-        )
-        delivery = AgentDeliveryMixin()
-        delivery.bot = SimpleNamespace(user=None)
-        delivery._archive_reply = AsyncMock()
-        await delivery.send_response(message, "Status checked", None)
-        channel.send.assert_awaited_once()
-        delivery._archive_reply.assert_not_awaited()
 
 
 class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):

@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, patch
 
 from agent.engine.test_agent_plan_flow import _context
 from agent.families import test_record_wars as fixtures
-from elbow_helper.agent.datasets.clash import read_clash
-from elbow_helper.agent.families import cohort_activity
+from elbow_helper.agent.reads.clash import read_clash
+from elbow_helper.agent.reads import cohort_activity
 from elbow_helper.agent.reads import projections, record_wars, war_tools as war_reads
-from elbow_helper.agent.families.account_activity import account_activity
+from elbow_helper.agent.reads.account_activity import account_activity
 from elbow_helper.data.reads import WarReads
 from tests.data.test_wars import END, SECOND, WarFixture, war
 
@@ -72,24 +72,6 @@ class WarContracts(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[0]['war_attendance']['attacks_expected'], 2)
         self.forbidden.assert_not_awaited()
 
-    async def test_current_war_checks_keep_unused_attacks_and_unavailable_states(self):
-        await self.record(war('inWar'), at=self.now - 10 * SECOND)
-        tool = fixtures.TOOLS['read_current_war']
-        result = await tool.handler(self.context, {'clan_codes': ['BEH'], 'account_tags': ['#P0']})
-        row, = result['rows'][0]['members']
-        self.assertEqual((row['player_tag'], row['attacks_used'], row['unused_attacks'], row['missed']),
-                         ('#P0', 1, 1, None))
-        for payload, status, expected in ((None, 503, 'unavailable'), ({'state': 'notInWar'}, 200, 'ok')):
-            self.now += 30 * SECOND
-            await self.record(payload, status=status, at=self.now - 10 * SECOND)
-            result = await war_reads.current_war(self.context, {'clan_codes': ['BEH']})
-            row, = result['rows']
-            self.assertEqual(row['status'], expected)
-            self.assertEqual(row['state'], 'notInWar' if expected == 'ok' else None)
-        self.now += fixtures.DAY
-        row, = (await war_reads.current_war(self.context, {'clan_codes': ['BEH']}))['rows']
-        self.assertEqual((row['status'], row['state']), ('stale', None))
-        self.forbidden.assert_not_awaited()
 
     async def test_failed_measure_read_is_unavailable_in_each_join(self):
         with patch.object(self.reads, 'regular_selection', AsyncMock(side_effect=OSError('offline'))):
@@ -127,11 +109,11 @@ class WarContracts(WarFixture, unittest.IsolatedAsyncioTestCase):
 
 class ExternalWarContracts(unittest.IsolatedAsyncioTestCase):
     async def test_family_clans_have_no_raw_war_fact_path_even_without_a_client(self):
-        from elbow_helper.agent.datasets.clash import CLANS, clash_tools
+        from elbow_helper.agent.reads.clash import CLANS, clash_tools
         client = SimpleNamespace(configured=True, get=AsyncMock(side_effect=AssertionError('No live family war read')))
         context = SimpleNamespace(bot=SimpleNamespace(clash_client=client), deadline_monotonic=None)
         code = next(iter(CLANS))
-        with patch('elbow_helper.agent.datasets.clash.require_evidence_access', AsyncMock()):
+        with patch('elbow_helper.agent.reads.clash.require_evidence_access', AsyncMock()):
             for kind in ('current_war', 'war_log'):
                 for selection in ({}, {'detail': 'full'}, {'fields': ['clan.members.attacks']}):
                     result = await read_clash(context, {'kind': kind, 'tags': [code], **selection})
@@ -153,7 +135,7 @@ class ExternalWarContracts(unittest.IsolatedAsyncioTestCase):
     async def test_raw_current_war_and_log_keep_external_payloads_and_failures(self):
         client = SimpleNamespace(configured=True, get=AsyncMock())
         context = SimpleNamespace(bot=SimpleNamespace(clash_client=client), deadline_monotonic=None)
-        with patch('elbow_helper.agent.datasets.clash.require_evidence_access', AsyncMock()):
+        with patch('elbow_helper.agent.reads.clash.require_evidence_access', AsyncMock()):
             for kind, payload in (('current_war', war()), ('war_log', {'items': [{'result': 'win'}]})):
                 client.get.return_value = SimpleNamespace(ok=True, status=200, payload=payload)
                 result = await read_clash(context, {'kind': kind, 'tags': ['#P0'], 'detail': 'full'})

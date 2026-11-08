@@ -4,7 +4,7 @@ from elbow_helper.domain.cwl import SEASON_KEY
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
 from elbow_helper.features.cwl.results import CwlResults
 from ..tool_support.core import family_tool, IDS, TAGS, DATE
-from ..datasets.clash import read_clash
+from elbow_helper.agent.reads.clash import read_clash
 from ..read_cache import stored_read
 from .wars import attendance, current_war, period, selected_wars, single_selection
 from .war_measures import clan_participation, participation_status

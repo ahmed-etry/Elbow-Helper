@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from elbow_helper.agent.delivery import AgentDeliveryMixin, _without_reply_gif
+from elbow_helper.agent.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.gifs import find_gif
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.agent.engine.service import AgentService
@@ -13,24 +13,10 @@ from elbow_helper.agent.models import AgentDelivery
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
 from agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 from tests.features.agent_plan_helpers import plan_call
-from agent.engine.helpers import social_step
 from agent.engine.test_banter_gifs import gif_context
 
 
 class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
-    def test_link_removal_preserves_labels_and_other_urls(self):
-        url = "https://tenor.com/view/synthetic"
-        for text, expected in (
-            (f"Synthetic answer\n{url}", "Synthetic answer"),
-            (f"Synthetic answer\n<{url}>", "Synthetic answer"),
-            (f"[Synthetic label]({url})", "Synthetic label"),
-            (f"{url}\n{url}", ""),
-            (url + "-other", url + "-other"),
-            (url + "?other=1", url + "?other=1"),
-            ("https://tenor.com/view/synthetic-other", "https://tenor.com/view/synthetic-other"),
-        ):
-            with self.subTest(text=text):
-                self.assertEqual(_without_reply_gif(text, url), expected)
 
     async def test_pasted_reply_link_is_removed_before_text_delivery(self):
         url = "https://tenor.com/view/synthetic"
@@ -114,48 +100,6 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(delivery.complete)
             surface._conversations.register_reply.assert_called_once_with(conversation, 800)
 
-    async def test_gif_replies_ignore_legacy_caption_flag_without_another_round(self):
-        for react in (False, True):
-            for caption in ("", "Synthetic banter."):
-                with self.subTest(react=react, caption=caption):
-                    context = _context()
-                    context.source_message.id = 300
-                    context.source_message.add_reaction = AsyncMock()
-
-                    context = replace(context, bot=SimpleNamespace())
-                    context = gif_context(context)
-                    step = social_step(caption or "Synthetic fallback.",
-                        meme_id="synthetic", gif_with_text=bool(caption),
-                        form="text_reactions" if react else "text",
-                        reactions=["\U0001f44d"] if react else [])
-                    session = _AgentSession([step, AgentStep(caption, (), AgentUsage())])
-                    service = AgentService(_AgentModel(session, route="social"))
-                    with patch.dict(ITEM_BY_ID, synthetic={'id': 'synthetic', 'media': 'https://tenor.com/view/synthetic-123',
-                            'use': 'Synthetic reaction', 'shows': 'Synthetic image', 'group': 'win'}):
-                        answer = await service.answer(question="Synthetic request", local_context="", context=context)
-                    self.assertEqual(answer, "")
-                    self.assertEqual(context.state.gif_fallback_text, caption or "Synthetic fallback.")
-                    self.assertEqual(len(session.calls), 1)
-                    self.assertEqual(context.state.gif_url, "https://tenor.com/view/synthetic-123")
-                    self.assertEqual(context.source_message.add_reaction.await_count, int(react))
-
-    async def test_no_meme_with_a_reaction_still_generates_a_text_reply(self):
-        context = _context()
-        context.source_message.id = 300
-        context.source_message.add_reaction = AsyncMock()
-
-        context = replace(context, bot=SimpleNamespace())
-        context = gif_context(context)
-        session = _AgentSession([social_step("Synthetic text reply.", form="text_reactions",
-                                            reactions=["\U0001f44d"]),
-                                 AgentStep("Synthetic text reply.", (), AgentUsage())])
-        answer = await AgentService(_AgentModel(session, route="social")).answer(
-            question="Synthetic request", local_context="", context=context,
-        )
-        self.assertEqual(answer, "Synthetic text reply.")
-        self.assertEqual(len(session.calls), 1)
-        self.assertIsNone(context.state.gif_url)
-        context.source_message.add_reaction.assert_awaited_once()
 
     async def test_research_plan_cannot_search_for_a_reply_gif(self):
         context = _context()

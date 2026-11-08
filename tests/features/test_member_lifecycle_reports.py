@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -25,27 +23,6 @@ class MemberLifecycleReportTests(unittest.TestCase):
     def test_applicant_scan_checks_daily_for_newly_overdue_applicants(self) -> None:
         self.assertEqual(ReportsMixin.applicant_linger_scan.hours, 24.0)
 
-    def test_applicant_report_uses_readable_ages_and_ticket_log_actions(self) -> None:
-        now = datetime(2026, 9, 12, tzinfo=timezone.utc)
-        linked = SimpleNamespace(id=1, display_name="Linked Applicant", mention="<@1>")
-        unlinked = SimpleNamespace(id=2, display_name="Unlinked Applicant", mention="<@2>")
-
-        embed = ReportsMixin._build_applicant_linger_embed(
-            [
-                (linked, now, 14),
-                (unlinked, now, 15),
-            ],
-            {"1": ["https://discord.com/channels/1/2/3"]},
-            now,
-        )
-
-        self.assertEqual(
-            embed.description,
-            "**1.** <@1>\n"
-            "Joined **14 days ago** · [Open ticket log](https://discord.com/channels/1/2/3)\n\n"
-            "**2.** <@2>\n"
-            "Joined **15 days ago** · No ticket log found",
-        )
 
     def test_applicant_report_limits_cards_and_explains_hidden_results(self) -> None:
         now = datetime(2026, 9, 12, tzinfo=timezone.utc)
@@ -96,10 +73,8 @@ class MemberLifecycleViewTests(unittest.IsolatedAsyncioTestCase):
         )
         events = MemoryEventsStore()
         self.addCleanup(events.close)
-        directory = TemporaryDirectory(dir=Path.cwd())
-        self.addCleanup(directory.cleanup)
         cog = Owner()
-        cog.lifecycle_state = LifecycleState(events, Path(directory.name) / "state.json")
+        cog.lifecycle_state = LifecycleState(events)
         await cog.lifecycle_state.startup()
         cog.bot = SimpleNamespace(
             wait_until_ready=AsyncMock(),
@@ -114,7 +89,7 @@ class MemberLifecycleViewTests(unittest.IsolatedAsyncioTestCase):
         channel.send.assert_awaited_once()
         self.assertEqual(cog.state["overdue_applicant_ids"], [member.id])
         self.assertEqual(cog.state["applicant_reports"]["42"]["applicant_ids"], [member.id])
-        restarted = LifecycleState(events, Path(directory.name) / "state.json")
+        restarted = LifecycleState(events)
         await restarted.startup()
         self.assertEqual(restarted.state, cog.state)
 

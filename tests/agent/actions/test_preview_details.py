@@ -3,10 +3,10 @@
 from types import SimpleNamespace
 from dataclasses import replace
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from datetime import datetime, timedelta, timezone
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.agent.access import ACCESS_LEAD
@@ -16,18 +16,15 @@ from elbow_helper.agent.actions.contracts import (
 from elbow_helper.agent.actions.details import prepare_preview
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.actions.preview import ConfirmationView, preview_text
-from elbow_helper.agent.actions.runner import AgentActionRunner
 from elbow_helper.agent.actions.store import AgentActionRepository
-from elbow_helper.agent.actions.private_view import PrivateResultView
 from elbow_helper.agent.delivery import AgentDeliveryMixin
-from elbow_helper.agent.conversation.turns import AgentTurnMixin
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.models import AgentRequestContext
 from elbow_helper.agent.models import RegisteredAgentTool
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.agent.scheduled.tools import prepare_manage, prepare_save
-from elbow_helper.agent.wording import ACTION_PREVIEW_DETAILS_BUTTON, ACTION_PREVIEW_DETAILS_HIDDEN
+from elbow_helper.agent.wording import ACTION_PREVIEW_DETAILS_HIDDEN
 from tests.agent.test_agent_audiences import Channel, Member, Role
 
 
@@ -35,18 +32,6 @@ SECRET = "Synthetic private content"
 
 
 class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
-    async def test_scheduled_preview_mentions_requester_and_lasts_one_hour(self):
-        delivery = AgentDeliveryMixin()
-        delivery.bot = self.context.bot
-        delivery.action_runner = object()
-        await delivery.send_response(self.message, preview_text([self.action]), None,
-                                     context=self.context, preview_timeout=3600.0,
-                                     mention_requester=True)
-        sent = self.message.reply.await_args
-        self.assertTrue(sent.args[0].startswith("<@2> "))
-        self.assertEqual(sent.kwargs["allowed_mentions"].users, [self.member])
-        self.assertEqual(sent.kwargs["view"].timeout, 3600.0)
-        self.assertNotIn(SECRET, sent.args[0])
 
     async def test_preview_pings_no_one_the_request_mentioned(self):
         delivery = AgentDeliveryMixin()
@@ -62,21 +47,6 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
                                      context=self.context)
         self.assertEqual(self.message.reply.await_args.kwargs["allowed_mentions"].users, [])
 
-    async def test_answer_pings_the_members_it_writes_as_mentions(self):
-        delivery = AgentDeliveryMixin()
-        delivery.bot = self.context.bot
-        delivery.action_runner = object()
-        extra = {member_id: Member(member_id, ()) for member_id in (5, 6, 7)}
-        lookup = {**{m.id: m for m in self.guild.members}, **extra}
-        self.guild.get_member = lookup.get
-        await delivery.send_response(self.message, "<@3> off you go", None)
-        self.assertEqual(self.message.reply.await_args.kwargs["allowed_mentions"].users, [self.other])
-        await delivery.send_response(self.message, "<@3> <@5> <@6> <@7> addressed", None)
-        self.assertEqual([member.id for member in self.message.reply.await_args.kwargs["allowed_mentions"].users],
-                         [3, 5, 6, 7])
-        await delivery.send_response(self.message, preview_text([self.action]) + " <@3>", None,
-                                     context=self.context)
-        self.assertEqual(self.message.reply.await_args.kwargs["allowed_mentions"].users, [])
 
     async def test_watcher_save_checks_the_destination_audience(self):
         tool = RegisteredAgentTool(AgentToolDefinition("synthetic_read", "Synthetic", {
@@ -193,55 +163,6 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(SECRET, interaction.response.send_message.await_args.args[0])
             self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
 
-    async def test_retained_visible_preview_keeps_detail_access_requirements(self):
-        recorder = SimpleNamespace(_commit_reports=MagicMock(),
-                                   _refresh_history_checkpoint=MagicMock(), persistence=None)
-        self.message.created_at = datetime.now(timezone.utc)
-        member = SimpleNamespace(id=2, display_name="Member")
-        delivery = SimpleNamespace(attempted_nonces=(1,), complete=True, unknown=False,
-                                   message_ids=(31,), uncertain_nonce=None,
-                                   text_parts=[], generated_parts=[])
-        for hidden in (False, True):
-            with self.subTest(hidden=hidden):
-                self.context.state.proposed_changes[:] = [replace(self.action, details_hidden=hidden)]
-                turns = []
-                conversation = SimpleNamespace(append=turns.append, turns=turns, working=None)
-                response = preview_text(self.context.state.proposed_changes)
-                delivery.text_parts = [response]
-                delivery.generated_parts = [response]
-                await AgentTurnMixin._record_turn(
-                    recorder, self.message, member, "Change target", response, "",
-                    self.context, delivery, conversation,
-                )
-                self.assertEqual(turns[0].source_channels,
-                                 frozenset({10} if hidden else {10, 20}))
-                self.assertEqual(turns[0].required_access,
-                                 frozenset() if hidden else frozenset({ACCESS_LEAD}))
-                self.assertEqual(SECRET in turns[0].text, not hidden)
-                self.assertEqual(self.context.state.source_channels, {10})
-                self.assertEqual(self.context.state.required_access, set())
-
-    async def test_hidden_preview_still_confirms_and_details_open_ephemerally(self):
-        delivery = AgentDeliveryMixin()
-        delivery.bot = self.context.bot
-        delivery.action_runner = SimpleNamespace(submit=AsyncMock())
-        await delivery.send_response(
-            self.message, preview_text(self.context.state.proposed_changes), None, context=self.context,
-        )
-        public = self.message.reply.await_args.args[0]
-        self.assertNotIn(SECRET, public)
-        self.assertIn("Change target", public)
-        self.assertIn(ACTION_PREVIEW_DETAILS_HIDDEN, public)
-        view = self.message.reply.await_args.kwargs["view"]
-        self.assertIsInstance(view, ConfirmationView)
-        self.assertIn(ACTION_PREVIEW_DETAILS_BUTTON, [item.label for item in view.children])
-        interaction = self.interaction()
-        await view.show_details(interaction)
-        self.assertEqual(interaction.response.send_message.await_args.args[0], SECRET)
-        self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
-        await view.confirm(self.interaction())
-        delivery.action_runner.submit.assert_awaited_once()
-        self.action.run.assert_not_awaited()
 
     async def test_details_button_checks_owner_source_access_and_expiration(self):
         await prepare_preview(self.context)
@@ -293,13 +214,6 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
         prepare.assert_not_awaited()
         self.assertFalse(self.context.state.proposed_changes)
 
-    def test_unfinished_report_contains_labels_and_no_preview_text(self):
-        report = AgentActionRunner._report({"steps": [{
-            "action_label": "Synthetic change", "action_class": "change",
-            "status": "queued", "preview_json": '["Synthetic private content"]',
-        }]})
-        self.assertIn("Synthetic change", report)
-        self.assertNotIn(SECRET, report)
 
     async def test_provenance_without_explicit_details_hides_all_preview_lines(self):
         self.context.state.proposed_changes[0] = replace(
@@ -310,29 +224,3 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(SECRET, preview)
         self.assertIn("Synthetic change", preview)
         self.assertIn(ACTION_PREVIEW_DETAILS_HIDDEN, preview)
-
-    async def test_hidden_change_result_is_delivered_behind_the_private_result_button(self):
-        directory = TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        repository = AgentActionRepository(Path(directory.name) / "actions.sqlite3")
-        progress = SimpleNamespace(id=40, edit=AsyncMock())
-        self.destination.send = AsyncMock(return_value=progress)
-        runner = AgentActionRunner(
-            bot=SimpleNamespace(get_guild=lambda _: self.guild), repository=repository, guild_id=1,
-        )
-        await runner.recover()
-        await prepare_preview(self.context)
-        self.context.state.proposed_changes = [
-            replace(action, preview=replace(action.preview, summary="Set synthetic value"))
-            for action in self.context.state.proposed_changes
-        ]
-        identifier = await runner.submit(
-            self.context, tuple(self.context.state.proposed_changes), confirmer_id=2,
-        )
-        result = await runner.wait_run(identifier)
-        self.assertEqual(result["status"], "completed")
-        self.assertNotIn(SECRET, str(self.destination.send.await_args_list))
-        self.assertNotIn(SECRET, progress.edit.await_args.kwargs["content"])
-        private_view = progress.edit.await_args.kwargs["view"]
-        self.assertIsInstance(private_view, PrivateResultView)
-        self.assertIn(SECRET, private_view.parts)

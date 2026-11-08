@@ -10,31 +10,41 @@ from elbow_helper.features.account_links.database import AccountLinksDbMixin
 from elbow_helper.features.clan_health.database import DATABASE as HEALTH_SETTINGS
 from elbow_helper.features.rosters.repository.repository import RosterRepository
 from elbow_helper.features.achievements.database import AchievementsDatabaseMixin
-from elbow_helper.data.store.schema import create_schema
+from elbow_helper.data.store.database import DATABASE as FAMILY
+from elbow_helper.infrastructure.persistence.documents import Document, write_document
 
 
-def synthetic_datasets(root):
+def synthetic_datasets(root, *, only=None):
     paths = SimpleNamespace(project_root=Path(root), data_root=Path(root) / "data")
-    files = {source.alias:source.resolve(paths) for source in SOURCES if source.tables}
+    files = {source.alias:source.resolve(paths) for source in SOURCES
+             if source.tables and (only is None or source.alias in only)}
     for path in files.values():
         path.parent.mkdir(parents=True, exist_ok=True)
-    with closing(sqlite3.connect(files["family"])) as connection:
-        create_schema(connection)
-        connection.commit()
-    with patch("elbow_helper.features.account_links.database.DB_PATH", files["links"]):
-        AccountLinksDbMixin()._init_db()
-    HEALTH_SETTINGS.initialize(files["health"])
-    RosterRepository(files["rosters"])
-    achievements = AchievementsDatabaseMixin()
-    achievements.db_path = files["achievements"]
-    achievements.logger = logging.getLogger(__name__)
-    achievements.init_database()
+    if "family" in files:
+        FAMILY.initialize(files["family"])
+    if "links" in files:
+        with patch("elbow_helper.features.account_links.database.DB_PATH", files["links"]):
+            AccountLinksDbMixin()._init_db()
+    if "health" in files:
+        HEALTH_SETTINGS.initialize(files["health"])
+    if "rosters" in files:
+        RosterRepository(files["rosters"])
+    if "achievements" in files:
+        achievements = AchievementsDatabaseMixin()
+        achievements.db_path = files["achievements"]
+        achievements.logger = logging.getLogger(__name__)
+        achievements.init_database()
     for source in SOURCES:
-        if source.state_name:
+        if source.state_name and (only is None or source.alias in only):
             path = source.resolve(paths)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("{}", encoding="utf-8")
-    seed_record_links(paths, [])
+            if isinstance(path, Document):
+                HEALTH_SETTINGS.initialize(path.database)
+                write_document(path, {})
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("{}", encoding="utf-8")
+    if "family" in files:
+        seed_record_links(paths, [])
     return paths
 
 

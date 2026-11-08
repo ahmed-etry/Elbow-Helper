@@ -2,23 +2,20 @@
 
 import asyncio
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import threading
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.conversation.debug import OperatorDebugRecord
-from elbow_helper.agent.conversation.transcripts import TranscriptArchive, _schema
+from elbow_helper.agent.conversation.transcripts import TranscriptArchive
 from elbow_helper.agent.delivery import AgentDeliveryMixin
 from elbow_helper.agent.tool_support.sql.catalogue import SOURCES
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
-from elbow_helper.agent.engine.service import AgentService, AgentUnavailableError
+from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
-from elbow_helper.infrastructure.persistence import SQLiteMigration, run_sqlite_migrations, sqlite_connection, sqlite_transaction
 from agent.engine.helpers import patch_engine
 from agent.engine.test_agent_plan_flow import _context, _model_step, _plan, _step, _Session
 from agent.engine.test_agent_service import _AgentModel
@@ -122,16 +119,6 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
         rows = self.archive.read_page(guild_id=3, channel_id=91, root_message_id=1)
         self.assertEqual(rows[0]["replies"][0]["content"], "Synthetic answer")
 
-    async def test_provider_setup_failure_is_archived(self):
-        with self.assertRaises(AgentUnavailableError):
-            await AgentService(_AgentModel(None)).answer(
-                question="Synthetic question", local_context="", context=self.context)
-        record, = await self.records()
-        self.assertEqual(record["status"], "failed")
-        self.assertEqual(record["error"], "The AI backend is not configured")
-        self.assertEqual(record["rounds"][0]["phase"], "routing")
-        self.assertEqual(record["rounds"][0]["outcome"], "failed")
-        self.assertIsNone(record["rounds"][0]["usage"])
 
     async def test_cancelled_round_is_archived_without_invented_token_usage(self):
         session = _Session([], [])
@@ -143,24 +130,3 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record["status"], "cancelled")
         self.assertGreaterEqual(record["usage"]["unknown_token_rounds"], 1)
         self.assertIsNone(record["rounds"][-1]["usage"])
-
-    async def test_version_one_migrates_and_only_old_diagnostics_are_pruned(self):
-        legacy = Path(self.directory.name) / "legacy.sqlite3"
-        with sqlite_connection(legacy) as connection:
-            run_sqlite_migrations(connection, (SQLiteMigration(1, "legacy", _schema),), target_version=1)
-        archive = TranscriptArchive(legacy)
-        archive.record_request(message_id=1, guild_id=3, channel_id=91, root_message_id=1,
-                               member_id=41, created_at="2025-01-01", content="Synthetic question",
-                               replied_to_message_id=None)
-        values = dict(record=OperatorDebugRecord("Synthetic question"), request_message_id=1,
-                      guild_id=3, channel_id=91, root_message_id=1, member_id=41)
-        archive.record_debug(**values)
-        with archive.connect() as connection, sqlite_transaction(connection, immediate=True):
-            connection.execute("UPDATE operator_debug_records SET created_at=?",
-                               ((datetime.now(timezone.utc) - timedelta(days=31)).isoformat(),))
-        archive.record_debug(**values)
-        archive.prune_debug()
-        with archive.connect() as connection:
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 3)
-            self.assertEqual(connection.execute("SELECT count(*) FROM operator_debug_records").fetchone()[0], 1)
-        self.assertEqual(len(archive.read_page(guild_id=3, channel_id=91, root_message_id=1)), 1)

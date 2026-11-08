@@ -42,13 +42,6 @@ def _latest_completed_season_key(now: datetime) -> str:
     py, pm = _prev_month(now.year, now.month)
     return _season_key(py, pm)
 
-def _season_key_for_datetime(value: datetime) -> str:
-    """Map an arbitrary timestamp into the clan-health season key."""
-    current_end = _season_end_dt(value.year, value.month)
-    if value < current_end:
-        return _season_key(value.year, value.month)
-    ny, nm = _next_month(value.year, value.month)
-    return _season_key(ny, nm)
 
 def _clan_games_signal_open(*, cycle_start: datetime, cycle_end: datetime) -> bool:
     # CG runs day 22 00:00 UTC to day 28 00:00 UTC each month.

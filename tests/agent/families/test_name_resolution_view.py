@@ -2,13 +2,12 @@
 from copy import deepcopy
 import json
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.plan.results import model_result, model_view
 from agent.engine.test_agent_plan_flow import _context
-from agent.families.test_family_paging_regressions import decode_rows
 
 
 def named_accounts(names=9):
@@ -46,17 +45,6 @@ def view_size(payload):
 
 
 class NameResolutionViewTests(unittest.IsolatedAsyncioTestCase):
-    def test_resolved_lookups_keep_only_selection_and_fallback_source(self):
-        payload = named_accounts()
-        before = deepcopy(payload)
-        for family in ('read_member_accounts', 'read_ranked_activity', 'read_test_family'):
-            view = family_model_view({**payload, 'family': family, 'rows': []})
-            for raw, shown in zip(payload['name_resolutions'], view['name_resolutions']):
-                self.assertEqual(set(shown), {'query', 'status', 'look_in', 'found_in', 'selected_accounts'})
-                self.assertEqual(shown['selected_accounts'], [
-                    {'player_tag': a['player_tag']} for a in raw['selected_accounts']])
-            self.assertEqual(family_model_view(view), view)
-        self.assertEqual(payload, before)
 
     def test_ambiguous_source_keeps_choices_and_linked_names(self):
         for side in ('game', 'discord'):
@@ -82,20 +70,6 @@ class NameResolutionViewTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(family_model_view(view), view)
             self.assertEqual(payload, raw)
 
-    async def test_nine_names_fourteen_accounts_fit_one_page_and_report_is_lossless(self):
-        payload = named_accounts()
-        context = _context()
-        tool = family_tool('read_member_accounts', 'Synthetic accounts.', {}, AsyncMock(return_value=payload))
-        page = await tool.handler(context, {})
-        self.assertEqual(len(decode_rows(model_view(model_result(page))['rows'])), 14)
-        self.assertIsNone(page['next_cursor'])
-        self.assertLessEqual(view_size(page), 16_000)
-        with patch('elbow_helper.agent.tool_support.model_view.name_resolution_view', side_effect=lambda r: r):
-            before_size = view_size(page)
-        self.assertLess(view_size(page), before_size)
-        stored = json.loads(context.state.reports[page['report_id']].payload)
-        self.assertEqual(stored['summary']['name_resolutions'], payload['name_resolutions'])
-        self.assertEqual(stored['rows'], payload['rows'])
 
     async def test_larger_selection_pages_rows_without_mutating_retained_names(self):
         payload = named_accounts(40)

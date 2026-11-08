@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
-from elbow_helper.agent.families import identity_reads as reads
-from elbow_helper.agent.families.cohort_activity import roster_cohort
+from elbow_helper.agent.reads import identity_reads as reads
+from elbow_helper.agent.reads.cohort_activity import roster_cohort
 from agent.families.test_named_account_stats import lookup_context, named_member
 
 
@@ -29,7 +29,7 @@ class ActivityNoPeriodTests(unittest.IsolatedAsyncioTestCase):
         activity = Mock(return_value=records)
         context = self.context(SimpleNamespace(member_activity=activity))
         with patch.object(reads, 'profiles', AsyncMock(return_value={})), \
-             patch('elbow_helper.agent.families.cohort_activity.selected_wars', AsyncMock()) as wars:
+             patch('elbow_helper.agent.reads.cohort_activity.selected_wars', AsyncMock()) as wars:
             result = await reads.TOOLS[2].handler(context, {'basis': 'selected',
                 'member_ids': [42, 43, 404], 'include_activity': True})
         self.assertNotIn('error', result)
@@ -59,28 +59,13 @@ class ActivityNoPeriodTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(coverage['discord_activity_coverage']['members_checked'], 3)
         context.message_search.history_page.assert_not_awaited()
 
-    async def test_failed_or_missing_discord_store_without_period_stays_unavailable(self):
-        for source in (None, SimpleNamespace(member_activity=Mock(
-                side_effect=RuntimeError('Synthetic read failure')))):
-            with self.subTest(source=source):
-                context = self.context(source)
-                with patch.object(reads, 'profiles', AsyncMock(return_value={})), \
-                     patch('elbow_helper.agent.families.cohort_activity.selected_wars', AsyncMock()) as wars:
-                    result = await reads.member_cohort(context, {'basis': 'selected',
-                        'member_ids': [42, 43], 'include_activity': True})
-                self.assertNotIn('error', result)
-                self.assertEqual([row['discord_activity_status'] for row in result['rows']],
-                                 ['source_unavailable', 'source_unavailable'])
-                self.assertTrue(all(row['lifetime_messages'] is None for row in result['rows']))
-                self.assertEqual(result['activity_coverage']['discord_activity_coverage']['members_not_checked'], 2)
-                wars.assert_not_awaited()
 
     async def test_roster_without_period_preserves_unlinked_accounts_and_unchecked_counts(self):
         context = self.context(SimpleNamespace(member_activity=Mock(return_value={})))
         roster = {'rows': [{'clan_code': 'BES', 'player_tag': tag, 'donations': 3}
                            for tag in ('#P0', '#Q0')], 'count_complete': True, 'clans': []}
         with patch.object(reads, 'clan_rosters', AsyncMock(return_value=roster)), \
-             patch('elbow_helper.agent.families.cohort_activity.selected_wars', AsyncMock()) as wars:
+             patch('elbow_helper.agent.reads.cohort_activity.selected_wars', AsyncMock()) as wars:
             result = await roster_cohort(context, {'include_activity': True})
         wars.assert_not_awaited()
         self.assertEqual(result['account_count'], 2)

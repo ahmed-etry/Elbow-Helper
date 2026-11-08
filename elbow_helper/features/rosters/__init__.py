@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from elbow_helper.core.lifecycle import ElbowHelperBot
 
 from .services.accounts import RosterAccountDirectory
@@ -20,7 +22,7 @@ async def setup(bot: ElbowHelperBot) -> None:
     if profiles is None:
         raise RuntimeError("Rosters requires the collectors' profiles")
 
-    repository = RosterRepository()
+    repository = await asyncio.to_thread(RosterRepository)
     cog = Rosters(
         bot,
         profiles,

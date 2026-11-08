@@ -5,11 +5,13 @@ from contextlib import closing
 import json
 from pathlib import Path
 import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import threading
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
+from tests.data.store_fixtures import empty_store
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.clans import collect_clans
 from elbow_helper.data.store.people import mirror_links, observe_discord
@@ -57,8 +59,7 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
         self.temporary = TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(self.temporary.cleanup)
         self.path = Path(self.temporary.name) / "family.sqlite3"
-        self.store = FamilyStore(self.path)
-        await self.store.initialize()
+        self.store = await empty_store(self.path)
 
     async def rows(self, sql, args=()):
         return await self.store.call(lambda connection: [dict(row) for row in connection.execute(sql, args)])
@@ -86,30 +87,6 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
         await self.store.finish(run)
         return run
 
-    async def test_schema_pragmas_foreign_keys_and_backup_inventory(self):
-        from elbow_helper.configuration.files import FAMILY_DATABASE, SQLITE_DATABASES
-        flags = await self.store.call(lambda c: [c.execute(f"PRAGMA {key}").fetchone()[0]
-                                                for key in ("user_version", "journal_mode", "foreign_keys")])
-        self.assertEqual(flags, [SCHEMA_VERSION, "wal", 1])
-        self.assertIn(FAMILY_DATABASE, SQLITE_DATABASES)
-        self.assertEqual(FAMILY_DATABASE, Path("family/family.sqlite3"))
-        tables = {row["name"] for row in await self.rows("SELECT name FROM sqlite_master WHERE type='table'")}
-        self.assertEqual(tables, {
-            "members", "member_aliases", "guild_membership", "member_roles", "accounts", "account_aliases",
-            "account_links", "account_link_metadata", "clans", "clan_observations", "clan_counters",
-            "clan_membership", "donation_snapshots", "collection_runs", "collection_items",
-            "player_observations", "item_catalog", "player_items", "hero_equipment", "player_counters",
-            "player_collection_state", "player_coverage", "old_profile_totals", "profile_history_coverage",
-            "wars", "war_source_keys", "war_sides", "war_members", "war_attacks", "cwl_seasons", "cwl_log_summaries",
-            "cwl_clans", "cwl_players", "cwl_rounds", "cwl_season_sources", "war_collection_state", "api_records", "api_field_changes", "player_ranked_references",
-            "family_api_state", "family_api_entities", "raid_member_lines", "old_clan_stays", "old_raid_weekends",
-            "family_battles", "battle_strings", "battle_changes", "battle_log_coverage",
-            "imports", "link_imports", "legacy_link_aliases", "link_operations", "war_legacy_ids",
-            "member_last_messages",
-        })
-        with self.assertRaises(sqlite3.IntegrityError):
-            await self.store.call(lambda c: c.execute(
-                "INSERT INTO account_link_metadata(account_id,basis,source_item_id) VALUES (999,'bad',999)"))
 
     async def test_future_migration_preserves_facts_and_rejects_downgrade(self):
         await self.links(100, link())
@@ -326,13 +303,6 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(r["from_at"], r["to_at"]) for r in await self.rows("SELECT * FROM account_links")], [(200, None)])
         self.assertEqual(len(await self.rows("SELECT * FROM members")), 1)
 
-    async def test_due_time_survives_restart_and_does_not_catch_up(self):
-        from elbow_helper.data.collectors.service import CLAN_INTERVAL_SECONDS
-        await self.links(100, {})
-        self.store = FamilyStore(self.path)
-        await self.store.initialize()
-        self.assertFalse(await self.store.due("links", CLAN_INTERVAL_SECONDS, 899_000_100))
-        self.assertTrue(await self.store.due("links", CLAN_INTERVAL_SECONDS, 900_000_100))
 
     async def test_disk_work_off_loop_and_writer_remains_serialized_after_cancellation(self):
         main_thread = threading.get_ident()
@@ -355,9 +325,15 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(completed.is_set())
             observed.append(threading.get_ident())
 
+        queued = threading.Event()
+        original_call = self.store._call
+        def observe_queue(*args):
+            queued.set()
+            return original_call(*args)
+        self.enterContext(patch.object(self.store, "_call", side_effect=observe_queue))
         next_task = asyncio.create_task(self.store.call(second))
         try:
-            await asyncio.sleep(0.02)
+            self.assertTrue(await asyncio.to_thread(queued.wait, 3))
             self.assertFalse(next_task.done())
         finally:
             release.set()

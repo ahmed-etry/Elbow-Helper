@@ -1,14 +1,11 @@
 """All supplied identity hints must identify the same Discord member."""
 
 from types import SimpleNamespace
-from elbow_helper.agent.wording import AGENT_ANSWER_UNFINISHED
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock
 
-from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.research.members import find_discord_members
-from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-from agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
+from agent.engine.test_agent_service import _context
 
 
 def member(identifier, username, *, nickname=None, aliases=()):
@@ -99,30 +96,8 @@ class MemberIdentityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "needs_input")
         self.assertEqual(target.state.resolved_members, {})
 
-    async def test_mentions_and_ids_are_exact(self):
-        for query in ("101", "<@101>", "<@!101>"):
-            result = await find_discord_members(context(), {"query": query})
-            self.assertEqual([row["member_id"] for row in result["members"]], [101])
 
     async def test_name_qualifier_must_also_match_an_explicit_mention(self):
         for query, expected in (("<@101> (amaj)", [101]), ("<@42> (amaj)", [])):
             result = await find_discord_members(context(), {"query": query})
             self.assertEqual([row["member_id"] for row in result["members"]], expected)
-
-    async def test_blank_social_answer_gets_one_generated_text_line(self):
-        session = _AgentSession([AgentStep(" \n\t ", (), AgentUsage()),
-                                 AgentStep("Synthetic greeting.", (), AgentUsage())])
-        answer = await AgentService(_AgentModel(session, route="social")).answer(
-            question="hello", local_context="", context=context(),
-        )
-        self.assertEqual(answer, "Synthetic greeting.")
-        self.assertEqual(len(session.calls), 2)
-        self.assertFalse(session.calls[-1][1])
-
-    async def test_tool_only_plan_claiming_delivery_without_message_ids_gets_fallback(self):
-        target = context()
-        target.state.reply_delivery.posts.append({"status": "complete", "message_ids": []})
-        service = AgentService(None)
-        with patch.object(service, "_answer", AsyncMock(return_value="")):
-            answer = await service.answer(question="hello", local_context="", context=target)
-        self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)

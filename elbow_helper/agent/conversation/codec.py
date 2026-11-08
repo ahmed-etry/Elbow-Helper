@@ -17,14 +17,14 @@ from .state import (
 )
 from ..tool_support.adapters.achievements.report import AchievementProgressReport
 from ..tool_support.adapters.events.report import EventScheduleReport
-from ..capabilities.member_lifecycle.report import MemberLifecycleReport
+from elbow_helper.agent.tool_support.adapters.member_lifecycle.report import MemberLifecycleReport
 from ..tool_support.adapters.clan_reporting.report import MissingElderReport
 from ..tool_support.adapters.cwl.report import CwlPerformanceReport
 from ..tool_support.adapters.clan_transfers.report import TransferQueueReport
 from ..tool_support.adapters.hibernation.report import HibernationReport
 from ..tool_support.adapters.support_tickets.report import SupportTicketReport
 from ..tool_support.adapters.recruitment.report import RecruitmentTrialReport
-from ..capabilities.examination.report import ExaminationCaseReport
+from elbow_helper.agent.tool_support.adapters.examination.report import ExaminationCaseReport
 from ..files.contracts import (
     CsvImportArtifact,
     TextImportArtifact,

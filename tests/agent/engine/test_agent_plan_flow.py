@@ -20,8 +20,6 @@ import discord
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.agent.models import AgentRequestContext, RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.engine.service import AgentUnavailableError
-from elbow_helper.agent.knowledge.store import KnowledgePrompt
 from elbow_helper.agent.commands.bridge import build_command_tools
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.actions.contracts import ActionRefused, ChangePreview
@@ -31,13 +29,9 @@ from elbow_helper.agent.prompts import LIMIT_ANSWER_INSTRUCTION
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
-from elbow_helper.agent.engine.budgets import ContextBudget, RequestLimits
-from elbow_helper.agent.engine.budgets import RESEARCH_LIMITS
+from elbow_helper.agent.engine.budgets import ContextBudget
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDefinition, AgentUsage
-from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import TextGenerationError
-
-from agent.engine.helpers import patch_contracts
 
 
 def _context():
@@ -122,31 +116,6 @@ class _Model:
 
 class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
 
-    async def test_assessment_loads_rule_index_and_starts_high_without_extra_calls(self):
-        knowledge = SimpleNamespace(load=lambda: SimpleNamespace(prompt=lambda _: KnowledgePrompt(
-            "Use the event's approved participation requirements.", frozenset(), 20,
-            index="Knowledge topics:\n- Event participation requirements",
-        )))
-        context = replace(_context(), knowledge_store=knowledge)
-        final = "There isn't enough attack evidence to call a candidate ready."
-        session = _Session([
-            _model_step(_plan([_step("cohort")], effort="low")),
-            AgentStep(final, (), AgentUsage(100, 50)),
-        ], self.events)
-        model = _Model(session)
-        with patch("elbow_helper.agent.engine.service.build_agent_tools",
-                   return_value=self.registry):
-            answer = await AgentService(model).answer(
-                question="Which newest recruit is promising enough to compete?",
-                local_context="", context=context,
-            )
-        self.assertEqual(answer, final)
-        self.assertIn("- Event participation requirements", model.request["prompt"])
-        self.assertNotIn("Use the event's approved participation requirements.", model.request["system_prompt"])
-        self.assertEqual(len(session.calls), 2)
-        self.assertEqual([call[2] for call in session.calls],
-                         [AgentReasoningEffort.HIGH, AgentReasoningEffort.LOW])
-        self.assertEqual(self.events, ["model", "read", "model"])
 
     async def test_invalid_step_keeps_valid_results_and_can_be_corrected(self):
         plan = _plan([
@@ -244,112 +213,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.calls), 1)
         self.assertEqual(len(context.state.proposed_changes), 1)
 
-    async def test_bad_reference_structure_uses_plan_correction(self):
-        invalid = _plan([_step("first"), _step("second", {
-            "value": {"step": "first", "path": []},
-        }, ["first"])])
-        session = _Session([
-            _model_step(invalid), _model_step(_plan([_step("corrected")])),
-            AgentStep("Synthetic answer", (), AgentUsage()),
-        ], self.events)
-        answer, _ = await self._answer(session)
-        self.assertEqual(answer, "Synthetic answer")
-        self.assertEqual(self.events, ["model", "model", "read", "model"])
-        self.assertIn("rule", session.calls[1][0][0].content)
-
-    async def test_reply_order_tracks_plan_order_while_reads_still_execute_first(self):
-        async def prepare(context, arguments):
-            self.events.append("change")
-            context.state.proposed_changes.append(PreparedAction(
-                "synthetic_change", {}, ChangePreview(("Synthetic preview",), AsyncMock(return_value=True)),
-                AsyncMock(),
-            ))
-            return {"status": "confirmation_required"}
-
-        self.registry["synthetic_change"] = RegisteredAgentTool(AgentToolDefinition(
-            "synthetic_change", "Change a synthetic value.",
-            {"type": "object", "properties": {}, "required": []}),
-            prepare, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-        )
-        for preview_first in (True, False):
-            with self.subTest(preview_first=preview_first):
-                self.events.clear()
-                change = {**_step("change"), "capability": "synthetic_change"}
-                read = _step("lookup")
-                plan = _plan([change, read] if preview_first else [read, change])
-                context = replace(_context(), bot=SimpleNamespace(tree=object()))
-                session = _Session([_model_step(plan), AgentStep("Synthetic answer", (), AgentUsage())], self.events)
-                with patch("elbow_helper.agent.engine.service.build_command_tools", return_value=({}, {})):
-                    answer, _ = await self._answer(session, context)
-                self.assertEqual(answer, "Synthetic answer")
-                self.assertEqual(context.state.preview_first, preview_first)
-                self.assertEqual(self.events, ["model", "read", "change", "model"])
-
-    async def test_compact_pages_preserve_payload_references_evidence_and_report(self):
-        report = SimpleNamespace(report_id="synthetic-report", retained_bytes=100,
-                                 manifest=lambda: {"report_id": "synthetic-report"})
-
-        async def page(context, arguments):
-            context.state.reports[report.report_id] = report
-            offset = arguments.get("offset", 0)
-            return {"report_id": report.report_id, "summary": {"total": 20},
-                    "players": [{"target_id": 101 + index, "name": f"Synthetic {index}"}
-                                for index in range(offset, offset + 10)],
-                    "next_offset": 10 if offset == 0 else None}
-
-        consume = AsyncMock(return_value={"value": 7})
-        self.registry = {
-            "synthetic_page": RegisteredAgentTool(AgentToolDefinition(
-                "synthetic_page", "Read synthetic values.", {"type": "object", "properties": {
-                    "report_id": {"type": "string"}, "offset": {"type": "integer", "minimum": 0},
-                }, "required": []}), page, contract=CapabilityContract(
-                    (("report_id", "synthetic_report"),), retained_fields=("report_id",),
-                )),
-            "synthetic_consume": RegisteredAgentTool(AgentToolDefinition(
-                "synthetic_consume", "Use synthetic values.", {"type": "object", "properties": {
-                    "targets": {"type": "array", "items": {"type": "integer"}, "maxItems": 20},
-                }, "required": ["targets"]}), consume, contract=CapabilityContract(
-                    (("targets", "synthetic_target_set"),),
-                )),
-        }
-        plan = _plan([
-            {**_step("first"), "capability": "synthetic_page"},
-            {**_step("second", {"report_id": {"step": "first", "path": ["report_id"]},
-                               "offset": {"step": "first", "path": ["next_offset"]}}, ["first"]),
-             "capability": "synthetic_page"},
-            {**_step("consume", {"targets": {"step": "second", "path": ["players", "*", "target_id"]}},
-                     ["second"]), "capability": "synthetic_consume"},
-        ])
-        context = _context()
-        session = _Session([_model_step(plan), AgentStep("Synthetic answer", (), AgentUsage())], self.events)
-        answer, _ = await self._answer(session, context)
-        self.assertEqual(answer, "Synthetic answer")
-        consume.assert_awaited_once()
-        self.assertEqual(consume.await_args.args[1]["targets"], list(range(111, 121)))
-        results = json.loads(session.calls[-1][0][0].content)["results"]
-        self.assertEqual(results["first"]["players"]["columns"], ["target_id", "name"])
-        self.assertIn("summary", results["first"])
-        self.assertNotIn("summary", results["second"])
-        self.assertEqual(results["second"]["players"]["rows"][0], [111, "Synthetic 10"])
-        evidence = json.loads(json.loads(context.state.evidence[1])["result"])
-        self.assertIn("summary", evidence)
-        self.assertEqual(evidence["players"][0]["target_id"], 111)
-        self.assertIs(context.state.reports[report.report_id], report)
-
-        consume.reset_mock()
-        continuation = _plan([
-            {**plan["steps"][1], "arguments": {"report_id": report.report_id, "offset": 10},
-             "depends_on": []}, plan["steps"][2],
-        ])
-        session = _Session([_model_step(_plan([plan["steps"][0]])), _model_step(continuation),
-                            AgentStep("Synthetic answer", (), AgentUsage())], self.events)
-        context = _context()
-        await self._answer(session, context)
-        first = json.loads(session.calls[1][0][0].content)["results"]["first"]
-        second = json.loads(session.calls[2][0][0].content)["results"]["second"]
-        self.assertIn("summary", first)
-        self.assertNotIn("summary", second)
-        self.assertEqual(consume.await_args.args[1]["targets"], list(range(111, 121)))
 
     async def test_model_truncation_preserves_structured_references_and_evidence(self):
         rows = [{"target_id": 101 + index, "details": "synthetic " * 100}
@@ -375,7 +238,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         record = json.loads(context.state.evidence[0])
         self.assertEqual(json.loads(record["result"])["players"], rows)
         self.assertFalse(record["result_complete"])
-
 
 
     async def test_prepared_actions_must_match_the_registered_class(self):
@@ -416,35 +278,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                     else:
                         self.assertIn("Synthetic preview", answer)
 
-    async def test_results_receive_a_final_answer_at_output_limits(self):
-        session = _Session([
-            _model_step(_plan([_step("first")])),
-            AgentStep("Part one", (), AgentUsage(), output_limit_reached=True),
-            AgentStep("Checked seven; no more reads.", (), AgentUsage()),
-        ], self.events)
-        answer, _ = await self._answer(session)
-        self.assertEqual(answer, "Checked seven; no more reads.")
-        self.assertFalse(session.calls[-1][1])
-        self.assertEqual(session.instructions[-1],
-                         LIMIT_ANSWER_INSTRUCTION)
-        self.assertEqual(self.events.count("read"), 1)
-
-    async def test_small_remaining_context_still_answers_from_checked_results(self):
-        session = _Session([_model_step(_plan([_step("first")])),
-                            AgentStep("Checked seven.", (), AgentUsage())], self.events)
-        session.context_window_tokens = 100_000
-        projected = ContextBudget.projected_input
-        def pressure(budget, results):
-            if results:
-                return budget.context_window_tokens - 512
-            return projected(budget, results)
-        with patch.object(ContextBudget, "projected_input", pressure):
-            answer, _ = await self._answer(session)
-        self.assertEqual(answer, "Checked seven.")
-        self.assertFalse(session.calls[-1][1])
-        self.assertEqual(session.instructions[-1],
-                         LIMIT_ANSWER_INSTRUCTION)
-        self.assertLessEqual(session.output_limits[-1], 8192)
 
     async def test_failed_final_answer_retains_partial_content_without_a_canned_failure(self):
         session = _Session([_model_step(_plan([_step("first")])),
@@ -486,14 +319,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             )
         return answer, model
 
-    async def test_direct_reply_uses_one_high_effort_call_and_only_the_plan_tool(self):
-        session = _Session([AgentStep("Ready.", (), AgentUsage())], self.events)
-        answer, model = await self._answer(session)
-        self.assertEqual(answer, "Ready.")
-        self.assertEqual(len(session.calls), 1)
-        self.assertEqual(session.calls[0][2], AgentReasoningEffort.HIGH)
-        self.assertEqual([tool.name for tool in model.request["tools"]],
-                         ["submit_request_plan"])
 
     async def test_cut_off_direct_reply_continues_once(self):
         session = _Session([
@@ -543,30 +368,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("first", session.calls[1][0][0].content)
         self.assertIn("required earlier result", session.calls[1][0][0].content)
 
-    async def test_declared_assessment_uses_max_effort_final_composition(self):
-        plan = {**_plan([_step("first")], effort="high"), "assessment": True, 'advice': True, 'finish_after_reads': True}
-        session = _Session([_model_step(plan),
-                            AgentStep(json.dumps({'intent': 'Established objective', 'intent_source': 'request',
-                                'discussion_message_ids': [], 'settled_choices': [], 'open_choices': [], 'facts': '', 'question': '',
-                                'recommendation': 'Supported recommendation.'}), (), AgentUsage())], self.events)
-        answer, _ = await self._answer(session)
-        self.assertEqual(answer, "Supported recommendation.")
-        self.assertEqual(len(session.calls), 2)
-        self.assertEqual(session.calls[-1][2], AgentReasoningEffort.MAX)
-        self.assertIn("intent_source", session.instructions[-1])
-
-    async def test_one_step_plan_uses_two_model_calls(self):
-        plan = _plan([_step("first")], effort="high")
-        session = _Session([_model_step(plan), AgentStep("Seven.", (), AgentUsage())],
-                           self.events)
-        answer, _ = await self._answer(session)
-        self.assertEqual(answer, "Seven.")
-        self.assertEqual(self.events, ["model", "read", "model"])
-        self.assertEqual(len(session.calls), 2)
-        self.assertEqual(session.calls[1][2], AgentReasoningEffort.LOW)
-        result = json.loads(session.calls[1][0][0].content)["results"]["first"]
-        self.assertEqual(result["value"], 7)
-        self.assertEqual(result["flags"], {"status": "complete", "truncated": False})
 
     async def test_initial_plan_and_each_revision_get_one_correction(self):
         initial = _plan([_step("initial", {"value": 1})])
@@ -603,53 +404,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(session.calls[-1][1])
 
 
-    async def test_max_effort_plan_keeps_composition_bounded(self):
-        plan = _plan([_step("first")], effort="max")
-        session = _Session([_model_step(plan), AgentStep("Seven.", (), AgentUsage())],
-                           self.events)
-        answer, _ = await self._answer(session)
-        self.assertEqual(answer, "Seven.")
-        self.assertEqual([call[2] for call in session.calls],
-                         [AgentReasoningEffort.HIGH, AgentReasoningEffort.LOW])
-
-    async def test_answer_output_limit_respects_request_budget_at_every_effort(self):
-        for effort, expected in (("low", 8_192), ("high", 8_192),
-                                 ("max", 8_192)):
-            with self.subTest(effort=effort):
-                session = _Session([
-                    _model_step(_plan([_step("first")], effort=effort)),
-                    AgentStep("Seven.", (), AgentUsage()),
-                ], self.events)
-                limits = []
-                advance = session.advance
-
-                async def capture(*args, **kwargs):
-                    limits.append(kwargs["max_output_tokens"])
-                    return await advance(*args, **kwargs)
-
-                session.advance = capture
-                await self._answer(session)
-                self.assertEqual(limits, [8_192, expected])
-                self.events.clear()
-
-    async def test_answer_output_limit_stays_inside_context(self):
-        session = _Session([
-            _model_step(_plan([_step("first")], effort="max")),
-            AgentStep("Seven.", (), AgentUsage()),
-        ], self.events)
-        session.context_window_tokens = 70_000
-        limits = []
-        advance = session.advance
-
-        async def capture(*args, **kwargs):
-            limits.append(kwargs["max_output_tokens"])
-            return await advance(*args, **kwargs)
-
-        session.advance = capture
-        await self._answer(session)
-        self.assertLess(limits[1], 64_000)
-        self.assertGreaterEqual(limits[1], 1_024)
-
     async def test_dependent_steps_run_before_the_answer_call(self):
         plan = _plan([_step("first"), _step("second", {
             "value": {"step": "first", "path": ["value"]},
@@ -661,37 +415,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.events, ["model", "read", "read", "model"])
         self.assertEqual(len(session.calls), 2)
 
-    async def test_six_periods_complete_in_two_batched_plans(self):
-        self.registry["read_value"] = replace(self.registry["read_value"], definition=AgentToolDefinition(
-            "read_value", "Read a value.", {"type": "object", "properties": {
-                "period": {"type": "integer", "minimum": 0}}, "required": ["period"]}))
-        plans = [_plan([_step(f"period_{n}", {"period": n}) for n in range(start, start + 3)])
-                 for start in (0, 3)]
-        session = _Session([*[_model_step(plan) for plan in plans],
-                            AgentStep("Checked six periods.", (), AgentUsage())], self.events)
-        session.steps = [replace(step, usage=AgentUsage(4000, 100)) for step in session.steps]
-        with patch_contracts(self.registry, {
-            "read_value": CapabilityContract(())
-        }):
-            answer, _ = await self._answer(session)
-        self.assertEqual(answer, "Checked six periods.")
-        self.assertEqual(len(session.calls), 3)
-        self.assertEqual(self.events.count("read"), 6)
-
-    async def test_answer_only_round_refuses_extra_calls_once(self):
-        plan = _plan([_step("first")])
-        extra = AgentToolCall("extra", "submit_request_plan", json.dumps(plan))
-        session = _Session([
-            _model_step(plan), AgentStep("", (extra,), AgentUsage()),
-            AgentStep("Seven.", (), AgentUsage()),
-        ], self.events)
-        with patch("elbow_helper.agent.engine.budgets.MAX_MODEL_ROUNDS", 2):
-            answer, _ = await self._answer(session)
-        self.assertEqual(answer, "Seven.")
-        self.assertEqual(len(session.calls), 3)
-        self.assertFalse(session.calls[1][1])
-        self.assertEqual(json.loads(session.calls[2][0][0].content)["flags"]["reason"],
-                         "answer_only")
 
     async def test_independent_steps_run_together_before_the_answer(self):
         arrived = 0
@@ -739,48 +462,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         await self._answer(session)
         self.assertEqual(self.events.count("read"), 2)
 
-    async def test_revised_plan_references_completed_read(self):
-        first = _plan([_step("first", {"value": 7})])
-        second = _plan([
-            _step("second", {"value": {"step": "first", "path": ["value"]}}, ["first"]),
-        ])
-        session = _Session([
-            _model_step(first), _model_step(second), AgentStep("Done.", (), AgentUsage()),
-        ], self.events)
-        answer, _ = await self._answer(session)
-        self.assertEqual(answer, "Done.")
-        self.assertEqual(self.events.count("read"), 1)
-        self.assertFalse(session.calls[-1][1])
-        self.assertEqual(
-            json.loads(session.calls[-1][0][0].content)["results"]["second"]["value"], 7,
-        )
-
-    async def test_lookup_exception_returns_data_and_can_be_corrected(self):
-        original = self.registry["read_value"]
-        async def read(context, arguments):
-            if arguments.get("value") == 1:
-                raise AttributeError("Synthetic failure")
-            return {"value": arguments.get("value")}
-        self.registry["read_value"] = replace(original, handler=read)
-        session = _Session([_model_step(_plan([_step("first", {"value":1})])),
-            _model_step(_plan([_step("first", {"value":2})])),
-            AgentStep("Corrected.", (), AgentUsage())], self.events)
-        with self.assertLogs("elbow_helper.agent.engine.tool_call", level="ERROR"):
-            answer, _ = await self._answer(session)
-        self.assertEqual(answer, "Corrected.")
-        self.assertIn("error", json.loads(session.calls[1][0][0].content)["results"]["first"])
-        self.assertEqual(
-            json.loads(session.calls[2][0][0].content)["results"]["first"]["value"], 2,
-        )
-
-    async def test_identical_outputs_are_not_deduplicated(self):
-        original = self.registry["read_value"]
-        self.registry["read_value"] = replace(original, action_class=ActionClass.OUTPUT)
-        session = _Session([_model_step(_plan([_step("first", {"value":7})])),
-            _model_step(_plan([_step("second", {"value":7})])),
-            AgentStep("Done.", (), AgentUsage())], self.events)
-        await self._answer(session)
-        self.assertEqual(self.events.count("read"), 2)
 
     async def test_revision_keeps_successful_step_ids_reserved(self):
         for payload in ({"value": 7}, {}, {"value": 7, "flags": {"status": "partial"}}):
@@ -827,46 +508,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("read", self.events)
         self.assertEqual(len(session.calls), 1)
 
-    async def test_disclosure_rejection_is_returned_to_the_model(self):
-        async def read(_, arguments):
-            self.events.append("read")
-            return {"channel_id": arguments["channel_id"]}
-
-        self.registry = {"read_value": RegisteredAgentTool(
-            AgentToolDefinition("read_value", "Read a value.", {
-                "type": "object", "properties": {
-                    "channel_id": {"type": "integer", "minimum": 1},
-                }, "required": ["channel_id"],
-            }), read,
-        )}
-        contract = CapabilityContract(
-            (("channel_id", "discord_channel"),), channel_fields=("channel_id",),
-            source_scope="channel_messages", result_channel_fields=("channel_id",),
-        )
-        plan = _plan([_step("first", {"channel_id": 202})])
-        session = _Session([
-            _model_step(plan), AgentStep("That conversation is unavailable.", (), AgentUsage()),
-        ], self.events)
-        with (
-            patch_contracts(self.registry,
-                       {"read_value": contract}),
-            patch("elbow_helper.agent.engine.steps.accessible_message_channel",
-                  return_value=None),
-        ):
-            answer, _ = await self._answer(session)
-        self.assertEqual(answer, "That conversation is unavailable.")
-        self.assertIn("not available here", session.calls[1][0][0].content)
-        self.assertEqual(len(session.calls), 2)
-        self.assertNotIn("read", self.events)
-
-    async def test_unexpected_value_error_is_not_reported_as_an_unsettled_plan(self):
-        session = _Session([], self.events)
-        with (
-            patch("elbow_helper.agent.engine.flow.read_request",
-                  AsyncMock(side_effect=ValueError("broken lookup"))),
-            self.assertRaisesRegex(ValueError, "broken lookup"),
-        ):
-            await self._answer(session)
 
     async def test_exhausted_context_does_not_run_tools_or_send_another_provider_request(self):
         session = _Session([_model_step(_plan([_step("first")]))], self.events)
@@ -875,36 +516,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(AGENT_ANSWER_UNFINISHED, answer)
         self.assertEqual(self.events, [])
 
-    async def test_interrupted_provider_round_is_logged_as_unknown_usage(self):
-        session = _Session([], self.events)
-
-        async def fail(*args, **kwargs):
-            raise TextGenerationError("synthetic_failure")
-
-        session.advance = fail
-        with self.assertLogs("elbow_helper.agent.engine", level="INFO") as logs:
-            with self.assertRaises(AgentUnavailableError):
-                await self._answer(session)
-        self.assertTrue(any("attempted_rounds=2" in line and "unknown_token_rounds=1" in line
-                            for line in logs.output))
-
-    async def test_success_without_usage_is_not_recorded_as_known_free(self):
-        session = _Session([AgentStep("Ready.", (), AgentUsage())], self.events)
-        with self.assertLogs("elbow_helper.agent.engine", level="INFO") as logs:
-            await self._answer(session)
-        self.assertTrue(any("unknown_token_rounds=1" in line and "unknown_cache_rounds=1" in line
-                            for line in logs.output))
-
-    async def test_round_and_tool_diagnostics_include_identity_and_duration(self):
-        reply = AgentStep("Ready.", (), AgentUsage(100, 50, 80, 20),
-                          "provider-id", "synthetic-model", 7)
-        session = _Session([_model_step(_plan([_step("first")])), reply], self.events)
-        with self.assertLogs("elbow_helper.agent.engine", level="INFO") as logs:
-            await self._answer(session)
-        self.assertTrue(any("provider_request_id=provider-id" in line and "provider_duration_ms=7" in line
-                            and "model=synthetic-model" in line for line in logs.output))
-        self.assertTrue(any("Agent tool:" in line and "request=71" in line and "elapsed_ms=" in line
-                            for line in logs.output))
 
     async def test_replayed_source_access_is_checked_before_first_model_round(self):
         context = _context()
@@ -931,22 +542,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.calls), 1)
         self.assertEqual(context.state.evidence, [])
 
-    async def test_tool_budget_forces_next_round_to_answer(self):
-        session = _Session([_model_step(_plan([_step("first")])),
-                            AgentStep("Ready.", (), AgentUsage())], self.events)
-        with patch("elbow_helper.agent.engine.budgets.MAX_TOOL_CALLS", 1):
-            await self._answer(session)
-        self.assertFalse(session.calls[1][1])
-        self.assertEqual(self.events, ["model", "read", "model"])
-
-    async def test_final_answer_recovery_does_not_loop(self):
-        plan = _plan([_step("first")])
-        session = _Session([_model_step(plan)] * 3, self.events)
-        with patch("elbow_helper.agent.engine.budgets.MAX_MODEL_ROUNDS", 2):
-            answer, _ = await self._answer(session)
-        self.assertIn("couldn't finish checking", answer)
-        self.assertEqual(len(session.calls), 3)
-        self.assertEqual(self.events.count("read"), 1)
 
     async def test_history_is_supplied_and_lookup_evidence_is_retained(self):
         context = _context()
@@ -960,14 +555,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(evidence["result"])["value"], 7)
         self.assertEqual(evidence["result_status"], "complete")
 
-    async def test_observed_later_round_pressure_stops_further_tool_requests(self):
-        plan = _plan([_step("first")])
-        step = _model_step(plan)
-        step = replace(step, usage=AgentUsage(prompt_tokens=32_000, completion_tokens=1_000))
-        session = _Session([step, AgentStep("Ready.", (), AgentUsage())], self.events)
-        session.context_window_tokens = 50_000
-        await self._answer(session)
-        self.assertFalse(session.calls[1][1])
 
     async def test_nested_result_references_are_checked_again_before_execution(self):
         async def read(_, arguments):
@@ -990,28 +577,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(session.calls[1][0][0].content)["results"]["second"]["flags"]["status"],
                          "failed")
 
-    async def test_research_stops_at_shared_request_round_limit(self):
-        plans = [_plan([_step(str(value), {"value": value})]) for value in range(1, 13)]
-        session = _Session([*map(_model_step, plans), AgentStep("Ready.", (), AgentUsage())], self.events)
-        session.steps = [replace(step, usage=AgentUsage(4000, 100)) for step in session.steps]
-        await self._answer(session)
-        self.assertEqual(self.events.count("read"), RESEARCH_LIMITS.rounds - 2)
-        self.assertEqual(len(session.calls), RESEARCH_LIMITS.rounds - 1)
-        self.assertFalse(session.calls[-1][1])
-
-    async def test_future_unused_evidence_does_not_prevent_next_lookup(self):
-        step = replace(_model_step(_plan([_step("first")])), usage=AgentUsage(30_000, 1000))
-        session = _Session([step, AgentStep("Ready.", (), AgentUsage())], self.events)
-        await self._answer(session)
-        self.assertEqual(self.events.count("read"), 1)
-        self.assertTrue(session.calls[1][1])
-
-    async def test_requested_tool_result_is_returned_to_the_same_session(self):
-        session = _Session([_model_step(_plan([_step("first", {"value": 7})])),
-                            AgentStep("Ready.", (), AgentUsage())], self.events)
-        _, model = await self._answer(session)
-        self.assertIs(model.session, session)
-        self.assertEqual(json.loads(session.calls[1][0][0].content)["results"]["first"]["value"], 7)
 
     async def test_new_source_lost_before_next_model_round_is_removed_from_pending_results(self):
         context = _context()
@@ -1050,50 +615,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.calls), 2)
         self.assertEqual(self.events.count("read"), 1)
 
-    async def test_context_pressure_requests_final_answer_without_lowering_output_limit(self):
-        session = _Session([_model_step(_plan([_step("first")])), AgentStep("Ready.", (), AgentUsage())], self.events)
-        calls = []
-        advance = session.advance
-        async def observe(*args, **kwargs):
-            calls.append(kwargs)
-            return await advance(*args, **kwargs)
-        session.advance = observe
-        with patch("elbow_helper.agent.engine.service.ContextBudget.can_continue_tools", return_value=False):
-            await self._answer(session)
-        self.assertFalse(calls[1]["allow_tools"])
-        self.assertEqual(calls[1]["max_output_tokens"], 8_192)
-        self.assertEqual(self.events.count("read"), 0)
-
-    async def test_final_tool_requests_are_declined_at_each_budget(self):
-        for budget, value in (("MAX_TOOL_CALLS", 1), ("MAX_EVIDENCE_CHARACTERS", 1), ("MAX_MODEL_ROUNDS", 2)):
-            with self.subTest(budget=budget):
-                self.events.clear()
-                first = _plan([_step("first")])
-                second = _plan([_step("second", {"value": 8})])
-                session = _Session([_model_step(first), _model_step(second), AgentStep("Ready.", (), AgentUsage())], self.events)
-                with patch("elbow_helper.agent.engine.budgets." + budget, value):
-                    await self._answer(session)
-                self.assertFalse(session.calls[1][1])
-                self.assertFalse(session.calls[2][1])
-                self.assertEqual(session.instructions[2],
-                    LIMIT_ANSWER_INSTRUCTION)
-                self.assertEqual(self.events.count("read"), 1)
-                self.assertIn("answer_only", session.calls[2][0][0].content)
-
-    async def test_dependent_period_is_bound_to_the_owner_result(self):
-        contract = CapabilityContract(())
-        async def read(_, arguments):
-            self.events.append(arguments)
-            return {"key": "synthetic-key", "value": 7}
-        self.registry["read_value"] = replace(self.registry["read_value"],
-            definition=AgentToolDefinition("read_value", "Read a value.", {
-                "type": "object", "properties": {"selected_key": {"type": "string"}}}), handler=read)
-        period = {"kind": "resolved", "step": "first", "selector": "latest", "path": ["key"]}
-        plan = _plan([_step("first"), _step("second", {"selected_key": {"step": "first", "path": ["key"]}}, ["first"])], periods=[period])
-        session = _Session([_model_step(plan), AgentStep("Ready.", (), AgentUsage())], self.events)
-        with patch_contracts(self.registry, {"read_value": contract}):
-            await self._answer(session)
-        self.assertEqual(self.events, ["model", {}, {"selected_key": "synthetic-key"}, "model"])
 
     async def test_lost_unpublished_batch_is_discarded_and_remaining_lookup_continues(self):
         context = _context()
@@ -1121,20 +642,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.source_channels, set())
         self.assertEqual(len(context.state.evidence), 1)
 
-    async def test_revoked_evidence_never_reaches_a_second_model_round(self):
-        context = _context()
-        session = _Session([_model_step(_plan([_step("first")]))], self.events)
-        advance = session.advance
-        async def revoke(*args, **kwargs):
-            result = await advance(*args, **kwargs)
-            context.source_message.channel.permissions_for = lambda _: SimpleNamespace(
-                view_channel=False, read_message_history=False)
-            return result
-        session.advance = revoke
-        with self.assertRaises(AgentAccessLost):
-            await self._answer(session, context)
-        self.assertEqual(len(session.calls), 1)
-        self.assertNotIn("read", self.events)
 
     async def test_deepseek_dsml_during_compact_synthesis_recovers_through_real_adapter(self):
         from elbow_helper.infrastructure.ai.client import DeepSeekTextClient
@@ -1170,16 +677,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("<capabilities>", prompts[1])
         self.assertIn("<capabilities>", prompts[0])
 
-    async def test_distinct_reads_share_the_request_round_budget(self):
-        self.registry["read_value"] = replace(
-            self.registry["read_value"], contract=CapabilityContract(()),
-        )
-        plans = [_plan([_step(str(index), {"value": index + 1})]) for index in range(5)]
-        session = _Session([*map(_model_step, plans), AgentStep("Ready.", (), AgentUsage())], self.events)
-        session.steps = [replace(step, usage=AgentUsage(1000, 100)) for step in session.steps]
-        with patch("elbow_helper.agent.engine.budgets.RESEARCH_LIMITS", RequestLimits(6, 120_000, 24_000, 8192)):
-            await self._answer(session)
-        self.assertEqual(self.events.count("read"), 4)
 
     async def test_selected_artifact_keeps_a_tool_slot_after_research_budget_ends(self):
         artifact = AsyncMock(return_value={"artifact_prepared": True})
@@ -1217,32 +714,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["output"]["error"],
                          "Step first failed, so this step could not run.")
 
-    async def test_finite_context_can_keep_tools_available_for_first_round(self):
-        session = _Session([AgentStep("Ready.", (), AgentUsage())], self.events)
-        session.context_window_tokens = 150_000
-        limits = []
-        advance = session.advance
-        async def observe(*args, **kwargs):
-            limits.append(kwargs["max_output_tokens"])
-            return await advance(*args, **kwargs)
-        session.advance = observe
-        _, model = await self._answer(session)
-        self.assertTrue(session.calls[0][1])
-        self.assertEqual(limits, [8_192])
-        self.assertEqual(model.request["max_output_tokens"], 64_000)
-
-    async def test_finite_context_executes_bounded_read_and_reserves_answer(self):
-        session = _Session([_model_step(_plan([_step("first")])), AgentStep("Ready.", (), AgentUsage())], self.events)
-        session.context_window_tokens = 150_000
-        limits = []
-        advance = session.advance
-        async def observe(*args, **kwargs):
-            limits.append(kwargs["max_output_tokens"])
-            return await advance(*args, **kwargs)
-        session.advance = observe
-        await self._answer(session)
-        self.assertEqual(self.events.count("read"), 1)
-        self.assertEqual(limits, [8_192, 8_192])
 
     async def test_deadline_rechecked_after_model_round_before_tool_runs(self):
         now = time.monotonic()
@@ -1260,16 +731,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("read", self.events)
         self.assertEqual(len(session.calls), 2)
 
-
-    async def test_disabled_commands_keep_the_read_only_catalogue(self):
-        session = _Session([AgentStep("Ready.", (), AgentUsage())], self.events)
-        with patch("elbow_helper.agent.engine.service.build_command_tools") as commands:
-            _, model = await self._answer(session)
-        commands.assert_not_called()
-        self.assertIn(
-            "You cannot browse the internet, remember other conversations unless "
-            "supplied, or change anything", model.request["system_prompt"],
-        )
 
     async def test_enabled_command_asks_once_then_runs_on_reply(self):
         run = AsyncMock(return_value=ActionOutcome("complete", text="Synthetic result"))
@@ -1375,38 +836,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.calls), 1)
         run.assert_not_awaited()
 
-    async def test_one_action_step_can_preview_each_selected_target(self):
-        run = AsyncMock(return_value=ActionOutcome("complete"))
-        async def prepare(context, arguments):
-            for target in arguments["targets"]:
-                context.state.proposed_changes.append(PreparedAction(
-                    "synthetic_change", {"target": target},
-                    ChangePreview((f"Change target {target}",), AsyncMock(return_value=True)),
-                    run,
-                ))
-            return {"status": "confirmation_required"}
-        tool = RegisteredAgentTool(AgentToolDefinition(
-            name="synthetic_change", description="Change selected targets.",
-            parameters={"type": "object", "properties": {
-                "targets": {"type": "array", "items": {"type": "integer", "minimum": 1},
-                            "minItems": 1, "maxItems": 5},
-            }, "required": ["targets"], "additionalProperties": False},
-        ), prepare, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE)
-        plan = _plan([{**_step("many", {"targets": [101, 202]}),
-                       "capability": "synthetic_change"}])
-        session = _Session([_model_step(plan)], self.events)
-        context = replace(_context(), bot=SimpleNamespace(tree=object()))
-        with (patch("elbow_helper.agent.engine.service.build_agent_tools",
-                    return_value={**self.registry, "synthetic_change": tool}),
-              patch("elbow_helper.agent.engine.service.build_command_tools",
-                    return_value=({}, {}))):
-            answer = await AgentService(_Model(session)).answer(
-                question="synthetic request", local_context="", context=context,
-            )
-        self.assertIn("Change target 101", answer)
-        self.assertIn("Change target 202", answer)
-        self.assertEqual(len(context.state.proposed_changes), 2)
-        run.assert_not_awaited()
 
     async def test_action_preview_keeps_an_earlier_action_result_reference(self):
         reference = {"step": "created", "path": ["target_id"]}

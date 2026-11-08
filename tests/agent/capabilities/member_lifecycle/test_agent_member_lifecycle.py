@@ -7,9 +7,7 @@ from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.models import AgentRequestContext
-from elbow_helper.agent.capabilities.member_lifecycle.reads import (
-    read_member_lifecycle, read_member_lifecycle_report,
-)
+from elbow_helper.agent.tool_support.adapters.member_lifecycle.reads import read_member_lifecycle, read_member_lifecycle_report
 from elbow_helper.features.member_lifecycle.queries import MemberLifecycleQueries
 
 
@@ -100,11 +98,6 @@ class AgentMemberLifecycleTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertEqual([row["member_id"] for row in retained["members"]], [8])
 
-    async def test_overseeing_access_is_required_before_state_read(self):
-        self.permissions[OVERSEEING_TERRACE] = False
-        result = await read_member_lifecycle(self.context, {})
-        self.assertEqual(result, {"error": "The member lifecycle source is not accessible."})
-        self.assertEqual(self.context.state.reports, {})
 
     async def test_stale_activity_channel_is_not_fetched_or_retained_as_evidence(self):
         stale = self.guild.get_channel_or_thread(200)

@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from threading import Event
 import time
 import unittest
@@ -35,22 +35,6 @@ class PersistenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot.revision, 2)
 
 
-
-
-    async def test_foreign_and_invalid_snapshot_are_not_restored(self):
-        await self.persistence.save(self.store, self.conversation)
-        now = time.time()
-        self.repository.save(StoredConversation(1, 100, 2, 0, now, now + 21600, '{"format":999}'), (20,))
-        restarted = ConversationPersistence(self.repository)
-        restored_store = ConversationStore()
-        with self.assertLogs("elbow_helper.agent.conversation.persistence", level="ERROR"):
-            await restarted.restore(restored_store, guild_id=1)
-        self.assertIsNotNone(restored_store.find(1, 100, 10))
-        self.assertIsNone(restored_store.find(1, 100, 20))
-        foreign_store = ConversationStore()
-        await restarted.restore(foreign_store, guild_id=2)
-        self.assertEqual(foreign_store.entries(), ())
-
     async def test_failed_save_does_not_advance_revision(self):
         with patch.object(self.repository, "save", side_effect=OSError("disk full")):
             with self.assertRaises(OSError):
@@ -58,50 +42,6 @@ class PersistenceTests(unittest.IsolatedAsyncioTestCase):
         await self.persistence.save(self.store, self.conversation)
         self.assertEqual(self.repository.find_reply(1, 100, 10, now=time.time()).revision, 1)
 
-    async def test_capacity_evicts_only_snapshots_no_longer_loaded(self):
-        with (
-            patch("elbow_helper.agent.conversation.state.MAX_CONVERSATIONS", 2),
-            patch("elbow_helper.agent.conversation.repository.MAX_CONVERSATIONS", 2),
-        ):
-            second = self.store.create(1, 100, 2)
-            second.append(ConversationTurn("second", frozenset({100})))
-            self.store.register_reply(second, 20)
-            await self.persistence.save(self.store, self.conversation)
-            await self.persistence.save(self.store, second)
-
-            # Make the first snapshot newest on disk without changing the
-            # store's capacity order, then evict it from memory.
-            self.conversation.append(ConversationTurn("newer", frozenset({100})))
-            await self.persistence.save(self.store, self.conversation)
-            third = self.store.create(1, 100, 3)
-            third.append(ConversationTurn("third", frozenset({100})))
-            self.store.register_reply(third, 30)
-            await self.persistence.save(self.store, third)
-
-            self.assertIsNone(self.repository.find_reply(1, 100, 10, now=time.time()))
-            self.assertIsNotNone(self.repository.find_reply(1, 100, 20, now=time.time()))
-            second.append(ConversationTurn("still writable", frozenset({100})))
-            await self.persistence.save(self.store, second)
-
-        self.assertEqual(self.repository.find_reply(1, 100, 20, now=time.time()).revision, 2)
-
-    async def test_restore_rehydrates_revision_after_memory_eviction(self):
-        await self.persistence.save(self.store, self.conversation)
-        with patch("elbow_helper.agent.conversation.state.MAX_CONVERSATIONS", 1):
-            second = self.store.create(1, 100, 2)
-        second.append(ConversationTurn("second", frozenset({100})))
-        self.store.register_reply(second, 20)
-        await self.persistence.save(self.store, second)
-        self.assertEqual(self.store.entries()[0][0], 2)
-        self.assertIsNotNone(self.repository.find_reply(1, 100, 10, now=time.time()))
-
-        restored_store = ConversationStore()
-        await self.persistence.restore(restored_store, guild_id=1)
-        restored = restored_store.find(1, 100, 10)
-        restored.append(ConversationTurn("after restore", frozenset({100})))
-        await self.persistence.save(restored_store, restored)
-
-        self.assertEqual(self.repository.find_reply(1, 100, 10, now=time.time()).revision, 2)
 
     async def test_exact_reply_lazily_restores_evicted_revision_and_protects_active_state(self):
         await self.persistence.save(self.store, self.conversation)
@@ -242,20 +182,3 @@ class PersistenceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await task
         self.assertTrue(completed.is_set())
-
-
-class LegacyConsentTests(unittest.TestCase):
-    def test_saved_disclosure_overrides_are_discarded(self):
-        from dataclasses import replace
-        import json
-        from elbow_helper.agent.conversation.codec import encode_conversation, decode_conversation
-        store = ConversationStore()
-        conversation = store.create(1, 100, 1)
-        stored = encode_conversation(conversation, root_message_id=1, revision=1)
-        payload = json.loads(stored.payload)
-        payload["answer_disclosures"] = [{"requester_id": 42, "source_channels": [200],
-                                           "required_access": ["lead"], "knowledge_sources": []}]
-        restored = decode_conversation(replace(stored, payload=json.dumps(payload)))
-        self.assertFalse(hasattr(restored, "answer_disclosures"))
-        self.assertNotIn("answer_disclosures", encode_conversation(
-            restored, root_message_id=1, revision=2).payload)

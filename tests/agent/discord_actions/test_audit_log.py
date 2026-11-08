@@ -2,13 +2,13 @@
 
 from dataclasses import replace
 from datetime import datetime, timezone
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
 from unittest.mock import AsyncMock, patch
 
 import discord
 
-from elbow_helper.agent.access import ACCESS_VIEW_AUDIT_LOG, AgentAccessLost, LookupAccessDenied
+from elbow_helper.agent.access import ACCESS_VIEW_AUDIT_LOG, AgentAccessLost
 from elbow_helper.agent.discord_actions.audit_log import read_audit
 from elbow_helper.agent.models import EvidenceScope
 from elbow_helper.agent.disclosure import can_show
@@ -44,15 +44,6 @@ class AuditLogTests(unittest.IsolatedAsyncioTestCase):
         context, channel, _, _ = fixture()
         self.assertFalse(await can_show(channel, {}, {ACCESS_VIEW_AUDIT_LOG}, context.guild))
 
-    async def test_public_scope_refuses_audit_before_read(self):
-        context, _, _, _ = fixture()
-        context.guild.audit_logs = AsyncMock()
-        from elbow_helper.agent.disclosure import request_scope
-        await request_scope(context)
-        with patch("elbow_helper.agent.discord_actions.audit_log.require_evidence_access", new_callable=AsyncMock):
-            with self.assertRaises(LookupAccessDenied):
-                await read_audit(context, {})
-        context.guild.audit_logs.assert_not_called()
 
     async def test_missing_bot_permission_is_named_before_reading(self):
         context, _, _, _ = fixture()

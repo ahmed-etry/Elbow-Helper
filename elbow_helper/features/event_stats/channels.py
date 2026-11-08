@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from elbow_helper.infrastructure.persistence.documents import serialized_mutation
+
 import asyncio
 import logging
 from datetime import datetime
@@ -225,6 +227,7 @@ class EventStatsChannelsMixin:
             next_start, _ = self._recurring_range(event, now + timedelta(days=1))
         return (3, position, next_start.timestamp(), name)
 
+    @serialized_mutation
     def _resolve_category(self, guild: discord.Guild, event: dict[str, Any]) -> discord.CategoryChannel | None:
         category_id = event.get("category_id")
         if not isinstance(category_id, int):
@@ -241,6 +244,7 @@ class EventStatsChannelsMixin:
         LOGGER.warning("Configured category no longer exists for event %s", event["key"])
         return None
 
+    @serialized_mutation
     def _set_channel_id(self, event_key: str, channel_id: int | None) -> None:
         state_event = self._find_state_event(event_key)
         if state_event is not None:
@@ -271,7 +275,7 @@ class EventStatsChannelsMixin:
                 return False
 
         if clear_state and channel_id is not None:
-            self._set_channel_id(event["key"], None)
+            await asyncio.to_thread(self._set_channel_id, event["key"], None)
         return True
 
     async def _prune_one_time_event(self, guild: discord.Guild, event: dict[str, Any]) -> bool:
@@ -284,7 +288,7 @@ class EventStatsChannelsMixin:
         if not deleted and event.get("channel_id"):
             return False
         self.state["events"] = [item for item in self._state_events() if item.get("key") != event["key"]]
-        self._persist_state()
+        await asyncio.to_thread(self._persist_state)
         LOGGER.info("Pruned one-time event %s", event["name"])
         return True
 
@@ -324,7 +328,7 @@ class EventStatsChannelsMixin:
             if isinstance(channel, discord.VoiceChannel):
                 continue
 
-            category = self._resolve_category(guild, event)
+            category = await asyncio.to_thread(self._resolve_category, guild, event)
             try:
                 channel = await guild.create_voice_channel(
                     name=self._compose_channel_name(event["name"], "Loading..."),
@@ -332,7 +336,7 @@ class EventStatsChannelsMixin:
                     overwrites=overwrites,
                     reason="Create event tracker channels",
                 )
-                self._set_channel_id(event["key"], channel.id)
+                await asyncio.to_thread(self._set_channel_id, event["key"], channel.id)
                 LOGGER.info("Created channel for %s -> %s", event["name"], channel.id)
                 structural_change = True
                 await asyncio.sleep(1)
@@ -398,7 +402,7 @@ class EventStatsChannelsMixin:
             channel = guild.get_channel(channel_id) if isinstance(channel_id, int) else None
             if not isinstance(channel, discord.VoiceChannel):
                 continue
-            category = self._resolve_category(guild, event)
+            category = await asyncio.to_thread(self._resolve_category, guild, event)
             category_id = category.id if category else None
             grouped.setdefault(category_id, []).append((self._sort_key_for_event(event, now), channel, event))
 

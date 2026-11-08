@@ -1,4 +1,4 @@
-﻿"""Member lifecycle state and history in the shared workflow database.
+"""Member lifecycle state and history in the shared workflow database.
 
 Join and leave times live in the family record's server membership, and last
 messages come from the Discord collector. Lifecycle keeps only each join's
@@ -12,17 +12,12 @@ import asyncio
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
-import logging
 from typing import Any
 
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.configuration.recruitment import PLATFORMS
-from elbow_helper.data.events import Event, finish_on_cancel, load_state, now_us, record, save_state
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic
-from .config import STATE_FILE
+from elbow_helper.data.events import Event, finish_on_cancel, initialize_state, load_state, now_us, record, save_state
 
-LOGGER = logging.getLogger(__name__)
 WORKFLOW = "lifecycle"
 
 
@@ -37,12 +32,6 @@ def default_state() -> dict[str, Any]:
         "ticket_log_last_message_id": None,
         "ticket_log_index_ready": False,
     }
-
-
-STATE_TYPES = {
-    "platform_counts": dict, "overdue_applicant_ids": list, "applicant_reports": dict,
-    "ticket_owner_links": dict, "ticket_log_index_ready": bool,
-}
 
 
 def microseconds(value: datetime) -> int:
@@ -84,35 +73,13 @@ def open_joins(connection) -> dict[int, dict[str, Any]]:
     return joins
 
 
-def _legacy(path) -> dict[str, Any]:
-    try:
-        data = read_json(path)
-    except FileNotFoundError:
-        return {}
-    if not isinstance(data, dict):
-        raise ValueError("Invalid member lifecycle state")
-    return data
-
-
-def _last_seen(old: dict[str, Any]) -> dict[str, Any]:
-    # Kept in the file unchanged until the family record has copied it; never lifecycle state.
-    value = old.get("last_seen", {})
-    return value if isinstance(value, dict) else {}
-
-
-def _iso(at: int) -> str:
-    return datetime.fromtimestamp(at / 1_000_000, timezone.utc).isoformat()
-
-
 class LifecycleState:
-    """SQLite owns lifecycle state with its events; the old JSON is a one-update revert mirror."""
+    """Save lifecycle state and its events together in SQLite."""
 
-    def __init__(self, events, path=None):
+    def __init__(self, events):
         self.events = events
-        self.path = STATE_FILE if path is None else path
         self.state = default_state()
         self.joins: dict[int, dict[str, Any]] = {}
-        self._last_seen: dict[str, Any] = {}
         self._lock = asyncio.Lock()
 
     # Readers return copies; the stored state is replaced, never changed in place.
@@ -125,56 +92,12 @@ class LifecycleState:
     async def startup(self):
         async with self._lock:
             async def complete():
-                self.state, self.joins = await self.events.call(self._import)
-                await self._mirror()
+                self.state, self.joins = await self.events.call(self._load)
             await finish_on_cancel(complete())
         self.events.register_member_deletion(WORKFLOW, self.refresh_after_deletion)
 
-    def _import(self, connection):
-        state = load_state(connection, WORKFLOW)
-        if state is not None:
-            try:
-                self._last_seen = _last_seen(_legacy(self.path))
-            except (OSError, ValueError):
-                self._last_seen = {}
-            return state, open_joins(connection)
-        old = _legacy(self.path)
-        self._last_seen = _last_seen(old)
-        state = default_state()
-        for key in state:
-            if old.get(key) is not None:
-                state[key] = old[key]
-        for key, kind in STATE_TYPES.items():
-            if not isinstance(state[key], kind):
-                raise ValueError("Invalid member lifecycle state")
-        # A closed report's button is already disabled; only open ones are work.
-        reports = state["applicant_reports"]
-        state["applicant_reports"] = {key: value for key, value in reports.items()
-                                      if isinstance(value, dict) and value.get("active") is True}
-        members = old.get("members", {})
-        if not isinstance(members, dict):
-            raise ValueError("Invalid member lifecycle state")
-        imported = closed = skipped = 0
-        for key, info in members.items():
-            if isinstance(info, dict) and info.get("left") is True:
-                closed += 1
-                continue
-            try:
-                member_id = int(key)
-                joined = microseconds(datetime.fromisoformat(info["joined_at_iso"]))
-                message_id = info.get("overseer_message_id")
-                if type(message_id) is not int or message_id <= 0:
-                    message_id = None
-                imported += record(connection, lifecycle_event(
-                    "joined", member_id, joined, {"platform": info["platform"]},
-                    at=joined, via="import", message_id=message_id))
-            except (KeyError, TypeError, ValueError):
-                skipped += 1
-        save_state(connection, WORKFLOW, state)
-        LOGGER.info("Imported %s open member joins (%s closed and %s unreadable left out), %s open applicant "
-                    "reports (%s closed left out) and %s ticket-log owners",
-                    imported, closed, skipped, len(state["applicant_reports"]),
-                    len(reports) - len(state["applicant_reports"]), len(state["ticket_owner_links"]))
+    def _load(self, connection):
+        state = initialize_state(connection, WORKFLOW, default_state)
         return state, open_joins(connection)
 
     async def change(self, edit):
@@ -193,7 +116,6 @@ class LifecycleState:
                 written = await self.events.call(write)
                 if written is not None:
                     self.state, self.joins = written
-                    await self._mirror()
                 return written is not None
             return await finish_on_cancel(complete())
 
@@ -237,19 +159,3 @@ class LifecycleState:
             def reload(connection):
                 return load_state(connection, WORKFLOW), open_joins(connection)
             self.state, self.joins = await self.events.call(reload)
-            self._last_seen.pop(str(discord_id), None)
-            await self._mirror()
-
-    def legacy_payload(self) -> dict[str, Any]:
-        """The old file's shape, so a revert keeps open joins, reports and counts."""
-        members = {str(member_id): {"overseer_message_id": join["message_id"], "platform": join["platform"],
-                                    "joined_at_iso": _iso(join["joined_at"]), "left": False}
-                   for member_id, join in sorted(self.joins.items())}
-        return {**self.state, "members": members, "last_seen": self._last_seen}
-
-    async def _mirror(self):
-        try:
-            await asyncio.to_thread(write_json_atomic, self.path, self.legacy_payload(), indent=2)
-        except (OSError, TypeError) as exc:
-            # SQLite stays authoritative; startup and the next change retry the mirror.
-            LOGGER.error("Failed saving %s: %s", self.path, exc)

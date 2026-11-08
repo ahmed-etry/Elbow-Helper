@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import logging
 import re
 import io
@@ -840,7 +842,7 @@ class CwlBonusDashboardMixin:
         clan_state["completed_at"] = None
         clan_state["skip_report"] = []
         board["updated_at"] = int(datetime.now(dt_timezone.utc).timestamp())
-        self.bonus_dashboard_store.save()
+        await asyncio.to_thread(self.bonus_dashboard_store.save)
 
     async def _set_bonus_board_needs_review(
         self,
@@ -852,7 +854,7 @@ class CwlBonusDashboardMixin:
         clan_state["status"] = BONUS_STATUS_NEEDS_REVIEW
         clan_state["last_actor_id"] = actor.id
         board["updated_at"] = int(datetime.now(dt_timezone.utc).timestamp())
-        self.bonus_dashboard_store.save()
+        await asyncio.to_thread(self.bonus_dashboard_store.save)
 
     async def _set_bonus_board_skipped(
         self,
@@ -867,7 +869,7 @@ class CwlBonusDashboardMixin:
         clan_state["completed_by_name"] = None
         clan_state["completed_at"] = None
         board["updated_at"] = int(datetime.now(dt_timezone.utc).timestamp())
-        self.bonus_dashboard_store.save()
+        await asyncio.to_thread(self.bonus_dashboard_store.save)
 
     async def _set_bonus_board_on_hold(
         self,
@@ -882,7 +884,7 @@ class CwlBonusDashboardMixin:
         clan_state["completed_by_name"] = None
         clan_state["completed_at"] = None
         board["updated_at"] = int(datetime.now(dt_timezone.utc).timestamp())
-        self.bonus_dashboard_store.save()
+        await asyncio.to_thread(self.bonus_dashboard_store.save)
 
     async def set_bonus_review_status(self, board_key: str, clan_code: str,
                                       status: str, actor: discord.Member) -> str:
@@ -970,14 +972,14 @@ class CwlBonusDashboardMixin:
             board["message_id"] = existing_message.id
         board["channel_id"] = target_channel.id
         board["updated_at"] = int(datetime.now(dt_timezone.utc).timestamp())
-        self.bonus_dashboard_store.save()
+        await asyncio.to_thread(self.bonus_dashboard_store.save)
         return True
 
     async def _mark_bonus_board_complete(self, board: Dict[str, Any]) -> None:
         if self._bonus_board_complete(board):
             board["closed"] = True
             board["updated_at"] = int(datetime.now(dt_timezone.utc).timestamp())
-            self.bonus_dashboard_store.save()
+            await asyncio.to_thread(self.bonus_dashboard_store.save)
 
     async def _handle_bonus_clan_selection(
         self,
@@ -1151,7 +1153,7 @@ class CwlBonusDashboardMixin:
             clan_state["recipient_ids"] = list(candidate.recipient_ids)
             clan_state["skip_report"] = list(summary.skipped)
             board["updated_at"] = int(datetime.now(dt_timezone.utc).timestamp())
-            self.bonus_dashboard_store.save()
+            await asyncio.to_thread(self.bonus_dashboard_store.save)
             await self._mark_bonus_board_complete(board)
             await self._edit_bonus_board_message(board)
             return "complete", summary

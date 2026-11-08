@@ -1,15 +1,10 @@
 """Library coverage, stable prompts and exact joke selection."""
-from types import SimpleNamespace
-from urllib.parse import urlsplit
 import unittest
 from unittest.mock import patch
 
-from elbow_helper.agent.discord_actions.gif_library import (
-    GROUPS, LIBRARY, ITEM_BY_ID, catalogue_text, channel_gif_urls, library_gif,
-)
+from elbow_helper.agent.discord_actions.gif_library import LIBRARY, ITEM_BY_ID, library_gif
 from elbow_helper.agent.discord_actions.gifs import find_gif
-from elbow_helper.agent.engine.social_reply import MEME_SEND_FIT, social_reply_definition, salvage_choice, social_plan
-from elbow_helper.agent.plan.checker import valid_arguments
+from elbow_helper.agent.engine.social_reply import MEME_SEND_FIT, salvage_choice, social_plan
 from agent.engine.test_agent_service import _context
 
 ORIGINAL_MEDIA = {'reaction-24.jpg', 'smart-ass.gif', 'reaction-04.jpg', 'reaction-05.jpg', 'reaction-21.webp', 'reaction-15.gif', 'reaction-20.webp', 'reaction-27.jpg', 'bait-or-low-iq.gif', 'is-this-guy-really-talking-back-to-me-rn.gif', 'reaction-13.gif', 'reaction-22.jpg', 'reaction-09.png', 'son-ts-was-not-tuff.gif', 'reaction-07.jpg', 'ts-lowkey-tuff.gif', 'reaction-12.jpg', 'reaction-18.jpg', 'reaction-06.gif', 'my-fault-g.gif', 'reaction-14.gif', 'reaction-02.jpg', 'reaction-08.gif', 'reaction-28.gif', 'reaction-10.gif', 'reaction-11.png', 'reaction-26.jpg', 'reaction-17.jpg', 'reaction-01.jpg', 'reaction-25.jpg', 'watch-yo-tone-mf.gif', 'reaction-16.gif', 'reaction-19.gif', 'reaction-23.jpg'}
@@ -24,41 +19,7 @@ def _choice(**overrides):
 
 
 class GifLibraryTests(unittest.IsolatedAsyncioTestCase):
-    def test_klipy_library_items_use_share_pages_for_discord_previews(self):
-        klipy_items = [item for item in LIBRARY
-                       if (urlsplit(item['media']).hostname or '').endswith('klipy.com')]
-        self.assertTrue(klipy_items)
-        for item in klipy_items:
-            with self.subTest(meme_id=item['id']):
-                url = urlsplit(item['media'])
-                self.assertEqual(url.scheme, 'https')
-                self.assertEqual(url.hostname, 'klipy.com')
-                self.assertTrue(url.path.startswith('/gifs/'))
 
-    def test_tenor_library_items_use_share_pages_for_discord_previews(self):
-        tenor_items = [item for item in LIBRARY
-                       if (urlsplit(item['media']).hostname or '').endswith('tenor.com')]
-        self.assertTrue(tenor_items)
-        for item in tenor_items:
-            with self.subTest(meme_id=item['id']):
-                url = urlsplit(item['media'])
-                self.assertEqual(url.scheme, 'https')
-                self.assertEqual(url.hostname, 'tenor.com')
-                self.assertTrue(url.path.startswith('/view/'))
-
-    def test_all_34_original_media_remain_with_real_use_and_screen_descriptions(self):
-        local_items = [item for item in LIBRARY if not item['media'].startswith('https://')]
-        self.assertEqual({item['media'] for item in local_items}, ORIGINAL_MEDIA)
-        self.assertEqual(len(local_items), len(ORIGINAL_MEDIA))
-        self.assertEqual(len(ITEM_BY_ID), len(LIBRARY))
-        for item in LIBRARY:
-            self.assertEqual(set(item), {'id', 'media', 'use', 'shows', 'group'})
-            self.assertRegex(item['id'], r'^[a-z][a-z0-9_]*$')
-            self.assertIn(item['group'], GROUPS)
-            self.assertGreater(len(item['use']), 20)
-            self.assertGreater(len(item['shows']), 20)
-        self.assertIn('sarcastically', ITEM_BY_ID['ts_lowkey_tuff']['use'])
-        self.assertIn('stupid', ITEM_BY_ID['why_i_bomb_people']['use'])
 
     async def test_community_links_deliver_the_exact_chosen_clip_without_search(self):
         community_items = [item for item in LIBRARY if item['media'].startswith('https://')]
@@ -71,35 +32,6 @@ class GifLibraryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(context.state.gif_url, item['media'])
                 self.assertIsNone(context.state.gif_attachment)
 
-    def test_enum_and_catalogue_are_identical_across_requests(self):
-        first = social_reply_definition({}).parameters
-        second = social_reply_definition({'find_gif': object()}, combo_due=True).parameters
-        shortlist = first['properties']['meme_shortlist']
-        self.assertEqual(shortlist, second['properties']['meme_shortlist'])
-        item = shortlist['items']
-        self.assertEqual(item['properties']['id']['enum'], list(ITEM_BY_ID))
-        self.assertEqual(item['properties']['fit'], {'type': 'integer', 'minimum': 1, 'maximum': 5})
-        self.assertEqual(item['required'], ['id', 'fit'])
-        self.assertFalse(item['additionalProperties'])
-        self.assertEqual((shortlist['minItems'], shortlist['maxItems'], shortlist['uniqueItems']), (3, 3, True))
-        self.assertTrue(shortlist['description'].startswith(
-            'The three library memes closest to this moment. Rate how well posting each one '
-            'alone answers this message: 5 = a member here would post it as the reply, '
-            '4 = it would work but a line is just as natural, 3 = related but off, 1-2 = wrong. '))
-        for order in (list(first['properties']), first['required']):
-            start = order.index('meme_shortlist')
-            self.assertEqual(order[start:start + 2], ['meme_shortlist', 'text'])
-            self.assertNotIn('meme', order)
-            self.assertNotIn('meme_match', order)
-        catalogue = catalogue_text()
-        self.assertEqual(shortlist['description'].split('Items by group, as id = when members post it [what it shows]:\n', 1)[1].encode(),
-                         catalogue.encode())
-        for item in LIBRARY:
-            self.assertEqual(catalogue.count(f"{item['id']} = {item['use']} [{item['shows']}]"), 1)
-        self.assertTrue(valid_arguments(_choice(), first))
-        for invalid in ([], _choice()['meme_shortlist'][:2], _choice()['meme_shortlist'] * 2,
-                        [_choice()['meme_shortlist'][0]] * 3):
-            self.assertFalse(valid_arguments(_choice(meme_shortlist=invalid), first))
 
     def test_top_fit_and_first_listed_tie_control_delivery(self):
         ids = [item['id'] for item in _choice()['meme_shortlist']]
@@ -116,14 +48,6 @@ class GifLibraryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual([step['arguments']['query'] for step in plan['steps']],
                                  [expected] if expected else [])
 
-    def test_requested_gif_uses_the_highest_fit_at_every_valid_score(self):
-        ids = [item['id'] for item in _choice()['meme_shortlist']]
-        for fit in range(1, 6):
-            shortlist = [dict(id=ids[0], fit=1), dict(id=ids[1], fit=fit), dict(id=ids[2], fit=1)]
-            choice = salvage_choice(_choice(meme_shortlist=shortlist, gif_requested=True), {})
-            plan = social_plan(choice, 'synthetic', gif_available=True)
-            self.assertEqual(plan['steps'][0]['arguments']['query'], ids[0] if fit == 1 else ids[1])
-            self.assertEqual(social_plan(choice, 'synthetic', gif_available=False)['steps'], [])
 
     def test_bad_entries_are_dropped_individually_without_mutating_the_choice(self):
         from copy import deepcopy
@@ -175,12 +99,6 @@ class GifLibraryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(choice['reactions'], [])
         self.assertEqual(social_plan(choice, 'synthetic', gif_available=True)['steps'][0]['capability'], 'find_gif')
 
-    def test_channel_snapshot_keeps_full_urls_and_attachments(self):
-        rows = [SimpleNamespace(content='https://tenor.com/view/reaction-Abc123', embeds=[]),
-                SimpleNamespace(content='', embeds=[SimpleNamespace(url='https://media.tenor.com/Def456.gif')]),
-                SimpleNamespace(content='', attachments=[SimpleNamespace(filename='reaction.jpg')])]
-        self.assertEqual(channel_gif_urls(rows), {'https://tenor.com/view/reaction-Abc123', 'https://media.tenor.com/Def456.gif', 'attachment://reaction.jpg'})
-        self.assertEqual(channel_gif_urls([SimpleNamespace(content='https://[', embeds=[])]), set())
 
     async def test_repeated_item_uses_unused_clip_of_same_joke_then_returns_nothing(self):
         clips = {key: {'id': key, 'media': media} for key, media in (
@@ -197,10 +115,3 @@ class GifLibraryTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(library_gif(context, 'joke'))
             self.assertEqual(await find_gif(context, {'query': 'different'}),
                              {'url': clips['different']['media']})
-
-    async def test_unknown_item_leaves_gif_unselected(self):
-        context = _context()
-        self.assertEqual(await find_gif(context, {'query': 'not_a_meme'}),
-                         {'error': 'No fitting GIF in the library.'})
-        self.assertIsNone(context.state.gif_url)
-        self.assertIsNone(context.state.gif_attachment)

@@ -9,7 +9,7 @@ from discord.ext import commands
 
 from .board import WarBoardMixin
 from .config import CLAN_CHANNELS
-from .emojis import WarEmojiProvider
+from elbow_helper.infrastructure.discord.war_emojis import WarEmojiProvider
 from .helpers import HelperMixin
 from .record import RecordMixin
 from .roles import WarRoleMixin

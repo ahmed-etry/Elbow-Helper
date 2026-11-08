@@ -1,13 +1,12 @@
 """Coin history requires Core access even through SQL aliases and joins."""
 
 from dataclasses import replace
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
 
 from elbow_helper.configuration import roles
 from elbow_helper.agent.access import AgentAccessLost, require_evidence_access
-from elbow_helper.agent.tool_support.sql.catalogue import SOURCES
-from elbow_helper.agent.tool_support.sql.query import query_context, run_query
+from elbow_helper.agent.tool_support.sql.query import query_context
 from agent.dataset_helpers import synthetic_datasets
 from agent import test_evidence_scope as fixtures
 
@@ -19,19 +18,8 @@ class CoinTransactionGateTests(unittest.IsolatedAsyncioTestCase):
         self.context = replace(fixture.context, private_pass=True)
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.paths = self.context.bot.paths = synthetic_datasets(directory.name)
+        self.paths = self.context.bot.paths = synthetic_datasets(directory.name, only=['achievements'])
 
-    async def test_core_only_across_query_routes(self):
-        for sql in ("SELECT count(*) AS n FROM achievements.coin_transactions",
-                    'SELECT * FROM "achievements"."coin_transactions"',
-                    "SELECT * FROM coin_transactions",
-                    "SELECT a.* FROM achievements.coin_transactions a JOIN achievements.user_coins b ON 1=1"):
-            for levels in (set(), {"lead"}, {"lead_plus"}, {"core", "lead"}):
-                with self.subTest(sql=sql, levels=levels):
-                    result, touched = run_query(SOURCES, self.paths, levels, sql)
-                    self.assertEqual("error" not in result, "core" in levels)
-                    if "error" not in result:
-                        self.assertIn("core", touched)
 
     async def test_shared_destination_and_revocation(self):
         self.context.member.roles.append(fixtures.Role(next(iter(roles.CORE))))

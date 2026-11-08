@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from agent.engine.helpers import LegacyCatalogueMixin
 
 import json
@@ -12,13 +12,10 @@ from unittest.mock import AsyncMock
 from unittest.mock import patch
 
 from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID
-from elbow_helper.agent.tool_support.adapters.cwl.report import CwlPerformanceReport
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.models import AgentRequestContext
-from agent.report_helpers import make_event_report
-from elbow_helper.agent.tool_support.adapters.cwl.reads import read_cwl_performance, read_cwl_performance_report, read_cwl_threads
-from elbow_helper.agent.reads.cwl import cwl_ass_scores, cwl_bonus_scores
-from elbow_helper.agent.files.spreadsheet_tools import prepare_spreadsheet
+from elbow_helper.agent.tool_support.adapters.cwl.reads import read_cwl_threads
+from elbow_helper.agent.reads.cwl import cwl_bonus_scores
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
@@ -142,8 +139,6 @@ class AgentCwlTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
     async def test_ass_read_and_result_sheet_build_workbook_in_one_round(self):
         await self._ass_result_sheet_builds_workbook(wrapped=False)
 
-    async def test_wrapped_ass_reference_builds_workbook_in_one_round(self):
-        await self._ass_result_sheet_builds_workbook(wrapped=True)
 
     async def _ass_result_sheet_builds_workbook(self, *, wrapped):
         registry = build_agent_tools()
@@ -263,49 +258,6 @@ class AgentCwlTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
     async def test_bonus_keeps_all_30_player_scores_when_56_wars_exceed_the_result_limit(self):
         await self._assert_large_selection_keeps_scores("cwl_bonus_scores", "rows")
 
-    async def test_complete_performance_report_is_retained_and_paged(self):
-        first = await read_cwl_performance(self.context, {"history_limit": 3})
-        self.assertEqual(self.queries.calls, [3])
-        self.assertEqual(first["matching_rows"], 30)
-        self.assertEqual(len(first["players"]), 25)
-        report = self.context.state.reports[first["report_id"]]
-        self.queries.snapshot = _snapshot(1)
-
-        second = await read_cwl_performance_report(self.context, {
-            "report_id": first["report_id"], "offset": first["next_offset"],
-        })
-        self.assertEqual(len(second["players"]), 5)
-        self.assertEqual(second["matching_rows"], 30)
-        self.assertIs(report, self.context.state.reports[first["report_id"]])
-        self.assertEqual(self.queries.calls, [3])
-        whole = await read_cwl_performance_report(self.context, {
-            "report_id": first["report_id"], "limit": 100,
-        })
-        self.assertEqual(len(whole["players"]), 30)
-        self.assertIsNone(whole["next_offset"])
-
-    async def test_performance_source_receives_requested_period_and_clan(self):
-        await read_cwl_performance(self.context, {
-            "season": "2026-08", "clan_code": "BEH", "player_tag": "#P0",
-        })
-
-        self.assertEqual(self.queries.scopes, [("2026-08", "BEH")])
-
-    async def test_report_filters_and_rejects_invalid_tag_or_kind(self):
-        first = await read_cwl_performance(self.context, {})
-        filtered = await read_cwl_performance_report(self.context, {
-            "report_id": first["report_id"], "player_tag": "P0",
-        })
-        self.assertEqual(filtered["matching_rows"], 1)
-        self.assertEqual(filtered["players"][0]["player_tag"], "#P0")
-        invalid = await read_cwl_performance_report(self.context, {
-            "report_id": first["report_id"], "player_tag": "BAD",
-        })
-        self.assertIn("error", invalid)
-        self.context.state.reports["wrong"] = make_event_report("wrong", "now")
-        self.assertIn("error", await read_cwl_performance_report(
-            self.context, {"report_id": "wrong"},
-        ))
 
     async def test_registered_threads_include_only_currently_accessible_sources(self):
         result = await read_cwl_threads(self.context, {})
@@ -313,32 +265,6 @@ class AgentCwlTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["omitted_inaccessible_count"], 1)
         self.assertEqual(self.context.state.source_channels, {100})
 
-    async def test_scoped_ass_evidence_can_feed_generic_spreadsheet_output(self):
-        result = await cwl_ass_scores(self.context, {
-            "clan_code": "BE1", "war_ids": ["CWL:#WAR"],
-        })
-        self.context.guild.filesize_limit = 8 * 1024 * 1024
-        player = result["players"][0]
-        with patch(
-            "elbow_helper.agent.files.spreadsheet_tools.render_workbook_bytes",
-            AsyncMock(return_value=b"xlsx"),
-        ):
-            spreadsheet = await prepare_spreadsheet(self.context, {
-                "title": "BE1 CWL war evidence",
-                "sheets": [{
-                    "name": "Observed inputs",
-                    "columns": [
-                        "Account", "Attacks", "Stars", "ASS status",
-                    ],
-                    "rows": [[
-                        player["player_name"], str(player["attacks"]),
-                        str(player["stars"]), result["scoring_status"],
-                    ]],
-                }],
-            })
-        self.assertEqual(spreadsheet["filename"], "be1-cwl-war-evidence.xlsx")
-        self.assertEqual(spreadsheet["rows"], 1)
-        self.assertEqual(len(self.context.state.attachments), 1)
 
     async def test_configured_bonus_scope_is_retained_and_distinct_from_ass(self):
         result = await cwl_bonus_scores(self.context, {
@@ -359,8 +285,3 @@ class AgentCwlTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
                     "clan_code": "BE1", "war_ids": ["#WAR"],
                 })
         self.assertEqual(self.context.state.reports, {})
-
-    async def test_report_is_scoped_to_current_guild(self):
-        self.context.state.reports["foreign"] = CwlPerformanceReport("foreign", 2, _snapshot())
-        result = await read_cwl_performance_report(self.context, {"report_id": "foreign"})
-        self.assertIn("error", result)

@@ -43,6 +43,6 @@ SOURCES = (
                 "created_at is UTC Unix seconds.",
             ),
         ),
-        config_constant="bot.paths.data_root / achievements / achievements.db",
+        config_constant="ACHIEVEMENTS_DATABASE",
     ),
 )

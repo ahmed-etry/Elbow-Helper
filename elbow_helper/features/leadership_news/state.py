@@ -2,8 +2,7 @@
 
 import json
 
-from elbow_helper.data.events import Event, load_state, record, save_state
-from elbow_helper.infrastructure.persistence import read_json
+from elbow_helper.data.events import Event, initialize_state, load_state, record, save_state
 
 
 WORKFLOW = "leadership_news"
@@ -19,19 +18,8 @@ def snapshot(connection):
     return {"published": receipts, "prompts": state["prompts"]}
 
 
-def import_state(connection, path):
-    if load_state(connection, WORKFLOW) is None:
-        try:
-            old = read_json(path)
-        except FileNotFoundError:
-            old = {"published": {}, "prompts": {}}
-        if not isinstance(old, dict) or not all(isinstance(old.get(key), dict) for key in ("published", "prompts")):
-            raise ValueError("Invalid leadership news state")
-        # Keep historical receipt IDs solely to prevent publishing them again.
-        # They are not a backfill of past workflow events.
-        state = {"legacy_receipts": old["published"], "prompts": {
-            key: value | {"imported": True} for key, value in old["prompts"].items()}}
-        save_state(connection, WORKFLOW, state)
+def startup(connection):
+    initialize_state(connection, WORKFLOW, lambda: {"legacy_receipts": {}, "prompts": {}})
     return snapshot(connection)
 
 

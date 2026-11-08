@@ -68,7 +68,7 @@ class ClanReportingElderMixin:
                     return False
                 if recovered_message is not None:
                     board_messages[clan_code] = recovered_message.id
-                    save_state(self.state)
+                    await asyncio.to_thread(save_state, self.state)
                     message = recovered_message
                     if embed is not None and reposition_if_buried and is_buried:
                         await self._repost_missing_elder_message(
@@ -93,7 +93,7 @@ class ClanReportingElderMixin:
                 if new_message is None:
                     return False
                 board_messages[clan_code] = new_message.id
-                save_state(self.state)
+                await asyncio.to_thread(save_state, self.state)
                 return True
 
             result = await self.bot.publishing.edit_message(message, embed=embed, view=view)
@@ -106,7 +106,7 @@ class ClanReportingElderMixin:
                     return False
                 if recovered_message is not None:
                     board_messages[clan_code] = recovered_message.id
-                    save_state(self.state)
+                    await asyncio.to_thread(save_state, self.state)
                     result = await self.bot.publishing.edit_message(recovered_message, embed=embed, view=view)
                     return bool(result)
                 new_message = await self._run_discord_http_operation(
@@ -117,7 +117,7 @@ class ClanReportingElderMixin:
                 if new_message is None:
                     return False
                 board_messages[clan_code] = new_message.id
-                save_state(self.state)
+                await asyncio.to_thread(save_state, self.state)
                 return True
             return bool(result)
 
@@ -150,7 +150,7 @@ class ClanReportingElderMixin:
         board_messages = self.state.setdefault("missing_elder_messages", {})
         if clan_code not in board_messages or board_messages[clan_code] is not None:
             board_messages[clan_code] = None
-            save_state(self.state)
+            await asyncio.to_thread(save_state, self.state)
         self._board_last_repost_at.pop(clan_code, None)
         return True
 
@@ -234,7 +234,7 @@ class ClanReportingElderMixin:
             return old_message
         board_messages[clan_code] = new_message.id
         self._board_last_repost_at[clan_code] = time.monotonic()
-        save_state(self.state)
+        await asyncio.to_thread(save_state, self.state)
 
         try:
             await self._run_discord_http_operation(
@@ -334,7 +334,7 @@ class ClanReportingElderMixin:
                 if not recovery_completed or recovered_message is None:
                     return False
                 board_messages[clan_code] = recovered_message.id
-                save_state(self.state)
+                await asyncio.to_thread(save_state, self.state)
                 old_message = recovered_message
                 should_repost = is_buried and trigger_message.id != recovered_message.id
 

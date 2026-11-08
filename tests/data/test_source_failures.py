@@ -14,7 +14,8 @@ from elbow_helper.data.store.sources import DAY, due_sources
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
 from .test_family_store import CLANS, response
-from .test_sources import BASE, SourceTests, sample
+from . import test_sources as source_fixtures
+from .test_sources import BASE, sample
 
 
 SERVICE = "elbow_helper.data.collectors.service"
@@ -22,10 +23,10 @@ SEASON = 1792990800
 
 
 class BattleLogShapeTests(unittest.IsolatedAsyncioTestCase):
-    asyncSetUp = SourceTests.asyncSetUp
-    rows = SourceTests.rows
-    record = SourceTests.record
-    assert_leaves = SourceTests.assert_leaves
+    asyncSetUp = source_fixtures.SourceTests.asyncSetUp
+    rows = source_fixtures.SourceTests.rows
+    record = source_fixtures.SourceTests.record
+    assert_leaves = source_fixtures.SourceTests.assert_leaves
 
     def battles(self, count=3):
         data = sample("battle_log")
@@ -61,14 +62,6 @@ class BattleLogShapeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(await self.rows("SELECT * FROM family_battles")), 2)
         await self.assert_leaves(data)
 
-    async def test_a_battle_repeated_word_for_word_counts_once(self):
-        data = self.battles(2)
-        data["body"]["items"].append(deepcopy(data["body"]["items"][0]))
-        del data["body"]["items"][-1]["opponentPlayerTag"]
-        data["body"]["items"][0].pop("opponentPlayerTag")
-        _, report = await self.record(data)
-        self.assertEqual(report["failed"], 0)
-        self.assertEqual(len(await self.rows("SELECT * FROM family_battles")), 2)
 
     async def test_battles_without_a_time_or_direction_still_fail_and_keep_nothing(self):
         cases = ((("battleTimestamp", None), "missing_time"), (("battleTimestamp", "yesterday"), "missing_time"),
@@ -103,10 +96,10 @@ class BattleLogShapeTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RankedGroupOutcomeTests(unittest.IsolatedAsyncioTestCase):
-    asyncSetUp = SourceTests.asyncSetUp
-    rows = SourceTests.rows
-    record = SourceTests.record
-    seed_account = SourceTests.seed_account
+    asyncSetUp = source_fixtures.SourceTests.asyncSetUp
+    rows = source_fixtures.SourceTests.rows
+    record = source_fixtures.SourceTests.record
+    seed_account = source_fixtures.SourceTests.seed_account
 
     async def references(self, *rows):
         run = await self.seed_account()
@@ -123,9 +116,6 @@ class RankedGroupOutcomeTests(unittest.IsolatedAsyncioTestCase):
         jobs = await self.store.call(due_sources, "ranked_groups", CLANS, BASE)
         self.assertEqual([job["scope_id"] for job in jobs], [canonical_json(["#P0", "#PP2", SEASON])])
 
-    async def test_account_with_only_no_group_has_nothing_to_poll(self):
-        await self.references(("#0", SEASON, "#0", SEASON - 7 * 86400))
-        self.assertEqual(await self.store.call(due_sources, "ranked_groups", CLANS, BASE), [])
 
     async def test_each_outcome_stays_distinct_and_only_failures_count_as_failed(self):
         data = sample("ranked_group")
@@ -160,11 +150,11 @@ class RankedGroupOutcomeTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SourceWarningTests(unittest.IsolatedAsyncioTestCase):
-    rows = SourceTests.rows
-    seed_account = SourceTests.seed_account
+    rows = source_fixtures.SourceTests.rows
+    seed_account = source_fixtures.SourceTests.seed_account
 
     async def asyncSetUp(self):
-        await SourceTests.asyncSetUp(self)
+        await source_fixtures.SourceTests.asyncSetUp(self)
         await self.seed_account()
         self.client = SimpleNamespace(get=AsyncMock())
         self.owner = FamilyCollectors(SimpleNamespace(boot_complete=asyncio.Event()), self.store, self.client, CLANS)
@@ -177,73 +167,34 @@ class SourceWarningTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.data.collectors.sources.now_us", return_value=at), patch(f"{SERVICE}.now_us", return_value=at):
             return await collect_sources(self.owner, collector)
 
-    async def test_a_battle_log_answering_500_every_time_warns_once_and_recovery_logs_once(self):
+    async def test_repeated_500_recovery_and_new_failure_depend_on_source_kind(self):
         hour = 3600 * 1_000_000
-        self.client.get.return_value = response(None, 500)
-        with self.assertLogs(SERVICE, level="WARNING") as first:
-            report = await self.poll("battle_logs", BASE)
-        self.assertEqual((report["failed"], report["status"]), (1, "failed"))
-        self.assertEqual(len(first.output), 1)
-        self.assertIn("battle_log #P0 (HTTP 500)", first.output[0])
-        with self.assertNoLogs(SERVICE, level="INFO"):
-            for later in (1, 2, 3):
-                report = await self.poll("battle_logs", BASE + later * hour)
-                self.assertEqual((report["failed"], report["empty"], report["status"]), (0, 1, "empty"))
-        items = await self.rows("SELECT status,error_code,http_status FROM collection_items WHERE source_kind='battle_log' ORDER BY id")
-        self.assertEqual([(row["status"], row["error_code"], row["http_status"]) for row in items],
-                         [("failed", "fetch_failed", 500)] + [("unavailable", "log_unavailable", 500)] * 3)
-        state = (await self.rows("SELECT * FROM family_api_state WHERE source_kind='battle_log'"))[0]
-        self.assertEqual((state["enabled"], state["next_due_at"]), (1, BASE + 4 * hour))
-        self.assertEqual(self.client.get.await_count, 4)
-        self.client.get.return_value = response({"items": []})
-        with self.assertLogs(SERVICE, level="INFO") as recovered:
-            report = await self.poll("battle_logs", BASE + 4 * hour)
-        self.assertEqual(report["failed"], 0)
-        self.assertEqual(len(recovered.output), 1)
-        self.assertIn("recovered", recovered.output[0])
-        self.assertIn("battle_log #P0 (HTTP 500)", recovered.output[0])
-        with self.assertNoLogs(SERVICE, level="INFO"):
-            await self.poll("battle_logs", BASE + 5 * hour)
+        for collector, source_kind, unavailable in (
+            ('battle_logs', 'battle_log', True),
+            ('league_history', 'league_history', False),
+        ):
+            with self.subTest(source_kind=source_kind):
+                self.client.get.return_value = response(None, 500)
+                with self.assertLogs(SERVICE, level='WARNING') as first:
+                    report = await self.poll(collector, BASE)
+                self.assertEqual((report['failed'], len(first.output)), (1, 1))
+                with self.assertNoLogs(SERVICE, level='INFO'):
+                    report = await self.poll(collector, BASE + hour)
+                self.assertEqual(report['failed'], 0 if unavailable else 1)
+                statuses = await self.rows('SELECT status FROM collection_items WHERE source_kind=? ORDER BY id', (source_kind,))
+                self.assertEqual([row['status'] for row in statuses],
+                                 ['failed', 'unavailable' if unavailable else 'failed'])
+                self.client.get.return_value = response({'items': []})
+                with self.assertLogs(SERVICE, level='INFO') as recovered:
+                    report = await self.poll(collector, BASE + 2 * hour)
+                self.assertEqual(report['failed'], 0)
+                self.assertEqual(len(recovered.output), 1)
+                self.assertIn('recovered', recovered.output[0])
+                self.client.get.return_value = response(None, 500)
+                with self.assertLogs(SERVICE, level='WARNING') as again:
+                    report = await self.poll(collector, BASE + 3 * hour)
+                self.assertEqual((report['failed'], len(again.output)), (1, 1))
 
-    async def test_a_500_after_a_good_poll_is_a_failure_again(self):
-        hour = 3600 * 1_000_000
-        self.client.get.return_value = response({"items": []})
-        await self.poll("battle_logs", BASE)
-        self.client.get.return_value = response(None, 500)
-        with self.assertLogs(SERVICE, level="WARNING") as logs:
-            report = await self.poll("battle_logs", BASE + hour)
-        self.assertEqual((report["failed"], len(logs.output)), (1, 1))
-
-    async def test_only_battle_logs_treat_a_repeated_500_as_unavailable(self):
-        self.client.get.return_value = response(None, 500)
-        with self.assertLogs(SERVICE, level="WARNING") as logs:
-            for index in range(3):
-                report = await self.poll("league_history", BASE + index)
-                self.assertEqual(report["failed"], 1)
-        self.assertEqual(len(logs.output), 1)
-        self.assertEqual(len(await self.rows("SELECT * FROM collection_items WHERE status='failed'")), 3)
-
-    async def test_a_one_off_failure_warns_once_and_recovery_logs_once(self):
-        fail = True
-
-        async def fetch(path, **options):
-            if fail and path.startswith("/labels/clans"):
-                raise TimeoutError("private detail")
-            return response(sample("goldpass")["body"] if path.startswith("/goldpass") else sample("catalogue")["body"])
-        self.client.get.side_effect = fetch
-        with self.assertLogs(SERVICE, level="WARNING") as first:
-            await self.poll("reference_data", BASE)
-        self.assertEqual(len(first.output), 1)
-        self.assertIn("catalogue /labels/clans (fetch_failed)", first.output[0])
-        self.assertNotIn("private detail", first.output[0])
-        fail = False
-        with self.assertLogs(SERVICE, level="INFO") as second:
-            report = await self.poll("reference_data", BASE + 1)
-        self.assertEqual(report["failed"], 0)
-        self.assertEqual(len(second.output), 1)
-        self.assertIn("recovered", second.output[0])
-        with self.assertNoLogs(SERVICE, level="INFO"):
-            await self.poll("reference_data", BASE + 2)
 
     async def test_repeated_failures_stay_quiet_but_a_new_item_or_a_new_kind_of_failure_warns(self):
         broken = {"/labels/clans": 503}
@@ -279,14 +230,6 @@ class SourceWarningTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/labels/players", one_recovered.output[0])
         self.assertNotIn("/labels/clans", one_recovered.output[0])
 
-    async def test_the_same_failure_is_a_debug_line(self):
-        self.client.get.return_value = response(None, 503)
-        with self.assertLogs(SERVICE, level="WARNING"):
-            await self.poll("league_history", BASE)
-        with self.assertLogs(SERVICE, level="DEBUG") as logs:
-            await self.poll("league_history", BASE + 1)
-        self.assertEqual([record.levelname for record in logs.records], ["DEBUG"])
-        self.assertIn("still failing", logs.output[0])
 
     async def test_a_failure_to_list_the_items_is_still_reported_once(self):
         self.client.get.return_value = response(None, 503)

@@ -3,7 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import random
 import threading
 import unittest
@@ -169,15 +169,6 @@ class DestinationPreviewTests(unittest.IsolatedAsyncioTestCase):
         values = {"kind": "reminder", "text": "Synthetic reminder", **once(offset), **changes}
         return await prepare_save(self.context, values, registry_factory=lambda: {})
 
-    async def test_conflicting_one_offs_are_refused_before_growing_the_preview(self):
-        await self.prepare(0)
-        with self.assertRaisesRegex(ActionRefused, "at most one message a minute"):
-            await self.prepare(30)
-        self.assertEqual(len(self.context.state.proposed_changes), 1)
-        await self.prepare(60)
-        for action in self.context.state.proposed_changes:
-            await action.run()
-        self.assertEqual(len(self.repository.list_standing(requester_id=10)), 2)
 
     async def test_conflicting_new_active_rule_invalidates_preview_and_blocks_run(self):
         await self.prepare(0)

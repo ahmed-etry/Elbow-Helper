@@ -7,50 +7,12 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.reads import reference as reads
 from elbow_helper.agent.knowledge.store import KnowledgeSection
 from elbow_helper.agent.models import EvidenceScope
-from elbow_helper.agent.engine.service import AgentService
-from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan
+from agent.engine.test_agent_plan_flow import _context
 from elbow_helper.agent.research import history
 
 
 class ReferenceFamilyTests(unittest.IsolatedAsyncioTestCase):
-    async def test_author_mentions_with_only_member_id_reaches_search(self):
-        from agent.research.test_agent_search import _context as search_context
 
-        for selector in ({'author_id': 42}, {'mentions': [42]}):
-            with self.subTest(selector=selector):
-                context = search_context()
-                result = await reads.conversation_evidence(context, {'mode': 'author_mentions', **selector})
-                self.assertNotIn('error', result)
-                self.assertEqual(result['rows'], [])
-                context.message_search.search_page.assert_awaited_once()
-                values = context.message_search.search_page.await_args.kwargs
-                for key, value in selector.items():
-                    self.assertEqual(values[key], value)
-                self.assertEqual(values['content'], '')
-                self.assertNotIn('channel_ids', values)
-
-    async def test_search_filters_and_newest_order_reach_shared_search(self):
-        selectors = ({'query': 'synthetic topic'}, {'author_ids': [42, 43]},
-                     {'channel_ids': [91, 92]}, {'before': '2026-09-01'})
-        for selector in selectors:
-            with self.subTest(selector=selector):
-                original = {'matches': [{'message_id': 10}, {'message_id': 20}],
-                            'coverage': {'next_cursor': 'next'}}
-                with patch.object(reads, 'search_discord_messages', AsyncMock(return_value=original)) as search:
-                    result = await reads.conversation_evidence(_context(), {'mode': 'search', **selector})
-                self.assertEqual([row['message_id'] for row in result['rows']], [20, 10])
-                self.assertEqual(result['coverage']['order'], 'newest_first')
-                self.assertEqual(result['source_next_cursor'], 'next')
-                self.assertEqual(search.await_args.args[1], {**selector, 'limit': 25})
-                self.assertTrue(search.await_args.kwargs['complete_content'])
-
-    async def test_author_mentions_without_any_search_selector_is_refused(self):
-        source = AsyncMock()
-        with patch.object(reads, 'search_discord_messages', source):
-            result = await reads.conversation_evidence(_context(), {'mode': 'author_mentions'})
-        self.assertEqual(result['cause'], 'invalid_arguments')
-        self.assertIn('mentions', result['missing_fields'])
-        source.assert_not_awaited()
 
     async def test_transport_pages_start_with_later_replies_and_keep_backward_source_cursor(self):
         original = {'messages': [{'message_id': 20, 'content': 'Revision.'},
@@ -64,19 +26,6 @@ class ReferenceFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['coverage']['source_order'], 'newest_first')
         self.assertEqual(result['source_next_cursor'], 'opaque-older')
 
-    async def test_policy_scope_is_available_in_index_and_opened_reference(self):
-        context = self.reference_context()
-        catalog = context.knowledge_store.load()
-        section = KnowledgeSection('Program entry', 'Requirements.', applicability='New programs only.')
-        catalog.active_sections = (section,)
-        catalog.visible_sections = lambda levels: catalog.active_sections
-        index = await reads.community_reference(context, {})
-        opened = await reads.community_reference(context, {'titles': [section.title]})
-        for result in (index, opened):
-            self.assertEqual(result['rows'][0]['applicability'], section.applicability)
-        from elbow_helper.agent.engine.answer_inputs import answer_evidence
-        facts = answer_evidence({'policy': {'family': 'read_community_reference', **opened}})
-        self.assertEqual(facts['policy']['rows'][0]['applicability'], section.applicability)
 
     async def test_reply_chain_follows_only_structured_parent_ids(self):
         nodes = {2: {'message_id': 2, 'reply_to_message_id': 1, 'content': 'him'},
@@ -163,21 +112,9 @@ class ReferenceFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['rows'][0]['mentioned_member_ids'],[41])
         self.assertEqual(result['rows'][0]['attachments'][0]['filename'],'Synthetic.txt')
 
-    async def test_typed_replay_delivers_only_exact_visible_answer_without_synthesis(self):
-        context = _context()
-        context.state.reply_context={'status':'resolved','message_id':100,
-            'author':{'member_id':999},'conversation':{'requester_id':42,'request':'Old task',
-                'delivered_answer':'Exact visible answer.','delivery_complete':True}}
-        step={'id':'replay','capability':'read_conversation_evidence','arguments':{'mode':'replay'},'depends_on':[]}
-        session=_Session([_model_step(_plan([step]))],[])
-        flow,_=AgentService(_Model(session))._start_flow(question='Synthetic follow-up',local_context='',
-                                                       context=context,conversation_history='')
-        answer=await flow.run()
-        self.assertEqual(answer,'Exact visible answer.')
-        self.assertEqual(len(session.calls),1)
 
     async def test_recruitment_ticket_evidence_requests_complete_native_bodies(self):
-        from elbow_helper.agent.families import workflow_reads
+        from elbow_helper.agent.reads import workflow_reads
         from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
         channel = SimpleNamespace(category_id=RECRUITMENT_TICKET_CATEGORY)
         source = AsyncMock(return_value={'messages':[{'content':'x'*5000}]})

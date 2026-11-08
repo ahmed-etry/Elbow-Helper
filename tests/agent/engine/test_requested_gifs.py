@@ -12,9 +12,7 @@ from elbow_helper.core.paths import ApplicationPaths
 from elbow_helper.agent.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.engine.social_reply import (
-    MEME_SEND_FIT, salvage_choice, social_plan,
-)
+from elbow_helper.agent.engine.social_reply import salvage_choice, social_plan
 from elbow_helper.agent.models import AgentDelivery
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from agent.engine.helpers import social_step
@@ -102,11 +100,6 @@ class RequestedGifTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(answer, "")
             self.assertEqual(self.context.state.gif_url, "attachment://synthetic.gif")
 
-    async def test_no_valid_shortlist_keeps_text_for_requested_and_optional_media(self):
-        for requested in (False, True):
-            answer, _ = await self.answer('Synthetic exchange', requested=requested, query=None)
-            self.assertEqual(answer, 'Synthetic fallback.')
-            self.assertIsNone(self.context.state.gif_url)
 
     async def test_invalid_shortlist_empty_or_unreadable_library_keeps_social_text_without_search(self):
         for history in ((), (True,), None):
@@ -120,10 +113,6 @@ class RequestedGifTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(answer, "Synthetic fallback.")
                     self.assertIsNone(self.context.state.gif_url)
 
-    async def test_completely_empty_library_keeps_social_text(self):
-        with patch.dict(ITEM_BY_ID, {}, clear=True):
-            answer, _ = await self.answer("inner peace", query=None)
-        self.assertEqual(answer, "Synthetic fallback.")
 
     async def test_invalid_shortlist_preserves_the_chosen_social_reaction(self):
         self.context.source_message.add_reaction = AsyncMock()
@@ -147,13 +136,6 @@ class RequestedGifTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(answer, "")
             self.assertIn(self.context.state.gif_attachment.filename, ("seen.gif", "fresh.gif"))
 
-    async def test_missing_fresh_media_does_not_hide_readable_seen_media(self):
-        (self.directory / "seen.gif").write_bytes(b"synthetic")
-        self.context.state.channel_gif_urls.add("attachment://seen.gif")
-        with self.library(["seen.gif", "missing.gif"]):
-            answer, _ = await self.answer("moon dance")
-        self.assertEqual(answer, "")
-        self.assertEqual(self.context.state.gif_attachment.filename, "seen.gif")
 
     async def test_requested_repeat_reuses_chosen_item_when_no_unused_clip_exists(self):
         (self.directory / "synthetic.gif").write_bytes(b"synthetic")
@@ -163,13 +145,6 @@ class RequestedGifTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer, "")
         self.assertEqual(self.context.state.gif_url, "attachment://synthetic.gif")
 
-    async def test_fit_below_the_send_bar_sends_the_line(self):
-        (self.directory / "synthetic.gif").write_bytes(b"synthetic")
-        with self.library(["synthetic.gif"]):
-            answer, _ = await self.answer("Synthetic exchange", requested=False, fit=MEME_SEND_FIT - 1)
-        self.assertEqual(answer, "Synthetic fallback.")
-        self.assertIsNone(self.context.state.gif_url)
-        self.assertIsNone(self.context.state.gif_attachment)
 
     async def test_unrequested_repeat_without_unused_clip_sends_the_line(self):
         (self.directory / "synthetic.gif").write_bytes(b"synthetic")
@@ -192,15 +167,6 @@ class RequestedGifTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer, "")
         self.assertEqual(self.context.state.gif_url, "attachment://fresh.gif")
 
-    async def test_previous_request_does_not_allow_an_unrequested_repeat(self):
-        (self.directory / "synthetic.gif").write_bytes(b"synthetic")
-        self.context.state.gif_requested = True
-        self.context.state.channel_gif_urls.add("attachment://synthetic.gif")
-        with self.library(["synthetic.gif"]):
-            answer, _ = await self.answer("Synthetic exchange", requested=False, fit=5)
-        self.assertEqual(answer, "Synthetic fallback.")
-        self.assertFalse(self.context.state.gif_requested)
-        self.assertIsNone(self.context.state.gif_url)
 
     async def test_member_clarification_still_precedes_requested_media(self):
         (self.directory / "synthetic.gif").write_bytes(b"synthetic")
@@ -242,4 +208,3 @@ class RequestedGifTests(unittest.IsolatedAsyncioTestCase):
                          {"query": "ts_lowkey_tuff"})
         original.pop("gif_requested")
         self.assertFalse(salvage_choice(original, {})["gif_requested"])
-

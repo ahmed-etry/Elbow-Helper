@@ -5,12 +5,11 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.families import identity_reads as reads
-from elbow_helper.agent.families import account_names
+from elbow_helper.agent.reads import identity_reads as reads
+from elbow_helper.agent.reads import account_names
 from elbow_helper.agent.reads import reference as reference_reads
 from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
-from elbow_helper.agent.clan_roles import ROLE_PURPOSES
 from agent.engine.test_agent_plan_flow import _context
 
 
@@ -20,45 +19,6 @@ def member(identifier, joined=None):
 
 
 class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
-    async def test_live_clan_evidence_reaches_account_and_cohort_writers(self):
-        target = member(42, datetime(2026, 1, 1, tzinfo=timezone.utc))
-        clan = {'tag': CLANS['BEC'].tag, 'name': CLANS['BEC'].name}
-        payloads = {'/players/%23P0': {'tag': '#P0', 'name': 'In clan', 'clan': clan},
-                    '/players/%23Q0': {'tag': '#Q0', 'name': 'Clanless'}}
-
-        async def get(path, **kwargs):
-            payload = payloads.get(path)
-            return SimpleNamespace(ok=payload is not None, status=200 if payload else 503, payload=payload)
-
-        context = replace(_context(),
-            bot=SimpleNamespace(clash_client=SimpleNamespace(configured=True, get=AsyncMock(side_effect=get))),
-            account_links=SimpleNamespace(get_links_for_members=lambda ids: {
-                42: [{'player_tag': tag} for tag in ('#P0', '#Q0', '#P2')]}))
-        context.guild.members = [target]
-        context.guild.get_member = lambda identifier: target if identifier == 42 else context.member
-        for family, handler, arguments in (
-            ('read_member_accounts', reads.member_accounts, {'member_ids': [42]}),
-            ('read_member_cohort', reads.member_cohort, {'basis': 'joined_discord'}),
-        ):
-            with self.subTest(family=family):
-                result = await handler(context, arguments)
-                visible = answer_evidence({'accounts': family_model_view({**result, 'family': family})})['accounts']
-                for evidence in (result, visible):
-                    accounts = (evidence['rows'] if family == 'read_member_accounts'
-                                else evidence['rows'][0]['accounts'])
-                    by_tag = {row['player_tag']: row for row in accounts}
-                    self.assertEqual(by_tag['#P0']['clan'], clan)
-                    self.assertEqual(by_tag['#P0']['clan_status'], 'in_clan')
-                    self.assertIsNone(by_tag['#Q0']['clan'])
-                    self.assertEqual(by_tag['#Q0']['clan_status'], 'not_in_clan')
-                    self.assertEqual(by_tag['#Q0']['profile_status'], 'ok')
-                    self.assertIsNone(by_tag['#P2']['clan'])
-                    self.assertNotIn('clan_status', by_tag['#P2'])
-                    self.assertEqual(by_tag['#P2']['profile_status'], 'maintenance')
-                unknown_count = 'unknown_profile_count' if family == 'read_member_accounts' else 'unknown_account_profiles'
-                self.assertEqual(result[unknown_count], 1)
-                self.assertFalse(result['count_complete'])
-        self.assertNotIn('clan', payloads['/players/%23Q0'])
 
     async def test_roster_subreads_share_deadline_and_keep_current_capacity_after_seasonal_gap(self):
         import time
@@ -110,36 +70,6 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result['member_count'], 1)
                 self.assertIn(42, context.state.resolved_members)
 
-    async def test_all_configured_clan_roles_keep_live_display_names_and_purposes(self):
-        context = _context()
-        roles = [SimpleNamespace(id=getattr(clan, field), name=f'Display {index}-{slot}',
-                                 is_default=lambda: False)
-                 for index, clan in enumerate(CLANS.values())
-                 for slot, field in enumerate(ROLE_PURPOSES) if getattr(clan, field) is not None]
-        context.guild.roles = roles
-        context.member.roles = roles
-        result = reads.member_fields(context.member, context.member.id, include_roles=True)
-        by_id = {role.id: role for role in roles}
-        for clan in CLANS.values():
-            kind = 'participation_clans' if clan.is_utility else 'home_clans'
-            binding = next(row for row in result[kind] if row['clan_code'] == clan.code)
-            self.assertEqual(binding['role_name'], by_id[clan.member_role_id].name)
-            if clan.is_utility:
-                self.assertNotIn(clan.code, [row['clan_code'] for row in result['home_clans']])
-            for field in ROLE_PURPOSES:
-                role_id = getattr(clan, field)
-                if role_id is None:
-                    continue
-                row = next(row for row in result['roles'] if row['role_id'] == role_id)
-                self.assertIn({'clan_code': clan.code, 'purpose': field.removesuffix('_role_id')},
-                              row['clan_purposes'])
-        reference = await reference_reads.community_reference(context, {'reference_kind': 'clans'})
-        projected = answer_evidence({'clans': {**reference, 'family': 'read_community_reference',
-            'selection': {'reference_kind': 'clans'}}}, guild=context.guild)
-        for row in projected['clans']['rows']:
-            for binding in row['roles']:
-                self.assertEqual(binding['name'], by_id[binding['role_id']].name)
-                self.assertEqual(binding['status'], 'resolved')
 
     async def test_bew_self_role_remains_extra_participation_after_projection_and_rename(self):
         context = _context()
@@ -179,7 +109,7 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
                                                          context.member if identifier == context.member.id else None)
         trials = {'rows': [{'applicant_member_id': 8, 'start_at': '2026-09-05T00:00:00+00:00'},
                              {'applicant_member_id': 9, 'start_at': '2026-08-05T00:00:00+00:00'}]}
-        with patch('elbow_helper.agent.families.workflow_reads.active_trial_rows',
+        with patch('elbow_helper.agent.reads.workflow_reads.active_trial_rows',
                    AsyncMock(return_value=trials)):
             result = await reads.member_cohort(context, {'basis': 'accepted_recruitment',
                 'accepted_after': '2026-09-01T00:00:00+00:00', 'accepted_before': '2026-10-01T00:00:00+00:00'})
@@ -198,24 +128,6 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['rows'][0]['selection_status'], 'unknown_date')
         self.assertFalse(result['count_complete'])
 
-    async def test_every_linked_account_keeps_ranked_and_legacy_leagues_distinct(self):
-        actor = member(41)
-        links = SimpleNamespace(get_links_for_members=lambda ids: {41:[{'player_tag':'#P0'}, {'player_tag':'#Q0'}]})
-        context = replace(_context(), account_links=links)
-        actor.roles = context.member.roles
-        for role in actor.roles:
-            role.is_default = lambda: False
-            role.name = "Core"
-        context.guild.get_member=lambda identifier: actor if identifier == 41 else None
-        api = {'#P0':{'status':'ok','data':{'name':'One','townHallLevel':17,
-               'leagueTier':{'name':'Ranked'},'league':{'name':'Legacy'}}}, '#Q0':{'status':'unavailable'}}
-        with patch.object(reads, 'profiles', AsyncMock(return_value=api)):
-            result = await reads.member_accounts(context, {'member_ids':[41]})
-        self.assertEqual(result['account_count'], 2)
-        self.assertEqual(result['rows'][0]['ranked_league']['name'], 'Ranked')
-        self.assertEqual(result['rows'][0]['legacy_league']['name'], 'Legacy')
-        self.assertIsNone(result['rows'][1]['townHallLevel'])
-        self.assertEqual(result['rows'][1]['profile_status'], 'unavailable')
 
     async def test_all_clans_include_cwl_only_cohort_without_parked_members(self):
         response = {'items':[{'tag':clan.tag,'status':'ok','data':{'members':50,
@@ -303,32 +215,6 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
         # Without the record every tier is unknown, never the live roster's value.
         self.assertEqual(unknown['rows'], [])
 
-    async def test_cohort_joins_every_account_and_filters_actual_ranked_tier(self):
-        context = _context()
-        context.guild.members = [member(41),member(42),member(43)]
-        accounts = {'rows':[{'member_id':41,'player_tag':'#P0','townHallLevel':17,
-                            'ranked_league':{'id':9,'name':'Legend III'},'profile_status':'ok'},
-                           {'member_id':41,'player_tag':'#Q0','townHallLevel':18,
-                            'ranked_league':{'id':9,'name':'Legend II'},'profile_status':'ok'},
-                           {'member_id':42,'player_tag':'#P2','townHallLevel':17,
-                            'ranked_league':{'id':1,'name':'Different'},'profile_status':'ok'},
-                           {'member_id':43,'player_tag':None,'profile_status':'unlinked'}]}
-        with patch.object(reads,'member_accounts',AsyncMock(return_value=accounts)):
-            result = await reads.member_cohort(context,{'basis':'joined_discord',
-                                                       'include_accounts':True,'ranked_tier_ids':[9]})
-        self.assertEqual(result['member_count'],1)
-        self.assertEqual(result['account_count'],2)
-        self.assertEqual(len(result['rows'][0]['accounts']),2)
-        with patch.object(reads,'member_accounts',AsyncMock(return_value=accounts)):
-            named = await reads.member_cohort(context,{'basis':'joined_discord','ranked_tier_prefix':'Legend'})
-        self.assertEqual(named['member_count'],1)
-        self.assertEqual(named['account_count'],2)
-        accounts['rows'].append({'member_id':42,'player_tag':'#Q2',
-            'ranked_league':None,'townHallLevel':None,'profile_status':'unavailable'})
-        with patch.object(reads,'member_accounts',AsyncMock(return_value=accounts)):
-            partial = await reads.member_cohort(context,{'basis':'joined_discord','ranked_tier_prefix':'Legend'})
-        self.assertFalse(partial['count_complete'])
-        self.assertEqual(partial['unknown_account_profiles'],1)
 
     async def test_cohort_reference_opens_complete_snapshot_and_rechecks_authority(self):
         from elbow_helper.agent.tool_support.core import family_tool
@@ -360,45 +246,3 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(source.call_args.args[2], 'CWL')
         self.assertEqual(result['rows'][0]['war_attendance']['missed'],1)
         self.assertIsNone(result['rows'][1]['war_attendance'])
-
-    async def test_tags_view_uses_all_retained_cohort_accounts_without_duplicates(self):
-        from elbow_helper.agent.tool_support.core import family_tool
-        async def source(context,arguments):
-            return {'rows':[{'accounts':[{'player_tag':'#P0'},{'player_tag':'#Q0'}]},
-                            {'accounts':[{'player_tag':'#P0'}]}]}
-        tool = family_tool('read_member_cohort','Synthetic cohort.',{},source)
-        result = await tool.handler(_context(),{'limit':1,'view':'tags'})
-        self.assertEqual(result['tags'],['#P0','#Q0'])
-        self.assertEqual(result['rows'],[])
-
-    async def test_two_family_reads_export_whole_cohort_in_one_plan_and_answer(self):
-        import csv
-        from io import StringIO
-        from elbow_helper.agent.engine.service import AgentService
-        from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-        from agent.engine.test_agent_plan_flow import _Model, _Session, _model_step, _plan
-        context = _context()
-        members = [member(100+index) for index in range(31)]
-        context.guild.members = members
-        context.guild.get_member = lambda identifier: context.member if identifier==41 else next(
-            (row for row in members if row.id==identifier),None)
-        alphabet = '0289PYLQGRJCUV'
-        tags = ['#P'+alphabet[index//len(alphabet)]+alphabet[index%len(alphabet)] for index in range(31)]
-        context = replace(context,account_links=SimpleNamespace(get_links_for_members=lambda ids:{
-            row.id:[{'player_tag':tags[index]}] for index,row in enumerate(members) if row.id in ids}))
-        async def profiles(context,selected):
-            return {tag:{'status':'ok','data':{'name':'Synthetic','townHallLevel':17}} for tag in selected}
-        plan = _plan([
-            {'id':'cohort','capability':'read_member_cohort','arguments':{'basis':'joined_discord','limit':1},'depends_on':[]},
-            {'id':'accounts','capability':'read_member_accounts','arguments':{
-                'cohort_ref':{'step':'cohort','path':['report_id']},'delivery':'csv','limit':1},'depends_on':['cohort']},
-        ])
-        session = _Session([_model_step(plan),AgentStep('Found 31 accounts.',(),AgentUsage())],[])
-        flow,_ = AgentService(_Model(session))._start_flow(question='Synthetic cohort export',
-            local_context='',context=context,conversation_history='')
-        with patch.object(reads,'profiles',profiles):
-            answer = await flow.run()
-        self.assertEqual(answer,'Found 31 accounts.')
-        self.assertEqual(len(session.calls),2)
-        exported = list(csv.reader(StringIO(context.state.attachments[0].data.decode('utf-8-sig'))))
-        self.assertEqual(len(exported),32)

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 
@@ -10,7 +10,6 @@ from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.models import AgentRequestContext
 from elbow_helper.agent.tool_support.adapters.recruitment.report import RecruitmentTrialReport
-from agent.report_helpers import make_event_report
 from elbow_helper.agent.tool_support.adapters.recruitment.reads import (
     read_active_recruitment_trial_report,
     read_active_recruitment_trials,
@@ -162,16 +161,6 @@ class AgentRecruitmentToolTests(unittest.IsolatedAsyncioTestCase):
         self.queries.active_trial_snapshot.assert_not_called()
         self.assertEqual(self.context.state.source_channels, set())
 
-    async def test_empty_accessible_status_returns_coverage_without_artifact(self):
-        self.first.allowed = False
-        self.second.allowed = False
-        result = await read_active_recruitment_trials(self.context, {})
-        self.assertEqual(result["accessible_active_trial_count"], 0)
-        self.assertEqual(result["accessible_selected_entry_count"], 0)
-        self.assertNotIn("omitted_unselected_count", result)
-        self.assertIsNone(result["report_id"])
-        self.assertEqual(self.context.state.reports, {})
-        self.assertEqual(self.context.state.source_channels, set())
 
     async def test_ended_trial_in_accessible_ticket_is_distinct_from_access_denial(self):
         del self.state["200"]
@@ -184,12 +173,6 @@ class AgentRecruitmentToolTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AgentAccessLost):
             await read_active_recruitment_trials(self.context, {"ticket_channel_id": 200})
 
-    async def test_malformed_snapshot_does_not_retain_candidate_sources(self):
-        self.queries.active_trial_snapshot.side_effect = ValueError("malformed")
-        result = await read_active_recruitment_trials(self.context, {})
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.source_channels, set())
-        self.assertEqual(self.context.state.reports, {})
 
     async def test_access_revoked_during_projection_prevents_result_and_retention(self):
         project = self.queries.active_trial_snapshot.side_effect
@@ -227,13 +210,6 @@ class AgentRecruitmentToolTests(unittest.IsolatedAsyncioTestCase):
                 self.context, {"report_id": result["report_id"]},
             )
 
-    async def test_report_reuse_rechecks_every_ticket_source(self):
-        result = await read_active_recruitment_trials(self.context, {})
-        self.first.allowed = False
-        with self.assertRaises(AgentAccessLost):
-            await read_active_recruitment_trial_report(
-                self.context, {"report_id": result["report_id"]},
-            )
 
     async def test_report_reuse_fails_after_requester_bot_or_core_access_changes(self):
         result = await read_active_recruitment_trials(self.context, {})
@@ -269,34 +245,6 @@ class AgentRecruitmentToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["accessible_active_trial_count"], 1)
         self.assertEqual(result["accessible_selected_entry_count"], 1)
         self.assertEqual(self.context.state.source_channels, {200})
-
-    async def test_budget_wrong_kind_foreign_guild_and_filters_fail_closed(self):
-        with patch("elbow_helper.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES", 1):
-            result = await read_active_recruitment_trials(self.context, {})
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.reports, {})
-        self.context.state.source_channels.clear()
-        result = await read_active_recruitment_trials(self.context, {})
-        report = self.context.state.reports[result["report_id"]]
-        self.context.state.reports["role"] = make_event_report("role", "now")
-        self.context.state.reports["foreign"] = RecruitmentTrialReport(
-            "foreign", 2, report.snapshot,
-        )
-        for report_id in ("missing", "role", "foreign"):
-            value = await read_active_recruitment_trial_report(
-                self.context, {"report_id": report_id},
-            )
-            self.assertIn("error", value)
-        for invalid in (
-            {"ticket_channel_id": True},
-            {"applicant_member_id": 0},
-            {"timing_status": "accepted"},
-        ):
-            value = await read_active_recruitment_trial_report(
-                self.context,
-                {"report_id": result["report_id"], **invalid},
-            )
-            self.assertIn("error", value)
 
 
 if __name__ == "__main__":

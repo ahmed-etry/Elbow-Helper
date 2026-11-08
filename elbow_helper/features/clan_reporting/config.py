@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-STATE_FILE = "data/clan_data/clan_activity.json"
+from elbow_helper.infrastructure.persistence.documents import Document
+
+STATE_FILE = Document("clan_reporting")
 
 WAR_CHART_FILENAME = "war_summary.png"
 MISSING_ELDER_STICKY_BURIAL_MESSAGES = 3

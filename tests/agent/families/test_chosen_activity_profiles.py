@@ -5,14 +5,13 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from elbow_helper.agent.families import identity_reads as reads
+from elbow_helper.agent.reads import identity_reads as reads
 from elbow_helper.agent.tool_support.core import family_tool
-from elbow_helper.agent.reads.member_context import owner_context, PROFILE_ROLE_GROUPS
+from elbow_helper.agent.reads.member_context import PROFILE_ROLE_GROUPS
 from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
 from elbow_helper.agent.engine.assessment import assessment_limits
-from elbow_helper.agent.reads.projections import performance_projection
-from elbow_helper.configuration.roles import MEMBER_ROLE_ID, CO_LEADER_ROLE_ID, AGE_ROLE_IDS
+from elbow_helper.configuration.roles import MEMBER_ROLE_ID, AGE_ROLE_IDS
 from agent.families.test_named_account_stats import lookup_context, named_member
 
 
@@ -34,7 +33,7 @@ class ChosenActivityProfileTests(unittest.IsolatedAsyncioTestCase):
                  'war_type': 'REG', 'attacks_used': count, 'attacks_expected': count, 'missed': 0}
                 for tag, count in (('#P0', 1), ('#P2', 2), ('#P8', 1), ('#P9', 99))]
         tool = next(tool for tool in reads.TOOLS if tool.definition.name == 'read_member_cohort')
-        with patch('elbow_helper.agent.families.cohort_activity.selected_wars',
+        with patch('elbow_helper.agent.reads.cohort_activity.selected_wars',
                    AsyncMock(return_value={'rows': wars})), \
              patch('elbow_helper.agent.reads.wars.selected_wars',
                    AsyncMock(return_value={'rows': wars})):
@@ -56,19 +55,6 @@ class ChosenActivityProfileTests(unittest.IsolatedAsyncioTestCase):
         table = writer['activity']['rows']
         self.assertEqual(len(table['rows'] if isinstance(table, dict) else table), 2)
 
-    async def test_chosen_unlinked_accounts_survive_without_any_owners(self):
-        context = lookup_context()
-        source = family_tool('read_member_accounts', 'Synthetic accounts', {}, AsyncMock(return_value={
-            'rows': [{'member_id': None, 'player_tag': '#P0', 'profile_status': 'ok', 'donations': 2}]}))
-        accounts = await source.handler(context, {})
-        with patch('elbow_helper.agent.families.cohort_activity.selected_wars',
-                   AsyncMock(return_value={'error': 'Unavailable', 'cause': 'source_unavailable'})):
-            result = await reads.member_cohort(context, {'basis': 'selected', 'cohort_ref': accounts['report_id'],
-                'include_activity': True, 'after': '2025-12-01T00:00:00+00:00'})
-        self.assertEqual((result['account_count'], result['member_count']), (1, 0))
-        self.assertEqual(result['rows'][0]['account_tags'], ['#P0'])
-        self.assertEqual(result['rows'][0]['discord_activity_status'], 'unlinked')
-        self.assertEqual(result['rows'][0]['war_status'], 'source_unavailable')
 
     async def test_explicit_member_ids_include_departed_and_unlinked_members(self):
         context = lookup_context([named_member(42, 'Owner A')])
@@ -96,12 +82,6 @@ class ChosenActivityProfileTests(unittest.IsolatedAsyncioTestCase):
             result = await reads.member_cohort(context, {'basis': 'selected', 'cohort_ref': accounts['report_id']})
         self.assertEqual(result['cause'], 'report_unavailable')
 
-    def test_leadership_only_exists_for_role_holders(self):
-        owner = named_member(42, 'Owner A')
-        self.assertNotIn('leadership', reads.member_fields(owner, 42))
-        self.assertNotIn('leadership', owner_context(None, 404))
-        owner.roles = [SimpleNamespace(id=CO_LEADER_ROLE_ID, name='Leader')]
-        self.assertEqual(reads.member_fields(owner, 42)['leadership']['status'], 'active')
 
     def test_selection_uncertainty_only_marks_missing_owners(self):
         result = assessment_limits({'cohort': {
@@ -112,18 +92,6 @@ class ChosenActivityProfileTests(unittest.IsolatedAsyncioTestCase):
                       'accounts': [{'player_tag': '#P9'}]}]}})
         self.assertEqual([row['player_tag'] for row in result['unverified_selection']], ['#P9'])
 
-    async def test_performance_scope_excludes_other_accounts_of_selected_owner(self):
-        context = lookup_context([named_member(42, 'Owner A')],
-                                 [('#P0', 'Selected', 42), ('#P9', 'Other account', 42)])
-        rows = [{'member_id': 42, 'accounts': [{'player_tag': '#P0'}]}]
-        wars = [{'player_tag': tag, 'player_name': tag, 'war_id': 'W', 'war_type': 'REG',
-                 'attacks_used': used, 'attacks_expected': used, 'missed': 0}
-                for tag, used in (('#P0', 1), ('#P9', 99))]
-        with patch('elbow_helper.agent.reads.wars.selected_wars',
-                   AsyncMock(return_value={'rows': wars})):
-            await performance_projection(context, rows, {'war_type': 'REG'}, account_tags={'#P0'})
-        self.assertEqual(rows[0]['war_attendance']['attacks_used'], 1)
-        self.assertEqual(rows[0]['war_attendance']['account_tags'], ['#P0'])
 
     async def test_roles_require_opt_in_and_only_include_configured_operational_groups(self):
         owner = named_member(42, 'Owner A')

@@ -10,27 +10,18 @@ from typing import Any
 
 import discord
 
+from elbow_helper.infrastructure.discord.embeds import stable_embed_payload
+
 from elbow_helper.configuration.channels import CLAN_WAR_CHANNELS
 from elbow_helper.configuration.clans import CLAN_CODES_BY_NAME
 from .config import WAR_BOARD_CLAN_CODES
-from .rendering import build_war_board_embed
-from .rendering import coc_time_to_datetime
-from .rendering import normalize_war_state
+from elbow_helper.infrastructure.discord.war_boards import build_war_board_embed
+from elbow_helper.infrastructure.discord.war_boards import coc_time_to_datetime
+from elbow_helper.domain.wars import normalize_war_state
 
 
 LOGGER = logging.getLogger(__name__)
 PREVIOUS_WAR_CUSTOM_ID_PREFIX = "war_board:previous:"
-
-
-def _embed_without_timestamp(embed: discord.Embed) -> dict[str, Any]:
-    payload = embed.to_dict()
-    payload.pop("timestamp", None)
-    for key in ("thumbnail", "image"):
-        media = payload.get(key)
-        if isinstance(media, dict):
-            for dynamic_key in ("proxy_url", "height", "width"):
-                media.pop(dynamic_key, None)
-    return payload
 
 
 class PreviousWarView(discord.ui.View):
@@ -212,8 +203,8 @@ class WarBoardMixin:
             return
 
         content_changed = not message.embeds or (
-            _embed_without_timestamp(message.embeds[0])
-            != _embed_without_timestamp(embed)
+            stable_embed_payload(message.embeds[0])
+            != stable_embed_payload(embed)
         )
         expected_control_ids = (
             {f"{PREVIOUS_WAR_CUSTOM_ID_PREFIX}{clan_code}"}

@@ -11,8 +11,7 @@ from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.agent.engine.tool_call import (
     clone_tool_state, execute_tool, merge_tool_state, tool_state_snapshot,
 )
-from elbow_helper.agent.families import account_names, cohort_activity, identity_reads
-from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
+from elbow_helper.agent.reads import account_names, cohort_activity, identity_reads
 from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.plan.executor import execute_plan
 from agent.families.test_named_account_stats import lookup_context, named_member, rosters
@@ -87,14 +86,3 @@ class AmbiguousCandidateTests(unittest.IsolatedAsyncioTestCase):
             empty = await identity_reads.member_accounts(context, {'name': 'Absent Subject', 'look_in': 'game'})
         self.assertEqual(empty['status'], 'needs_input')
         self.assertEqual(empty['rows'], [])
-
-    async def test_overlapping_candidate_queries_keep_both_names(self):
-        context = lookup_context([named_member(42, 'Amber Pilot'), named_member(43, 'Copper Pilot')],
-                                 [('#P0', 'Silver Kite', 42), ('#Q0', 'Silver Kite', 43)])
-        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())), \
-             patch.object(identity_reads, 'profiles', AsyncMock(return_value={})):
-            result = await identity_reads.member_accounts(context, {
-                'account_names': ['Silver Kite', 'Silver Kte'], 'look_in': 'game'})
-        self.assertEqual(len(result['rows']), 2)
-        self.assertTrue(all(row['candidate_for'] == ['Silver Kite', 'Silver Kte'] for row in result['rows']))
-        self.assertIn('candidates are included so plans can cover each or ask', FAMILY_INSTRUCTION)

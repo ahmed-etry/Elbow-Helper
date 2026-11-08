@@ -1,7 +1,7 @@
 """Unverified account ownership stays with account reviewers."""
 
 from dataclasses import replace
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
 
 from elbow_helper.configuration import roles
@@ -18,7 +18,7 @@ class AccountReviewGateTests(unittest.IsolatedAsyncioTestCase):
         self.context = replace(fixture.context, private_pass=True)
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.context.bot.paths = synthetic_datasets(directory.name)
+        self.context.bot.paths = synthetic_datasets(directory.name, only=['family', 'links'])
 
     async def test_review_tables_require_actual_reviewer_roles(self):
         for role in (roles.MEMBER_ROLE_ID, *roles.LEAD_PLUS, *roles.RECRUITERS, *roles.CORE):

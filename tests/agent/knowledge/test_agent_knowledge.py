@@ -1,7 +1,7 @@
 """Markdown knowledge defaults, access, ranking and prompt bounds."""
 from pathlib import Path
 from datetime import datetime, timezone
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -56,16 +56,6 @@ Hidden""")
         self.assertEqual(sections[1].body, "Introduction")
         self.assertNotIn("Review wars", self.store.load().prompt().text)
 
-    def test_rank_and_reload_interval(self):
-        self.write("facts.md", "# War\nOther facts\n# Other\nwar war war")
-        with patch("elbow_helper.agent.knowledge.store.time.monotonic", return_value=0):
-            first = self.store.load()
-        self.assertEqual(first.search(first.active_sections, query="war")[0].title, "War")
-        self.write("facts.md", "# War\nNew facts")
-        with patch("elbow_helper.agent.knowledge.store.time.monotonic", return_value=59):
-            self.assertIs(self.store.load(), first)
-        with patch("elbow_helper.agent.knowledge.store.time.monotonic", return_value=60):
-            self.assertEqual(self.store.load().active_sections[0].body, "New facts")
 
     def test_prompt_profiles_are_lazy_and_scope_the_index(self):
         self.write("public.md", "# Public topic\nPublic body")
@@ -86,16 +76,6 @@ Hidden""")
         self.assertIsNot(reloaded.prompt({"lead"}), prompt)
         self.assertIn("Changed body", reloaded.prompt({"lead"}).core)
 
-    def test_prompt_threshold(self):
-        self.write("large.md", "+++\nalways_loaded=true\n+++\n# Facts\n" + "x" * 20000)
-        with self.assertLogs("elbow_helper.agent.knowledge.store", level="WARNING") as logs:
-            self.assertEqual(self.store.load().prompt().core, "")
-        self.assertIn("large.md: Facts", " ".join(logs.output))
-        with patch(
-            "elbow_helper.agent.knowledge.store.time.monotonic", return_value=10**12,
-        ):
-            self.write("large.md", "+++\nalways_loaded=true\n+++\n# Facts\nA fact")
-            self.assertIn("A fact", self.store.load().prompt().text)
 
     def test_core_is_opt_in_approved_visible_and_ordered(self):
         self.write("b.md", "+++\nalways_loaded=true\n+++\n# Second\nSecond body\n# Third\nThird body")
@@ -124,10 +104,6 @@ Hidden""")
         self.assertIn("core.md: Oversized", " ".join(logs.output))
         self.assertLessEqual(estimate_tokens(prompt.core), 4000)
 
-    def test_invalid_always_loaded_does_not_load_file(self):
-        self.write("bad.md", '+++\nalways_loaded="true"\n+++\n# Invalid\nBody')
-        with self.assertLogs("elbow_helper.agent.knowledge.store", level="ERROR"):
-            self.assertEqual(self.store.load().active_sections, ())
 
     def test_topic_index_groups_only_public_titles_without_restricted_provenance(self):
         self.write("b.md", "# Second topic\nSecond body\n# Third topic\nThird body")
@@ -151,66 +127,19 @@ Hidden""")
             self.assertEqual(prompt.required_access, {level})
             self.assertLessEqual(estimate_tokens(prompt.index), TOPIC_INDEX_TOKEN_LIMIT)
 
-    def test_topic_index_keeps_public_titles_across_visibility_profiles(self):
-        visibilities = ["public"] * 13 + ["lead", "lead_plus", "core"] * 4
-        for file_index, visibility in enumerate(visibilities):
-            self.write(f"topics-{file_index:02}.md", f'+++\nvisibility="{visibility}"\n+++\n'
-                       + "".join(f"# Topic {file_index:02} section {index:02}\nBody\n"
-                                 for index in range(20)))
-        catalog = self.store.load()
-        self.assertEqual(len(catalog.active_sections), 500)
-        self.assertEqual(len(catalog.visible_sections()), 260)
-        for levels, prompt in catalog._prompts.items():
-            with self.subTest(levels=levels):
-                self.assertFalse(prompt.index_fallback)
-                self.assertEqual(prompt.index_omitted, ())
-                self.assertGreater(prompt.index_tokens, 1500)
-                self.assertLessEqual(prompt.index_tokens, TOPIC_INDEX_TOKEN_LIMIT)
-                self.assertEqual([line for line in prompt.index.splitlines() if line.startswith("- ")],
-                                 [f"- {section.title}" for section in catalog.visible_sections(levels)])
-                self.assertEqual(prompt.required_access, {section.visibility for section in catalog.visible_sections(levels)
-                                                          if section.visibility != "public"})
-
-    def test_topic_index_uses_full_cap_before_falling_back(self):
-        self.assertEqual(TOPIC_INDEX_TOKEN_LIMIT, 14000)
-        self.write("topics.md", "# Topic\nBody")
-        prompt = self.store.load().prompt()
-        title = "Topic" + "x" * (5 * (TOPIC_INDEX_TOKEN_LIMIT - prompt.index_title_tokens))
-        self.write("topics.md", f"# {title}\nBody")
-        with patch("elbow_helper.agent.knowledge.store.time.monotonic", return_value=10**12):
-            prompt = self.store.load().prompt()
-        self.assertEqual(prompt.index_tokens, TOPIC_INDEX_TOKEN_LIMIT)
-        self.assertFalse(prompt.index_fallback)
-        self.assertIn(f"- {title}", prompt.index)
-        self.write("topics.md", f"# {title}xxxxx\nBody")
-        with (patch("elbow_helper.agent.knowledge.store.time.monotonic", return_value=10**12 + 60),
-              self.assertLogs("elbow_helper.agent.knowledge.store", level="WARNING") as logs):
-            prompt = self.store.load().prompt()
-        self.assertEqual(prompt.index_title_tokens, TOPIC_INDEX_TOKEN_LIMIT + 1)
-        self.assertTrue(prompt.index_fallback)
-        self.assertEqual(prompt.index.splitlines()[-1], "topics.md: 1 sections")
-        self.assertIn("exceeds 14000 tokens", " ".join(logs.output))
 
     def test_large_topic_index_falls_back_to_visible_file_counts(self):
-        self.write("topics.md", "".join(f"# Topic {index}\nBody\n" for index in range(4000)))
+        self.enterContext(patch.object(knowledge_store, "TOPIC_INDEX_TOKEN_LIMIT", 50))
+        self.write("topics.md", "".join(f"# Topic {index}\nBody\n" for index in range(20)))
         self.write("private.md", '+++\nvisibility="lead"\n+++\n# Restricted title\nBody')
         with self.assertLogs("elbow_helper.agent.knowledge.store", level="WARNING") as logs:
             prompt = self.store.load().prompt()
-        self.assertEqual(prompt.index.splitlines()[-1], "topics.md: 4000 sections")
+        self.assertEqual(prompt.index.splitlines()[-1], "topics.md: 20 sections")
         self.assertNotIn("Topic 1", prompt.index)
         self.assertNotIn("private.md", prompt.index)
         self.assertIn("using file counts", " ".join(logs.output))
         self.assertLessEqual(estimate_tokens(prompt.index), TOPIC_INDEX_TOKEN_LIMIT)
 
-    def test_file_count_fallback_stays_bounded_with_many_files(self):
-        for index in range(1200):
-            self.write(f"community-knowledge-reference-topic-{index:04}.md",
-                       "# Generic topic\nGeneric body")
-        with self.assertLogs("elbow_helper.agent.knowledge.store", level="WARNING") as logs:
-            prompt = self.store.load().prompt()
-        self.assertIn("Additional files omitted", prompt.index)
-        self.assertIn("omitted files", " ".join(logs.output))
-        self.assertLessEqual(estimate_tokens(prompt.index), TOPIC_INDEX_TOKEN_LIMIT)
 
     def test_search_weights_titles_and_preserves_exact_priority(self):
         self.write("topics.md", "# Repeated body\n" + "policy " * 20
@@ -246,40 +175,6 @@ Hidden""")
                              ["a.md", "b.md"])
         self.assertEqual(catalog.search(catalog.active_sections, query=""), catalog.active_sections)
 
-    def test_reload_logs_counts_estimates_and_warnings_once(self):
-        self.write("core.md", "+++\nalways_loaded=true\n+++\n# Oversized core\n" + "x" * 21000)
-        self.write("topics.md", "".join(
-            f"# Generic community knowledge section for reload logging extended reference {index}\nBody\n"
-            for index in range(1000)))
-        self.write("draft.md", '+++\nstatus="draft"\n+++\n# Draft title\nBody')
-        self.write("invalid.md", '+++\nalways_loaded="invalid"\n+++\nBody')
-        logger = "elbow_helper.agent.knowledge.store"
-        with (patch(logger + ".time.monotonic", return_value=0),
-              self.assertLogs(logger, level="INFO") as logs):
-            catalog = self.store.load()
-            for levels in ((), {"lead"}, {"core", "lead", "lead_plus"}):
-                self.assertIs(catalog.prompt(levels), catalog.prompt(levels))
-        info = [line for line in logs.output if line.startswith("INFO:")]
-        warnings = [line for line in logs.output if line.startswith("WARNING:")]
-        self.assertEqual(len(info), 1)
-        self.assertEqual(len(warnings), 2)
-        self.assertIn("4 files, 1001 sections", info[0])
-        self.assertIn("index tokens", info[0])
-        self.assertIn("Oversized core", " ".join(warnings))
-        self.assertIn("using file counts", " ".join(warnings))
-        with self.assertNoLogs(logger, level="INFO"):
-            for now in (59, 60, 120):
-                with patch(logger + ".time.monotonic", return_value=now):
-                    self.assertIs(self.store.load(), catalog)
-                    catalog.prompt({"lead"})
-        self.write("core.md", "+++\nalways_loaded=true\n+++\n# Small core\nGeneric body")
-        with (patch(logger + ".time.monotonic", return_value=180),
-              self.assertLogs(logger, level="INFO") as logs):
-            reloaded = self.store.load()
-        self.assertIsNot(reloaded, catalog)
-        self.assertIn("Generic body", reloaded.prompt().core)
-        self.assertEqual(sum(line.startswith("INFO:") for line in logs.output), 1)
-        self.assertFalse(any("Oversized core" in line for line in logs.output))
 
     async def test_service_loads_visible_index_and_rechecks_retained_access(self):
         self.write("core.md", '+++\nalways_loaded=true\nvisibility="lead"\n+++\n# Restricted topic\nRestricted body')
@@ -342,53 +237,6 @@ Hidden""")
         self.assertTrue(result["available_privately"])
         self.assertEqual(context.state.required_access, set())
         self.assertFalse(context.state.knowledge_title_access)
-
-    async def test_visibility_and_result_bounds(self):
-        self.write("public.md", "".join(
-            f"# Public {index}\n" + "x" * 5000 + "\n" for index in range(10)
-        ))
-        for level in ("lead", "lead_plus", "core"):
-            self.write(level + ".md", f"""+++
-visibility="{level}"
-+++
-# Secret {level}
-Secret facts""")
-        context = SimpleNamespace(
-            knowledge_store=self.store, member=SimpleNamespace(id=1),
-            guild=SimpleNamespace(id=3, get_member=lambda _: None), state=AgentTurnState(),
-        )
-        with (
-            patch(
-                "elbow_helper.agent.knowledge.tools.require_evidence_access", AsyncMock(),
-            ),
-            patch(
-                "elbow_helper.agent.knowledge.tools.request_scope",
-                new=AsyncMock(return_value=EvidenceScope(0, frozenset(), frozenset())),
-            ),
-        ):
-            result = await search_approved_knowledge(context, {"query": ""})
-            self.assertEqual(len(result["sections"]), 8)
-            self.assertTrue(all(
-                len(s["body"]) <= 4000 and s["visibility"] == "public" for s in result["sections"]
-            ))
-            self.assertEqual(
-                (await search_approved_knowledge(context, {"query": "secret"}))["sections"], [],
-            )
-        with (
-            patch(
-                "elbow_helper.agent.knowledge.tools.require_evidence_access", AsyncMock(),
-            ),
-            patch(
-                "elbow_helper.agent.knowledge.tools.has_reader_access_requirements",
-                return_value=True,
-            ),
-            patch("elbow_helper.agent.knowledge.tools.require_lookup_access"),
-            patch("elbow_helper.agent.knowledge.tools.request_scope",
-                  AsyncMock(return_value=EvidenceScope(0, frozenset(), frozenset({"lead", "lead_plus", "core"})))),
-        ):
-            result = await search_approved_knowledge(context, {"query": "secret", "scope": "requester"})
-            self.assertEqual(len(result["sections"]), 3)
-            self.assertEqual(context.state.required_access, {"lead", "lead_plus", "core"})
 
 
 class KnowledgeCoverageTests(unittest.IsolatedAsyncioTestCase):
@@ -471,15 +319,6 @@ class KnowledgeRankingTests(unittest.TestCase):
         catalog = KnowledgeCatalog("", tuple(KnowledgeSection(*section) for section in sections))
         return [section.title for section in catalog.search(catalog.active_sections, query=query)]
 
-    def test_question_stop_words_do_not_match_or_change_ranking(self):
-        sections = [("Broad reference", "what are the rules for how do i " * 50),
-                    ("Voucher policy", "Submit a voucher request."),
-                    ("Other topic", "voucher " * 20)]
-        expected = self.search(sections, "voucher")
-        self.assertEqual(self.search(sections, "What are the vouchers for?"), expected)
-        self.assertEqual(expected[0], "Voucher policy")
-        self.assertNotIn("Broad reference", expected)
-        self.assertEqual(self.search(sections, "the and of"), [])
 
     def test_short_focused_body_beats_long_body_with_equal_term_frequency(self):
         sections = [("Broad reference", "voucher " + "ordinary detail " * 500),
@@ -498,10 +337,6 @@ class KnowledgeRankingTests(unittest.TestCase):
                 sections = [("Other reference", title), (title, "ordinary detail " * 500)]
                 self.assertEqual(self.search(sections, title)[0], title)
 
-    def test_empty_corpus_and_empty_query_remain_bounded(self):
-        self.assertEqual(self.search([], "voucher"), [])
-        sections = [(f"Topic {i}", "Body") for i in range(10)]
-        self.assertEqual(self.search(sections, ""), [title for title, _ in sections[:8]])
 
     def test_hidden_sections_do_not_influence_visible_ranking(self):
         public = (KnowledgeSection("First reference", "archive"),

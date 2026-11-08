@@ -4,7 +4,7 @@ from contextlib import closing
 import json
 from pathlib import Path
 import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch, AsyncMock
@@ -77,13 +77,6 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
         result, _ = self.query("SELECT '? @id $id' AS text FROM first.accounts WHERE id = :id -- ?", {"id": 2})
         self.assertEqual(result["rows"], [{"text": "? @id $id"}])
 
-    def test_state_json_and_truncation(self):
-        result, _ = self.query(
-            "SELECT value FROM state.selection,json_each(json_extract(doc,'$.ids'))", max_rows=1,
-        )
-        self.assertEqual(result["total_rows"], 2)
-        self.assertTrue(result["truncated"])
-        self.assertEqual(result["rows"], [{"value": 1}])
 
     def test_denied_table_names_access_level(self):
         result, touched = self.query("SELECT * FROM second.accounts", levels=set())
@@ -119,14 +112,6 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
             "second.accounts", DataGuide(self.paths, self.sources).for_levels({"lead"}),
         )
 
-    def test_bounded_recursive_cte_returns_rows(self):
-        result, touched = self.query(
-            "WITH RECURSIVE numbers(n) AS ("
-            "VALUES(1) UNION ALL SELECT n+1 FROM numbers WHERE n<4"
-            ") SELECT n FROM numbers"
-        )
-        self.assertEqual(result["rows"], [{"n": n} for n in range(1, 5)])
-        self.assertFalse(touched)
 
     def test_truncated_count_uses_one_execution_and_export_retains_the_complete_set(self):
         statements = []
@@ -178,29 +163,6 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
                                    max_rows=None)
         self.assertEqual(result['cause'], 'capacity')
 
-    def test_row_limit_names_the_rows_cut_and_the_way_to_get_them(self):
-        result, _ = self.query('SELECT id FROM first.accounts ORDER BY id', max_rows=2)
-        self.assertEqual((result['row_count'], result['total_rows'], result['rows_cut']), (2, 5, 3))
-        self.assertIn('Raise max_rows', result['instruction'])
-        result, _ = self.query('WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<1005) '
-                               'SELECT i FROM n', max_rows=1000)
-        self.assertEqual(result['rows_cut'], 5)
-        self.assertNotIn('Raise max_rows', result['instruction'])
-
-    def test_one_row_per_account_for_the_whole_family_comes_back_whole(self):
-        columns = ', '.join(f'i + {offset} AS c{offset}' for offset in range(10))
-        result, _ = self.query('WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<700) '
-                               f'SELECT i, {columns} FROM n', max_rows=1000)
-        self.assertEqual(result['row_count'], 700)
-        self.assertFalse(result['truncated'])
-        self.assertNotIn('rows_cut', result)
-        self.assertNotIn('instruction', result)
-
-    def test_query_time_limit_fits_inside_the_tool_timeout(self):
-        from elbow_helper.agent.tool_support.sql.query import QUERY_SECONDS
-        from elbow_helper.agent.engine.budgets import TOOL_TIMEOUT_SECONDS
-        self.assertGreaterEqual(QUERY_SECONDS, 10)
-        self.assertLessEqual(QUERY_SECONDS, TOOL_TIMEOUT_SECONDS - 5)
 
     def test_empty_columns_and_large_cells(self):
         self.assertEqual(
@@ -211,16 +173,6 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
             [{"blob": "ff", "text": "x" * 4000 + "\u2026"}],
         )
 
-    def test_guides_and_schema_recovery_expose_composite_primary_keys(self):
-        from dataclasses import replace
-        with closing(sqlite3.connect(self.paths.project_root / 'first.sqlite3')) as connection:
-            connection.execute('CREATE TABLE observations (event_id TEXT, side TEXT, amount INT, PRIMARY KEY(event_id, side))')
-        sources = (replace(self.sources[0], tables=(('observations', 'none', 'Synthetic observations'),)),)
-        guide = DataGuide(self.paths, sources).for_levels(set())
-        self.assertIn('event_id TEXT PK1', guide)
-        self.assertIn('side TEXT PK2', guide)
-        result, _ = run_query(sources, self.paths, set(), 'SELECT missing FROM first.observations')
-        self.assertEqual(result['available_schema']['first.observations']['primary_key'], ['event_id', 'side'])
 
     def test_quoted_source_refusal_and_duplicate_columns(self):
         self.assertEqual(

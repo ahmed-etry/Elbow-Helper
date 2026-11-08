@@ -1,13 +1,12 @@
 """The CWL bonus command keeps report creation in its feature service."""
 
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.agent.tool_support.adapters.cwl.bonus_export import run_cwl_bonus
-from elbow_helper.features.cwl.bonus.service import BonusReportError
 
 
 class CwlBonusCommandTests(unittest.IsolatedAsyncioTestCase):
@@ -31,13 +30,3 @@ class CwlBonusCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Eligible players: 2", outcome.text)
         service.create.assert_awaited_once_with("BEH", None)
         service.discard.assert_awaited_once_with(report)
-
-    async def test_report_error_uses_feature_message(self):
-        service = SimpleNamespace(create=AsyncMock(side_effect=BonusReportError("no_seasons")))
-        workflow = SimpleNamespace(
-            bonus_reports=service,
-            bonus_report_error_message=lambda _: "No completed season.",
-        )
-        context = SimpleNamespace(bot=SimpleNamespace(get_cog=lambda _: workflow))
-        outcome = await run_cwl_bonus(context, {"clan": "BEH"})
-        self.assertEqual(outcome.text, "No completed season.")

@@ -25,8 +25,8 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from .helpers import coc_time_to_dt
 from .helpers import wait_for_boot_complete
 from .record import group_checked, league_wars
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic_async
+from elbow_helper.infrastructure.persistence.documents import read_document as read_json
+from elbow_helper.infrastructure.persistence.documents import write_document_async as write_json_atomic_async
 from .config import CWL_CLAN_TAGS
 from .config import CWL_THREADS
 from .config import ROUTER_STATE_FILE

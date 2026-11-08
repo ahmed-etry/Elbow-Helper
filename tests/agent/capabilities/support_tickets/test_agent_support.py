@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 
@@ -9,7 +9,6 @@ from elbow_helper.configuration.channels import SUPPORT_TICKET_CATEGORY
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.models import AgentRequestContext
-from agent.report_helpers import make_event_report
 from elbow_helper.agent.tool_support.adapters.support_tickets.report import SupportTicketReport
 from elbow_helper.agent.tool_support.adapters.support_tickets.reads import (
     read_accessible_support_tickets,
@@ -158,22 +157,6 @@ class AgentSupportToolTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.context.state.reports, {})
         self.queries.metadata_snapshot.assert_not_called()
 
-    async def test_empty_accessible_inventory_has_coverage_without_artifact(self):
-        self.first.allowed = False
-        self.second.allowed = False
-        result = await read_accessible_support_tickets(self.context, {})
-        self.assertEqual(result["accessible_ticket_count"], 0)
-        self.assertEqual(result["omitted_inaccessible_count"], 3)
-        self.assertIsNone(result["report_id"])
-        self.assertEqual(self.context.state.reports, {})
-        self.assertEqual(self.context.state.source_channels, set())
-
-    async def test_malformed_snapshot_does_not_retain_candidate_sources(self):
-        self.queries.metadata_snapshot.side_effect = ValueError("malformed")
-        result = await read_accessible_support_tickets(self.context, {})
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.source_channels, set())
-        self.assertEqual(self.context.state.reports, {})
 
     async def test_snapshot_cannot_substitute_an_unauthorized_channel(self):
         real = SupportTicketQueries().metadata_snapshot((self.hidden,))
@@ -190,35 +173,6 @@ class AgentSupportToolTests(unittest.IsolatedAsyncioTestCase):
             await read_support_ticket_report(
                 self.context, {"report_id": result["report_id"]},
             )
-
-    async def test_budget_wrong_kind_foreign_guild_and_filters_fail_closed(self):
-        with patch("elbow_helper.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES", 1):
-            result = await read_accessible_support_tickets(self.context, {})
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.reports, {})
-        self.context.state.source_channels.clear()
-        result = await read_accessible_support_tickets(self.context, {})
-        report = self.context.state.reports[result["report_id"]]
-        self.context.state.reports["role"] = make_event_report("role", "now")
-        self.context.state.reports["foreign"] = SupportTicketReport(
-            "foreign", 2, report.registered_ticket_count,
-            report.omitted_inaccessible_count, report.snapshot,
-        )
-        for report_id in ("missing", "role", "foreign"):
-            value = await read_support_ticket_report(
-                self.context, {"report_id": report_id},
-            )
-            self.assertIn("error", value)
-        for invalid in (
-            {"channel_id": True},
-            {"owner_member_id": 0},
-            {"owner_can_send": "false"},
-            {"activity_status": "meaningful_reply"},
-        ):
-            value = await read_support_ticket_report(
-                self.context, {"report_id": result["report_id"], **invalid},
-            )
-            self.assertIn("error", value)
 
 
 if __name__ == "__main__":

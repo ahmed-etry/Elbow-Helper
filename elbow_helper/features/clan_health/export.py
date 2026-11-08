@@ -670,20 +670,3 @@ class ClanHealthExportMixin:
             ))
         if export_view.children:
             await msg.edit(content=export.workbook_title, view=export_view)
-
-    async def _write_and_send_export(
-        self, *, interaction: discord.Interaction, workbook_name: str,
-        workbook_title: str, summary_lines: List[str],
-        sheets: List[Tuple[str, List[List[Any]]]],
-    ) -> None:
-        try:
-            export = await self.prepare_health_export(
-                workbook_name=workbook_name, workbook_title=workbook_title,
-                summary_lines=summary_lines, sheets=sheets,
-            )
-        except HealthWorkbookError:
-            await interaction.followup.send(
-                "Could not generate the spreadsheet right now. Try again in a moment.",
-            )
-            return
-        await self.send_prepared_health_export(interaction, export)

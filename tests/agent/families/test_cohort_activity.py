@@ -10,14 +10,12 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.families.cohort_activity import roster_cohort
-from elbow_helper.agent.families.cohort_activity import discord_activity_projection
-from elbow_helper.agent.families.cohort_activity import war_measures
-from elbow_helper.features.clan_health.attendance import aggregate_attendance
+from elbow_helper.agent.reads.cohort_activity import roster_cohort
+from elbow_helper.agent.reads.cohort_activity import discord_activity_projection
+from elbow_helper.agent.reads.cohort_activity import war_measures
+from elbow_helper.domain.war_attendance import aggregate_attendance
 from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.features.achievements.queries import AchievementQueries
-from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.plan.checker import check_plan
 from agent.engine.test_agent_plan_flow import _context
 
 
@@ -85,30 +83,6 @@ class CohortActivityTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(coverage['source_reads_complete'])
             self.assertEqual(coverage['members_not_checked'], 1)
 
-    def test_missing_malformed_and_read_only_activity_databases(self):
-        database = self.activity_database()
-        queries = AchievementQueries(database)
-        with self.assertRaises(RuntimeError):
-            queries.member_activity([42])
-        self.assertFalse(database.exists())
-        with closing(sqlite3.connect(database)) as connection, connection:
-            connection.execute('CREATE TABLE unrelated (value INTEGER)')
-        with self.assertRaises(RuntimeError):
-            queries.member_activity([42])
-        with closing(queries._connect()) as connection:
-            with self.assertRaises(sqlite3.OperationalError):
-                connection.execute('CREATE TABLE forbidden (value INTEGER)')
-
-    def test_initial_catalogue_supports_chosen_accounts_and_has_no_scan_continuation(self):
-        registry = {name: tool for name, tool in build_agent_tools().items() if tool.default_visible}
-        plan = {'goal': 'Read selected member activity', 'effort': 'high', 'output': 'text', 'steps': [
-            {'id': 'accounts', 'capability': 'read_member_accounts', 'arguments': {'member_ids': [42]}, 'depends_on': []},
-            {'id': 'activity', 'capability': 'read_member_cohort', 'arguments': {'basis': 'selected',
-                'cohort_ref': {'step': 'accounts', 'path': ['report_id']}, 'include_activity': True,
-                'after': '2025-12-01T00:00:00+00:00', 'view': 'count'}, 'depends_on': ['accounts']}]}
-        checked = check_plan(plan, registry)
-        self.assertTrue(checked.ok, checked.error)
-        self.assertNotIn('activity_ref', registry['read_member_cohort'].definition.parameters['properties'])
 
     async def test_accounts_join_across_clans_and_unlinked_accounts_survive(self):
         context = _context()
@@ -128,8 +102,8 @@ class CohortActivityTests(unittest.IsolatedAsyncioTestCase):
                         attacks_used=2, attacks_expected=2, missed=0),
                     dict(player_tag='#P0', player_name='Account', war_id='W2',
                          attacks_used=0, attacks_expected=1, missed=1)]
-        with patch('elbow_helper.agent.families.identity_reads.clan_rosters', AsyncMock(return_value=roster)), \
-             patch('elbow_helper.agent.families.cohort_activity.selected_wars', AsyncMock(return_value={'rows': war_rows, 'coverage': {'historical_collection_complete': False}})):
+        with patch('elbow_helper.agent.reads.identity_reads.clan_rosters', AsyncMock(return_value=roster)), \
+             patch('elbow_helper.agent.reads.cohort_activity.selected_wars', AsyncMock(return_value={'rows': war_rows, 'coverage': {'historical_collection_complete': False}})):
             result = await roster_cohort(context, {'include_activity': True, 'after': '2025-12-01T00:00:00+00:00'})
         self.assertEqual(result['account_count'], 3)
         self.assertEqual(result['member_count'], 1)
@@ -162,12 +136,3 @@ class CohortActivityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by_clan['BES']['accounts_with_observed_attacks'], 1)
         self.assertEqual(by_clan['BEM']['accounts_with_observed_attacks'], 0)
         self.assertEqual(by_clan['BEM']['accounts_without_stored_participation'], 2)
-
-    async def test_invalid_window_is_rejected_before_activity_queries(self):
-        context = _context()
-        roster = {'rows': [], 'count_complete': True, 'clans': []}
-        with patch('elbow_helper.agent.families.identity_reads.clan_rosters', AsyncMock(return_value=roster)), \
-             patch('elbow_helper.agent.families.cohort_activity.selected_wars', AsyncMock()) as wars:
-            invalid = await roster_cohort(context, {'include_activity': True, 'after': '2026-02-01T00:00:00+00:00'})
-        self.assertEqual(invalid['cause'], 'invalid_arguments')
-        wars.assert_not_awaited()

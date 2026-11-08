@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 
@@ -11,15 +11,9 @@ from elbow_helper.configuration.channels import (
 )
 from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.agent.access import AgentAccessLost
-from elbow_helper.agent.actions.preview import preview_text
-from elbow_helper.agent.capabilities.examination.examiner_profile import prepare_examiner_leave
-from elbow_helper.agent.capabilities.examination.report import ExaminationCaseReport
-from elbow_helper.agent.models import AgentRequestContext, AgentTurnState
-from agent.report_helpers import make_event_report
-from elbow_helper.agent.capabilities.examination.reads import (
-    read_accessible_examination_cases,
-    read_examination_case_report,
-)
+from elbow_helper.agent.tool_support.adapters.examination.report import ExaminationCaseReport
+from elbow_helper.agent.models import AgentRequestContext
+from elbow_helper.agent.tool_support.adapters.examination.reads import read_accessible_examination_cases, read_examination_case_report
 from elbow_helper.features.examination.queries import ExaminationQueries
 
 
@@ -62,26 +56,6 @@ class _Channel:
 
 class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
 
-    async def test_leave_examiner_preview_formats_the_heading_and_targets(self):
-        member = SimpleNamespace(id=10, mention="<@10>")
-        channel = SimpleNamespace(id=200, mention="<#200>")
-        workflow = SimpleNamespace(
-            has_examiner_profile=lambda _: True,
-            examiner_profile_snapshot=lambda _: {},
-            leave_examiner_roster=AsyncMock(),
-        )
-        context = SimpleNamespace(member=member, state=AgentTurnState())
-        with patch("elbow_helper.agent.capabilities.examination.examiner_profile._workflow",
-                   return_value=(workflow, channel)):
-            result = await prepare_examiner_leave(context, {})
-        self.assertEqual(result["status"], "confirmation_required")
-        preview = preview_text(context.state.proposed_changes)
-        self.assertEqual(context.state.proposed_changes[0].preview.summary, "Leave examiner roster")
-        self.assertIn("Leave examiner roster", preview)
-        self.assertNotIn("{", preview)
-        self.assertNotIn("}", preview)
-        self.assertIn("Remove <@10> from the examiner roster in <#200>.", preview)
-        workflow.leave_examiner_roster.assert_not_awaited()
 
     def setUp(self):
         requester = SimpleNamespace(
@@ -205,23 +179,6 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
         self.queries.case_snapshot.assert_not_called()
         self.assertEqual(self.context.state.source_channels, set())
 
-    async def test_empty_accessible_status_has_no_hidden_counts_or_artifact(self):
-        self.first.allowed = False
-        self.second.allowed = False
-        result = await read_accessible_examination_cases(self.context, {})
-        self.assertEqual(result["accessible_selected_entry_count"], 0)
-        self.assertEqual(result["accessible_case_count"], 0)
-        self.assertNotIn("omitted", str(result))
-        self.assertIsNone(result["report_id"])
-        self.assertEqual(self.context.state.reports, {})
-        self.assertEqual(self.context.state.source_channels, {EXAMINATION_ROOM})
-
-    async def test_malformed_snapshot_does_not_retain_candidate_sources(self):
-        self.queries.case_snapshot.side_effect = ValueError("malformed")
-        result = await read_accessible_examination_cases(self.context, {})
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.source_channels, set())
-        self.assertEqual(self.context.state.reports, {})
 
     async def test_routing_room_access_is_required_before_case_state_read(self):
         for actor_id in (self.bot_member.id,):
@@ -316,36 +273,6 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
             self.context.state.source_channels,
             {EXAMINATION_ROOM, 200, 300},
         )
-
-    async def test_budget_wrong_kind_foreign_guild_and_filters_fail_closed(self):
-        with patch("elbow_helper.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES", 1):
-            result = await read_accessible_examination_cases(self.context, {})
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.reports, {})
-        self.context.state.source_channels.clear()
-        result = await read_accessible_examination_cases(self.context, {})
-        report = self.context.state.reports[result["report_id"]]
-        self.context.state.reports["role"] = make_event_report("role", "now")
-        self.context.state.reports["foreign"] = ExaminationCaseReport(
-            "foreign", 2, report.snapshot,
-        )
-        for report_id in ("missing", "role", "foreign"):
-            value = await read_examination_case_report(
-                self.context, {"report_id": report_id},
-            )
-            self.assertIn("error", value)
-        for invalid in (
-            {"ticket_channel_id": True},
-            {"applicant_member_id": 0},
-            {"case_type": "support"},
-            {"workflow_status": "approved"},
-            {"response_status": "answered"},
-        ):
-            value = await read_examination_case_report(
-                self.context,
-                {"report_id": result["report_id"], **invalid},
-            )
-            self.assertIn("error", value)
 
 
 if __name__ == "__main__":

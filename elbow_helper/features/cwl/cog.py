@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import discord
 from discord.ext import commands
 from elbow_helper.core.background import start_resilient_loop
-from elbow_helper.features.wars.emojis import WarEmojiProvider
+from elbow_helper.infrastructure.discord.war_emojis import WarEmojiProvider
 from elbow_helper.domain.cwl import is_cwl_window
 from elbow_helper.data.collectors import ProfileDemand
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
@@ -97,15 +97,15 @@ class CwlManagement(
         self.roster_automation = roster_automation
         self.logger = logging.getLogger(__name__)
 
-        self.data_file = str(THREAD_STATE_FILE)
+        self.data_file = THREAD_STATE_FILE
         self.clan_configs = copy.deepcopy(THREAD_CLAN_CONFIGS)
         self.clan_tags = dict(CLAN_NAME_TO_TAG)
         self.lead_role_ids = set(LEAD_PLUS)
         self.helper_role_ids = set(CWL_HELPERS)
 
-        self.init_thread_feature()
-        self._sent_keys = set(self._load_sent_keys())
-        self.dashboard_state = self._load_dashboard_state()
+        self.init_thread_feature(load=False)
+        self._sent_keys = set()
+        self.dashboard_state = {}
         self.bonus_config = BonusConfigRepository()
         self.cwl_exports = bot.local_exports
         # League history and groups come from the family record; the collectors keep them.
@@ -130,27 +130,38 @@ class CwlManagement(
             google_publisher,
             self.cwl_exports,
         )
-        self.bonus_dashboard_store = BonusDashboardStore()
-        self.transfer_state = self._load_transfer_state()
+        self.bonus_dashboard_store = BonusDashboardStore(load=False)
+        self.transfer_state = {}
         self._transfer_reminder_lock = asyncio.Lock()
         self._transfer_hub_lock = asyncio.Lock()
-        if getattr(self, "_transfer_state_needs_save", False):
-            self._save_transfer_state()
-            self._transfer_state_needs_save = False
         self._hero_sum_cache: Dict[str, Dict[str, Any]] = {}
-        self._clan_league_cache: Dict[str, Dict[str, Any]] = {}
         self._first_war_check = asyncio.Event()
         self._manual_dashboard_refresh_locks: Dict[str, asyncio.Lock] = {}
         self._manual_dashboard_refresh_last_ts: Dict[str, float] = {}
         self._dashboard_refresh_warning_state: Dict[str, Dict[str, Any]] = {}
-        self.bonus_config.ensure()
 
-        self.state = self._load_state()
+        self.state = {}
         self.cwl_board_registry = self.state.setdefault("cwl_board_messages", {})
         self._cwl_board_locks: Dict[str, asyncio.Lock] = {}
         self.cwl_war_emojis = WarEmojiProvider(bot)
         self._poll_task: Optional[asyncio.Task] = None
+        self._transfer_hub_task: Optional[asyncio.Task] = None
 
+    def _load_storage(self):
+        self.load_data()
+        self._sent_keys = set(self._load_sent_keys())
+        self.dashboard_state = self._load_dashboard_state()
+        self.bonus_dashboard_store.state = self.bonus_dashboard_store._load()
+        self.transfer_state = self._load_transfer_state()
+        if getattr(self, "_transfer_state_needs_save", False):
+            self._save_transfer_state()
+            self._transfer_state_needs_save = False
+        self.bonus_config.load()
+        self.state = self._load_state()
+        self.cwl_board_registry = self.state.setdefault("cwl_board_messages", {})
+
+    async def cog_load(self):
+        await asyncio.to_thread(self._load_storage)
         self.start_thread_tasks()
         start_resilient_loop(self.reminder_loop)
         start_resilient_loop(self.dashboard_loop)

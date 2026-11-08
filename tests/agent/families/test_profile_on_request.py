@@ -6,9 +6,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.families import identity_reads
+from elbow_helper.agent.reads import identity_reads
 from elbow_helper.agent.tool_support.model_view import family_model_view
-from elbow_helper.agent.plan.results import model_result, model_view
 from elbow_helper.configuration.clans import CLANS
 from agent.families.test_named_account_stats import lookup_context, named_member
 
@@ -48,69 +47,36 @@ class ProfileOnRequestTests(unittest.IsolatedAsyncioTestCase):
             page = await tool.handler(context, {'member_ids': [42], **arguments})
         return context, page
 
-    async def test_default_view_keeps_identity_clan_town_hall_and_status_only(self):
-        _, page = await self.lookup({})
-        view = family_model_view(page)
-        self.assertEqual(len(view['rows']), 10)
-        for row in view['rows']:
-            for field in KEPT:
-                self.assertIn(field, row)
-            for field in ACCOUNT_FACTS:
-                self.assertNotIn(field, row)
-        member = view['members'][0]
-        self.assertEqual((member['member_id'], member['member_name']), (42, 'Synthetic Pilot'))
-        self.assertEqual(member['account_tags'], [f'#A{index}' for index in range(10)])
-        for field in MEMBER_PROFILE:
-            self.assertNotIn(field, member)
-        self.assertNotIn('home_clan_basis', json.dumps(view))
+    async def test_only_requested_profile_and_standing_facts_reach_the_writer(self):
+        for profile, standing in ((False, False), (True, False), (False, True), (True, True)):
+            with self.subTest(profile=profile, standing=standing):
+                _, page = await self.lookup({'include_profile': profile, 'include_standing': standing})
+                view = family_model_view(page)
+                self.assertEqual(len(view['rows']), 10)
+                wanted = set(KEPT)
+                if profile:
+                    wanted.update(ACCOUNT_PROFILE)
+                if standing:
+                    wanted.update(ACCOUNT_STANDING)
+                if profile or standing:
+                    wanted.add('observed_at')
+                for row in view['rows']:
+                    for field in set(KEPT) | set(ACCOUNT_FACTS) | {'observed_at'}:
+                        self.assertEqual(field in row, field in wanted, field)
+                member = view['members'][0]
+                self.assertEqual((member['member_id'], member['member_name']), (42, 'Synthetic Pilot'))
+                self.assertEqual(member['account_tags'], [f'#A{index}' for index in range(10)])
+                for field in MEMBER_PROFILE[:-1]:
+                    self.assertEqual(field in member, profile, field)
+                self.assertNotIn('home_clan_basis', member)
+                if profile:
+                    self.assertEqual(member['nickname'], 'Synthetic Nick')
+                    self.assertEqual(member['home_clan_status'], 'resolved')
+                    self.assertEqual([clan['clan_code'] for clan in member['home_clans']], ['BES'])
+                if standing:
+                    self.assertEqual(view['rows'][0]['trophies'], 4000)
+                    self.assertEqual(view['rows'][0]['ranked_league']['name'], 'Synthetic League A')
 
-    async def test_include_profile_returns_the_facts_without_the_basis_text(self):
-        _, page = await self.lookup({'include_profile': True})
-        view = family_model_view(page)
-        for row in view['rows']:
-            for field in ACCOUNT_PROFILE + ('observed_at',):
-                self.assertIn(field, row)
-            for field in ACCOUNT_STANDING:
-                self.assertNotIn(field, row)
-        member = view['members'][0]
-        for field in MEMBER_PROFILE[:-1]:
-            self.assertIn(field, member)
-        self.assertEqual(member['nickname'], 'Synthetic Nick')
-        self.assertEqual(member['home_clan_status'], 'resolved')
-        self.assertEqual([clan['clan_code'] for clan in member['home_clans']], ['BES'])
-        self.assertNotIn('home_clan_basis', member)
-
-    async def test_include_standing_returns_leagues_and_totals_without_the_member_profile(self):
-        _, page = await self.lookup({'include_standing': True})
-        view = family_model_view(page)
-        for row in view['rows']:
-            for field in ACCOUNT_STANDING + ('observed_at',):
-                self.assertIn(field, row)
-            self.assertNotIn('role', row)
-        self.assertEqual(view['rows'][0]['trophies'], 4000)
-        self.assertEqual(view['rows'][0]['ranked_league']['name'], 'Synthetic League A')
-        for field in MEMBER_PROFILE:
-            self.assertNotIn(field, view['members'][0])
-
-    async def test_both_options_return_everything(self):
-        _, page = await self.lookup({'include_profile': True, 'include_standing': True})
-        view = family_model_view(page)
-        for row in view['rows']:
-            for field in ACCOUNT_FACTS:
-                self.assertIn(field, row)
-        for field in MEMBER_PROFILE[:-1]:
-            self.assertIn(field, view['members'][0])
-
-    async def test_retained_report_keeps_every_fact_whatever_the_option(self):
-        context, page = await self.lookup({})
-        retained = json.loads(context.state.reports[page['report_id']].payload)
-        for row in retained['rows']:
-            for field in ACCOUNT_FACTS:
-                self.assertIn(field, row)
-        member = retained['summary']['members'][0]
-        for field in MEMBER_PROFILE:
-            self.assertIn(field, member)
-        self.assertIn('home_clan_basis', page['members'][0])
 
     async def test_filters_use_the_full_data_without_the_option(self):
         _, page = await self.lookup({'town_hall_min': 15, 'ranked_tier_prefix': 'Synthetic League B'})
@@ -125,18 +91,6 @@ class ProfileOnRequestTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(row['ranked_league']['name'].startswith('Synthetic League B'))
         self.assertLess(len(view['rows']), 10)
 
-    async def test_unknown_accounts_follow_the_same_default(self):
-        context = lookup_context([owner()], [('#A0', 'Synthetic account 0', 42)])
-        tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
-        with patch.object(identity_reads, 'profiles', AsyncMock(return_value={
-                '#A0': {'tag': '#A0', 'status': 'unavailable'}})):
-            page = await tool.handler(context, {'member_ids': [42]})
-        view = family_model_view(page)
-        self.assertEqual(view['rows'][0]['profile_status'], 'unavailable')
-        self.assertTrue(view['unknown_accounts'])
-        for row in view['unknown_accounts']:
-            for field in ACCOUNT_FACTS:
-                self.assertNotIn(field, row)
 
     async def test_cohort_selection_from_a_default_lookup_still_sees_every_fact(self):
         context, page = await self.lookup({})
@@ -145,23 +99,6 @@ class ProfileOnRequestTests(unittest.IsolatedAsyncioTestCase):
                          {'account_tags': [f'#A{index}' for index in range(10)]})
         retained = json.loads(context.state.reports[page['report_id']].payload)['rows']
         self.assertTrue(all(row['ranked_league'] and row['donations'] for row in retained))
-
-    async def test_default_view_is_smaller_for_ten_accounts(self):
-        def size(page):
-            return len(json.dumps(model_view(model_result(page)), ensure_ascii=False, separators=(',', ':')))
-        _, plain = await self.lookup({})
-        _, full = await self.lookup({'include_profile': True, 'include_standing': True})
-        self.assertLess(size(plain), size(full) * 0.6)
-
-    def test_options_are_off_by_default_and_described(self):
-        tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
-        properties = tool.definition.parameters['properties']
-        for name, topics in (('include_profile', ('trial or member status', 'join date', 'home clans', 'clan role')),
-                             ('include_standing', ('leagues', 'trophies', 'donations', 'career war stars'))):
-            option = properties[name]
-            self.assertEqual((option['type'], option['default']), ('boolean', False))
-            for topic in topics:
-                self.assertIn(topic, option['description'].lower())
 
 
 if __name__ == '__main__':

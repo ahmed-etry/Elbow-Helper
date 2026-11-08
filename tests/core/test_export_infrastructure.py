@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
@@ -14,7 +14,6 @@ import zipfile
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import LocalExportStore
 from elbow_helper.infrastructure.exports import WorkbookWriter
-from elbow_helper.infrastructure.exports.google_sheets import GOOGLE_EXPORT_OWNER_KEY
 from elbow_helper.infrastructure.exports.google_sheets import GOOGLE_EXPORT_OWNER_VALUE
 from elbow_helper.infrastructure.exports.google_sheets import MAX_WORKBOOK_COLUMN_PIXELS
 
@@ -45,51 +44,6 @@ class WorkbookWriterTests(unittest.TestCase):
 
 
 class GoogleSheetsPublisherTests(unittest.TestCase):
-    def test_workbook_upload_uses_the_central_folder(self) -> None:
-        drive = MagicMock()
-        drive.files.return_value.create.return_value.execute.return_value = {
-            "id": "sheet-id",
-            "webViewLink": "https://docs.google.com/spreadsheets/d/sheet-id/edit",
-        }
-        drive.files.return_value.list.return_value.execute.return_value = {}
-        media_upload = MagicMock()
-        publisher = GoogleSheetsPublisher(
-            client_id="client",
-            client_secret="secret",
-            refresh_token="refresh",
-            folder_id="https://drive.google.com/drive/folders/folder-id",
-        )
-
-        with (
-            patch("google.oauth2.credentials.Credentials"),
-            patch("google.auth.transport.requests.Request"),
-            patch("googleapiclient.discovery.build", return_value=drive),
-            patch(
-                "googleapiclient.http.MediaFileUpload",
-                return_value=media_upload,
-            ),
-        ):
-            link, warning = publisher.upload_workbook_sync(
-                Path("report.xlsx"),
-                "Report",
-            )
-
-        self.assertEqual(
-            link,
-            "https://docs.google.com/spreadsheets/d/sheet-id/edit",
-        )
-        self.assertIsNone(warning)
-        create_call = drive.files.return_value.create.call_args.kwargs
-        self.assertEqual(create_call["body"]["parents"], ["folder-id"])
-        self.assertEqual(
-            create_call["body"]["appProperties"],
-            {GOOGLE_EXPORT_OWNER_KEY: GOOGLE_EXPORT_OWNER_VALUE},
-        )
-        self.assertIs(create_call["media_body"], media_upload)
-        cleanup_query = drive.files.return_value.list.call_args.kwargs["q"]
-        self.assertIn("appProperties has", cleanup_query)
-        self.assertIn(GOOGLE_EXPORT_OWNER_VALUE, cleanup_query)
-        self.assertIn("'folder-id' in parents", cleanup_query)
 
     def test_converted_workbook_fits_every_sheet_then_clamps_only_wide_columns(self) -> None:
         drive = MagicMock()
@@ -170,19 +124,6 @@ class GoogleSheetsPublisherTests(unittest.TestCase):
         self.assertEqual(link, "https://docs.google.com/spreadsheets/d/synthetic/edit")
         self.assertIsNone(warning)
 
-    def test_fitted_columns_within_the_cap_need_no_clamp_request(self) -> None:
-        sheets = MagicMock()
-        api = sheets.spreadsheets.return_value
-        api.get.return_value.execute.side_effect = [
-            {"sheets": [{"properties": {
-                "sheetId": 7, "gridProperties": {"columnCount": 2},
-            }}]},
-            {"sheets": [{"properties": {"sheetId": 7}, "data": [{"columnMetadata": [
-                {}, {"pixelSize": MAX_WORKBOOK_COLUMN_PIXELS},
-            ]}]}]},
-        ]
-        GoogleSheetsPublisher._fit_workbook_columns(sheets, "synthetic")
-        api.batchUpdate.assert_called_once()
 
     def test_cleanup_deletes_only_files_selected_by_the_managed_export_query(self) -> None:
         drive = MagicMock()

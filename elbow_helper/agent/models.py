@@ -20,7 +20,7 @@ from .conversation.state import ConversationCheckpoint, ConversationTurn
 from .reports.base import ReportArtifact
 from .conversation.instructions import TaskInstruction, WorkingState
 from .actions.contracts import ActionClass
-from .datasets.clash_cache import RequestClashReads
+from elbow_helper.agent.tool_support.clash_cache import RequestClashReads
 
 if TYPE_CHECKING:
     from .engine.capability_contract import CapabilityContract

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import copy
+import asyncio
 from hashlib import sha256
 import json
 import logging
 import math
+import sqlite3
 from datetime import datetime
 from datetime import timezone as dt_timezone
 from typing import Any
@@ -18,13 +20,13 @@ from typing import Tuple
 
 from ..config import BONUS_CONFIG_FILE
 from ..config import CWL_CLAN_CODES
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic
+from elbow_helper.infrastructure.persistence.documents import Document, DocumentConflict, read_document as read_json, save_bonus_revision, encode
+from elbow_helper.infrastructure.persistence.documents import write_document as write_json_atomic
 
 LOGGER = logging.getLogger(__name__)
 
-BONUS_CONFIG_BACKUP_FILE = BONUS_CONFIG_FILE.with_name("cwl_bonus_config.backup.json")
-BONUS_CONFIG_AUDIT_FILE = BONUS_CONFIG_FILE.with_name("cwl_bonus_config_audit.json")
+BONUS_CONFIG_BACKUP_FILE = Document("cwl_bonus_previous")
+BONUS_CONFIG_AUDIT_FILE = Document("cwl_bonus_audit")
 BONUS_CONFIG_AUDIT_LIMIT = 500
 
 
@@ -41,8 +43,19 @@ class BonusConfigValidationError(ValueError):
 class BonusConfigRepository:
     """Own validated CWL bonus configuration and its audit history."""
 
+    @staticmethod
+    def _on_loop():
+        try:
+            asyncio.get_running_loop()
+            return True
+        except RuntimeError:
+            return False
+
     def cache_revision(self) -> str | None:
         """Observe settings without initializing or changing the configuration."""
+        if isinstance(BONUS_CONFIG_FILE, Document) and self._on_loop():
+            config, _errors = self.load()
+            return sha256(encode(config).encode("utf-8")).hexdigest() if config else None
         try:
             return sha256(BONUS_CONFIG_FILE.read_bytes()).hexdigest()
         except OSError:
@@ -236,6 +249,17 @@ class BonusConfigRepository:
         return errors
 
     def load(self) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+        if isinstance(BONUS_CONFIG_FILE, Document) and self._on_loop():
+            return copy.deepcopy(getattr(self, "_snapshot", (None, ["CWL bonus settings aren't available."])))
+        result = self._load()
+        self._snapshot = copy.deepcopy(result)
+        try:
+            self._history = read_json(BONUS_CONFIG_AUDIT_FILE)
+        except (FileNotFoundError, OSError, json.JSONDecodeError, TypeError):
+            self._history = {"entries": []}
+        return result
+
+    def _load(self) -> Tuple[Optional[Dict[str, Any]], List[str]]:
         self.ensure()
         try:
             raw_config = read_json(BONUS_CONFIG_FILE)
@@ -321,35 +345,28 @@ class BonusConfigRepository:
         if full_errors:
             raise BonusConfigValidationError(full_errors)
 
-        try:
-            write_json_atomic(
-                BONUS_CONFIG_BACKUP_FILE,
-                config,
-                indent=2,
-                ensure_ascii=False,
-            )
-            write_json_atomic(
-                BONUS_CONFIG_FILE,
-                updated,
-                indent=2,
-                ensure_ascii=False,
-            )
-        except (OSError, TypeError) as exc:
-            raise RuntimeError("Couldn't save the scoring setup. Nothing was changed.") from exc
-
-        try:
-            self._write_bonus_audit_entry(
-                {
-                    "ts_utc": now_iso,
-                    "clan_code": code,
-                    "summary": str(summary),
-                    "actor_discord_id": actor_id,
-                    "actor_display": actor_name,
-                    "revision": updated["revision"],
-                }
-            )
-        except (OSError, TypeError):
-            LOGGER.exception("Saved CWL bonus config but failed writing its audit entry")
+        entry = {
+            "ts_utc": now_iso, "clan_code": code, "summary": str(summary),
+            "actor_discord_id": actor_id, "actor_display": actor_name,
+            "revision": updated["revision"],
+        }
+        if isinstance(BONUS_CONFIG_FILE, Document):
+            try:
+                save_bonus_revision(BONUS_CONFIG_FILE, BONUS_CONFIG_BACKUP_FILE,
+                                    BONUS_CONFIG_AUDIT_FILE, config, updated, entry,
+                                    expected_revision, BONUS_CONFIG_AUDIT_LIMIT)
+            except DocumentConflict as exc:
+                raise BonusConfigConflictError(
+                    "These settings changed while this panel was open. Nothing was saved. Reload the section and try again."
+                ) from exc
+            except (OSError, sqlite3.Error, TypeError) as exc:
+                raise RuntimeError("Couldn't save the scoring setup. Nothing was changed.") from exc
+        else:
+            # Explicit file paths are used by standalone feature fixtures.
+            write_json_atomic(BONUS_CONFIG_BACKUP_FILE, config, indent=2, ensure_ascii=False)
+            write_json_atomic(BONUS_CONFIG_FILE, updated, indent=2, ensure_ascii=False)
+            self._write_bonus_audit_entry(entry)
+        self.load()
         return updated
 
     def copy_clan(
@@ -376,15 +393,16 @@ class BonusConfigRepository:
             summary=f"Copied scoring setup from {source}",
         )
 
-    @staticmethod
     def history(
-        clan_code: str,
+        self, clan_code: str,
         *,
         limit: int = 8,
         offset: int = 0,
     ) -> Tuple[List[Dict[str, Any]], int]:
         try:
-            payload = read_json(BONUS_CONFIG_AUDIT_FILE)
+            payload = (copy.deepcopy(getattr(self, "_history", {"entries": []}))
+                       if isinstance(BONUS_CONFIG_FILE, Document) and self._on_loop()
+                       else read_json(BONUS_CONFIG_AUDIT_FILE))
         except (FileNotFoundError, OSError, json.JSONDecodeError, TypeError):
             return [], 0
         entries = payload.get("entries") if isinstance(payload, dict) else []

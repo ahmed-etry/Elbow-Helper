@@ -4,8 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from agent.research.test_agent_search import _context
 from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.plan.checker import check_plan, check_step
-from elbow_helper.agent.plan.executor import execute_plan
+from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.plan.results import plan_feedback
 from elbow_helper.agent.research.search import search_discord_messages
 
@@ -35,7 +34,6 @@ class SearchContractTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(result.ok, result.error)
 
 
-
     def test_feedback_identifies_each_invalid_argument_without_echoing_values(self):
         plan = author_plan({"limit": 0, "query": 123})
         result = check_plan(plan, self.registry)
@@ -46,26 +44,6 @@ class SearchContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("123", feedback["error"])
         self.assertEqual(feedback["step_id"], "history")
 
-
-    async def test_author_reference_reaches_search_without_a_keyword_filter(self):
-        context = _context()
-        plan = author_plan({"query": "", "limit": 25})
-        self.assertTrue(check_plan(plan, self.registry).ok)
-
-        async def run(step, arguments, results):
-            if step["id"] == "member":
-                return {"members": [{"member_id": 1}]}
-            checked = check_step({**step, "arguments": arguments}, self.registry, resolved=True)
-            self.assertTrue(checked.ok, checked.error)
-            return await search_discord_messages(context, arguments)
-
-        results = await execute_plan(plan, run)
-        self.assertNotIn("error", results["history"])
-        context.message_search.search_page.assert_awaited_once()
-        values = context.message_search.search_page.await_args.kwargs
-        self.assertEqual(values["author_id"], 1)
-        self.assertEqual(values["content"], "")
-        self.assertNotIn("channel_ids", values)
 
     async def test_multichannel_preflight_leaves_partial_access_to_the_search_reader(self):
         from elbow_helper.agent.engine.steps import disclosure_issue

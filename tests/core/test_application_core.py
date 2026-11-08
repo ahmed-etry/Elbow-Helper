@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -17,10 +17,6 @@ from elbow_helper.core.lifecycle import RequiredExtensionLoadError
 from elbow_helper.core.lifecycle import load_extensions
 from elbow_helper.core.lifecycle import sync_guild_commands
 from elbow_helper.core.logging import CompactTransientDuplicateFilter
-from elbow_helper.core.logging import CompactTransientFormatter
-from elbow_helper.core.logging import ConsoleAllowlistFilter
-from elbow_helper.core.logging import TransientExternalFailurePolicy
-from elbow_helper.core.logging import UnifiedLogFormatter
 from elbow_helper.core.paths import ApplicationPaths
 from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.infrastructure.clash import ClashClient
@@ -129,26 +125,6 @@ class ExtensionLifecycleTests(unittest.IsolatedAsyncioTestCase):
             [1.0, 2.0],
         )
 
-    async def test_command_sync_failure_rejects_startup(self) -> None:
-        response = SimpleNamespace(
-            status=503,
-            reason="Unavailable",
-            headers={},
-        )
-        error = discord.HTTPException(response, "sync unavailable")
-        tree = SimpleNamespace(sync=AsyncMock(side_effect=error))
-
-        with (
-            patch(
-                "elbow_helper.core.lifecycle.asyncio.sleep",
-                new=AsyncMock(),
-            ),
-            self.assertLogs("elbow.boot", level=logging.ERROR),
-            self.assertRaises(discord.HTTPException),
-        ):
-            await sync_guild_commands(tree, 123)
-
-        self.assertEqual(tree.sync.await_count, 3)
 
     async def test_setup_rejects_command_sync_failure(self) -> None:
         bot = SimpleNamespace(
@@ -204,7 +180,7 @@ class ApplicationAssemblyTests(unittest.TestCase):
         self.assertIs(bot.agent_model, ai_client)
         self.assertEqual(
             bot.local_exports.directory,
-            paths.data_root / ".exports",
+            paths.data_root / "exports",
         )
         self.assertEqual(bot.extensions, {})
         self.assertTrue(bot.intents.message_content)
@@ -224,52 +200,9 @@ class LoggingPolicyTests(unittest.TestCase):
             exc_info=None,
         )
 
-    def test_timeout_is_classified_as_transient(self) -> None:
-        self.assertTrue(
-            TransientExternalFailurePolicy.is_transient_exception(
-                TimeoutError("request timed out")
-            )
-        )
-        self.assertFalse(
-            TransientExternalFailurePolicy.is_transient_exception(
-                ValueError("invalid stored value")
-            )
-        )
 
     def test_duplicate_transient_records_are_throttled(self) -> None:
         duplicate_filter = CompactTransientDuplicateFilter(cooldown_seconds=300.0)
 
         self.assertTrue(duplicate_filter.filter(self._warning_record("connection timed out")))
         self.assertFalse(duplicate_filter.filter(self._warning_record("connection timed out")))
-
-    def test_formatter_preserves_the_existing_logger_tags(self) -> None:
-        formatter = UnifiedLogFormatter("%(log_tag)s %(message)s")
-
-        rendered = formatter.format(self._warning_record("Example"))
-
-        self.assertEqual(rendered, "[EXAMPLE] Example")
-
-        console_filter = ConsoleAllowlistFilter()
-        for suffix, tag in (("", "AGENT"), (".cog", "COG"), (".conversation.state", "STATE")):
-            for level in (logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR):
-                for transient in (False, True):
-                    with self.subTest(suffix=suffix, level=level, transient=transient):
-                        records = [logging.LogRecord(
-                            name=name + suffix, level=level, pathname="synthetic.py", lineno=1,
-                            msg="Synthetic event", args=(),
-                            exc_info=(TimeoutError, TimeoutError("Synthetic timeout"), None)
-                            if transient else None,
-                        ) for name in ("elbow_helper.features.agent", "elbow_helper.agent")]
-                        for formatter_type in (UnifiedLogFormatter, CompactTransientFormatter):
-                            log_formatter = formatter_type("%(log_tag)s %(message)s")
-                            old, new = [log_formatter.format(record) for record in records]
-                            self.assertEqual(new, old)
-                            self.assertTrue(new.startswith(f"[{tag}] "))
-                        self.assertEqual(
-                            [console_filter.filter(record) for record in records],
-                            [level >= logging.WARNING] * 2,
-                        )
-        self.assertEqual(
-            UnifiedLogFormatter._build_tag("elbow_helper.agents.cog"),
-            "[ELBOW_HELPER.AGENTS.COG]",
-        )

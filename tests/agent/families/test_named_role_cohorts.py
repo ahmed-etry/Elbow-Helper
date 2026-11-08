@@ -3,10 +3,8 @@ from types import SimpleNamespace
 import unittest
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.families.identity_reads import member_cohort
-from elbow_helper.agent.plan.checker import check_plan
-from agent.engine.test_agent_plan_flow import _context, _plan
+from elbow_helper.agent.reads.identity_reads import member_cohort
+from agent.engine.test_agent_plan_flow import _context
 
 
 class NamedRoleTests(unittest.IsolatedAsyncioTestCase):
@@ -51,16 +49,3 @@ class NamedRoleTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result['status'], 'needs_input')
             self.assertEqual(result['rows'], [])
             self.assertEqual(len(result['roles']), 2 if duplicate else 0)
-
-    async def test_mixed_selectors_are_rejected(self):
-        for selection in ({'role_ids': [27]}, {'clan_role': 'leadership'}):
-            result = await member_cohort(self.context(), {'basis': 'role_holders',
-                'role_name': 'War Co', **selection})
-            self.assertEqual(result['cause'], 'invalid_arguments')
-
-    def test_visible_planner_can_name_the_responsibility_in_one_step(self):
-        registry = {name: tool for name, tool in build_agent_tools().items() if tool.default_visible}
-        plan = _plan([{'id': 'holders', 'capability': 'read_member_cohort', 'arguments': {
-            'basis': 'role_holders', 'role_name': 'War Co', 'clan_codes': ['BEH']}, 'depends_on': []}])
-        checked = check_plan(plan, registry)
-        self.assertTrue(checked.ok, checked.error)

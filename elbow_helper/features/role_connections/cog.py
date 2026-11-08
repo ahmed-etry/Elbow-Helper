@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from elbow_helper.infrastructure.persistence.documents import serialized_mutation
+
 import asyncio
 import copy
 import json
@@ -45,9 +47,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 class RoleConnections(commands.Cog):
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot: commands.Bot, *, initial_state=None):
         self.bot = bot
-        self.state = load_state()
+        self.state = initial_state if initial_state is not None else load_state()
         self.queries = RoleConnectionQueries(
             lambda: self.state.get("connections", ()),
         )
@@ -94,17 +96,20 @@ class RoleConnections(commands.Cog):
             return False
         return any(r.id in LEAD for r in getattr(member, "roles", []))
 
+    @serialized_mutation
     def _replace_connections(self, connections: List[Dict[str, Any]]) -> None:
         next_state = copy.deepcopy(self.state)
         next_state["connections"] = connections
         save_state(next_state)
         self.state = next_state
 
+    @serialized_mutation
     def add_connection(self, connection: Dict[str, Any]) -> None:
         connections = copy.deepcopy(self.state["connections"])
         connections.append(copy.deepcopy(connection))
         self._replace_connections(connections)
 
+    @serialized_mutation
     def remove_connection(self, conn_id: str) -> bool:
         connections = copy.deepcopy(self.state["connections"])
         for idx, connection in enumerate(connections):
@@ -147,6 +152,7 @@ class RoleConnections(commands.Cog):
         connection = self.get_connection(conn_id)
         return copy.deepcopy(connection) if connection is not None else None
 
+    @serialized_mutation
     def replace_connection(self, conn_id: str, connection: Dict[str, Any]) -> bool:
         """Save one complete rule after validating its dependencies."""
         if connection.get("id") != conn_id or not self.connection_change_is_valid(
@@ -448,7 +454,7 @@ class RoleConnections(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(RoleConnections(bot))
+    await bot.add_cog(RoleConnections(bot, initial_state=await asyncio.to_thread(load_state)))
 
 
 

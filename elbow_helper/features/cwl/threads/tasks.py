@@ -258,7 +258,7 @@ class CwlThreadTasksMixin:
                     "Auto-reset completed with issues for month=%s; guard not committed so it can be retried.",
                     month_key,
                 )
-            self.save_data()
+            await asyncio.to_thread(self.save_data)
 
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError) as e:
             LOGGER.exception("Error in auto_reset_cwl task: %s", e)

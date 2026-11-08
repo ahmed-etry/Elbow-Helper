@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import json
 import logging
-import os
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
@@ -45,8 +46,8 @@ from .templates import ROSTER_SINGLE_DEADLINE_SECTION
 from .templates import ROSTER_TEMPLATE
 from .templates import SECOND_REMINDER_TEMPLATE
 from .templates import SIGNUP_STATEMENT
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic
+from elbow_helper.infrastructure.persistence.documents import read_document as read_json, document_exists
+from elbow_helper.infrastructure.persistence.documents import write_document as write_json_atomic
 
 
 LOGGER = logging.getLogger(__name__)
@@ -195,7 +196,7 @@ class CwlAnnouncementMixin:
         sent_messages = await self._send_chunked(channel, content)
         if sent_messages:
             await self._react_with_detected_emojis(sent_messages[-1], content)
-        self._release_cwl_placements(cycles)
+        await asyncio.to_thread(self._release_cwl_placements, cycles)
         if await self.ensure_transfer_hub():
             message = "The roster announcement is live."
         else:
@@ -209,7 +210,7 @@ class CwlAnnouncementMixin:
 
     def _load_scheduler_state(self) -> dict[str, Any]:
         try:
-            if os.path.exists(SCHEDULER_STATE_FILE):
+            if document_exists(SCHEDULER_STATE_FILE):
                 data = read_json(SCHEDULER_STATE_FILE)
                 if isinstance(data, dict):
                     return data

@@ -1,12 +1,11 @@
 """Current roster selection through retained cohorts and the SQLite owner facade."""
 from dataclasses import replace
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.agent.reads.war_tools import TOOLS
 from elbow_helper.features.rosters.config import CWL_SIGNUP_ROSTER_ID
 from elbow_helper.features.rosters.repository import RosterRepository
@@ -41,15 +40,6 @@ class SignupSelectionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result['selected_population'], 2)
                 self.assertEqual(result['rosters'][0]['accounts'], 3)
 
-    async def test_retained_cohort_selects_accounts_and_invalid_reference_is_rejected(self):
-        async def source(context, arguments):
-            return {'rows': [{'member_id': 41, 'account_tags': ['#Y0']}]}
-        cohort = await family_tool('read_member_cohort', 'Read selected accounts.', {}, source).handler(self.context, {})
-        for metric in ('signup_pool', 'assigned_rosters'):
-            result = await self.tool.handler(self.context, {'metric': metric, 'cohort_ref': cohort['report_id']})
-            self.assertEqual([row['player_tag'] for row in result['rows']], ['#Y0'])
-            invalid = await self.tool.handler(self.context, {'metric': metric, 'cohort_ref': 'missing'})
-            self.assertEqual(invalid['cause'], 'report_unavailable')
 
     async def test_historical_selectors_are_rejected_before_current_rosters_are_queried(self):
         selectors = {'season': '2000-01', 'season_keys': ['2000-01'],

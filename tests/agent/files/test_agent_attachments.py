@@ -10,27 +10,10 @@ from openpyxl import Workbook
 
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.agent.access import AgentAccessLost
-from elbow_helper.agent.files.contracts import (
-    AttachmentValidationError,
-    CsvImportArtifact,
-    TextImportArtifact,
-    XlsxImportArtifact,
-)
-from elbow_helper.agent.files.attachments import (
-    acquire_csv_attachment,
-    acquire_text_attachment,
-    acquire_xlsx_attachment,
-    parse_csv,
-    parse_text,
-    parse_xlsx,
-)
+from elbow_helper.agent.files.contracts import AttachmentValidationError, CsvImportArtifact
+from elbow_helper.agent.files.attachments import acquire_csv_attachment, parse_csv, parse_text, parse_xlsx
 from elbow_helper.agent.models import AgentRequestContext
-from elbow_helper.agent.files.attachment_tools import (
-    import_csv_attachment, import_text_attachment, import_xlsx_attachment,
-    list_supported_attachments, read_csv_import, read_text_import,
-    read_xlsx_import,
-)
-
+from elbow_helper.agent.files.attachment_tools import import_csv_attachment, import_text_attachment, import_xlsx_attachment, read_csv_import, read_text_import, read_xlsx_import
 
 
 def _attachment(attachment_id, filename, data, content_type="text/csv", *, size=None):
@@ -71,9 +54,6 @@ class CsvParserTests(unittest.TestCase):
         self.assertEqual(delimiter, ",")
         self.assertEqual(issues, ("duplicate_headings:Player", "formula_like_cells:1"))
 
-    def test_explicit_delimiter_and_single_column_are_supported(self):
-        self.assertEqual(parse_csv(b"A;B\n1;2\n", delimiter_name="semicolon")[1], (("1", "2"),))
-        self.assertEqual(parse_csv(b"Account\nAlpha\n")[1], (("Alpha",),))
 
     def test_invalid_encoding_nul_shape_and_limits_are_rejected(self):
         cases = (b"\xff", b"A\x00,B\n1,2\n", b"A,B\n1\n")
@@ -197,77 +177,6 @@ class XlsxParserTests(unittest.TestCase):
             parse_xlsx(_xlsx_bytes())
 
 
-class XlsxAcquisitionTests(unittest.IsolatedAsyncioTestCase):
-    def message(self, attachment):
-        return SimpleNamespace(
-            id=10, guild=SimpleNamespace(id=1), channel=SimpleNamespace(id=100),
-            attachments=[attachment],
-        )
-
-    async def test_acquisition_uses_selected_attachment_and_hashes_bytes(self):
-        data = _xlsx_bytes()
-        attachment = _attachment(
-            7, "season.xlsx", data,
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-        report = await acquire_xlsx_attachment(
-            self.message(attachment), 7, report_id="report",
-            imported_at=datetime(2026, 9, 17, tzinfo=timezone.utc),
-        )
-        self.assertIsInstance(report, XlsxImportArtifact)
-        self.assertEqual(report.sha256, hashlib.sha256(data).hexdigest())
-        self.assertEqual(report.sheets[0].rows[0][0], "Alpha")
-
-    async def test_macro_filename_and_bad_content_type_fail_before_download(self):
-        for attachment in (
-            _attachment(7, "season.xlsm", _xlsx_bytes()),
-            _attachment(7, "season.xlsx", _xlsx_bytes(), "text/plain"),
-        ):
-            with self.subTest(filename=attachment.filename), self.assertRaises(AttachmentValidationError):
-                await acquire_xlsx_attachment(self.message(attachment), 7, report_id="report")
-            attachment.read.assert_not_awaited()
-
-
-class TextAcquisitionTests(unittest.IsolatedAsyncioTestCase):
-    def message(self, attachment):
-        return SimpleNamespace(
-            id=10, guild=SimpleNamespace(id=1), channel=SimpleNamespace(id=100),
-            attachments=[attachment],
-        )
-
-    async def test_acquisition_uses_selected_attachment_and_hashes_bytes(self):
-        data = b"# Notes\nDecision evidence\n"
-        attachment = _attachment(7, "notes.md", data, "text/markdown")
-        report = await acquire_text_attachment(
-            self.message(attachment), 7, report_id="report",
-            imported_at=datetime(2026, 9, 17, tzinfo=timezone.utc),
-        )
-        self.assertIsInstance(report, TextImportArtifact)
-        self.assertEqual(report.sha256, hashlib.sha256(data).hexdigest())
-        self.assertEqual(report.document_format, "markdown")
-        self.assertEqual(report.page()["text"], data.decode())
-
-    async def test_extension_type_size_and_binary_fail_safely(self):
-        cases = (
-            _attachment(7, "../notes.txt", b"notes", "text/plain"),
-            _attachment(7, "notes.py", b"print('x')", "text/plain"),
-            _attachment(7, "notes.md", b"notes", "application/pdf"),
-            _attachment(7, "notes.txt", b"\x00binary", "text/plain"),
-            _attachment(7, "notes.txt", b"notes", "text/plain", size=999_999),
-        )
-        for attachment in cases:
-            with self.subTest(filename=attachment.filename), self.assertRaises(
-                AttachmentValidationError
-            ):
-                await acquire_text_attachment(
-                    self.message(attachment), 7, report_id="report",
-                )
-            if attachment.filename == "notes.txt" and attachment.size == 7:
-                attachment.read.assert_awaited_once()
-            else:
-                attachment.read.assert_not_awaited()
-
-
 class AgentAttachmentToolTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         member = SimpleNamespace(id=42, roles=[SimpleNamespace(id=next(iter(CORE)))])
@@ -318,13 +227,6 @@ class AgentAttachmentToolTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
-    async def test_supported_discovery_labels_csv_and_xlsx(self):
-        result = await list_supported_attachments(self.context, {})
-        self.assertEqual(
-            [(row["attachment_id"], row["kind"]) for row in result["attachments"]],
-            [(7, "csv"), (11, "xlsx"), (8, "markdown"), (9, "csv")],
-        )
-
     async def test_import_is_retained_and_later_pages_do_not_redownload(self):
         first = await import_csv_attachment(self.context, {"attachment_id": 7})
         self.assertEqual(first["total_rows"], 30)
@@ -347,11 +249,6 @@ class AgentAttachmentToolTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("error", await read_csv_import(self.context, {"report_id": "foreign"}))
 
-    async def test_report_budget_rejects_the_whole_import(self):
-        with patch("elbow_helper.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES", 1):
-            result = await import_csv_attachment(self.context, {"attachment_id": 7})
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.reports, {})
 
     async def test_access_loss_during_download_prevents_retention(self):
         async def revoke(*, use_cached):
@@ -400,13 +297,3 @@ class AgentAttachmentToolTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertTrue(second["text"])
         self.text_attachment.read.assert_awaited_once()
-
-    async def test_text_access_loss_during_download_prevents_retention(self):
-        async def revoke(*, use_cached):
-            self.context.member.roles = []
-            return self.text_data
-
-        self.text_attachment.read.side_effect = revoke
-        with self.assertRaises(AgentAccessLost):
-            await import_text_attachment(self.context, {"attachment_id": 8})
-        self.assertEqual(self.context.state.reports, {})

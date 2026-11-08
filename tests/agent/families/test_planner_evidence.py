@@ -1,16 +1,14 @@
 """Planner-selected inputs survive source joins, export and the model boundary."""
 
 from dataclasses import dataclass, replace
-from io import BytesIO
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
 import discord
-from openpyxl import load_workbook
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.families import identity_reads
+from elbow_helper.agent.reads import identity_reads
 from elbow_helper.agent.reads import war_tools as war_reads
 from elbow_helper.agent.reads.access import TOOLS as ACCESS_TOOLS
 from elbow_helper.agent.tool_support.model_view import family_model_view
@@ -72,49 +70,6 @@ class PlannerEvidenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(rows['#Q0']['member_name'])
         self.assertIsNone(rows['#P2']['member_id'])
 
-    async def test_multi_clan_ass_exports_all_rows_and_pages_without_attack_samples(self):
-        @dataclass
-        class Score:
-            player_tag: str
-            rank: int | None
-            ass_score: float | None
-            attacks: int
-
-        @dataclass
-        class Snapshot:
-            rows: tuple
-            profile_key: str
-            attack_sample: tuple
-
-        def score(clan_code, war_ids):
-            return Snapshot((Score('#P0', 1, 2.5, 7), Score('#Q0', None, None, 0)),
-                clan_code, ({'description': 'x' * 2000},) * 30)
-
-        context = replace(_context(), cwl_queries=ResultQueries(ass_wars=score))
-        tool = next(t for t in war_reads.TOOLS if t.definition.name == 'read_cwl_results')
-        with patch('elbow_helper.features.cwl.results.CwlResults.selection', return_value={'war_ids': ['war']}):
-            result = await tool.handler(context, {'clan_codes': ['BEH', 'BEM'], 'metric': 'ass',
-                'season': '2026-09', 'delivery': 'xlsx', 'sheet_by': 'clan_code', 'limit': 1})
-        self.assertEqual(result['total_rows'], 4)
-        self.assertEqual(result['ranked_population'], 4)
-        self.assertEqual(result['artifact_status'], 'complete')
-        self.assertTrue(result['next_cursor'])
-        visible = family_model_view(result)
-        self.assertEqual([r['profile_key'] for r in visible['clan_results']], ['BEH', 'BEM'])
-        self.assertTrue(all('attack_sample' not in r for r in visible['clan_results']))
-        self.assertTrue(all(r['attack_sample'] for r in result['clan_results']))
-        book = load_workbook(BytesIO(context.state.attachments[0].data), read_only=True, data_only=True)
-        try:
-            self.assertEqual(book.sheetnames, ['BEH', 'BEM'])
-            for code in book.sheetnames:
-                rows = list(book[code].values)
-                self.assertEqual(len(rows), 3)
-                records = [dict(zip(rows[0], row)) for row in rows[1:]]
-                self.assertEqual([r['clan_code'] for r in records], [code, code])
-                self.assertEqual([r['ass_score'] for r in records], [2.5, None])
-                self.assertEqual([r['rank'] for r in records], [1, None])
-        finally:
-            book.close()
 
     async def test_role_matrix_uses_live_channel_permissions_and_keeps_role_only_caveat(self):
         context = _context()

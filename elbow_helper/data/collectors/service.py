@@ -11,7 +11,6 @@ from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.data.store import FamilyStore, now_us
 from elbow_helper.data.store.clans import collect_clans
-from elbow_helper.data.store.last_seen_import import import_last_seen
 from elbow_helper.data.store.people import observe_discord, observe_messages
 from elbow_helper.data.store.players import collect_player, due_accounts, players_due
 from elbow_helper.data.store.source_state import COLLECTORS as SOURCE_COLLECTORS
@@ -58,13 +57,11 @@ def _member_row(member) -> dict:
 class FamilyCollectors(commands.Cog):
     """Own schedules and gateway listeners; contain every collection failure."""
 
-    def __init__(self, bot, store: FamilyStore, clash_client: ClashClient, clans, *, old_last_seen=None):
+    def __init__(self, bot, store: FamilyStore, clash_client: ClashClient, clans):
         self.bot = bot
         self.store = store
         self.clash_client = clash_client
         self.clans = tuple(clans)
-        # The old member lifecycle file, whose last messages are copied once.
-        self.old_last_seen = old_last_seen
         self._tasks: list[asyncio.Task] = []
         self._discord_lock = asyncio.Lock()
         self._clan_lock = asyncio.Lock()
@@ -86,7 +83,6 @@ class FamilyCollectors(commands.Cog):
             # An unavailable database cannot truthfully hold a failed run.
             LOGGER.warning("Family record initialization failed; collectors will retry")
         self._tasks = [
-            *((asyncio.create_task(self._copy_old_last_seen()),) if self.old_last_seen is not None else ()),
             asyncio.create_task(self._schedule("clans", CLAN_INTERVAL_SECONDS, self.collect_clans)),
             asyncio.create_task(self._schedule("players", PLAYER_INTERVAL_SECONDS, self.collect_players)),
             asyncio.create_task(self._schedule("wars", SCHEDULE_CHECK_SECONDS, self.collect_wars)),
@@ -112,20 +108,6 @@ class FamilyCollectors(commands.Cog):
                 async with lock:
                     pass
 
-    async def _copy_old_last_seen(self):
-        """Copy members' old last messages once; a failure keeps nothing and the next start tries again."""
-        try:
-            checks = await self.store.call(import_last_seen, self.old_last_seen, now_us())
-        except asyncio.CancelledError:
-            raise
-        except Exception as error:
-            LOGGER.warning("Old last messages could not be copied; the next start tries again (%s: %s)",
-                           type(error).__name__, error)
-            return None
-        if checks is not None:
-            LOGGER.info("Old last messages copied into the family record: %s copied, %s kept a newer message, "
-                        "%s unreadable", checks["copied"], checks["newer_observation_kept"], checks["unreadable"])
-        return checks
 
     async def _schedule(self, name, seconds, collect, *, startup=False):
         await self.bot.boot_complete.wait()

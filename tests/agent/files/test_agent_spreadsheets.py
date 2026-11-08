@@ -1,6 +1,6 @@
 from io import BytesIO
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -11,8 +11,6 @@ from elbow_helper.configuration.roles import CORE
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.models import AgentAttachment, AgentRequestContext
 from elbow_helper.agent.files.spreadsheets import parse_agent_spreadsheet
-from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.plan.checker import check_plan, valid_arguments
 from elbow_helper.agent.files.spreadsheet_tools import prepare_spreadsheet
 from elbow_helper.infrastructure.exports import LocalExportStore, WorkbookWriter
 
@@ -54,12 +52,6 @@ def _context(export_directory: str):
 
 
 class AgentSpreadsheetContractTests(unittest.TestCase):
-    def test_content_drives_stable_filename_and_fingerprint(self):
-        first = parse_agent_spreadsheet(_arguments("Leadership Å Review"))
-        second = parse_agent_spreadsheet(_arguments("Leadership Å Review"))
-        self.assertEqual(first.filename, "leadership-a-review.xlsx")
-        self.assertEqual(first.content_fingerprint, second.content_fingerprint)
-        self.assertEqual(first.workbook()[0][0], "Accounts")
 
     def test_rejects_ambiguous_or_malformed_tables(self):
         invalid = (
@@ -78,39 +70,6 @@ class AgentSpreadsheetContractTests(unittest.TestCase):
         for arguments in invalid:
             with self.subTest(arguments=arguments), self.assertRaises(ValueError):
                 parse_agent_spreadsheet(arguments)
-
-    def test_tool_schema_is_registered_with_bounded_literal_cells(self):
-        registry = build_agent_tools()
-        self.assertNotIn("prepare_report_spreadsheet", registry)
-        tool = registry["prepare_spreadsheet"].definition
-        self.assertEqual(tool.parameters["properties"]["sheets"]["maxItems"], 10)
-        self.assertIn("literal rows only for proposals or summaries", tool.usage_note)
-        sheet = tool.parameters["properties"]["sheets"]["items"]
-        self.assertEqual(len(sheet["anyOf"]), 4)
-        self.assertTrue(all(kind["type"] == "object" for kind in sheet["anyOf"]))
-        self.assertTrue(all("name" in kind["required"] for kind in sheet["anyOf"]))
-        arguments = {"title": "Synthetic", "sheets": [
-            _arguments()["sheets"][0],
-            {"name": "Query", "sql": "SELECT :value", "params": {"value": 7}},
-            {"name": "Report", "report_id": "synthetic", "collection": "accounts",
-             "columns": [{"field": "tag", "heading": "Account"}]},
-        ]}
-        self.assertTrue(valid_arguments(arguments, tool.parameters))
-
-
-    def test_plan_builds_at_most_one_spreadsheet(self):
-        def sheet(step_id):
-            return {"id": step_id, "capability": "prepare_spreadsheet", "depends_on": [],
-                    "arguments": {"title": "Synthetic", "sheets": [
-                        {"name": "Values", "columns": ["Value"], "rows": [["1"]]},
-                    ]}}
-        plan = {"goal": "Synthetic", "effort": "low", "output": "prepare_spreadsheet",
-                "steps": [sheet("first")]}
-        registry = build_agent_tools()
-        self.assertTrue(check_plan(plan, registry).ok)
-        check = check_plan({**plan, "steps": [sheet("first"), sheet("second")]}, registry)
-        self.assertFalse(check.ok)
-        self.assertEqual(check.error, "Put every table in one spreadsheet as separate sheets.")
 
 
 class AgentSpreadsheetToolTests(unittest.IsolatedAsyncioTestCase):

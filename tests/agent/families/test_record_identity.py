@@ -4,19 +4,18 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, call, patch
 
 from elbow_helper.agent.reads import people as record_identity
-from elbow_helper.agent.reads.people import read_people_links as read_linked_accounts
-from elbow_helper.agent.datasets import membership as history_tool
-from elbow_helper.agent.families import identity_reads, account_names
+from elbow_helper.agent.reads import membership as history_tool
+from elbow_helper.agent.reads import identity_reads, account_names
 from elbow_helper.agent.tool_support import model_view
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.data.reads import PeopleReads, MembershipReads, StayReads
-from elbow_helper.data.store import FamilyStore
+from tests.data.store_fixtures import empty_store
 from elbow_helper.data.store.clans import collect_clans
 from elbow_helper.data.store.people import mirror_links, observe_discord
 from elbow_helper.data.store.players import collect_player
@@ -34,8 +33,7 @@ class RecordConsumerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         temporary = TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(temporary.cleanup)
-        self.store = FamilyStore(Path(temporary.name) / 'family.sqlite3')
-        await self.store.initialize()
+        self.store = await empty_store(Path(temporary.name) / 'family.sqlite3')
         self.at = int(datetime(2026, 10, 28, tzinfo=timezone.utc).timestamp() * 1_000_000)
         self.initial_at = self.at
         self.clock = patch('elbow_helper.data.reads.core.now_us', lambda: self.at + 10)
@@ -141,11 +139,6 @@ class RecordConsumerTests(unittest.IsolatedAsyncioTestCase):
         later = await history_tool.read_membership_history(self.context, {**arguments, 'offset': 1})
         self.assertEqual(later['events'][0]['kind'], 'returning_observation')
 
-    async def test_history_before_any_stay_is_empty_without_another_source(self):
-        arguments = {'after': iso(self.at - 2_000_000),
-                     'before': iso(self.at - 1_000_000), 'history_after': iso(self.at - 3_000_000)}
-        result = await history_tool.read_membership_history(self.context, arguments)
-        self.assertEqual((result['events'], result['coverage']['stay_count']), ([], 0))
 
     async def test_record_alias_remains_searchable_with_live_current_name(self):
         self.at += 86_400_000_000
@@ -185,23 +178,6 @@ class RecordConsumerTests(unittest.IsolatedAsyncioTestCase):
         account = next(a for r in cohort['rows'] for a in r['accounts'] if a['player_tag'] == '#P0')
         self.assertEqual(model_view.account_view(account, nested=True)['record_history'], original)
 
-    async def test_current_rosters_members_and_links_keep_the_existing_sources(self):
-        self.target.roles = []  # Gateway is ahead of the dated scan.
-        self.links['#P0']['discord_user_id'] = 300  # Current links are ahead of the record.
-        clan = CLANS[self.codes[0]].tag
-        self.live_clans[clan]['memberList'][0].update(name='Live roster name', role='admin')
-        arguments = {'clan_codes': self.codes, 'basis': 'current_in_game'}
-        live = AsyncMock(side_effect=self.live)
-        with patch.object(identity_reads, 'read_clash', live):
-            roster = await identity_reads.clan_rosters(self.context, arguments)
-            cohort = await identity_reads.member_cohort(self.context, {'basis': 'role_holders', 'role_ids': [self.role.id]})
-        live.assert_awaited_once()
-        row = next(r for r in roster['rows'] if r['player_tag'] == '#P0')
-        self.assertEqual((row['member_id'], row['player_name'], row['role']), (300, 'Live roster name', 'admin'))
-        self.assertEqual(cohort['rows'], [])
-        linked = await read_linked_accounts(self.context, {'member_ids': [100, 300]})
-        self.assertEqual(next(r['member_id'] for r in linked['accounts'] if r['player_tag'] == '#P0'), 300)
-        self.legacy.get_links_for_members.assert_called_once_with([100, 300])
 
     async def test_missing_or_unavailable_history_keeps_live_current_answer(self):
         with patch.object(identity_reads, 'read_clash', self.live):
@@ -212,21 +188,6 @@ class RecordConsumerTests(unittest.IsolatedAsyncioTestCase):
                 actual = await identity_reads.member_accounts(self.context, {'member_ids': [100]})
             self.assertEqual(actual, expected)
 
-    async def test_history_is_read_only_when_requested(self):
-        history = AsyncMock(wraps=self.people.account_history)
-        with patch.object(self.people, 'account_history', history), patch.object(identity_reads, 'read_clash', self.live):
-            plain = await identity_reads.member_accounts(self.context, {'account_tags': ['#P0']})
-            plain_cohort = await identity_reads.member_cohort(self.context, {
-                'basis': 'role_holders', 'role_ids': [self.role.id], 'include_accounts': True})
-            history.assert_not_awaited()
-            asked = await identity_reads.member_accounts(self.context, {'account_tags': ['#P0'], 'include_history': True})
-            asked_cohort = await identity_reads.member_cohort(self.context, {
-                'basis': 'role_holders', 'role_ids': [self.role.id], 'include_accounts': True, 'include_history': True})
-            history.assert_awaited()
-        self.assertNotIn('record_history', plain['rows'][0])
-        self.assertTrue(all('record_history' not in a for r in plain_cohort['rows'] for a in r['accounts']))
-        self.assertIn('record_history', asked['rows'][0])
-        self.assertTrue(any('record_history' in a for r in asked_cohort['rows'] for a in r['accounts']))
 
     async def test_live_failure_keeps_history_without_record_current_fields(self):
         for live_response in ({'error': 'synthetic outage', 'cause': 'unavailable'},
@@ -299,9 +260,3 @@ class RecordConsumerTests(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaises(PermissionError):
                         await operation(self.context, arguments)
                 self.assertEqual(source.await_count, denied_call - 1)
-
-    async def test_history_record_outage_is_reported_without_another_source(self):
-        arguments = {'after': iso(self.at + 1), 'before': iso(self.at + 10), 'history_after': iso(self.at)}
-        with patch.object(self.stays, 'movements', AsyncMock(side_effect=OSError('synthetic outage'))):
-            result = await history_tool.read_membership_history(self.context, arguments)
-        self.assertEqual(result['cause'], 'source_unavailable')

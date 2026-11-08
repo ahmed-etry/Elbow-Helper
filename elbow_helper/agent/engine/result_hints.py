@@ -19,11 +19,7 @@ from elbow_helper.features.support_tickets.queries import SupportTicketMetadata
 from ..conversation.instructions import TaskInstruction
 from ..discord_actions.polls import PollSnapshot
 from ..discord_actions.audit_log import AuditSnapshot
-from ..datasets.clash import (
-    BATTLE_LOG_FIELDS, CLAN_FIELDS, CLAN_MEMBER_FIELDS, CWL_CLAN_FIELDS, CWL_GROUP_FIELDS, CWL_MEMBER_FIELDS,
-    LEAGUE_FIELDS, RANKED_LEAGUE_FIELDS, PLAYER_CLAN_FIELDS, PLAYER_FIELDS, WAR_CLAN_FIELDS,
-    WAR_FIELDS, WAR_LOG_FIELDS, WAR_MEMBER_FIELDS, WAR_SIDE_FIELDS,
-)
+from elbow_helper.agent.reads.clash import BATTLE_LOG_FIELDS, CLAN_FIELDS, CLAN_MEMBER_FIELDS, CWL_CLAN_FIELDS, CWL_GROUP_FIELDS, CWL_MEMBER_FIELDS, LEAGUE_FIELDS, RANKED_LEAGUE_FIELDS, PLAYER_CLAN_FIELDS, PLAYER_FIELDS, WAR_CLAN_FIELDS, WAR_FIELDS, WAR_LOG_FIELDS, WAR_MEMBER_FIELDS, WAR_SIDE_FIELDS
 from ..plan.results import LIMIT_FIELDS
 from .result_fields import format_returns, names, result_fields
 

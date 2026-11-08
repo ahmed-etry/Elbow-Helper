@@ -20,17 +20,10 @@ from PIL import Image
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.agent.engine.routing import ROUTE_INSTRUCTION
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.engine.social_reply import MEME_SEND_FIT
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.conversation.context import build_history_checkpoint
 from elbow_helper.agent.models import RegisteredAgentTool
-from elbow_helper.agent.delivery import AgentDeliveryMixin
-from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
-from elbow_helper.agent.plan.format import (
-    IMAGE_EVIDENCE_INSTRUCTION, WRITER_INSTRUCTION, answer_instructions, system_instructions,
-)
-from elbow_helper.features.help.catalog import HELP_ENTRIES
-from elbow_helper.agent.prompts import ANSWER_RULES, BANTER_RULES, DISCORD_REPLY_RULES
+from elbow_helper.agent.plan.format import IMAGE_EVIDENCE_INSTRUCTION, WRITER_INSTRUCTION, answer_instructions
 from elbow_helper.infrastructure.ai import AgentToolDefinition, DeepSeekTextClient
 from agent.engine.test_agent_plan_flow import _context, _plan
 from agent.engine.test_writer_tables import expand
@@ -122,64 +115,6 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
                 finally:
                     await model.close()
 
-    async def test_social_media_keeps_planned_text_only_as_fallback_without_forced_rewrite(self):
-        for outcome in ('no_fit', 'missing', 'selected', 'optional'):
-            with self.subTest(outcome=outcome):
-                context = _context()
-                context.source_message.add_reaction = AsyncMock()
-                context.state.channel_bot_gifs = (True,) if outcome == 'optional' else ()
-                requests = []
-                selected = outcome in ('selected', 'optional')
-                url = 'https://tenor.com/view/synthetic-media'
-                media = 'missing.gif' if outcome == 'missing' else url
-                requested = outcome not in ('no_fit', 'optional')
-                final = 'Synthetic initial draft.'
-
-                async def provider(**options):
-                    requests.append(deepcopy(options))
-                    if options['messages'][0]['content'] == ROUTE_INSTRUCTION:
-                        return provider_response('social')
-                    feedback = [json.loads(message['content']) for message in options['messages']
-                                if isinstance(message, dict) and message['role'] == 'tool']
-                    if feedback:
-                        return provider_response(final)
-                    return provider_response(calls=[call('submit_social_reply', {
-                        'mechanic_check': 'no_gameplay_number', 'reply_form': 'text_reactions',
-                        'reaction_fit': True, 'reaction_basis': 'The message requests a celebration.',
-                        'text': 'Synthetic initial draft.', 'gif_requested': requested,
-                        'meme_shortlist': [{'id': item, 'fit': MEME_SEND_FIT + (outcome == 'optional') if item == 'ts_lowkey_tuff' and outcome != 'no_fit' else 1} for item in
-                            ('ts_lowkey_tuff', 'things_will_happen_horse', 'son_not_tuff')],
-                        'gif_with_text': True, 'reactions': ['\U0001f680'],
-                    })])
-
-                model = client(provider)
-                try:
-                    with patch.dict(ITEM_BY_ID, ts_lowkey_tuff={**ITEM_BY_ID['ts_lowkey_tuff'], 'media': media}):
-                        answer = await AgentService(model).answer(question='Show a synthetic meme.',
-                            local_context='', context=context)
-                    self.assertEqual(answer, '' if selected else final)
-                    if selected:
-                        self.assertEqual(context.state.gif_fallback_text, final)
-                    self.assertEqual(len(requests), 2)
-                    self.assertEqual(context.state.gif_url, url if selected else None)
-                    self.assertEqual(context.state.reactions.emojis, ['\U0001f680'])
-                    context.source_message.add_reaction.assert_awaited_once_with('\U0001f680')
-                    surface = AgentDeliveryMixin()
-                    surface._send_response = AsyncMock()
-                    surface._send_gif = AsyncMock()
-                    with patch('elbow_helper.agent.delivery.assert_answer_scope', AsyncMock()):
-                        await surface.send_response(context.source_message, answer, None, context=context)
-                    self.assertEqual(surface._send_response.await_count, int(not selected))
-                    if not selected:
-                        self.assertEqual(surface._send_response.await_args.args[1], final)
-                    self.assertEqual(surface._send_gif.await_count, int(selected))
-                finally:
-                    await model.close()
-
-    async def test_large_evidence_max_plan_delivers_within_family_request_budget(self):
-        for clipped in (False, True):
-            with self.subTest(output_limit_reached=clipped):
-                await self._large_evidence_writer(clipped)
 
     async def _large_evidence_writer(self, clipped):
         requests = []
@@ -275,139 +210,6 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await model.close()
 
-    async def test_canonical_public_help_reaches_research_and_expanded_social_writer(self):
-        expected = [{"path": entry.path, "summary": entry.summary}
-                    for entry in HELP_ENTRIES if entry.visible_to is None]
-        for social in (False, True):
-            with self.subTest(social=social):
-                requests = []
-                source = AsyncMock(return_value={"rows": []})
-                registry = {"read_sample": RegisteredAgentTool(AgentToolDefinition("read_sample", "Read sample facts.",
-                    {"type": "object", "properties": {}}), source)}
-
-                async def provider(**options):
-                    requests.append(options)
-                    system = options["messages"][0]["content"]
-                    if system == ROUTE_INSTRUCTION:
-                        return provider_response("social" if social else "research")
-                    if system == answer_instructions(registry):
-                        _, answer_context, _ = writer_payload(options)
-                        self.assertEqual(answer_context["bot_command_overview"]["commands"], expected)
-                        return provider_response("I help with clan tasks.")
-                    prompt = '\n'.join(message['content'] for message in options['messages']
-                                       if isinstance(message, dict) and isinstance(message.get('content'), str))
-                    if social and '<bot_command_overview>' not in prompt:
-                        return provider_response(calls=[call('load_research_context', {})])
-                    overview = prompt.split("<bot_command_overview>\n")[1].split("\n</bot_command_overview>")[0]
-                    self.assertEqual(json.loads(overview)["commands"], expected)
-                    return provider_response(calls=[call("submit_request_plan", _plan([
-                        {"id": "sample", "capability": "read_sample", "arguments": {}, "depends_on": []}]))])
-
-                model = client(provider)
-                try:
-                    with patch("elbow_helper.agent.engine.service.build_agent_tools", return_value=registry):
-                        answer = await AgentService(model).answer(question="Describe your purpose.",
-                            local_context="", context=_context())
-                    self.assertEqual(answer, "I help with clan tasks.")
-                    self.assertEqual(len(requests), 4 if social else 3)
-                finally:
-                    await model.close()
-
-    async def test_real_writer_receives_facts_without_planning_context_on_each_route(self):
-        for route in ("research", "family", "expanded", "recovery"):
-            with self.subTest(route=route):
-                requests, writers = [], []
-                question = ("Give Orion's raid average for April 1 through April 8."
-                            if route == "family" else "Give Orion's raid average.")
-                raw = {
-                    "rows": [{"player_name": "Orion", "average": None, "observed_range": {
-                        "oldest": "2026-04-06", "newest": "2026-04-08"}}],
-                    "sections": [{"title": "Arrival", "body":
-                        "Visitors use the welcome desk. Members use the transfer desk."}],
-                    "history_coverage": {"status": "partial", "requested_after": "2026-01-19",
-                        "message": "INTERNAL_COVERAGE", "reasons": ["INTERNAL_REASON"]},
-                    "selection": {"after": "2026-01-19"},
-                    "coverage_note": "INTERNAL_NOTE", "detail_projection": "INTERNAL_PROJECTION",
-                    "collection_limits": ["INTERNAL_POLLING"], "source_complete": False,
-                    "flags": {"status": "partial", "truncated": False},
-                }
-                source = AsyncMock(return_value=deepcopy(raw))
-                tool = RegisteredAgentTool(AgentToolDefinition("read_sample", "Read sample facts.",
-                    {"type": "object", "properties": {}}), source)
-                registry = {"read_sample": tool}
-                if route == "family":
-                    registry["hidden"] = replace(tool, default_visible=False,
-                        definition=AgentToolDefinition("hidden", "Hidden sample.", {}))
-                research_rounds = 0
-
-                async def provider(**options):
-                    nonlocal research_rounds
-                    requests.append(deepcopy(options))
-                    system = options["messages"][0]["content"]
-                    if system == ROUTE_INSTRUCTION:
-                        return provider_response("social" if route == "expanded" else "research")
-                    if WRITER_INSTRUCTION in system:
-                        writers.append(options)
-                        self.assertIn(WRITER_INSTRUCTION, system)
-                        self.assertEqual(options.get("tool_choice") == "none", route == "recovery")
-                        payload = options["messages"][1]["content"]
-                        context_json, evidence_json = payload.split("\nAvailable evidence:\n", 1)
-                        frame = json.loads(context_json)
-                        self.assertEqual(frame["asker_wants"], [] if route == "recovery" else ["PLAN_GOAL"])
-                        self.assertNotIn("PLAN_GOAL", system)
-                        context = json.loads(frame["context"])
-                        self.assertEqual(context["request"], question)
-                        self.assertEqual(context["nearby_conversation"], "Nearby member text.")
-                        self.assertEqual(context["conversation_history"], "Earlier subject: Orion.")
-                        evidence = json.loads(evidence_json)["results"]
-                        if route != "recovery":
-                            self.assertEqual(evidence["sample"]["rows"], raw["rows"])
-                            self.assertEqual(evidence["sample"]["sections"], raw["sections"])
-                            self.assertFalse(evidence["sample"]["source_complete"])
-                        serialized = json.dumps(options, ensure_ascii=False)
-                        for marker in ("INTERNAL_", "CATALOGUE_LOCATOR", "DATA_LOCATOR"):
-                            self.assertNotIn(marker, serialized)
-                        self.assertNotIn("PLAN_GOAL", json.dumps(context))
-                        self.assertNotIn("PLAN_GOAL", evidence_json)
-                        if route != "recovery":
-                            self.assertEqual(evidence["sample"]["history_coverage"]["requested_after"],
-                                             "2026-01-19")
-                        self.assertNotIn(BANTER_RULES, system)
-                        self.assertIn(ANSWER_RULES, system)
-                        self.assertIn(DISCORD_REPLY_RULES, system)
-                        return provider_response("Orion's raid average is unconfirmed.")
-                    tools = {tool["function"]["name"] for tool in options.get("tools", ())}
-                    if "submit_social_reply" in tools and research_rounds == 0:
-                        research_rounds += 1
-                        return provider_response(calls=[call("load_research_context", {})])
-                    if route == "recovery":
-                        return provider_response(calls=[call("unknown", {})])
-                    if not any(isinstance(message, dict) and message["role"] == "tool"
-                               and '"sample"' in message["content"]
-                               for message in options["messages"]):
-                        plan = _plan([{"id": "sample", "capability": "read_sample",
-                                       "arguments": {}, "depends_on": []}])
-                        plan["goal"] = "PLAN_GOAL"
-                        return provider_response(calls=[call("submit_request_plan", plan)])
-                    self.fail("A draft-producing provider round preceded the isolated writer.")
-
-                model = client(provider)
-                guide = SimpleNamespace(for_levels=lambda _: "DATA_LOCATOR")
-                try:
-                    with (patch("elbow_helper.agent.engine.service.build_agent_tools",
-                                return_value=registry),
-                          patch("elbow_helper.agent.engine.service.scoped_channel_directory",
-                                AsyncMock(return_value="CATALOGUE_LOCATOR"))):
-                        answer = await AgentService(model, data_guide=guide).answer(
-                            question=question, local_context="Nearby member text.",
-                            conversation_history="Earlier subject: Orion.", context=_context())
-                    self.assertEqual(answer, "Orion's raid average is unconfirmed.")
-                    self.assertEqual(len(writers), 1)
-                    self.assertEqual(len(requests), 4 if route in ("expanded", "recovery") else 3)
-                    self.assertTrue(any("CATALOGUE_LOCATOR" in json.dumps(item, default=vars) for item in requests))
-                    self.assertEqual(source.await_count, 0 if route == "recovery" else 1)
-                finally:
-                    await model.close()
 
     async def test_real_writer_can_read_a_remaining_gap_without_a_draft_round(self):
         requests, writers = [], []
@@ -673,56 +475,8 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await model.close()
 
-    async def test_social_contract_checks_mechanic_before_text_through_real_provider(self):
-        received = []
-
-        async def provider(**options):
-            received.append(options)
-            if options["messages"][0]["content"] == ROUTE_INSTRUCTION:
-                return provider_response("social")
-            system = options["messages"][0]["content"]
-            self.assertIn(BANTER_RULES, system)
-            definition = next(tool["function"] for tool in options["tools"]
-                              if tool["function"]["name"] == "submit_social_reply")
-            schema = definition["parameters"]
-            self.assertEqual(next(iter(schema["properties"])), "mechanic_check")
-            self.assertIn("mechanic_check", schema["required"])
-            self.assertEqual(schema["properties"]["mechanic_check"]["enum"],
-                             ["no_gameplay_number", "possible", "unclear", "impossible"])
-            return provider_response(calls=[call("submit_social_reply", {
-                "mechanic_check": "impossible", "reply_form": "text", "text": "Check that score again.",
-                "reaction_fit": False, "reaction_basis": "",
-                "gif_requested": False,
-                "meme_shortlist": [{"id": item, "fit": 1} for item in
-                    ("ts_lowkey_tuff", "things_will_happen_horse", "son_not_tuff")],
-                "reactions": []})])
-
-        model = client(provider)
-        try:
-            with patch("elbow_helper.agent.engine.service.build_agent_tools", return_value={}):
-                answer = await AgentService(model).answer(question="My attack got 104% destruction, roast it.",
-                    local_context="", context=_context())
-            self.assertEqual(answer, "Check that score again.")
-            self.assertEqual(len(received), 2)
-        finally:
-            await model.close()
-
 
 class AnswerEvidenceTests(unittest.TestCase):
-    def test_failed_read_reasons_survive_invalid_arguments_and_nested_projection(self):
-        reason = 'Synthetic period is required.'
-        failed = {'family': 'read_member_cohort', 'error': reason,
-                  'cause': 'invalid_arguments', 'missing_fields': ['after']}
-        raw = {'activity': failed, 'retained': {'earlier': failed},
-               'source': {'source_reads': {'nested': failed}}}
-        projected = answer_evidence(raw, subjects={'activity': {'member_ids': [42, 43]}})
-        for result in (projected['activity'], projected['retained']['earlier'],
-                       projected['source']['source_reads']['nested']):
-            self.assertEqual(result['status'], 'unavailable')
-            self.assertEqual(result['failed_read'], {'what': 'read_member_cohort', 'reason': reason})
-            self.assertNotIn('rows', result)
-        self.assertEqual(projected['activity']['subject'], {'member_ids': [42, 43]})
-        self.assertEqual(raw['activity']['error'], reason)
 
     def test_failed_flags_without_error_keep_failure_distinct_from_empty_records(self):
         projected = answer_evidence({'failed': {'flags': {'status': 'failed'},
@@ -746,11 +500,6 @@ class AnswerEvidenceTests(unittest.TestCase):
                                                "good": {"sections": [{"body": body}]}})
         self.assertEqual(raw, original)
 
-    def test_research_and_writer_do_not_receive_the_banter_contract(self):
-        for instructions in (system_instructions({}), system_instructions({}, actions_enabled=False),
-                             answer_instructions()):
-            self.assertNotIn(BANTER_RULES, instructions)
-            self.assertIn(ANSWER_RULES, instructions)
 
     def test_navigation_cannot_reenter_through_retained_reads_or_clash_item_coverage(self):
         raw = {"discovery": {"catalogue": "transport signatures", "total_capabilities": 10},

@@ -5,13 +5,13 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from elbow_helper.data.links import LinkService
-from elbow_helper.data.store import FamilyStore
+from tests.data.store_fixtures import empty_store
 from elbow_helper.data.store.battles import _find, identity, save_battle
 from elbow_helper.data.store.battle_coverage import observe, save_watch, watch_fact
 from elbow_helper.data.store.clans import collect_clans
@@ -61,8 +61,7 @@ class PeopleFixture(unittest.IsolatedAsyncioTestCase):
         database = patch("elbow_helper.features.account_links.database.DB_PATH", self.legacy)
         database.start()
         self.addCleanup(database.stop)
-        self.store = FamilyStore(self.root / "family.sqlite3")
-        await self.store.initialize()
+        self.store = await empty_store(self.root / 'family.sqlite3')
         self.service = LinkService(self.store)
         self.addAsyncCleanup(self.service.close)
         await self.clans()

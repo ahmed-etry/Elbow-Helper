@@ -2,7 +2,7 @@
 
 import asyncio
 from pathlib import Path
-import tempfile
+from tests.temp_directory import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
@@ -12,7 +12,7 @@ from elbow_helper.features.account_links.database import AccountLinksDbMixin
 
 class AccountLinkTransactionTests(unittest.TestCase):
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
+        self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.path = Path(self.directory.name) / "links.db"
         self.patcher = patch("elbow_helper.features.account_links.database.DB_PATH", self.path)

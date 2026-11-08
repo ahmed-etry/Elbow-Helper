@@ -13,7 +13,7 @@ def link_snapshot(paths, legacy_path, readable):
     result = {}
     if 'links' in readable:
         result['links'] = query_links(paths.data_root / FAMILY_DATABASE)
-    # Feature state stays in its existing file. Never select the old links.
+    # Review tables share the family file. Ownership is projected above.
     auxiliary = set(readable) & {'suggestions', 'ignored_tags'}
     if auxiliary and legacy_path.is_file():
         with closing(sqlite3.connect(legacy_path.resolve().as_uri() + '?mode=ro', uri=True)) as connection:

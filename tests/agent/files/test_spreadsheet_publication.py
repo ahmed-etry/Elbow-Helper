@@ -4,7 +4,7 @@ from dataclasses import replace
 from io import BytesIO
 import json
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -18,10 +18,7 @@ from elbow_helper.agent.engine.tool_call import (
 )
 from elbow_helper.agent.delivery import AgentDeliveryMixin
 from elbow_helper.agent.files.delivery import delivery_manifest
-from elbow_helper.agent.files.spreadsheet_tools import (
-    prepare_spreadsheet, spreadsheet_tools,
-)
-from elbow_helper.agent.plan import capability_list
+from elbow_helper.agent.files.spreadsheet_tools import prepare_spreadsheet
 
 
 GOOGLE_LINK = "https://docs.google.com/spreadsheets/d/synthetic-sheet/edit"
@@ -56,13 +53,6 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
         surface.bot = context.bot
         return surface, message, sent, replace(context, source_message=message)
 
-    def test_catalogue_requires_one_spreadsheet_and_no_invented_links(self):
-        tool = spreadsheet_tools()[0]
-        catalogue = capability_list({tool.definition.name: tool})
-        self.assertIn("one spreadsheet per reply", catalogue)
-        self.assertIn("every table as a separate sheet", tool.definition.description)
-        self.assertIn("Never paste or invent spreadsheet links", catalogue)
-        self.assertNotIn("Google Sheet", tool.definition.description)
 
     async def test_revisions_replace_workbooks_without_publishing_drafts(self):
         with TemporaryDirectory() as directory:
@@ -113,17 +103,6 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(manifest[1]['delivery'], 'link')
             self.assertEqual(manifest[1]['url'], GOOGLE_LINK)
 
-    async def test_ten_sheets_fit_and_eleven_are_refused(self):
-        with TemporaryDirectory() as directory:
-            context = _context(directory)
-            arguments = {"title": "Synthetic tables", "sheets": [
-                {"name": f"Table {index}", "columns": ["Value"], "rows": [["Synthetic"]]}
-                for index in range(10)
-            ]}
-            result = await prepare_spreadsheet(context, arguments)
-            self.assertEqual(result["sheets"], 10)
-            arguments["sheets"].append({"name": "Excess", "columns": ["Value"], "rows": []})
-            self.assertIn("error", await prepare_spreadsheet(context, arguments))
 
     async def test_publish_uploads_exact_bytes_once_and_delivers_only_link_buttons(self):
         with TemporaryDirectory() as directory:

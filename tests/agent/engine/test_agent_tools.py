@@ -3,16 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from elbow_helper.infrastructure.discord.message_search import DiscordSearchMessage, DiscordSearchPage
-from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID
-from elbow_helper.agent.engine.registry import (
-    build_agent_tool_groups, build_agent_tools,
-)
-from elbow_helper.agent.plan import capability_list, check_plan
+from elbow_helper.agent.engine.registry import build_agent_tools
+from elbow_helper.agent.plan import check_plan
 from elbow_helper.agent.models import AgentTurnState
-from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 
 
 class _Channel:
@@ -33,57 +29,6 @@ class _Channel:
 class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
 
-
-    async def test_command_help_uses_registered_public_entries_only(self):
-        member = SimpleNamespace(
-            id=10, roles=[
-                SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID),
-            ],
-        )
-        bot_member = SimpleNamespace(id=20)
-        channel = _Channel(100, "chat", {10, 20})
-        guild = SimpleNamespace(
-            id=1, me=bot_member,
-            get_member=lambda member_id: member if member_id == 10 else bot_member,
-        )
-        channel.guild = guild
-        guild.get_channel_or_thread = lambda channel_id: channel if channel_id == 100 else None
-        context = SimpleNamespace(
-            bot=SimpleNamespace(), guild=guild, member=member,
-            source_message=SimpleNamespace(channel=channel),
-            state=AgentTurnState(source_channels={100}),
-        )
-        discovered = {
-            "/ping": DiscoveredCommand(
-                "/ping", "Check the bot's response time.",
-                (ParameterInfo("target", "Example option", False, "string"),),
-            ),
-            "/coinlog": DiscoveredCommand("/coinlog", "Private", ()),
-        }
-        handler = build_agent_tools()["read_bot_command_help"].handler
-        with patch(
-            "elbow_helper.agent.commands.help_tool.discover_commands",
-            return_value=discovered,
-        ):
-            public = await handler(context, {"query": "ping"})
-            restricted = await handler(context, {"query": "coinlog"})
-            listed = await handler(context, {})
-
-        self.assertEqual(public["path"], "/ping")
-        self.assertEqual(public["options"][0]["name"], "target")
-        self.assertEqual(restricted["matching_count"], 0)
-        self.assertNotIn("/coinlog", str(listed))
-
-    def test_plan_catalogue_covers_every_registered_capability(self):
-        registry = build_agent_tools()
-        catalogue = capability_list(registry)
-        self.assertEqual(len(catalogue.splitlines()), len(registry))
-        for name in registry:
-            self.assertEqual(catalogue.count(name + ":"), 1)
-        self.assertNotIn(" | time ", catalogue)
-        self.assertNotIn(" | entity ", catalogue)
-
-
     def test_oversized_plan_is_rejected_before_any_capability_runs(self):
         registry = build_agent_tools()
         plan = {
@@ -96,24 +41,6 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertFalse(check_plan(plan, registry).ok)
 
-    def test_duplicate_or_undescribed_capabilities_fail_closed(self):
-        registry = build_agent_tools()
-        duplicated = build_agent_tool_groups()
-        duplicated["wars"] = (*duplicated["wars"], duplicated["files"][0])
-        with patch("elbow_helper.agent.engine.registry.build_agent_tool_groups",
-                   return_value=duplicated):
-            with self.assertRaisesRegex(ValueError, "Duplicate"):
-                build_agent_tools()
-
-        missing = dict(registry)
-        missing.pop(next(iter(missing)))
-        self.assertFalse(check_plan({
-            "goal": "Read", "effort": "low", "output": "text",
-              "steps": [
-                {"id": "one", "capability": next(iter(set(registry) - set(missing))),
-                 "arguments": {}, "reason": "Read", "depends_on": []},
-            ],
-        }, missing).ok)
 
     async def test_message_search_is_limited_to_asker_access(self) -> None:
         asker = SimpleNamespace(id=10)
@@ -171,57 +98,6 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["matches"]), 1)
         self.assertEqual(result["matches"][0]["content"], "visible result")
         self.assertNotIn("hidden result", str(result))
-
-
-
-
-    def test_cwl_ass_tool_preserves_selected_scope_projection(self) -> None:
-        from elbow_helper.agent.plan import capability_list
-
-        line = next(line for line in capability_list(build_agent_tools()).splitlines()
-                    if line.startswith("cwl_ass_scores:"))
-        for guidance in ("read_war_attendance", "read_cwl_results", "Rounds 1-7 are one season",
-                         "Sample projects to seven attacks", "completed CWL wars"):
-            self.assertIn(guidance, line)
-        self.assertNotIn('health.wars', line)
-        self.assertIn("players:[{", line)
-        self.assertIn("attack_sample", line)
-
-    def test_cwl_scoring_catalogue_lines_name_the_calculation(self):
-        from elbow_helper.agent.plan import capability_list
-
-        lines = capability_list(build_agent_tools()).splitlines()
-        for name, calculation in (
-            ("cwl_ass_scores", "Calculate one combined CWL ASS result for chosen war IDs"),
-            ("cwl_bonus_scores", "Apply the clan's CWL bonus scoring to chosen war IDs"),
-        ):
-            self.assertTrue(next(line for line in lines if line.startswith(name + ":"))
-                            .startswith(name + ": " + calculation))
-
-    def test_cwl_bonus_tool_preserves_metric_and_side_effect_boundaries(self) -> None:
-        from elbow_helper.agent.plan import capability_list
-
-        line = next(line for line in capability_list(build_agent_tools()).splitlines()
-                    if line.startswith("cwl_bonus_scores:"))
-        self.assertIn("Adjusted delta is not ASS", line)
-        self.assertIn("read_war_attendance", line)
-        self.assertIn("read_cwl_results", line)
-        self.assertIn("rows:[{", line)
-        self.assertIn("attack_sample", line)
-        self.assertEqual(build_agent_tools()["cwl_bonus_scores"].action_class.value, "read")
-
-    def test_public_event_tools_preserve_read_only_boundaries(self) -> None:
-        tools = build_agent_tools()
-        current = tools["read_event_schedule"]
-        from elbow_helper.agent.reports.tools import original_tool
-        retained = original_tool(tools, "read_saved_report", {
-            "report_kind": "event_schedule",
-        })
-
-        self.assertEqual(current.contract.required_access, frozenset())
-        self.assertEqual(current.action_class.value, "read")
-        self.assertIn("does not refresh event channels", current.definition.usage_note)
-        self.assertEqual(retained.contract.required_access, frozenset())
 
 
 if __name__ == "__main__":

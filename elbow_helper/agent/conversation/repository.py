@@ -7,8 +7,9 @@ from pathlib import Path
 import sqlite3
 
 from elbow_helper.infrastructure.persistence import (
-    SQLiteMigration, run_sqlite_migrations, sqlite_connection, sqlite_transaction,
+    sqlite_transaction,
 )
+from ..storage import agent_connection, initialize_agent
 from .state import MAX_CONVERSATIONS, MAX_REPLY_REFERENCES
 
 
@@ -53,14 +54,14 @@ class ConversationRepository:
     def __init__(self, path: Path):
         self.path = path
         with self.connect() as connection:
-            run_sqlite_migrations(connection, (SQLiteMigration(1, "conversation snapshots", _create_schema),), target_version=1)
+            initialize_agent(connection)
             # Fail startup for a damaged declared schema instead of losing history silently.
             connection.execute("SELECT guild_id, channel_id, root_message_id, revision, touched_at, expires_at, payload FROM conversations LIMIT 0")
             connection.execute("SELECT guild_id, channel_id, message_id, root_message_id FROM conversation_replies LIMIT 0")
 
     @contextmanager
     def connect(self):
-        with sqlite_connection(self.path, synchronous="FULL", busy_timeout_ms=5000) as connection:
+        with agent_connection(self.path, synchronous="FULL", busy_timeout_ms=5000) as connection:
             connection.execute("PRAGMA secure_delete=ON")
             yield connection
 

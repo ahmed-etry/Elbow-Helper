@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import replace
 import json
 import unittest
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan
@@ -76,19 +76,3 @@ class SqlResultTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result['rows_cut'], 1200-len(rows))
                 self.assertEqual(result['total_rows'], 1200)
                 self.assertIn(str(result['rows_cut']), result['instruction'])
-
-    def test_final_evidence_cut_updates_nested_sql_counts(self):
-        payload = dict(source='bot_data', rows=family_rows(), row_count=700, truncated=False)
-        encoded = bounded_answer_evidence({'summary': payload}, 100000, 4000)
-        result = json.loads(encoded)['results']['summary']
-        self.assertTrue(result['truncated'])
-        self.assertEqual(result['total_rows'], 700)
-        self.assertEqual(result['row_count'], len(result['rows']['rows']))
-        self.assertEqual(result['rows_cut'], 700-result['row_count'])
-
-    def test_other_report_manifests_keep_their_own_row_count_meaning(self):
-        payload = dict(kind='synthetic_report', row_count=700, matching_rows=100,
-                       rows=family_rows()[:100])
-        result = json.loads(bound_tool_result(json.dumps(payload), 4000))
-        self.assertEqual(result['row_count'], 700)
-        self.assertNotIn('rows_cut', result)

@@ -2,13 +2,14 @@
 
 from pathlib import Path
 import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from elbow_helper.data.reads import MembershipReads, PeopleReads
+from tests.data.store_fixtures import empty_store
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.players import collect_player
 
@@ -26,8 +27,7 @@ class PeopleReadTests(unittest.IsolatedAsyncioTestCase):
         self.temporary = TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(self.temporary.cleanup)
         self.path = Path(self.temporary.name) / "family.sqlite3"
-        self.store = FamilyStore(self.path)
-        await self.store.initialize()
+        self.store = await empty_store(self.path)
         self.people = PeopleReads(self.store, alias_reader=lambda: [])
         self.membership = MembershipReads(self.store, clans=CLANS)
 
@@ -57,9 +57,20 @@ class PeopleReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(page2["next_offset"])
 
     async def test_history_generations_require_every_clan_and_keep_latest_128(self):
-        for index in range(130):
-            await self.clans(100 + index)
-        await self.clans(300, [clan_response(0, [], declared=1), clan_response(1, [])])
+        def seed(c):
+            # This read needs generation boundaries, not 130 complete collector passes.
+            with c:
+                for at in (*range(100, 230), 300):
+                    run = c.execute(
+                        "INSERT INTO collection_runs(collector,scope_kind,scheduled_at,started_at,finished_at,status,expected) "
+                        "VALUES ('clans','family_clans',?,?,?,'ok',2)", (at, at, at)).lastrowid
+                    c.executemany(
+                        "INSERT INTO collection_items(run_id,ordinal,source_kind,scope_id,status,started_at,fetched_at,completeness_json) "
+                        "VALUES (?,?,'clan_roster',?,'ok',?,?,?)",
+                        [(run, ordinal, clan.tag, at, at,
+                          '{"complete":false}' if at == 300 and ordinal == 0 else '{"complete":true}')
+                         for ordinal, clan in enumerate(CLANS)])
+        await self.store.call(seed)
         result = await self.membership.generations(0, 301)
         self.assertTrue(result['truncated'])
         self.assertEqual(len(result['rows']), 128)

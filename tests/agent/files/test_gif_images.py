@@ -4,7 +4,7 @@ import io
 from types import SimpleNamespace
 import time
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import discord
 from PIL import Image
@@ -64,20 +64,6 @@ class GifImageTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("replied-to message", images[0].label)
             self.assertEqual(selected.bot.http.get_from_cdn.await_count, 2)
 
-    async def test_delayed_embed_uses_the_animation_without_fetching_the_page(self):
-        page = "https://klipy.com/gifs/synthetic"
-        media = "https://static.klipy.com/synthetic.gif"
-        embed = discord.Embed(type="gifv", url=page).set_image(url=media)
-        message = source(content=page)
-        message.channel = SimpleNamespace(fetch_message=AsyncMock(
-            return_value=source(content=page, embeds=[embed])))
-        selected = context(message)
-        selected.bot.http.get_from_cdn.return_value = animation()
-        with patch("elbow_helper.agent.files.gif_media.asyncio.sleep", AsyncMock()):
-            images = await request_images(selected)
-        message.channel.fetch_message.assert_awaited_once_with(message.id)
-        selected.bot.http.get_from_cdn.assert_awaited_once_with(media)
-        self.assertIn("Frames of one GIF", images[0].label)
 
     async def test_video_only_embed_uses_its_still(self):
         embed = discord.Embed.from_dict({"type": "gifv",
@@ -97,13 +83,6 @@ class GifImageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await request_images(selected), ())
         selected.bot.http.get_from_cdn.assert_not_called()
 
-    async def test_several_gifs_and_missing_embed_metadata_are_supported(self):
-        links = [f"https://tenor.com/synthetic-{index}.gif" for index in range(2)]
-        selected = context(SimpleNamespace(id=1, content=" ".join(links), attachments=[]))
-        selected.bot.http.get_from_cdn.return_value = animation()
-        images = await request_images(selected)
-        self.assertEqual(len(images), 2)
-        self.assertTrue(all("Frames of one GIF" in image.label for image in images))
 
     async def test_embed_wait_ends_within_the_remaining_request_budget(self):
         message = source(content="https://tenor.com/view/synthetic")

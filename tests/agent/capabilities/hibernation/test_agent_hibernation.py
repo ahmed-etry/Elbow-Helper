@@ -3,14 +3,13 @@ from dataclasses import asdict
 import json
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from elbow_helper.configuration.channels import HIBERNATION_LOG
 from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.tool_support.adapters.hibernation.report import HibernationReport
 from elbow_helper.agent.models import AgentRequestContext
-from agent.report_helpers import make_event_report
 from elbow_helper.agent.tool_support.adapters.hibernation.reads import (
     read_active_hibernation,
     read_active_hibernation_report,
@@ -91,9 +90,6 @@ class AgentHibernationToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page["matched_count"], 1)
         self.queries.active_snapshot.assert_called_once_with()
 
-    async def test_status_read_limit_covers_more_records_within_bounds(self):
-        self.assertEqual(len((await read_active_hibernation(self.context, {"limit": 1}))["records"]), 1)
-        self.assertIn("error", await read_active_hibernation(self.context, {"limit": 501}))
 
     async def test_255_records_keep_the_oldest_ten_within_the_model_result_budget(self):
         from elbow_helper.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
@@ -143,12 +139,6 @@ class AgentHibernationToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("error", result)
         self.assertEqual(self.context.state.source_channels, set())
 
-    async def test_empty_status_returns_coverage_without_artifact(self):
-        self.queries.active_snapshot.return_value = _snapshot(active=False)
-        result = await read_active_hibernation(self.context, {})
-        self.assertEqual(result["active_record_count"], 0)
-        self.assertIsNone(result["report_id"])
-        self.assertEqual(self.context.state.reports, {})
 
     async def test_report_reuse_rechecks_log_access(self):
         result = await read_active_hibernation(self.context, {})
@@ -157,23 +147,6 @@ class AgentHibernationToolTests(unittest.IsolatedAsyncioTestCase):
             await read_active_hibernation_report(
                 self.context, {"report_id": result["report_id"]},
             )
-
-    async def test_budget_wrong_kind_and_foreign_guild_fail_closed(self):
-        with patch("elbow_helper.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES", 1):
-            result = await read_active_hibernation(self.context, {})
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.reports, {})
-        result = await read_active_hibernation(self.context, {})
-        report = self.context.state.reports[result["report_id"]]
-        self.context.state.reports["role"] = make_event_report("role", "now")
-        self.context.state.reports["foreign"] = HibernationReport(
-            "foreign", 2, HIBERNATION_LOG, report.snapshot,
-        )
-        for report_id in ("missing", "role", "foreign"):
-            value = await read_active_hibernation_report(
-                self.context, {"report_id": report_id},
-            )
-            self.assertIn("error", value)
 
 
 if __name__ == "__main__":

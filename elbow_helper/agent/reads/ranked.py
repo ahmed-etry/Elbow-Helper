@@ -107,7 +107,7 @@ async def read_ranked(context, arguments, *, selection_maximum=200, starts=None)
     if request.selector == 'clan_tags' and arguments.get('membership_basis', 'community') == 'community':
         codes = [next((code for code, clan in CLANS.items() if clan.tag == value), None) for value in request.values]
         if all(codes) and any(CLANS[code].cwl_only for code in codes):
-            from ..families.identity_reads import clan_rosters
+            from elbow_helper.agent.reads.identity_reads import clan_rosters
             roster = await clan_rosters(context, {'clan_codes': codes, 'basis': 'community',
                 **({'season': arguments['season']} if arguments.get('season') else {})})
             if 'error' in roster:

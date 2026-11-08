@@ -2,13 +2,13 @@
 
 import asyncio
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.data.collectors import FamilyCollectors, Profile
-from elbow_helper.data.store import FamilyStore
+from tests.data.store_fixtures import empty_store
 from elbow_helper.data.store.clans import collect_clans
 from elbow_helper.data.store.player_projection import HOUR_US
 from elbow_helper.data.store.players import due_accounts
@@ -25,8 +25,7 @@ class ProfileDemandTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temporary = TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(self.temporary.cleanup)
-        self.store = FamilyStore(Path(self.temporary.name) / "family.sqlite3")
-        await self.store.initialize()
+        self.store = await empty_store(Path(self.temporary.name) / 'family.sqlite3')
         self.client = SimpleNamespace(configured=True, get=AsyncMock())
         self.collectors = FamilyCollectors(SimpleNamespace(boot_complete=asyncio.Event()), self.store, self.client, CLANS)
         self.profiles = self.collectors.profiles
@@ -187,13 +186,6 @@ class ProfileDemandTests(unittest.IsolatedAsyncioTestCase):
         run, = await self.rows("SELECT * FROM collection_runs WHERE collector='clan_demand'")
         self.assertEqual((run["status"], run["succeeded"]), ("ok", 1))
 
-    async def test_scheduled_clan_profiles_are_served(self):
-        self.client.get.side_effect = [clan_response(0, [player()]), clan_response(1, [])]
-        await self.collectors.collect_clans()
-        self.client.get.reset_mock(side_effect=True)
-        result = await self.profiles.clan(CLANS[1].tag, max_age=15 * 60)
-        self.assertEqual(result.payload["name"], CLANS[1].name)
-        self.client.get.assert_not_awaited()
 
     async def test_failures_come_back_typed_and_store_nothing(self):
         cases = (

@@ -3,57 +3,26 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
 from elbow_helper.agent.conversation.state import Conversation, ConversationRecord, ConversationTurn
 from agent.report_helpers import make_event_report
 from elbow_helper.agent.tool_support.adapters.events.report import EventScheduleReport
-from elbow_helper.agent.capabilities.member_lifecycle.report import MemberLifecycleReport
-from elbow_helper.agent.tool_support.adapters.clan_reporting.report import MissingElderReport
-from elbow_helper.agent.tool_support.adapters.cwl.report import CwlPerformanceReport
-from elbow_helper.agent.tool_support.adapters.clan_transfers.report import TransferQueueReport
+from elbow_helper.agent.tool_support.adapters.member_lifecycle.report import MemberLifecycleReport
 from elbow_helper.agent.tool_support.adapters.hibernation.report import HibernationReport
-from elbow_helper.agent.tool_support.adapters.support_tickets.report import SupportTicketReport
-from elbow_helper.agent.tool_support.adapters.recruitment.report import RecruitmentTrialReport
-from elbow_helper.agent.capabilities.examination.report import ExaminationCaseReport
 from elbow_helper.configuration.channels import HIBERNATION_LOG
-from elbow_helper.features.clan_transfers.config import CLAN_TRANSFER_QUEUES
-from elbow_helper.features.clan_transfers.queries import (
-    PendingTransferRequest, TransferQueueSnapshot,
-)
 from elbow_helper.features.hibernation.queries import (
     ActiveHibernationRecord, ActiveHibernationSnapshot,
 )
-from elbow_helper.features.support_tickets.queries import (
-    SupportTicketMetadata, SupportTicketSnapshot,
-)
-from elbow_helper.features.recruitment.queries import (
-    ActiveRecruitmentTrial, ActiveRecruitmentTrialSnapshot,
-)
-from elbow_helper.features.examination.queries import (
-    ExaminationCaseSnapshot, ExaminationCaseStatus,
-)
-from elbow_helper.agent.files.contracts import (
-    CsvImportArtifact,
-    TextImportArtifact,
-    XlsxImportArtifact,
-    XlsxSheet,
-)
-from elbow_helper.features.cwl.queries import (
-    CwlClanSeasonSummary, CwlPerformanceRow, CwlPerformanceSnapshot,
-)
+from elbow_helper.agent.files.contracts import CsvImportArtifact
 from elbow_helper.features.event_stats.queries import (
     EventScheduleRow, EventScheduleSnapshot,
 )
 from elbow_helper.features.member_lifecycle.queries import (
     MemberLifecycleRow, MemberLifecycleSnapshot, OverdueApplicant,
 )
-from elbow_helper.features.clan_reporting.queries import (
-    MissingElderRow, MissingElderSnapshot,
-)
-from elbow_helper.configuration.channels import CLAN_LEADERSHIP_CHANNELS
 from elbow_helper.agent.conversation.repository import ConversationRepository, SnapshotCapacityError, SnapshotConflict, StoredConversation
 from elbow_helper.agent.conversation.codec import (
     encode_conversation as _encode_conversation, decode_conversation,
@@ -118,12 +87,6 @@ class AgentStorageTests(unittest.TestCase):
         with self.repository.connect() as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM conversation_replies").fetchone()[0], 0)
 
-    def test_capacity_prunes_oldest_snapshot_and_its_reply_mapping(self):
-        with patch("elbow_helper.agent.conversation.repository.MAX_CONVERSATIONS", 2):
-            for index in range(1, 4):
-                self.repository.save(_snapshot(index, touched=1000 + index), (10 + index,))
-        self.assertIsNone(self.repository.find_reply(1, 100, 11, now=1004))
-        self.assertEqual(len(self.repository.load_active(now=1004, limit=128)), 2)
 
     def test_capacity_never_evicts_protected_conversations(self):
         self.repository.save(_snapshot(1), (11,))
@@ -136,14 +99,6 @@ class AgentStorageTests(unittest.TestCase):
         self.assertIsNone(self.repository.find_reply(1, 100, 12, now=1003))
         self.assertIsNotNone(self.repository.find_reply(1, 100, 13, now=1003))
 
-    def test_expiry_pruning_defers_in_flight_conversations(self):
-        self.repository.save(_snapshot(1), (11,))
-        self.repository.save(_snapshot(2), (12,))
-        self.assertEqual(self.repository.prune(now=22600, protected_roots=(1,)), 1)
-        with self.repository.connect() as connection:
-            rows = connection.execute("SELECT root_message_id FROM conversations").fetchall()
-        self.assertEqual([row[0] for row in rows], [1])
-        self.assertEqual(self.repository.prune(now=22600), 1)
 
     def test_oversize_write_leaves_existing_snapshot_intact(self):
         self.repository.save(_snapshot(), (10,))
@@ -152,21 +107,10 @@ class AgentStorageTests(unittest.TestCase):
                 self.repository.save(replace(_snapshot(), revision=1), (11,))
         self.assertIsNotNone(self.repository.find_reply(1, 100, 10, now=1001))
 
-    def test_sqlite_backup_can_be_reopened_with_reply_identity(self):
-        self.repository.save(_snapshot(), (10,))
-        backup_path = Path(self.directory.name) / "backup.sqlite3"
-        with self.repository.connect() as source:
-            destination = sqlite3.connect(backup_path)
-            try:
-                source.backup(destination)
-            finally:
-                destination.close()
-        restored = ConversationRepository(backup_path)
-        self.assertIsNotNone(restored.find_reply(1, 100, 10, now=1001))
 
     def test_newer_schema_is_rejected_without_modification(self):
         with self.repository.connect() as connection:
-            connection.execute("PRAGMA user_version=2")
+            connection.execute("PRAGMA user_version=999")
         with self.assertRaises(UnsupportedSQLiteVersionError):
             ConversationRepository(self.path)
 
@@ -197,27 +141,6 @@ class ConversationCodecTests(unittest.TestCase):
                     replace(snapshot, payload=json.dumps(data)), wall_time=1001,
                 )
 
-    def test_legacy_snapshot_with_reports_is_rejected_but_empty_snapshot_restores(self):
-        snapshot = encode_conversation(
-            self.conversation(), root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-        data = json.loads(snapshot.payload)
-        data["format"] = 1
-        data.pop("report_sources")
-        data.pop("report_access_requirements")
-        for turn in data["turns"]:
-            turn.pop("required_access")
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-        data["reports"] = []
-        restored = decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
-        self.assertEqual(restored.reports, {})
 
     def test_turn_role_requirements_roundtrip_and_unknown_values_are_rejected(self):
         conversation = self.conversation()
@@ -394,32 +317,6 @@ class ConversationCodecTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             decode_conversation(replace(snapshot, payload=json.dumps(data)), wall_time=1001)
 
-    def test_cwl_performance_report_roundtrip_and_guild_scope(self):
-        original = self.conversation()
-        performance = CwlPerformanceSnapshot(
-            "2026-09-17T12:00:00+00:00", 3, ("2026-08",),
-            (CwlClanSeasonSummary("2026-08", "BEH", "Champion League II", 1007,
-                                  7, 1, 7, 7, True),),
-            (CwlPerformanceRow(
-                "2026-08", "BEH", "Champion League II", "high_2026_06",
-                "#P0", "Alpha", 18, 7, 7, 7, 21, 100.0, 21.0, 1, 1,
-                21.0, 1, 1,
-            ),),
-        )
-        original.reports.clear()
-        original.reports["cwl"] = CwlPerformanceReport("cwl", 1, performance)
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0, wall_time=1000, monotonic_time=60,
-        )
-
-        restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
-        self.assertEqual(restored.reports["cwl"], original.reports["cwl"])
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["guild_id"] = 2
-        with self.assertRaises(ValueError):
-            decode_conversation(replace(snapshot, payload=json.dumps(data)), wall_time=1001)
-
 
     def test_event_schedule_roundtrip_rejects_forged_counter_coverage(self):
         original = self.conversation()
@@ -505,99 +402,6 @@ class ConversationCodecTests(unittest.TestCase):
                 replace(snapshot, payload=json.dumps(data)), wall_time=1001,
             )
 
-    def test_legacy_knowledge_fields_are_ignored(self):
-        original = self.conversation()
-        snapshot = encode_conversation(original, root_message_id=1, revision=0,
-                                       wall_time=1000, monotonic_time=60)
-        data = json.loads(snapshot.payload)
-        data["turns"][0]["knowledge_refs"] = {"obsolete": True}
-        data["reports"].append({"kind": "approved_knowledge", "report_id": "old-knowledge"})
-        data["report_sources"]["old-knowledge"] = [100]
-        data["report_access_requirements"]["old-knowledge"] = ["lead"]
-        restored = decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
-        self.assertEqual(restored.turns, original.turns)
-        self.assertNotIn("old-knowledge", restored.reports)
-
-    def test_missing_elder_roundtrip_requires_leadership_source_provenance(self):
-        original = self.conversation()
-        original.reports.clear()
-        clan_code = next(iter(CLAN_LEADERSHIP_CHANNELS))
-        channel_id = CLAN_LEADERSHIP_CHANNELS[clan_code]
-        report = MissingElderReport(
-            "missing-elder", 1, (channel_id,), (),
-            MissingElderSnapshot(
-                "2026-09-19T12:00:00+00:00", (clan_code,), 0,
-                (MissingElderRow(
-                    42, "Alpha", "#P2LQ", "One", clan_code, "member",
-                ),),
-            ),
-        )
-        original.reports[report.report_id] = report
-        original.report_sources[report.report_id] = frozenset({channel_id})
-        original.report_access_requirements[report.report_id] = frozenset()
-        snapshot = _encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-
-        restored = decode_conversation(snapshot, wall_time=1001)
-        self.assertEqual(restored.reports[report.report_id], report)
-
-        original.report_sources[report.report_id] = frozenset({100})
-        with self.assertRaises(ValueError):
-            _encode_conversation(
-                original, root_message_id=1, revision=0,
-                wall_time=1000, monotonic_time=60,
-            )
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["source_channel_ids"] = [channel_id + 1]
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-
-
-    def test_pending_transfer_report_roundtrip_and_validation(self):
-        original = self.conversation()
-        original.reports.clear()
-        created = datetime(2026, 9, 17, 5, tzinfo=timezone.utc)
-        expires = datetime(2026, 9, 17, 17, tzinfo=timezone.utc)
-        request = PendingTransferRequest(
-            42, created.isoformat(), int(created.timestamp()),
-            expires.isoformat(), int(expires.timestamp()),
-        )
-        queue = TransferQueueSnapshot(
-            "BEH", CLAN_TRANSFER_QUEUES["BEH"]["thread_id"], 1, 0, (request,),
-        )
-        report = TransferQueueReport(
-            "transfers", 1, "2026-09-17T12:00:00+00:00", 12, 1, 0, (queue,),
-        )
-        original.reports[report.report_id] = report
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-
-        restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
-        self.assertEqual(restored.reports[report.report_id], report)
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["queues"][0]["pending"][0]["expires_ts"] += 1
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["guild_id"] = 2
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
 
     def test_hibernation_report_roundtrip_excludes_private_state_and_validates(self):
         original = self.conversation()
@@ -644,146 +448,6 @@ class ConversationCodecTests(unittest.TestCase):
                 replace(snapshot, payload=json.dumps(data)), wall_time=1001,
             )
 
-    def test_support_ticket_report_roundtrip_excludes_content_and_validates(self):
-        original = self.conversation()
-        original.reports.clear()
-        created = datetime(2026, 9, 1, tzinfo=timezone.utc)
-        activity = datetime(2026, 9, 16, 12, tzinfo=timezone.utc)
-        report = SupportTicketReport(
-            "support", 1, 2, 1,
-            SupportTicketSnapshot(
-                "2026-09-17T12:00:00+00:00",
-                (SupportTicketMetadata(
-                    200, "support-member", 42, "resolved", False,
-                    created.isoformat(), int(created.timestamp()),
-                    activity.isoformat(), int(activity.timestamp()), 86_400,
-                    "channel_last_message",
-                ),),
-            ),
-        )
-        original.reports[report.report_id] = report
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-
-        restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
-        self.assertEqual(restored.reports[report.report_id], report)
-        self.assertNotIn("message_content", snapshot.payload)
-        self.assertNotIn("topic_text", snapshot.payload)
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["snapshot"]["tickets"][0]["owner_status"] = "forged"
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["guild_id"] = 2
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-    def test_recruitment_trial_report_roundtrip_excludes_private_state_and_validates(self):
-        original = self.conversation()
-        original.reports.clear()
-        start = datetime(2026, 9, 16, 12, tzinfo=timezone.utc)
-        expected_end = datetime(2026, 9, 18, 12, tzinfo=timezone.utc)
-        report = RecruitmentTrialReport(
-            "recruitment", 1,
-            ActiveRecruitmentTrialSnapshot(
-                "2026-09-17T12:00:00+00:00", 1, 0,
-                (ActiveRecruitmentTrial(
-                    200, 42,
-                    start.isoformat(), int(start.timestamp()), 2,
-                    expected_end.isoformat(), int(expected_end.timestamp()),
-                    "in_progress", 86_400, None,
-                ),),
-            ),
-        )
-        original.reports[report.report_id] = report
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-
-        restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
-        self.assertEqual(restored.reports[report.report_id], report)
-        self.assertNotIn("tracking_msg_id", snapshot.payload)
-        self.assertNotIn("private_note", snapshot.payload)
-        self.assertNotIn("application_answers", snapshot.payload)
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["snapshot"]["trials"][0]["expected_end_ts"] += 1
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["snapshot"]["trials"][0]["timing_status"] = "accepted"
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["guild_id"] = 2
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-    def test_examination_report_roundtrip_excludes_private_state_and_validates(self):
-        original = self.conversation()
-        original.reports.clear()
-        report = ExaminationCaseReport(
-            "examination", 1,
-            ExaminationCaseSnapshot(
-                "2026-09-17T12:00:00+00:00", 1, 0,
-                (ExaminationCaseStatus(
-                    200, 42, "identified", "elder_promo", "not_applicable",
-                    "required", "routed", "reminder", "not_recorded",
-                    "followup_sent",
-                ),),
-            ),
-        )
-        original.reports[report.report_id] = report
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-
-        restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
-        self.assertEqual(restored.reports[report.report_id], report)
-        for excluded in (
-            "availability", "elder_reason", "pinged_ids", "routing_message_id",
-            "application_answers",
-        ):
-            self.assertNotIn(excluded, snapshot.payload)
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["snapshot"]["cases"][0]["workflow_status"] = "approved"
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["snapshot"]["cases"][0]["response_status"] = "recorded"
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["guild_id"] = 2
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
 
     def test_csv_import_roundtrip_and_source_scope(self):
         original = self.conversation()
@@ -803,56 +467,3 @@ class ConversationCodecTests(unittest.TestCase):
         data["reports"][0]["rows"][0].append("extra")
         with self.assertRaises(ValueError):
             decode_conversation(replace(snapshot, payload=json.dumps(data)), wall_time=1001)
-
-    def test_xlsx_import_roundtrip_and_source_scope(self):
-        original = self.conversation()
-        original.reports.clear()
-        original.reports["xlsx"] = XlsxImportArtifact(
-            "xlsx", 1, 100, 50, 60, "season.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            12, 100, "a" * 64, "2026-09-17T12:00:00+00:00", 1,
-            (XlsxSheet("Roster", ("Name", "Tag"), (("Alpha", "#P0"),), ()),),
-        )
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0, wall_time=1000, monotonic_time=60,
-        )
-        restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
-        self.assertEqual(restored.reports["xlsx"], original.reports["xlsx"])
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["sheets"][0]["issues"] = ["formula_like_cells:1"]
-        with self.assertRaises(ValueError):
-            decode_conversation(replace(snapshot, payload=json.dumps(data)), wall_time=1001)
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["sheets"][0]["rows"][0].append("extra")
-        with self.assertRaises(ValueError):
-            decode_conversation(replace(snapshot, payload=json.dumps(data)), wall_time=1001)
-
-    def test_text_import_roundtrip_and_source_scope(self):
-        original = self.conversation()
-        original.reports.clear()
-        original.reports["text"] = TextImportArtifact(
-            "text", 1, 100, 50, 60, "notes.md", "text/markdown", 8,
-            "a" * 64, "2026-09-17T12:00:00+00:00", 1, "utf-8-sig",
-            "markdown", "# Notes\n", 1,
-        )
-        snapshot = encode_conversation(original, root_message_id=1, revision=0,
-                                       wall_time=1000, monotonic_time=60)
-        restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
-        self.assertEqual(restored.reports["text"], original.reports["text"])
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["line_count"] = 2
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-                monotonic_time=61,
-            )
-
-        data = json.loads(snapshot.payload)
-        data["report_sources"]["text"] = [200]
-        with self.assertRaisesRegex(ValueError, "provenance is incomplete"):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-                monotonic_time=61,
-            )

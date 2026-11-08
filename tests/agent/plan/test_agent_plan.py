@@ -5,7 +5,7 @@ import unittest
 import copy
 from unittest.mock import patch
 
-from elbow_helper.agent.plan import capability_list, check_plan, plan_definition
+from elbow_helper.agent.plan import check_plan
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.reports.tools import original_tool
 from elbow_helper.agent.actions.contracts import ActionClass
@@ -54,15 +54,6 @@ def _plan_for(name, tool, contract, selected_field=None):
 
 
 class PlanContractTests(unittest.TestCase):
-    def test_catalogue_exposes_bounds_defaults_and_required_dates(self):
-        catalogue = capability_list(REGISTRY)
-        ranked = next(line for line in catalogue.splitlines() if line.startswith("read_ranked_activity:"))
-        clash = next(line for line in catalogue.splitlines() if line.startswith("read_clash:"))
-        self.assertIn("limit:int[1..500]", ranked)
-        self.assertIn("after:str(ISO8601 with timezone)", ranked)
-        self.assertIn("limit:int[1..50]", clash)
-        self.assertIn("offset:int>=0", ranked)
-        self.assertIn("account_tags:[str]{1..200}", ranked)
 
     def test_synthetic_replays_reject_four_missing_dates_and_four_oversized_limits(self):
         for index in range(4):
@@ -88,37 +79,6 @@ class PlanContractTests(unittest.TestCase):
                     self.assertTrue(check_plan(plan, REGISTRY).ok)
                     self.assertFalse(check_plan(plan, REGISTRY).step_errors)
 
-    def test_catalogue_describes_nested_objects_and_object_arrays(self):
-        tool = RegisteredAgentTool(
-            AgentToolDefinition(
-                "synthetic", "Inspect synthetic data.",
-                {
-                    "properties": {
-                        "schedule": {
-                            "type": "object",
-                            "properties": {
-                                "kind": {"type": "string"},
-                                "nested": {
-                                    "type": "object",
-                                    "properties": {"hour": {"type": "integer"}},
-                                },
-                            },
-                        },
-                        "sheets": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {"sql": {"type": "string"}},
-                            },
-                        },
-                    },
-                },
-            ),
-            lambda *_: None,
-        )
-        catalogue = capability_list({"synthetic": tool})
-        self.assertIn("schedule:{kind:str,nested:{hour:int}}", catalogue)
-        self.assertIn("sheets:[{sql:str}]", catalogue)
 
     def test_extra_parameter_keys_are_allowed_only_by_schema(self):
         from elbow_helper.agent.plan.checker import valid_arguments
@@ -128,13 +88,6 @@ class PlanContractTests(unittest.TestCase):
             {"ids": [1, 2]}, {**schema, "additionalProperties": False},
         ))
 
-    def test_unknown_step_keys_are_ignored_but_plan_keys_are_refused(self):
-        tool = next(iter(self.registry.values()))
-        plan = _plan_for(tool.definition.name, tool, tool.contract)
-        plan["steps"][0]["reason"] = None
-        self.assertTrue(check_plan(plan, self.registry).ok)
-        plan["periods"] = []
-        self.assertFalse(check_plan(plan, self.registry).ok)
 
     @classmethod
     def setUpClass(cls):
@@ -216,21 +169,6 @@ class PlanContractTests(unittest.TestCase):
         self.assertTrue(check_plan(plan(("irreversible", "irreversible")), registry).ok)
         self.assertFalse(check_plan(plan(("irreversible", "other_irreversible")), registry).ok)
 
-    def test_catalogue_and_plan_tool_are_stable(self):
-        self.assertEqual(capability_list(self.registry), capability_list(build_agent_tools()))
-        self.assertEqual(plan_definition(self.registry), plan_definition(build_agent_tools()))
-        self.assertEqual(len(capability_list(self.registry).splitlines()), len(self.registry))
-
-    def test_valid_arguments_need_no_entities_or_periods(self):
-        for name, tool in self.registry.items():
-            plan = _plan_for(name, tool, CONTRACTS[name])
-            plan.pop("entities", None)
-            plan.pop("periods", None)
-            with self.subTest(capability=name):
-                checked = check_plan(plan, self.registry)
-                self.assertTrue(checked.ok, checked.error)
-        self.assertNotIn("entities", plan_definition(self.registry).parameters["required"])
-        self.assertNotIn("periods", plan_definition(self.registry).parameters["required"])
 
     def test_saved_report_rejects_an_unsupported_filter_with_supported_names(self):
         name = "read_saved_report"

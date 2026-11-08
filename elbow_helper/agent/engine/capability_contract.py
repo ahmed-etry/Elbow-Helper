@@ -15,13 +15,6 @@ class CapabilityBindError(ValueError):
     """A structurally valid call does not identify a supported data scope."""
 
 
-MECHANICAL_FIELDS = frozenset({
-    "offset", "limit", "cursor", "page_size", "pages", "expected_version",
-    "expected_state_fingerprint", "title", "sheets", "label", "quote", "section_offset",
-    "section_limit", "content_offset", "content_limit", "ticket_offset",
-    "winner_offset", "query", "report_kind",
-})
-
 ENTITY_KINDS = {
     "source_clan": "clan", "destination_clan": "clan",
     "current_clan": "clan", "discord_channel": "discord_channel",
@@ -49,7 +42,6 @@ class CapabilityContract:
     filter_fields: tuple[str, ...] = ()
     required_access: frozenset[str] = frozenset()
     retained_fields: tuple[str, ...] = ()
-
 
 
 def contract_catalogue(registry: Mapping[str, CapabilityTool]) -> dict[str, CapabilityContract]:

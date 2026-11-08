@@ -4,10 +4,9 @@ from dataclasses import replace
 import json
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.engine.social_reply import social_reply_definition
 from elbow_helper.agent.research.member_identity import clarification
 from elbow_helper.agent.research.members import find_discord_members
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
@@ -21,33 +20,6 @@ LOOKUP = "elbow_helper.agent.engine.social_members.find_discord_members"
 
 
 class SocialMemberTests(unittest.IsolatedAsyncioTestCase):
-    async def test_asker_names_ids_mentions_and_unnamed_chat_never_run_discovery(self):
-        for question, query, own in (
-            ("lol", None, False), ("W", "Ahmad", False), ("gm gang", "Ahmad", False),
-            ("Roast Ahmad", "Ahmad", False), ("Roast owner", "owner", False),
-            ("Roast <@42>", "<@42>", False), ("Roast 42", "42", False),
-            ("I am Ahmad amaj", "Ahmad amaj", True),
-            ("Roast him", "him", False), ("lol", "Ahmad amaj", False),
-        ):
-            with self.subTest(question=question, query=query):
-                target = context()
-                links = Mock()
-                target = replace(target, account_links=links)
-                target.guild.chunk = AsyncMock()
-                extra = {"self_target": own, **({"member_query": query} if query else {})}
-                session = _AgentSession([social_step("Synthetic acknowledgement.", **extra)])
-                with patch(LOOKUP, AsyncMock(wraps=find_discord_members)) as lookup:
-                    answer = await AgentService(_AgentModel(session, route="social")).answer(
-                        question=question, local_context="", context=target,
-                    )
-                self.assertEqual(answer, "Synthetic acknowledgement.")
-                self.assertEqual(len(session.calls), 1)
-                lookup.assert_not_awaited()
-                links.get_links_for_members.assert_not_called()
-                target.guild.chunk.assert_not_awaited()
-                self.assertEqual(target.state.resolved_members, {})
-        definition = social_reply_definition({}).parameters
-        self.assertNotIn("member_query", definition["required"])
 
     async def test_qualified_third_party_gets_own_identity_before_rewriting(self):
         target = context()

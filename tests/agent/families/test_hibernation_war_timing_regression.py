@@ -1,12 +1,12 @@
 """Hibernation joins real completed-war evidence without inventing attack dates."""
 from dataclasses import replace
 from datetime import datetime, timezone
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 
 from elbow_helper.configuration.channels import HIBERNATION_LOG
-from elbow_helper.agent.families.workflow_reads import TOOLS
+from elbow_helper.agent.reads.workflow_reads import TOOLS
 from elbow_helper.features.hibernation.queries import HibernationQueries
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.record_stub import regular_war, regular_wars_from, with_record

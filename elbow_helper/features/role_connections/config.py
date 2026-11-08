@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-STATE_FILE = "data/role_connections/role_connections.json"
+from elbow_helper.infrastructure.persistence.documents import Document
+
+STATE_FILE = Document("role_connections")
 ROLE_CHANGE_DELAY_SECONDS = 10
 CONNECTIONS_PER_PAGE = 4
 SCAN_PREVIEW_PER_PAGE = 3

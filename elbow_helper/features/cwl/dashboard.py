@@ -6,7 +6,6 @@ import asyncio
 import io
 import json
 import logging
-import os
 import time
 import textwrap
 import warnings as py_warnings
@@ -31,8 +30,8 @@ from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 from .helpers import coc_time_to_dt
 from .helpers import wait_for_boot_complete
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic
+from elbow_helper.infrastructure.persistence.documents import read_document as read_json, document_exists
+from elbow_helper.infrastructure.persistence.documents import write_document as write_json_atomic
 from .config import CWL_CLAN_TAGS
 from .config import DASHBOARD_REFRESH_BACKOFF_SECONDS
 from .config import DASHBOARD_REFRESH_RETRIES
@@ -41,7 +40,6 @@ from .config import DASHBOARD_THREADS
 from .config import DASHBOARD_WARNING_COOLDOWN_SECONDS
 from .config import FIRST_WAR_CHECK_WAIT_SECONDS
 from .config import HERO_SUM_CACHE_SECONDS
-from .config import LEAGUE_NAME_CACHE_SECONDS
 from .config import MANUAL_DASHBOARD_REFRESH_COOLDOWN_SECONDS
 from .views import CwlPrepRefreshView
 
@@ -164,7 +162,7 @@ class CwlDashboardMixin:
 
     def _load_dashboard_state(self) -> Dict[str, Any]:
         try:
-            if os.path.exists(DASHBOARD_STATE_FILE):
+            if document_exists(DASHBOARD_STATE_FILE):
                 data = read_json(DASHBOARD_STATE_FILE)
             else:
                 data = {}
@@ -278,34 +276,6 @@ class CwlDashboardMixin:
         if missing_tags:
             await asyncio.gather(*(load(tag) for tag in missing_tags))
         return results
-
-
-    async def _fetch_clan_war_league_name(
-        self,
-        clan_tag: str,
-    ) -> Optional[str]:
-        # Resolve league from the clan profile endpoint and cache it.
-        now_ts = int(time.time())
-        cached = self._clan_league_cache.get(clan_tag)
-        if (
-            isinstance(cached, dict)
-            and isinstance(cached.get("fetched_at"), int)
-            and (now_ts - int(cached["fetched_at"])) <= LEAGUE_NAME_CACHE_SECONDS
-        ):
-            cached_name = cached.get("league_name")
-            return str(cached_name) if cached_name else None
-
-        payload = await self.bonus_analysis.fetch_profile("clan", clan_tag, retries=3)
-        league_name: Optional[str] = None
-        if payload:
-            raw_name = ((payload.get("warLeague") or {}).get("name") or "").strip()
-            if raw_name:
-                league_name = raw_name
-        self._clan_league_cache[clan_tag] = {
-            "league_name": league_name,
-            "fetched_at": now_ts,
-        }
-        return league_name
 
 
     def _render_prep_matchup_image(
@@ -960,7 +930,7 @@ class CwlDashboardMixin:
                         pass
 
                 if state_changed:
-                    self._save_dashboard_state()
+                    await asyncio.to_thread(self._save_dashboard_state)
                 return True
 
             if not await upsert_message(

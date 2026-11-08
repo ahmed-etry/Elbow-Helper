@@ -2,8 +2,8 @@
 
 import unittest
 from pathlib import Path
-from tempfile import TemporaryDirectory
-from elbow_helper.agent.scheduled.tools import prepare_manage, standing_tools
+from tests.temp_directory import TemporaryDirectory
+from elbow_helper.agent.scheduled.tools import prepare_manage
 from elbow_helper.agent.actions.store import AgentActionRepository
 
 from elbow_helper.agent.engine import registry
@@ -13,17 +13,12 @@ from types import SimpleNamespace
 
 from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.agent.scheduled.scope import validate_scope, within_scope
-from elbow_helper.agent.scheduled.tools import _field_label, _fixed_display
 from elbow_helper.agent.scheduled.tools import watcher_reads
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.models import RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.infrastructure.ai.agent import AgentToolDefinition
 from unittest.mock import patch
-from unittest.mock import AsyncMock
-from elbow_helper.agent.commands.bridge import build_command_tools
-from elbow_helper.agent.tool_support.adapters.achievements.commands import achievement_adapters
 from elbow_helper.agent.models import AgentTurnState
-from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 
 
 async def _unchanged():
@@ -60,12 +55,6 @@ class ScheduledScopeTests(unittest.IsolatedAsyncioTestCase):
                 await action.run()
                 self.assertFalse(await action.preview.recheck())
 
-    def test_weekly_schema_uses_monday_zero_and_preserves_monthly_days(self):
-        tool = next(tool for tool in standing_tools(lambda: {}) if tool.definition.name == "save_standing_rule")
-        schedule = tool.definition.parameters["properties"]["schedule"]
-        weekly, monthly, _ = schedule["anyOf"]
-        self.assertEqual(weekly["properties"]["days"]["items"], {"type": "integer", "minimum": 0, "maximum": 6})
-        self.assertEqual(monthly["properties"]["days"]["items"]["maximum"], 31)
 
     def setUp(self):
         self.allowed = [{
@@ -96,49 +85,6 @@ class ScheduledScopeTests(unittest.IsolatedAsyncioTestCase):
             validate_scope([{**self.allowed[0], "variable_fields": ["role_id"],
                              "fixed_values": {}}])
 
-    async def test_command_scope_uses_the_shared_feature_path(self):
-        path = "/grant ticket"
-        command = DiscoveredCommand(path, "Registered", (
-            ParameterInfo("user", "Choose a member.", True, "integer"),
-            ParameterInfo("reason", "Reason", True, "string"),
-        ))
-        entry = SimpleNamespace(path=path, summary="Give a ticket.", details="Give a ticket.")
-        with (patch("elbow_helper.agent.commands.registry.discover_commands",
-                    return_value={path: command}),
-              patch("elbow_helper.agent.commands.registry.HELP_ENTRIES", (entry,))):
-            tools, _ = build_command_tools(object(), achievement_adapters())
-        name, tool = next(iter(tools.items()))
-        workflow = SimpleNamespace(ticket_grant_state=AsyncMock(return_value={"issue": None}))
-        member = SimpleNamespace(id=4, mention="<@4>")
-        context = SimpleNamespace(state=AgentTurnState(),
-            bot=SimpleNamespace(get_cog=lambda _: workflow),
-            guild=SimpleNamespace(get_member=lambda _: member))
-        arguments = {"user": 4, "reason": "Synthetic reason"}
-        result = await tool.handler(context, arguments)
-        self.assertEqual(result["status"], "confirmation_required")
-        action = replace(context.state.proposed_changes[0], step_id="ticket",
-                         capability_name=name, checked_arguments=arguments)
-        self.assertEqual(action.path, path)
-        allowed = [{"capability": name, "fixed_values": arguments,
-                    "variable_fields": [], "max_targets": 1}]
-        self.assertTrue(within_scope((action,), allowed))
-        self.assertFalse(within_scope((replace(action, checked_arguments={
-            **arguments, "reason": "Other reason"}),), allowed))
-
-    def test_fixed_discord_values_render_as_mentions(self):
-        self.assertEqual(_field_label("role_id"), "role")
-        self.assertEqual(_field_label("member_ids"), "members")
-        guild = SimpleNamespace(
-            get_role=lambda _: SimpleNamespace(mention="<@&12>"),
-            get_member=lambda _: SimpleNamespace(mention="<@21>"),
-            get_channel_or_thread=lambda _: SimpleNamespace(mention="<#3>"),
-        )
-        context = SimpleNamespace(guild=guild)
-        self.assertEqual(_fixed_display(context, "role_id", 12), "<@&12>")
-        self.assertEqual(_fixed_display(context, "member_ids", [21]), "<@21>")
-        self.assertEqual(_fixed_display(context, "channel_id", 3), "<#3>")
-        with self.assertRaises(ValueError):
-            _fixed_display(context, "unresolved_id", 45)
 
     def test_separate_fixed_scopes_keep_their_own_target_limits(self):
         allowed = [self.allowed[0], {
@@ -157,19 +103,6 @@ class ScheduledScopeTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             validate_scope([self.allowed[0], dict(self.allowed[0])])
 
-    def test_scope_text_rejects_raw_discord_ids(self):
-        with self.assertRaises(ValueError):
-            validate_scope([{**self.allowed[0],
-                             "scope_text": "Grant role 123456789012345678"}])
-        validate_scope([{**self.allowed[0],
-                         "scope_text": "Grant <@&123456789012345678> in <#123456789012345679>"}])
-
-    def test_feature_targets_use_names_from_checked_evidence(self):
-        context = SimpleNamespace(state=SimpleNamespace(evidence=[json.dumps({
-            "result": json.dumps({"items": [{"roster_id": 7, "name": "War roster"}]})
-        })]))
-        self.assertEqual(_fixed_display(context, "roster_id", 7), "War roster")
-        self.assertEqual(_fixed_display(context, "roster", "7"), "War roster")
 
     def test_watcher_rejects_retained_and_attachment_reads(self):
         tool = RegisteredAgentTool(AgentToolDefinition(

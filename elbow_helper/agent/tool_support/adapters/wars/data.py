@@ -1,6 +1,5 @@
 """Queryable feature state files."""
 
-from pathlib import Path
 
 from elbow_helper.features.wars.config import CACHE_FILE
 
@@ -10,7 +9,7 @@ from ...sql.sources import DataSource
 SOURCES = (
     DataSource(
         "state",
-        Path(CACHE_FILE),
+        CACHE_FILE,
         state_name="war_cache",
         level="none",
         note=(

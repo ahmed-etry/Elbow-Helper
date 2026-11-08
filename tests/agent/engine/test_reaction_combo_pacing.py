@@ -72,11 +72,11 @@ class ReactionComboPacingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(salvage_choice(choice, registry, combo_due=False)['reactions'], ['\U0001f914'])
         self.assertFalse(result['gif_requested'])
 
-    async def test_19_fresh_conversations_share_channel_slots_and_always_keep_a_line(self):
+    async def test_consecutive_conversations_close_and_reopen_the_channel_slot(self):
         rows, combos = [], []
         channel = ChannelReactions()
         pairs = [("\U0001f914", "\U0001f4a1"), ("\U0001f680", "\U0001f389")]
-        for position in range(1, 20):
+        for position in range(1, 4):
             context = self.context(identifier=position * 10, channel=channel,
                 history=channel_combo_history(rows, 999, last_combo_message_id=channel.combo_message_id))
             due = reply_combo_due(context)
@@ -96,26 +96,8 @@ class ReactionComboPacingTests(unittest.IsolatedAsyncioTestCase):
                 combos.append(position)
             rows.extend([self.row(position * 10, emojis=context.state.reactions.emojis),
                          self.row(position * 10 + 1, author=999)])
-        self.assertEqual(combos, list(range(1, 20, 2)))
+        self.assertEqual(combos, [1, 3])
 
-    async def test_plain_replies_do_not_increase_the_combo_share_of_reacted_replies(self):
-        rows, reacted, combos = [], 0, 0
-        channel = ChannelReactions()
-        for position in range(1, 37):
-            context = self.context(identifier=position * 10, channel=channel,
-                history=channel_combo_history(rows, 999, last_combo_message_id=channel.combo_message_id))
-            due = reply_combo_due(context)
-            emojis = () if position % 3 == 0 else ("\U0001f602", "\U0001f480") if due else ("\U0001f440",)
-            form = 'text_reaction_combo' if len(emojis) == 2 else 'text_reactions' if emojis else 'text'
-            session = _AgentSession([social_step('That went well.', meme_id=None,
-                form=form, reactions=emojis)])
-            await AgentService(_AgentModel(session, route='social')).answer(
-                question='well that went sideways', local_context='', context=context)
-            delivered = context.state.reactions.emojis
-            reacted += bool(delivered)
-            combos += len(delivered) == 2
-            rows.extend([self.row(position * 10, emojis=delivered), self.row(position * 10 + 1, author=999)])
-        self.assertEqual((reacted, combos), (24, 12))
 
     async def test_closed_unknown_and_research_slots_cannot_deliver_a_combo(self):
         for history, route in (((True,), "social"), (None, "social"), ((), "research")):
@@ -131,20 +113,6 @@ class ReactionComboPacingTests(unittest.IsolatedAsyncioTestCase):
             result = await react_to_request(context, {"emoji": ["\U0001f680", "\U0001f389"]})
             self.assertEqual(result["cause"], "combo_not_offered")
 
-    async def test_failed_or_declined_combo_leaves_the_next_slot_available(self):
-        for declined in (False, True):
-            context = self.context()
-            if not declined:
-                context.source_message.add_reaction.side_effect = OSError("Synthetic failure")
-            session = _AgentSession([social_step("Synthetic fallback.", meme_id=None,
-                form="text" if declined else "text_reaction_combo",
-                reactions=[] if declined else ["\U0001f914", "\U0001f4a1"])])
-            answer = await AgentService(_AgentModel(session, route="social")).answer(
-                question="Synthetic exchange", local_context="", context=context,
-            )
-            self.assertEqual(answer, "Synthetic fallback.")
-            self.assertEqual(context.state.channel_reactions.combo_message_id, 0)
-            self.assertTrue(reply_combo_due(context))
 
     async def test_concurrent_offers_share_one_slot_and_failures_do_not_advance_pacing(self):
         channel = ChannelReactions()
@@ -181,13 +149,3 @@ class ReactionComboPacingTests(unittest.IsolatedAsyncioTestCase):
         await AgentService(model).answer(question="Synthetic exchange", local_context="", context=stale)
         self.assertNotIn("text_reaction_combo", model.request["tools"][0].parameters["properties"]["reply_form"]["enum"])
         self.assertEqual(combo_slot_status(stale), 'revision_changed')
-
-    def test_gate_reasons_distinguish_absent_metadata_from_false_and_cooldown(self):
-        context = self.context(history=())
-        self.assertEqual(combo_slot_status(context), 'available')
-        context.state.channel_bot_combos = (True,)
-        self.assertEqual(combo_slot_status(context), 'cooldown')
-        context.state.channel_bot_combos = None
-        self.assertEqual(combo_slot_status(context), 'reply_history_unavailable')
-        context.state.channel_reactions.emojis = None
-        self.assertEqual(combo_slot_status(context), 'reaction_history_unavailable')

@@ -36,7 +36,7 @@ class ClanReportingWarMixin:
         completed = await self._post_monthly_war_summaries(month_start, month_end)
         if completed and self.state.get("last_summary_month") != month_key:
             self.state["last_summary_month"] = month_key
-            save_state(self.state)
+            await asyncio.to_thread(save_state, self.state)
 
     async def _post_monthly_war_summaries(
         self, month_start: datetime, month_end: datetime
@@ -53,7 +53,7 @@ class ClanReportingWarMixin:
             else:
                 if completed:
                     completed_months[clan_code] = month_key
-                    save_state(self.state)
+                    await asyncio.to_thread(save_state, self.state)
             await asyncio.sleep(0.5)
         return all(completed_months.get(clan_code) == month_key for clan_code in CLANS)
 
@@ -117,7 +117,7 @@ class ClanReportingWarMixin:
             return False
 
         summaries[clan_code] = new_message.id
-        save_state(self.state)
+        await asyncio.to_thread(save_state, self.state)
         return log_available
 
     async def _month_war_counts(

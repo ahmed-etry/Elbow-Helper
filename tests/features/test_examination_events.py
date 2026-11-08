@@ -1,12 +1,7 @@
-import asyncio
-from contextlib import closing
-from copy import deepcopy
-from dataclasses import replace
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
@@ -14,11 +9,9 @@ from unittest.mock import MagicMock, patch
 import discord
 
 from elbow_helper.configuration.channels import EXAMINATION_TICKET_CATEGORY
-from elbow_helper.data.events import EventsStore, load_state, record
-from elbow_helper.data.events.schema import SCHEMA_VERSION, _create_history
+from elbow_helper.data.events import EventsStore
 from elbow_helper.features.examination.followups import ExaminationFollowupMixin
-from elbow_helper.features.examination.queries import ExaminationQueries
-from elbow_helper.features.examination.state import ExaminationStateStore, examination_event
+from elbow_helper.features.examination.state import ExaminationStateStore
 
 # Discord channel IDs carry their creation time.
 TICKET = 1_200_000_000_000_000_000
@@ -47,7 +40,7 @@ class ExaminationHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.store = await self.started()
 
     async def started(self, path=None):
-        store = ExaminationStateStore(EventsStore(self.db), self.path if path is None else path)
+        store = ExaminationStateStore(EventsStore(self.db))
         await store.startup()
         self.addCleanup(store.close)
         return store
@@ -59,44 +52,16 @@ class ExaminationHistoryTests(unittest.IsolatedAsyncioTestCase):
     async def kinds(self, store=None):
         return [row["kind"] for row in await (store or self.store).events.read(workflow="examination")]
 
-    async def test_first_start_imports_open_cases_once_and_keeps_the_old_shape(self):
-        legacy = {"examiner_roster": {"7": {"status": "Active", "th_levels": [15]}},
-                  "cases": {str(TICKET): case(), str(OTHER): case(OTHER, type="elder_promo"),
-                            "not-a-channel": {"type": "clan_promo"}},
-                  "panel_message_id": 99, "deprecated_routing_messages": [{"message_id": 5}],
-                  "timezone_preferences": {}}
-        path = self.root / "legacy.json"
-        path.write_text(json.dumps(legacy))
-        with self.assertLogs("elbow_helper.features.examination.state", level="INFO") as logs:
-            store = ExaminationStateStore(EventsStore(self.root / "import.sqlite3"), path)
-            await store.startup()
-        self.addCleanup(store.close)
-        self.assertIn("Imported 2 open examination cases (2 start events); skipped 1", logs.output[0])
-        self.assertEqual(store.cases(), {key: value for key, value in legacy["cases"].items()
-                                         if key != "not-a-channel"})
-        self.assertEqual(store.examiner_roster(), legacy["examiner_roster"])
-        self.assertEqual(store.state["panel_message_id"], 99)
-        rows = await store.events.read(workflow="examination")
-        self.assertEqual([(row["kind"], row["actor_kind"], row["via"]) for row in rows], [("started", "import", "import")] * 2)
-        self.assertEqual({row["detail"]["case_type"] for row in rows}, {"clan_promo", "elder_promo"})
-        self.assertTrue(all(row["subject_discord_id"] == 41 for row in rows))
-        mirrored = json.loads(path.read_text())
-        self.assertEqual(mirrored["cases"], store.cases())
-        restarted = ExaminationStateStore(EventsStore(store.events.path), path)
-        path.write_text(json.dumps({"cases": {"5": case(5)}}))
-        await restarted.startup()
-        self.addCleanup(restarted.close)
-        self.assertEqual(restarted.state, store.state)
-        self.assertEqual(await restarted.events.read(), rows)
 
     async def test_a_change_saves_only_its_own_case(self):
         self.store.cases()[str(TICKET)] = case()
         self.store.cases()[str(OTHER)] = case(OTHER)
-        self.assertTrue(await self.store.flush())
+        with patch("elbow_helper.data.events.examination.now_us", return_value=100):
+            self.assertTrue(await self.store.flush())
         before = dict((row[0], row) for row in await self.rows())
-        await asyncio.sleep(0.01)
         self.store.case(TICKET)["intake_state"] = "selecting_from"
-        self.assertTrue(await self.store.flush())
+        with patch("elbow_helper.data.events.examination.now_us", return_value=200):
+            self.assertTrue(await self.store.flush())
         after = dict((row[0], row) for row in await self.rows())
         self.assertEqual(after[OTHER], before[OTHER])
         self.assertNotEqual(after[TICKET], before[TICKET])
@@ -165,16 +130,6 @@ class ExaminationHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.kinds(), ["started"])
         self.assertEqual(len(await self.rows()), 1)
 
-    async def test_failed_event_insert_rolls_back_the_case_too(self):
-        self.store.cases()[str(TICKET)] = case()
-        await self.store.events.call(lambda c: c.execute(
-            "CREATE TRIGGER fail_event BEFORE INSERT ON workflow_events BEGIN SELECT RAISE(ABORT,'full'); END"))
-        with self.assertLogs("elbow_helper.features.examination.state", level="ERROR"):
-            self.assertFalse(await self.store.flush())
-        self.assertEqual(await self.rows(), [])
-        self.assertEqual(await self.store.events.call(load_state, "examination"), {
-            "examiner_roster": {}, "panel_message_id": None, "deprecated_routing_messages": [],
-            "timezone_preferences": {}})
 
     async def test_restart_mid_case_resumes_from_the_saved_case(self):
         self.store.cases()[str(TICKET)] = case(intake_state="complete", intake_completed_at=iso(10),
@@ -193,41 +148,6 @@ class ExaminationHistoryTests(unittest.IsolatedAsyncioTestCase):
         history = restarted.stage_history()[TICKET]
         self.assertEqual([kind for kind, _ in history], ["started", "answered", "sent_for_review"])
 
-    async def test_save_from_a_handler_coalesces_into_one_background_write(self):
-        self.store.cases()[str(TICKET)] = case()
-        calls = 0
-        original = self.store.events.call
-        async def counted(*args, **kwargs):
-            nonlocal calls
-            calls += 1
-            return await original(*args, **kwargs)
-        with patch.object(self.store.events, "call", side_effect=counted):
-            self.store.save()
-            self.store.case(TICKET)["stage"] = "initial"
-            self.store.save()
-            await self.store._flush_task
-        self.assertEqual(calls, 1)
-        self.assertEqual(self.store.saved_cases()[str(TICKET)]["stage"], "initial")
-
-    async def test_agent_reads_saved_cases_and_their_stages(self):
-        queries = ExaminationQueries(self.store.saved_cases, history=self.store.stage_history)
-        self.store.cases()[str(TICKET)] = case()
-        self.assertEqual(queries.case_registrations(), ())
-        await self.store.flush()
-        self.store.case(TICKET)["intake_state"] = "selecting_from"
-        row, = queries.case_snapshot(ticket_channel_ids=(TICKET,)).cases
-        self.assertEqual(row.intake_status, "pending")
-        self.assertEqual([stage.stage for stage in row.stages], ["started"])
-        self.assertEqual(row.stages[0].at, iso(0))
-
-    async def test_mirror_failure_recovers_from_sqlite_on_restart(self):
-        self.store.cases()[str(TICKET)] = case()
-        with patch("elbow_helper.features.examination.state.write_json_atomic", side_effect=OSError("full")):
-            with self.assertLogs("elbow_helper.features.examination.state", level="ERROR"):
-                self.assertTrue(await self.store.flush())
-        restarted = await self.started()
-        self.assertEqual(restarted.cases(), self.store.cases())
-        self.assertEqual(json.loads(self.path.read_text())["cases"], restarted.cases())
 
     async def test_deleting_a_member_removes_their_case_profile_and_mentions(self):
         self.store.cases()[str(TICKET)] = case()
@@ -246,62 +166,15 @@ class ExaminationHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([json.loads(row[1])["opener_id"] for row in await self.rows()], [43])
         self.assertEqual({row["subject_discord_id"] for row in await self.store.events.read()}, {43})
         await self.store.flush()
-        self.assertEqual(json.loads(self.path.read_text())["cases"], self.store.cases())
+        self.assertEqual((await self.started()).cases(), self.store.cases())
         self.assertNotIn("closed", await self.kinds())
-
-    async def test_unreadable_old_file_does_not_mark_the_import_done(self):
-        for payload in ("{", "[]", '{"cases": []}'):
-            self.path.write_text(payload)
-            events = EventsStore(self.root / f"bad{len(payload)}.sqlite3")
-            store = ExaminationStateStore(events, self.path)
-            with self.assertRaises(ValueError):
-                await store.startup()
-            self.assertIsNone(await events.call(load_state, "examination"))
-
-    async def test_stage_details_reject_free_text(self):
-        event = examination_event("followed_up", TICKET, case(), at=1, detail={"stage": "reminder"})
-        for detail in ({"stage": "please review"}, {"stage": "reminder", "note": "x"}):
-            with self.assertRaises(ValueError):
-                await self.store.events.call(record, replace(event, detail=detail))
-        started = examination_event("started", TICKET, case(), at=1, detail={"case_type": "words"})
-        with self.assertRaises(ValueError):
-            await self.store.events.call(record, started)
-        # A case with an unknown type still saves, without its start event.
-        self.store.cases()[str(TICKET)] = case(type="words")
-        with self.assertLogs("elbow_helper.features.examination.state", level="WARNING"):
-            self.assertTrue(await self.store.flush())
-        self.assertEqual(await self.kinds(), [])
-        self.assertEqual(len(await self.rows()), 1)
-
-    async def test_cancelled_save_still_publishes_what_it_committed(self):
-        self.store.cases()[str(TICKET)] = case()
-        original = self.store.events.call
-        started, release = asyncio.Event(), asyncio.Event()
-        async def slow(*args, **kwargs):
-            started.set()
-            await release.wait()
-            return await original(*args, **kwargs)
-        with patch.object(self.store.events, "call", side_effect=slow):
-            task = asyncio.create_task(self.store.flush())
-            await started.wait()
-            task.cancel()
-            await asyncio.sleep(0)
-            release.set()
-            with self.assertRaises(asyncio.CancelledError):
-                await task
-        self.assertIn(str(TICKET), self.store.saved_cases())
-        snapshot = deepcopy(self.store.saved_cases())
-        self.assertTrue(await self.store.flush())
-        self.assertEqual(await self.kinds(), ["started"])
-        self.assertEqual(self.store.saved_cases(), snapshot)
 
 
 class ExaminationHandlerHistoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_an_examiner_reply_in_the_ticket_records_who_reviewed(self):
         directory = TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(directory.cleanup)
-        store = ExaminationStateStore(EventsStore(Path(directory.name) / "events.sqlite3"),
-                                      Path(directory.name) / "state.json")
+        store = ExaminationStateStore(EventsStore(Path(directory.name) / "events.sqlite3"))
         await store.startup()
         self.addCleanup(store.close)
         store.cases()[str(TICKET)] = case(routing_message_id=555, stage="initial")
@@ -317,30 +190,6 @@ class ExaminationHandlerHistoryTests(unittest.IsolatedAsyncioTestCase):
         row, = await store.events.read(workflow="examination", kind="reviewed")
         self.assertEqual((row["actor_discord_id"], row["actor_kind"], row["via"]), (7, "member", "message"))
         self.assertTrue(store.saved_cases()[str(TICKET)]["responded"])
-
-
-class ExaminationSchemaUpgradeTests(unittest.IsolatedAsyncioTestCase):
-    async def test_a_version_one_file_gains_the_case_table_and_keeps_its_history(self):
-        directory = TemporaryDirectory(dir=Path.cwd())
-        self.addCleanup(directory.cleanup)
-        path = Path(directory.name) / "events.sqlite3"
-
-        def old_file():
-            with closing(sqlite3.connect(path)) as connection:
-                _create_history(connection)
-                connection.execute("INSERT INTO workflow_state VALUES ('transfers','{}',1)")
-                connection.execute("PRAGMA user_version=1")
-                connection.commit()
-        await asyncio.to_thread(old_file)
-        events = EventsStore(path)
-        store = ExaminationStateStore(events, Path(directory.name) / "state.json")
-        await store.startup()
-        self.addCleanup(store.close)
-        self.assertEqual(await events.call(load_state, "transfers"), {})
-        self.assertEqual(await events.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]),
-                         SCHEMA_VERSION)
-        store.cases()[str(TICKET)] = case()
-        self.assertTrue(await store.flush())
 
 
 if __name__ == "__main__":

@@ -396,18 +396,6 @@ class HibernationTicketMixin:
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             return None
 
-    async def _send_hibernation_log(
-        self,
-        interaction: discord.Interaction,
-        user: discord.Member,
-        stored_role_ids: list[int],
-        snapshot_role_ids: list[int],
-        unix_ts: int,
-    ) -> None:
-        await self.send_hibernation_log(
-            interaction.guild, interaction.user, user,
-            stored_role_ids, snapshot_role_ids, unix_ts,
-        )
 
     async def send_hibernation_log(
         self, guild: discord.Guild | None,

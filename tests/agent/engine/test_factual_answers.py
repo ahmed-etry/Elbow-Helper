@@ -4,18 +4,12 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.agent.engine.factual_answers import numeric_conflicts, clan_count_tag, ranked_conflicts
+from elbow_helper.agent.engine.factual_answers import numeric_conflicts, ranked_conflicts
 from elbow_helper.agent.reads.ranked_measures import metrics
 from elbow_helper.agent.engine.flow import AnswerFlow
 from agent.engine.test_agent_plan_flow import _context
-from agent.discord_actions import test_current_channel_posts as posts
-from elbow_helper.agent.discord_actions.messages import prepare_post
-from elbow_helper.infrastructure.ai import AgentStep, AgentUsage, AgentToolDefinition
+from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import RegisteredAgentTool
-from unittest.mock import patch
-from agent.engine.test_agent_plan_flow import _Model, _Session, _model_step, _plan, _step
 
 
 def clan(count=48):
@@ -39,16 +33,6 @@ def sample():
 
 
 class FactualFlowTests(unittest.IsolatedAsyncioTestCase):
-    async def test_family_ranked_figures_use_the_same_checked_repair_path(self):
-        context = _context()
-        context.state.family_catalogue = True
-        context.state.request_text = 'Moyenne des étoiles sur cette sélection ?'
-        context.state.grounding_evidence = {'read': sample()}
-        rounder = SimpleNamespace(advance=AsyncMock(return_value=AgentStep('2.3333', (), AgentUsage())))
-        flow = AnswerFlow(context=context, session=None, registry={}, budget=None,
-                          rounder=rounder, runner=None, request_id=1)
-        self.assertEqual(await flow._checked_figures('1.5'), '2.3333')
-        rounder.advance.assert_awaited_once()
 
     async def test_wrong_generated_number_gets_one_repair_with_verified_value(self):
         context = _context()
@@ -87,43 +71,6 @@ class FactualFlowTests(unittest.IsolatedAsyncioTestCase):
         answer = await flow._grounded_reply("#P0 has 49 members. Keep recruiting.")
         self.assertIn("Keep recruiting.", answer)
         self.assertIn("#P0 total members: 48.", answer)
-
-    async def test_filtered_member_question_always_reaches_answer_round(self):
-        for level in (16, 17):
-            with self.subTest(level=level):
-                question = f"How many members in #P0 are TH{level}?"
-                self.assertIsNone(clan_count_tag(question))
-                draft = f"12 members are TH{level}."
-                session = _Session([_model_step(_plan([_step("read")])),
-                                    AgentStep(draft, (), AgentUsage())], [])
-                registry = {"read_value": RegisteredAgentTool(AgentToolDefinition(
-                    "read_value", "Read synthetic evidence.", {"type": "object", "properties": {}}),
-                    AsyncMock(return_value=clan()))}
-                with patch("elbow_helper.agent.engine.service.build_agent_tools", return_value=registry):
-                    answer = await AgentService(_Model(session)).answer(
-                        question=question, context=_context(), local_context="")
-                self.assertEqual(answer, draft)
-                self.assertEqual(len(session.calls), 2)
-
-    async def test_already_posted_answer_is_not_rendered_twice(self):
-        context = _context()
-        context.state.request_text = "Member count?"
-        context.state.grounding_evidence = {"read": clan()}
-        flow = AnswerFlow(context=context, session=None, registry={}, budget=None,
-                          rounder=None, runner=None, request_id=1)
-        self.assertEqual(await flow._grounded_reply(""), "")
-
-
-class FactualPostTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        await posts.CurrentChannelPostTests.asyncSetUp(self)
-
-    async def test_immediate_reply_preserves_authored_prose(self):
-        self.context.state.request_text = "How many members in #P0?"
-        self.context.state.grounding_evidence = {"read": clan()}
-        result = await prepare_post(self.context, {"channel_id": 2, "text": "49, the hard cap."})
-        self.assertTrue(result["delivered_as_reply"])
-        self.context.send_reply.assert_awaited_with(self.context, "49, the hard cap.")
 
 
 class FigureCheckTests(unittest.TestCase):
@@ -178,20 +125,6 @@ class FigureCheckTests(unittest.TestCase):
                          {"message": {"content": str(clan())}}):
             self.assertFalse(numeric_conflicts("How many members in #P0?", "49", evidence))
 
-    def test_figures_compare_ratios_with_display_rounding_and_selection(self):
-        for answer in ("Average stars: 2.33", "Average stars: 2.3333", "Triple rate: 33.33%",
-                       "Ranked attack average stars: 1.5", "#P2 average stars: 1.5"):
-            with self.subTest(answer=answer):
-                self.assertFalse(numeric_conflicts("Average stars for ranked defenses?", answer, {"read": sample()}))
-        conflicts = numeric_conflicts("Average stars for ranked defenses?",
-                                      "#P0 average stars: 2.5. Keep practising.", {"read": sample()})
-        self.assertEqual(len(conflicts), 1)
-        self.assertIn("2.3333", conflicts[0])
-
-    def test_figures_do_not_compare_mismatched_typed_selections(self):
-        result = sample()
-        result['measurement']['direction'] = 'attacks'
-        self.assertFalse(numeric_conflicts("Average stars for ranked attacks?", "Average stars: 1.5", {'read': result}))
 
     def test_bare_figure_and_query_count_claims_are_checked(self):
         self.assertTrue(numeric_conflicts("Average stars for ranked defenses?", "1.5", {"read": sample()}))

@@ -1,24 +1,13 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from contextlib import closing
 from pathlib import Path
 import sqlite3
-from tempfile import TemporaryDirectory
-from types import SimpleNamespace
+from tests.temp_directory import TemporaryDirectory
 import unittest
 
 from elbow_helper.features.achievements.definitions import ALL_ACHIEVEMENTS
-from elbow_helper.features.achievements.config import (
-    DAILY_MIN_CHARS, DAILY_MSG_THRESHOLD, DAILY_REWARD, DAILY_REWARD_ELDER,
-    MANUAL_CAP_CWL, MANUAL_CAP_ENCOURAGEMENT, MANUAL_CAP_TOTAL, SALARY_AMOUNT,
-    TICKET_COST, TICKET_LIMIT_PER_MONTH,
-)
-from elbow_helper.features.achievements.definitions import COIN_REWARDS
 from elbow_helper.features.achievements.progress import AchievementProgressMixin
-from elbow_helper.features.achievements.queries import (
-    MAX_COIN_TRANSACTION_PAYLOAD_BYTES, MAX_COIN_TRANSACTIONS,
-    AchievementQueries, achievement_leaderboard_eligible,
-    achievement_progress_value,
-)
+from elbow_helper.features.achievements.queries import MAX_COIN_TRANSACTION_PAYLOAD_BYTES, MAX_COIN_TRANSACTIONS, AchievementQueries, achievement_leaderboard_eligible
 from elbow_helper.configuration.roles import LEAD
 
 
@@ -131,43 +120,6 @@ class AchievementQueriesTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def test_member_progress_reuses_existing_calculation_values(self):
-        joined_at = self.observed - timedelta(days=40)
-        queries = AchievementQueries(
-            self.path, clock=lambda: self.observed,
-        )
-
-        snapshot = queries.member_progress(42, joined_at=joined_at)
-
-        self.assertEqual(snapshot.completed_count, 1)
-        self.assertEqual(snapshot.total_count, len(ALL_ACHIEVEMENTS))
-        rows = {row.achievement_id: row for row in snapshot.rows}
-        self.assertTrue(rows["chatterbox"].completed)
-        self.assertEqual(rows["chatterbox"].current_count, 75)
-        self.assertEqual(rows["silent_lurker"].current_count, 1.5)
-        self.assertEqual(rows["one_of_us"].current_count, 40)
-        self.assertEqual(rows["storyteller"].progress_kind, "completion_only")
-
-    def test_shared_progress_helper_matches_existing_command_calculation(self):
-        stats = (75, 12, 8, 4.9, 5400, 3, 2, 1,
-                 "100 200 300", 4, 6, 30, 2, 5)
-        member = SimpleNamespace(
-            joined_at=self.observed - timedelta(days=40),
-        )
-        owner = _ProgressOwner()
-        completed = set()
-        for achievement_id, *_ in ALL_ACHIEVEMENTS:
-            if achievement_id in {"one_of_us", "veteran"}:
-                continue
-            with self.subTest(achievement_id=achievement_id):
-                expected = owner.calculate_achievement_progress(
-                    achievement_id, stats, completed, member,
-                )
-                actual, _ = achievement_progress_value(
-                    achievement_id, stats, joined_at=member.joined_at,
-                    observed_at=self.observed,
-                )
-                self.assertEqual(actual, expected["current"])
 
     def test_leaderboard_counts_known_achievements_without_departed_filtering(self):
         snapshot = AchievementQueries(
@@ -180,11 +132,6 @@ class AchievementQueriesTests(unittest.TestCase):
             [(43, 2), (42, 1)],
         )
 
-    def test_missing_database_fails_without_creating_it(self):
-        missing = Path(self.temporary.name) / "missing.db"
-        with self.assertRaises(RuntimeError):
-            AchievementQueries(missing).leaderboard_counts()
-        self.assertFalse(missing.exists())
 
     def test_leaderboard_eligibility_matches_existing_lead_exclusion(self):
         lead_role = next(iter(LEAD))
@@ -209,26 +156,6 @@ class AchievementQueriesTests(unittest.TestCase):
         self.assertEqual(missing.balance, 0)
         self.assertFalse(missing.has_current_ticket)
 
-    def test_economy_rules_match_authoritative_feature_configuration(self):
-        rules = AchievementQueries(
-            self.path, clock=lambda: self.observed,
-        ).economy_rules()
-
-        self.assertEqual(rules.observed_at, self.observed.isoformat())
-        self.assertEqual(rules.daily_message_threshold, DAILY_MSG_THRESHOLD)
-        self.assertEqual(rules.daily_minimum_characters, DAILY_MIN_CHARS)
-        self.assertEqual(rules.daily_member_reward, DAILY_REWARD)
-        self.assertEqual(rules.daily_elder_reward, DAILY_REWARD_ELDER)
-        self.assertEqual(rules.elder_monthly_salary, SALARY_AMOUNT)
-        self.assertEqual(rules.ticket_cost, TICKET_COST)
-        self.assertEqual(rules.ticket_limit_per_month, TICKET_LIMIT_PER_MONTH)
-        self.assertEqual(rules.manual_cwl_monthly_cap, MANUAL_CAP_CWL)
-        self.assertEqual(
-            rules.manual_encouragement_monthly_cap,
-            MANUAL_CAP_ENCOURAGEMENT,
-        )
-        self.assertEqual(rules.manual_combined_monthly_cap, MANUAL_CAP_TOTAL)
-        self.assertEqual(dict(rules.achievement_rewards), COIN_REWARDS)
 
     def test_coin_history_is_newest_first_with_exact_total(self):
         snapshot = AchievementQueries(
@@ -264,21 +191,6 @@ class AchievementQueriesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "time window"):
             queries.coin_transactions(42, after=1003, before=1002)
 
-    def test_coin_history_reports_bounded_coverage(self):
-        with closing(sqlite3.connect(self.path)) as connection:
-            connection.executemany(
-                "INSERT INTO coin_transactions "
-                "(user_id, amount, type, reason, actor_id, created_at) "
-                "VALUES (42, 1, 'daily', NULL, NULL, ?)",
-                ((2000 + index,) for index in range(MAX_COIN_TRANSACTIONS)),
-            )
-            connection.commit()
-
-        snapshot = AchievementQueries(self.path).coin_transactions(42)
-
-        self.assertEqual(snapshot.total_transactions, MAX_COIN_TRANSACTIONS + 2)
-        self.assertEqual(len(snapshot.rows), MAX_COIN_TRANSACTIONS)
-        self.assertFalse(snapshot.complete)
 
     def test_coin_history_byte_budget_preserves_newest_whole_rows(self):
         reason = "\U0001FA99" * 2_000

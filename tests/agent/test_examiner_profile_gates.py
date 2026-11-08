@@ -9,9 +9,7 @@ from unittest.mock import Mock
 from elbow_helper.configuration import roles
 from elbow_helper.configuration.channels import EXAMINATION_PANEL_THREAD
 from elbow_helper.agent.access import AgentAccessLost, require_evidence_access
-from elbow_helper.agent.capabilities.examination.examiner_profile import (
-    prepare_examiner_profile,
-)
+from elbow_helper.agent.tool_support.adapters.examination.examiner_profile import prepare_examiner_profile
 from elbow_helper.agent.actions.contracts import ActionRefused
 from elbow_helper.agent.engine.capability_contract import compile_capability_call
 from elbow_helper.agent.engine.registry import build_agent_tools

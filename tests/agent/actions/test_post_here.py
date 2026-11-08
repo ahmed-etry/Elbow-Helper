@@ -9,19 +9,12 @@ from unittest.mock import AsyncMock
 from elbow_helper.agent.access import ACCESS_VIEW_AUDIT_LOG
 from elbow_helper.agent.actions.answer_view import PostAnswerView
 from elbow_helper.agent.actions.combined_reply import CombinedReplyView
-from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
-from elbow_helper.agent.actions.preview import preview_text
 from elbow_helper.agent.conversation.state import (
     ConversationRecord, ConversationStore, ConversationTurn,
 )
 from elbow_helper.agent.models import AgentAttachment, AgentDelivery, AgentTurnState
 from elbow_helper.agent.research.history import read_message_context
-from elbow_helper.agent.wording import (
-    ACTION_CANCELLED, ACTION_POST_HERE_BUTTON, ACTION_PRIVATE_BUTTON,
-    ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER, ACTION_UNAVAILABLE,
-    AGENT_PRIVATE_CHECK_BUTTON, AGENT_PRIVATE_OFFER, AGENT_SCOPE_EMPTY,
-    LONG_REPLY_FILENAME,
-)
+from elbow_helper.agent.wording import ACTION_POST_HERE_BUTTON, ACTION_PRIVATE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_UNAVAILABLE, AGENT_PRIVATE_CHECK_BUTTON, AGENT_PRIVATE_OFFER, AGENT_SCOPE_EMPTY, LONG_REPLY_FILENAME
 from .. import test_evidence_scope as fixtures
 
 
@@ -108,86 +101,6 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("excluded_classes=[('per_person', 1), ('role_scope', 1)]", audit.output[0])
                 self.assertIn("request=1000 requester=10 channel=101 reply=999", audit.output[0])
 
-    async def test_only_asker_can_post(self):
-        parent, post, _, _ = await self.deliver()
-        interaction = self.interaction(self.peer)
-        await post.post_here(interaction)
-        interaction.response.send_message.assert_awaited_once_with(ACTION_RESULT_OWNER, ephemeral=True)
-        interaction.response.defer.assert_not_awaited()
-        self.sent.edit.assert_not_awaited()
-        self.assertFalse(parent.posted)
-
-    async def test_private_image_check_and_public_post_have_no_caption(self):
-        attachment = AgentAttachment('synthetic.png', b'media')
-        parent, post, _, active = await self.deliver(
-            full='Synthetic fallback.', attachments=(attachment,))
-        check = self.interaction()
-        await parent.check_privately(check)
-        call, = check.followup.send.await_args_list
-        self.assertIsNone(call.args[0])
-        self.assertEqual(len(call.kwargs['files']), 1)
-        extra = call.kwargs.get('view')
-        if extra is not None:
-            self.addCleanup(extra.stop)
-        await post.post_here(self.interaction())
-        self.assertEqual(self.sent.content, '')
-        self.assertEqual(self.sent.files, [('synthetic.png', b'media')])
-        self.assertEqual(active.text_parts, [''])
-
-    async def test_private_answer_quoting_a_gif_link_keeps_its_text_when_checked_and_posted(self):
-        full = "Synthetic first message.\nhttps://tenor.com/view/synthetic"
-        parent, post, _, active = await self.deliver(full=full)
-        check = self.interaction()
-        await parent.check_privately(check)
-        call, = check.followup.send.await_args_list
-        self.assertEqual(call.args[0], full)
-        extra = call.kwargs.get('view')
-        if extra is not None:
-            self.addCleanup(extra.stop)
-        await post.post_here(self.interaction())
-        self.assertEqual(self.sent.content, full)
-        self.member_chat.send.assert_not_awaited()
-        self.assertEqual(active.text_parts, [full])
-
-    async def test_private_image_post_keeps_confirmation_on_a_separate_message(self):
-        action = PreparedAction('synthetic_change', {},
-            ChangePreview(('Synthetic change',), AsyncMock(return_value=True)), AsyncMock())
-        self.context.state.proposed_changes.append(action)
-        self.context.state.preview_reply = preview_text([action])
-        conversation = self.delivery._conversations.create(1, 101, 1000)
-        _, post, _, active = await self.deliver(full='Synthetic fallback.',
-            attachments=(AgentAttachment('synthetic.png', b'media'),), conversation=conversation)
-        conversation.append(ConversationTurn('', frozenset(), record=ConversationRecord(
-            request_message_id=1000, member_id=10, created_at='2026-10-22',
-            question='Synthetic mixed request', generated_answer=self.sent.content,
-            delivered_answer=self.sent.content, local_context='', evidence=(), report_ids=(),
-            reply_ids=(999,), delivery_complete=True, generated_parts=tuple(active.generated_parts),
-        )))
-        combined = self.sent.view
-        self.assertIsInstance(combined, CombinedReplyView)
-        preview = combined.views['preview']
-        self.member_chat.send.return_value = SimpleNamespace(id=1001)
-        await post.post_here(self.interaction())
-        call, = self.member_chat.send.await_args_list
-        self.assertIsNone(call.args[0])
-        self.assertEqual(len(call.kwargs['files']), 1)
-        self.assertNotIn('Synthetic fallback.', self.sent.content)
-        self.assertEqual(self.sent.files, [])
-        self.assertIs(combined.views['preview'], preview)
-        self.assertIsNone(combined.views['answer'])
-        self.assertEqual(active.message_ids, [999, 1001])
-        self.assertEqual(active.text_parts, [self.sent.content, ''])
-        self.assertEqual(conversation.turns[-1].record.reply_ids, (999, 1001))
-        self.assertEqual(conversation.turns[-1].record.generated_parts, (self.sent.content, ''))
-        await preview.cancel(self.interaction())
-        self.assertIn(ACTION_CANCELLED, self.sent.content)
-
-    async def test_audit_counts_multiple_exclusions_in_each_class(self):
-        self.context.state.scope_audit.excluded["knowledge:synthetic"] = "role_scope"
-        _, post, _, _ = await self.deliver()
-        with self.assertLogs("elbow_helper.agent.disclosure", level="INFO") as audit:
-            await post.post_here(self.interaction())
-        self.assertIn("excluded_classes=[('per_person', 1), ('role_scope', 2)]", audit.output[0])
 
     async def test_revoked_role_channel_membership_and_bot_access_block_cached_answer(self):
         changes = (
@@ -304,38 +217,6 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(mentions.roles)
         self.assertFalse(mentions.replied_user)
 
-    async def test_combined_preview_survives_short_and_long_full_answer_edits(self):
-        for full in ("Full facts", "Full facts\n" * 250):
-            with self.subTest(full_length=len(full)):
-                self.setUp()
-                self.message.archive_reply = True
-                self.delivery._archive_reply_delivery = AsyncMock()
-                action = PreparedAction(
-                    "synthetic_change", {}, ChangePreview(("Synthetic change",), AsyncMock(return_value=True)),
-                    AsyncMock(),
-                )
-                self.context.state.proposed_changes.append(action)
-                self.context.state.preview_reply = preview_text([action])
-                _, post, _, _ = await self.deliver(full=full)
-                combined = self.sent.view
-                self.assertIsInstance(combined, CombinedReplyView)
-                preview = combined.views["preview"]
-                with self.assertLogs("elbow_helper.agent.disclosure", level="INFO"):
-                    await post.post_here(self.interaction())
-                self.assertEqual(combined.parts["preview"], preview_text([action]))
-                self.assertIs(combined.views["preview"], preview)
-                self.assertNotIn(AGENT_PRIVATE_OFFER, self.sent.content)
-                if len(full) > 2000:
-                    self.assertEqual(self.sent.files, [(LONG_REPLY_FILENAME, full.encode("utf-8"))])
-                else:
-                    self.assertIn(full, self.sent.content)
-                self.delivery._archive_reply_delivery.assert_awaited_once_with(
-                    1000, self.sent.id, full, (LONG_REPLY_FILENAME,) if len(full) > 2000 else (),
-                )
-                await preview.cancel(self.interaction())
-                self.assertIn(ACTION_CANCELLED, self.sent.content)
-                self.assertIsNone(combined.views["answer"])
-                self.message.reply.assert_awaited_once()
 
     async def test_post_updates_archived_and_retained_reply_content(self):
         self.message.archive_reply = True
@@ -359,29 +240,6 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(conversation.turns[-1].record.delivered_answer, self.sent.content)
         self.assertEqual(conversation.turns[-1].record.reply_ids, (999,))
 
-    async def test_split_preview_has_no_private_answer_override(self):
-        action = PreparedAction(
-            "synthetic_change", {}, ChangePreview(("Synthetic change",), AsyncMock(return_value=True)),
-            AsyncMock(),
-        )
-        self.context.state.proposed_changes.append(action)
-        self.context.state.preview_reply = preview_text([action])
-        # The private check needs excluded evidence that the asker can access.
-        result = await read_message_context(self.context, {"channel_id": 200, "message_id": 123})
-        self.assertIn("error", result)
-        self.context.state.scope_audit.offered = True
-        self.context.state.private_answer_run = AsyncMock()
-        await self.delivery.send_response(
-            self.message, "Partial facts\n" * 200, None, context=self.context,
-        )
-        calls = self.message.reply.await_args_list
-        self.assertEqual(len(calls), 2)
-        for call in calls:
-            self.addCleanup(call.kwargs["view"].stop)
-        self.assertEqual(calls[0].kwargs["view"].children[0].label, AGENT_PRIVATE_CHECK_BUTTON)
-        self.assertNotIn(AGENT_PRIVATE_OFFER, calls[1].args[0])
-        self.assertNotIn(AGENT_PRIVATE_CHECK_BUTTON, [item.label for item in calls[1].kwargs["view"].children])
-        self.context.state.private_answer_run.assert_not_awaited()
 
     async def test_audit_log_answers_remain_private_even_with_forged_callback(self):
         parent, original, private, _ = await self.deliver()

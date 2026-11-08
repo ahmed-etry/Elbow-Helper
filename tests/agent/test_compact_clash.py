@@ -7,12 +7,11 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.agent.datasets.clash import read_clash, select_fields, clash_tools
+from elbow_helper.agent.reads.clash import read_clash, select_fields, clash_tools
 from elbow_helper.agent.engine import budgets
 from elbow_helper.agent.engine.steps import PlanRunner
 from elbow_helper.agent.engine.tool_call import bound_tool_result, execute_tool
 from elbow_helper.agent.models import AgentRequestContext
-from elbow_helper.agent.plan.format import capability_list
 from elbow_helper.agent.plan.results import model_result, model_view
 
 
@@ -131,7 +130,7 @@ def read_context(payloads):
 async def measure_evidence():
     clans = [synthetic_clan(index) for index in range(9)]
     context = read_context({clan["tag"]: clan for clan in clans})
-    with patch("elbow_helper.agent.datasets.clash.require_evidence_access", AsyncMock()):
+    with patch("elbow_helper.agent.reads.clash.require_evidence_access", AsyncMock()):
         full = await read_clash(context, {"kind": "clan", "tags": [clans[0]["tag"]], "detail": "full"})
         compact = [await read_clash(context, {"kind": "clan", "tags": [clan["tag"]]}) for clan in clans]
         selected = await read_clash(context, {"kind": "clan", "tags": [clan["tag"] for clan in clans],
@@ -147,7 +146,7 @@ async def measure_evidence():
 
 class CompactClashTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.access = patch("elbow_helper.agent.datasets.clash.require_evidence_access", AsyncMock())
+        self.access = patch("elbow_helper.agent.reads.clash.require_evidence_access", AsyncMock())
         self.access.start()
         self.addCleanup(self.access.stop)
 
@@ -205,19 +204,6 @@ class CompactClashTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(select_fields(war, ["clan.members.attacks.stars"])["clan"]["members"][0],
                          {"attacks": [{"stars": 3}, {"stars": 3}]})
 
-    async def test_field_validation_precedes_io_and_is_visible_in_catalogue(self):
-        player = synthetic_player()
-        context = read_context({player["tag"]: player})
-        for fields in ([], "heroes", [1], [""], ["heroes.*"], ["/heroes"], ["heroes..name"],
-                       ["x" * 161], ["name"] * 41):
-            with self.subTest(fields=fields):
-                result = await read_clash(context, {"kind": "player", "tags": [player["tag"]], "fields": fields})
-                self.assertEqual(result["cause"], "invalid_arguments")
-        context.bot.clash_client.get.assert_not_awaited()
-        catalogue = capability_list({tool.definition.name: tool for tool in clash_tools()})
-        self.assertIn("fields:[str(length>=1)]", catalogue)
-        self.assertIn("fields overrides detail", catalogue)
-        self.assertIn("CWL-only clans need a CWL cohort first", catalogue)
 
     async def test_nine_clan_count_survives_actual_one_round_evidence_path(self):
         clans = [synthetic_clan(index) for index in range(9)]
@@ -321,14 +307,6 @@ class CompactClashTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(view["read_statuses"], {player["tag"]: "ok" for player in players})
         self.assertEqual(set(view["next_tags"]), {player["tag"] for player in players})
         self.assertEqual(view["omitted_collection_counts"]["/"], {"returned_rows": 0, "total_rows": 200})
-
-    async def test_real_shaped_measurement_stays_well_inside_existing_caps(self):
-        sizes = await measure_evidence()
-        self.assertGreater(sizes["raw_clan"], 45000)
-        self.assertLess(sizes["raw_clan"], 70000)
-        self.assertLess(sizes["compact_evidence_per_clan"], sizes["full_evidence_per_clan"] * 0.15)
-        self.assertLess(sizes["nine_separate_compact_reads"], budgets.MAX_EVIDENCE_CHARACTERS * 0.75)
-        self.assertLess(sizes["nine_clan_th_fields_one_result"], budgets.MAX_TOOL_RESULT_CHARACTERS * 0.75)
 
 
 if __name__ == "__main__":

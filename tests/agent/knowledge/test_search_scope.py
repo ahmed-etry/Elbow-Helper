@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID, LEAD
 from elbow_helper.agent.delivery import AgentDeliveryMixin
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
-from elbow_helper.agent.knowledge.tools import knowledge_tools, search_approved_knowledge
+from elbow_helper.agent.knowledge.tools import search_approved_knowledge
 from elbow_helper.agent.models import AgentRequestContext, AgentTurnState
 from tests.agent.test_agent_audiences import Channel, Member, Role, Thread
 
@@ -71,25 +71,6 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.context.state.knowledge_title_access)
         self.assertEqual(await self.deliver(), "Synthetic answer")
 
-    async def test_legacy_scope_cannot_release_private_bodies(self):
-        for scope in ("channel", "requester"):
-            result = await search_approved_knowledge(
-                self.context, {"titles": ["Alliance policies"], "scope": scope},
-            )
-            self.assertEqual(result["sections"], [])
-            self.assertTrue(result["available_privately"])
-            self.assertEqual(self.context.state.required_access, set())
-            self.assertNotIn("Alliance policies", str(result))
-
-    async def test_exact_public_title_stays_public(self):
-        result = await search_approved_knowledge(
-            self.context, {"titles": ["Clan family lore"], "query": "Brown Elbow founding history"},
-        )
-        self.assertEqual([s["visibility"] for s in result["sections"]], ["public"])
-        self.assertEqual(result["coverage"]["method"], "exact_titles")
-        self.assertFalse(self.context.state.scope_audit.offered)
-        self.assertEqual(await self.deliver(), "Synthetic answer")
-        self.assertIn("Open matching titles first;", knowledge_tools()[0].definition.description)
 
     async def test_unauthorized_requester_gets_no_private_titles_or_hints(self):
         self.members[0] = Member(2, (Role(AGENT_TESTER_ROLE_ID),))

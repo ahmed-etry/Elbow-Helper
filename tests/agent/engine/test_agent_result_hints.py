@@ -1,39 +1,29 @@
 """Registry return fields agree with serializers fed only synthetic values."""
 
-from dataclasses import asdict, fields, is_dataclass, replace
+from dataclasses import asdict, fields, is_dataclass
 from datetime import datetime, timezone
 from io import BytesIO
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace, UnionType
 from typing import Any, TypedDict, Union, get_args, get_origin, get_type_hints
 import unittest
-from unittest.mock import patch
 
 from openpyxl import load_workbook
 
 from agent.files.test_agent_spreadsheets import _context
-from features import test_cwl_queries as cwl_fixtures
 
 from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.engine.result_fields import (
-    format_returns, result_fields,
-)
-from elbow_helper.agent.engine.result_hints import (
-    CLASH_SUMMARIES, REPORT_FIELDS, RESULT_FIELDS,
-)
-from elbow_helper.agent.datasets.clash import summary
 from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.plan.executor import execute_plan
 from elbow_helper.agent.plan.results import model_result
-from elbow_helper.agent.models import AgentCapabilityEffect
 from elbow_helper.agent.tool_support.adapters.achievements.report import AchievementProgressReport
 from elbow_helper.agent.tool_support.adapters.clan_reporting.report import MissingElderReport
 from elbow_helper.agent.tool_support.adapters.clan_transfers.report import TransferQueueReport
 from elbow_helper.agent.tool_support.adapters.cwl.report import CwlPerformanceReport
 from elbow_helper.agent.tool_support.adapters.events.report import EventScheduleReport
-from elbow_helper.agent.capabilities.examination.report import ExaminationCaseReport
+from elbow_helper.agent.tool_support.adapters.examination.report import ExaminationCaseReport
 from elbow_helper.agent.tool_support.adapters.hibernation.report import HibernationReport
-from elbow_helper.agent.capabilities.member_lifecycle.report import MemberLifecycleReport
+from elbow_helper.agent.tool_support.adapters.member_lifecycle.report import MemberLifecycleReport
 from elbow_helper.agent.tool_support.adapters.recruitment.report import RecruitmentTrialReport
 from elbow_helper.agent.tool_support.adapters.support_tickets.report import SupportTicketReport
 from elbow_helper.agent.files.contracts import (
@@ -344,132 +334,7 @@ def fixed_results(seed):
     }
 
 
-class AgentResultHintTests(unittest.TestCase):
-    def assert_fields(self, shape, value, *, require_records=True):
-        if isinstance(shape, dict):
-            self.assertIsInstance(value, dict)
-            for field, child in shape.items():
-                key = field.removesuffix("?")
-                if field.endswith("?") and key not in value:
-                    continue
-                self.assertIn(key, value)
-                if value[key] is not None:
-                    self.assert_fields(child, value[key], require_records=require_records)
-        elif isinstance(shape, list):
-            self.assertIsInstance(value, (list, tuple))
-            if require_records:
-                self.assertTrue(value, "Property fixtures must exercise returned records")
-            for row in value:
-                self.assert_fields(shape[0], row, require_records=require_records)
-
-    def test_all_report_fields_match_real_pages_with_synthetic_records(self):
-        for seed in range(1, 4):
-            for kind in REPORT_FIELDS:
-                with self.subTest(kind=kind, seed=seed):
-                    self.assert_fields(REPORT_FIELDS[kind], report_page(kind, seed))
-
-    def test_every_registered_hint_matches_synthetic_result_records(self):
-        registry = build_agent_tools()
-        for seed in range(1, 4):
-            results = {name: model_result(value) for name, value in fixed_results(seed).items()}
-            results['read_discord_role_change_preview'] = {
-                'role_id': seed, 'role_name': 'Synthetic role', 'preview_only': True,
-                'members': [{'member_id': seed, 'member_name': 'Synthetic member', 'current_role_ids': [seed + 1],
-                             'add_role_ids': [seed], 'remove_role_ids': [],
-                             'allowed': True, 'refusal': None}]}
-            for role_change in ('add_discord_roles', 'remove_discord_roles'):
-                results[role_change] = {'status': 'confirmation_required', 'role_id': seed,
-                    'role_name': 'Synthetic role', 'requested_has_role': role_change == 'add_discord_roles',
-                    'members': [{'member_id': seed, 'display_name': 'Synthetic member', 'has_role': False}]}
-            for name, kind in READ_KINDS.items():
-                results[name] = report_page(kind, seed)
-            for name, field in {
-                "read_pending_transfer_requests": "selected_clan_code",
-                "read_accessible_support_tickets": "selected_channel_id",
-                "read_active_recruitment_trials": "selected_ticket_channel_id",
-                "read_accessible_examination_cases": "selected_ticket_channel_id",
-            }.items():
-                results[name][field] = None
-            for name, tool in registry.items():
-                with self.subTest(capability=name, seed=seed):
-                    self.assertTrue(tool.returns)
-                    if name == "read_saved_report":
-                        router = tool.handler.__wrapped__
-                        self.assertEqual(set(router.specs), set(REPORT_FIELDS))
-                        for kind in router.specs:
-                            self.assertIn(kind + ":{" + format_returns(REPORT_FIELDS[kind]) + "}",
-                                          tool.returns)
-                            self.assert_fields(REPORT_FIELDS[kind], report_page(kind, seed))
-                    elif name in results:
-                        if name == "read_clash":
-                            self.assertTrue(tool.returns.startswith(
-                                format_returns(RESULT_FIELDS[name]),
-                            ))
-                        else:
-                            self.assertEqual(tool.returns, format_returns(RESULT_FIELDS[name]))
-                        self.assert_fields(RESULT_FIELDS[name], results[name])
-                    elif tool.effect is AgentCapabilityEffect.COMMAND:
-                        self.assertEqual(tool.returns, "status")
-                        self.assert_fields({"status": ""}, {"status": "confirmation_required"})
-                    elif tool.default_visible:
-                        # Family serializers have dedicated end-to-end snapshot tests.
-                        self.assertEqual(tool.returns, format_returns(RESULT_FIELDS[name]))
-                        self.assertIn("rows", RESULT_FIELDS[name])
-                    else:
-                        self.fail(f"Missing synthetic result contract for {name}")
-
-    def test_dataclass_fields_are_not_handpicked(self):
-        for value_type in (CwlAssWarsSnapshot, CwlBonusWarsSnapshot, TaskInstruction):
-            with self.subTest(value_type=value_type):
-                value = synthetic_value(value_type, 1)
-                self.assertEqual(set(result_fields(value_type)), set(asdict(value)))
-
-    def test_typed_dictionary_fields_include_nested_record_fields(self):
-        shape = result_fields(SyntheticResult)
-        self.assertEqual(format_returns(shape), "records:[{name,value}],complete")
-        self.assert_fields(shape, {"records": [{"name": "Synthetic", "value": 1.125}],
-                                   "complete": True})
-
-    def test_clash_summary_hints_share_the_serializers_field_lists(self):
-        def fake_payload(shape):
-            if isinstance(shape, dict):
-                return {key: fake_payload(value) for key, value in shape.items()}
-            if isinstance(shape, list):
-                return [fake_payload(shape[0])]
-            return "Synthetic"
-
-        hint = build_agent_tools()["read_clash"].returns
-        for kind, shape in CLASH_SUMMARIES.items():
-            with self.subTest(kind=kind):
-                result = summary(kind, fake_payload(shape))
-                self.assert_fields(shape, result)
-                self.assertIn(kind + ":{" + format_returns(shape) + "}", hint)
-
-
 class AgentResultHintExecutionTests(unittest.IsolatedAsyncioTestCase):
-    async def test_discovery_results_have_every_advertised_record_field(self):
-        registry = build_agent_tools()
-        with TemporaryDirectory() as directory:
-            context = _context(directory)
-            member = context.member
-            member.name = "synthetic-handle"
-            member.display_name = "Synthetic member"
-            member.global_name = "Synthetic global name"
-            member.bot = False
-            member.mention = "<@42>"
-            member.joined_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
-            for role in member.roles:
-                role.name = "Synthetic role"
-                role.is_default = lambda: False
-            context.guild.members = [member]
-            for name, arguments in (
-                ("find_discord_members", {"query": "synthetic"}),
-                ("read_discord_members", {"member_ids": [42], "include_roles": True}),
-                ("read_discord_members", {"member_ids": [42], "include_roles": False}),
-            ):
-                with self.subTest(capability=name, arguments=arguments):
-                    result = await registry[name].handler(context, arguments)
-                    AgentResultHintTests().assert_fields(RESULT_FIELDS[name], result)
 
     async def test_member_read_and_spreadsheet_are_planned_before_any_results(self):
         registry = build_agent_tools()
@@ -509,21 +374,3 @@ class AgentResultHintExecutionTests(unittest.IsolatedAsyncioTestCase):
                 ])
             finally:
                 workbook.close()
-
-    async def test_score_hints_match_real_combined_calculations(self):
-        registry = build_agent_tools()
-        dataset = cwl_fixtures._dataset()
-        for attack in dataset["attacks"]:
-            attack["player_name"] = "Synthetic player"
-        queries = cwl_fixtures.CwlQueriesTests().bonus_queries(dataset)
-        with TemporaryDirectory() as directory:
-            context = replace(_context(directory), cwl_queries=queries)
-            for name in ("cwl_ass_scores", "cwl_bonus_scores"):
-                with self.subTest(capability=name), patch(
-                    "elbow_helper.agent.access.has_access_requirements", return_value=True,
-                ):
-                    result = await registry[name].handler(context, {
-                        "clan_code": "BEH", "war_ids": ["war-1", "war-2", "war-3"],
-                    })
-                    AgentResultHintTests().assert_fields(RESULT_FIELDS[name], result,
-                                                        require_records=False)

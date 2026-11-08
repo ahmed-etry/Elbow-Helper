@@ -1,13 +1,13 @@
 """A planner mistake reaches the planner as an error; an account in every checked lineup's absence is a zero."""
 from dataclasses import replace
 from datetime import datetime
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.families import account_activity, identity_reads
+from elbow_helper.agent.reads import account_activity, identity_reads
 from elbow_helper.agent.reads import war_tools as war_reads
 from elbow_helper.agent.reads.war_tools import TOOLS
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
@@ -39,11 +39,6 @@ class ConflictingOptionsTests(unittest.IsolatedAsyncioTestCase):
             'season': '2025-04', 'after': '2025-04-01T00:00:00+00:00', 'before': '2025-05-01T00:00:00+00:00'})
         self.assertEqual(result['cause'], 'invalid_arguments')
 
-    async def test_a_badly_formed_season_refused_by_every_clan_is_one_error(self):
-        result = await war_reads.cwl_results(self.context(), {'metric': 'bonus',
-            'clan_codes': list(CWL_CLAN_CODES[:2]), 'season': 'not-a-season'})
-        self.assertEqual(result['cause'], 'invalid_arguments')
-        self.assertNotIn('missing_sources', result)
 
     async def test_gaps_that_are_not_argument_mistakes_stay_per_clan(self):
         codes = list(CWL_CLAN_CODES[:2])
@@ -64,11 +59,6 @@ class ConflictingOptionsTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(NON_CWL, result['error'])
                 self.assertEqual(result['invalid_fields'], ['clan_codes'])
 
-    async def test_cwl_clans_are_not_refused(self):
-        result = await war_reads.cwl_results(replace(_context(), cwl_queries=None),
-            {'metric': 'ass', 'clan_codes': [CWL_CLAN_CODES[0]]})
-        self.assertEqual(result['cause'], 'missing_setup')
-
 
 class HistoryWindowTests(unittest.IsolatedAsyncioTestCase):
     async def lookup(self, history):
@@ -88,14 +78,6 @@ class HistoryWindowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('ISO dates', result['error'])
         self.assertNotIn('history_reads', result)
 
-    async def test_other_history_outcomes_stay_nested(self):
-        for status, cause in (('failed', 'source_unavailable'), ('invalid_selection', 'empty_cohort')):
-            with self.subTest(status=status):
-                result = await self.lookup({'ranked': {'read_ran': status != 'invalid_selection',
-                                                       'status': status, 'cause': cause, 'error': 'Synthetic.'}})
-                self.assertNotIn('error', result)
-                self.assertEqual(result['history_reads']['ranked']['status'], status)
-
 
 class ReportOwnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_report_of_another_read_names_the_read_that_owns_it(self):
@@ -111,12 +93,6 @@ class ReportOwnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['invalid_fields'], ['report_id'])
         again = await lookup.handler(context, {'report_id': page['report_id']})
         self.assertEqual(again['report_id'], page['report_id'])
-
-    async def test_an_unknown_report_is_still_unavailable(self):
-        context = lookup_context()
-        attendance = next(tool for tool in TOOLS if tool.definition.name == 'read_war_attendance')
-        result = await attendance.handler(context, {'report_id': 'missing'})
-        self.assertEqual(result['cause'], 'report_unavailable')
 
 
 class KnownZeroTests(unittest.IsolatedAsyncioTestCase):

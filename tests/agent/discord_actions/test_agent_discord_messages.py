@@ -1,7 +1,7 @@
 """Message actions record their own posts and refuse unrelated messages."""
 
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch

@@ -11,7 +11,7 @@ import discord
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.clans import CLAN_CODES_BY_NAME
 
-from .rendering import build_war_summary_embed
+from elbow_helper.infrastructure.discord.war_boards import build_war_summary_embed
 
 LOGGER = logging.getLogger(__name__)
 

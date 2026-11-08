@@ -1,4 +1,4 @@
-﻿"""Main clan transfers cog lifecycle and slash-command wiring."""
+"""Main clan transfers cog lifecycle and slash-command wiring."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ class ClanTransfers(ClanTransferQueueMixin, ClanTransfersCommandMixin, commands.
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.logger = logging.getLogger(__name__)
-        self.state_store = TransferState(bot.workflow_events, clock=self._now)
+        self.state_store = TransferState(bot.workflow_events)
         self.queries = ClanTransferQueries(lambda: self.state, clock=self._now)
         self.locks = {code: asyncio.Lock() for code in CLAN_TRANSFER_QUEUES}
         self.global_lock = asyncio.Lock()

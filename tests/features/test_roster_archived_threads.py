@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-import tempfile
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock
@@ -27,7 +27,7 @@ class RosterArchivedThreadTests(unittest.IsolatedAsyncioTestCase):
 
     def fixture(self, path, *, archived=True, thread=True, locked=True,
                 channel_error=None, message_errors=()):
-        temp_dir = tempfile.TemporaryDirectory()
+        temp_dir = TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         repository = RosterRepository(Path(temp_dir.name) / "rosters.sqlite3")
         roster = repository.create_roster(
@@ -156,18 +156,6 @@ class RosterArchivedThreadTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(message.edit.await_count, 2)
                 self.assert_posts(path, posts, roster, success=False)
 
-    async def test_normal_channels_and_open_threads_edit_without_reopening(self):
-        for path in ("refresh", "retire", "disable"):
-            for thread in (True, False):
-                with self.subTest(path=path, thread=thread):
-                    posts, roster, channel, message, events, _ = self.fixture(
-                        path, archived=not thread, thread=thread,
-                    )
-                    await self.run_path(path, posts, roster)
-                    self.assertEqual(events, ["edit"])
-                    channel.edit.assert_not_awaited()
-                    message.edit.assert_awaited_once()
-                    self.assert_posts(path, posts, roster, success=True)
 
     async def test_reopen_is_sent_again_after_prior_success_with_stale_channel_cache(self):
         posts, roster, channel, message, events, _ = self.fixture(

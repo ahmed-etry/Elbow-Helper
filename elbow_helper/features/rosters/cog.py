@@ -65,10 +65,10 @@ from .services.scheduling import parse_day_rule
 from .ui.views import AccountPickerView
 from .ui.views import ConfirmClearView
 from .ui.views import ConfirmDeleteView
-from .ui.views import RosterLayoutView
-from .ui.views import ROSTER_LAYOUT_PROMPT
-from .ui.views import roster_layout_columns_feedback
-from .ui.views import roster_layout_lengths_feedback
+from .ui.layout import RosterLayoutView
+from .ui.layout import ROSTER_LAYOUT_PROMPT
+from .ui.layout import roster_layout_columns_feedback
+from .ui.layout import roster_layout_lengths_feedback
 from .ui.views import RosterRemovalView
 from .ui.views import RosterSettingsView
 from .ui.views import RosterTargetMemberView

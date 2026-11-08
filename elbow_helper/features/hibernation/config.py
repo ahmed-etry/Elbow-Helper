@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 
 from elbow_helper.configuration.clans import CLAN_MEMBER_ROLE_IDS, CLAN_NAMES
 from elbow_helper.configuration.roles import (
@@ -14,7 +13,6 @@ from elbow_helper.configuration.roles import (
     SLEEPING_CROSS_ROLE_ID,
 )
 
-STATE_FILE = Path("data/hibernation/hibernation.json")
 FALLBACK_THREAD_PREFIX = "Hibernation "
 FALLBACK_THREAD_NAME_LIMIT = 100
 FALLBACK_THREAD_ARCHIVE_DURATIONS = (10080, 4320, 1440, 60)

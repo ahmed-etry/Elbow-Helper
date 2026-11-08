@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.families.identity_reads import TOOLS
+from elbow_helper.agent.reads.identity_reads import TOOLS
 from agent.engine.test_agent_plan_flow import _context
 
 

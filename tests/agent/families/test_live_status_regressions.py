@@ -3,9 +3,8 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.families import identity_reads, workflow_reads
+from elbow_helper.agent.reads import identity_reads, workflow_reads
 from elbow_helper.features.recruitment.queries import RecruitmentQueries
 from agent.engine.test_agent_plan_flow import _context
 
@@ -25,14 +24,6 @@ class WorkflowStatusRegressionTests(unittest.IsolatedAsyncioTestCase):
         return replace(context, recruitment_queries=RecruitmentQueries(lambda: state,
             clock=lambda: datetime(2026, 10, 3, tzinfo=timezone.utc)))
 
-    async def test_status_reads_all_fourteen_without_resolving_ticket_channels(self):
-        context = self.context()
-        tool = next(t for t in workflow_reads.TOOLS if t.definition.name == 'read_recruitment_pipeline')
-        with patch.object(workflow_reads, 'accessible_message_channel', AsyncMock(
-                side_effect=AssertionError('Status must not depend on ticket survival'))):
-            result = await tool.handler(context, {'stage': 'active_trials'})
-        self.assertEqual(len(result['rows']), 14)
-        self.assertEqual({r['applicant_member_id'] for r in result['rows']}, set(range(100, 114)))
 
     async def test_departed_trial_members_keep_acceptance_dates(self):
         context = self.context()

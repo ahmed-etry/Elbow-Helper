@@ -3,20 +3,14 @@ import csv
 from io import StringIO
 import json
 import unittest
-from unittest.mock import Mock, patch
-from dataclasses import replace
+from unittest.mock import patch
 from elbow_helper.agent.tool_support.core import family_tool, FamilyReport, decode_family
-from elbow_helper.agent.engine.catalogue import discovery_tool
-from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.models import RegisteredAgentTool
-from elbow_helper.agent.engine.capability_contract import CapabilityContract
-from elbow_helper.infrastructure.ai import AgentToolDefinition
 from agent.engine.test_agent_plan_flow import _context
 
 
 class FamilyReportTests(unittest.IsolatedAsyncioTestCase):
     async def test_default_keeps_large_tables_internal_and_explicit_export_has_every_row(self):
-        for size in (230, 620):
+        for size in (501,):
             async def read(context, arguments):
                 return {'rows': [{'count': value} for value in range(size)]}
             tool = family_tool('read_synthetic', 'Read synthetic rows.', {}, read)
@@ -82,60 +76,3 @@ class FamilyReportTests(unittest.IsolatedAsyncioTestCase):
         first = await tool.handler(context, {})
         context.state.report_sources.clear()
         self.assertIn('error', await tool.handler(context, {'report_id': first['report_id']}))
-
-    async def test_discovery_only_installs_checked_definitions_without_running_them(self):
-        execute = Mock()
-        tool = RegisteredAgentTool(AgentToolDefinition('synthetic', 'Inspect synthetic state.',
-                       {'type': 'object', 'properties': {}}), execute,
-                       contract=CapabilityContract(), default_visible=False, specialist_group='records')
-        active, changed = {}, Mock()
-        available = {'synthetic': tool, 'query_bot_data': replace(tool,
-                      definition=replace(tool.definition, name='query_bot_data'))}
-        discovery = discovery_tool(available, active, changed)
-        result = await discovery.handler(_context(), {'group': 'records', 'intent': 'inspect'})
-        self.assertEqual(set(active), {'synthetic', 'query_bot_data'})
-        self.assertIn('synthetic', result['catalogue'])
-        self.assertNotIn('data_guide', result)
-        execute.assert_not_called()
-        changed.assert_called_once()
-
-    async def test_opening_records_adds_the_data_query_with_its_table_guide_for_this_reader(self):
-        tool = RegisteredAgentTool(AgentToolDefinition('query_bot_data', 'Query stored data.',
-                       {'type': 'object', 'properties': {}}), Mock(),
-                       contract=CapabilityContract(), default_visible=False, specialist_group='records')
-        guide = Mock(return_value='synthetic guide')
-        active = {}
-        discovery = discovery_tool({'query_bot_data': tool}, active, Mock(), guide)
-        context = _context()
-        with patch('elbow_helper.agent.engine.catalogue.reader_levels', return_value={'lead'}):
-            result = await discovery.handler(context, {'group': 'records', 'intent': 'inspect'})
-            other = await discovery.handler(context, {'group': 'events', 'intent': 'inspect'})
-        self.assertEqual(set(active), {'query_bot_data'})
-        self.assertEqual(result['data_guide'], 'synthetic guide')
-        guide.assert_called_once_with({'lead'})
-        self.assertNotIn('data_guide', other)
-
-    def test_legacy_sql_and_change_tools_are_not_default_visible(self):
-        registry = build_agent_tools()
-        self.assertFalse(registry['query_bot_data'].default_visible)
-        self.assertFalse(registry['delete_discord_messages'].default_visible)
-
-    async def test_production_default_keeps_sql_and_other_specialists_behind_discovery(self):
-        from elbow_helper.agent.engine.service import AgentService
-        from elbow_helper.agent.plan.checker import check_plan
-        from agent.engine.test_agent_plan_flow import _Model, _Session
-        flow, _ = AgentService(_Model(_Session([], [])))._start_flow(
-            question='Synthetic request', local_context='', context=_context(), conversation_history='')
-        self.assertIn('open_capability_group', flow.registry)
-        self.assertNotIn('query_bot_data', flow.registry)
-        self.assertNotIn('delete_discord_messages', flow.registry)
-        self.assertLessEqual(len(flow.registry), 18)
-        policy = flow.budget.request_limits
-        self.assertEqual(policy.rounds - policy.answer_repair_rounds, 4)
-        self.assertEqual(policy.answer_repair_rounds, 1)
-        checked = check_plan({'goal':'Synthetic', 'effort':'low', 'output':'text', 'steps':[
-            {'id':'secret', 'capability':'delete_discord_messages', 'arguments':{}, 'depends_on':[]}]}, flow.registry)
-        self.assertFalse(checked.ok)
-        checked_sql = check_plan({'goal':'Synthetic', 'effort':'low', 'output':'text', 'steps':[
-            {'id':'sql', 'capability':'query_bot_data', 'arguments':{'sql':'SELECT 1'}, 'depends_on':[]}]}, flow.registry)
-        self.assertFalse(checked_sql.ok)

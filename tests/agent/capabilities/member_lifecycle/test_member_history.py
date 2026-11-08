@@ -1,15 +1,13 @@
 """The agent's member history: record stays with lifecycle sources and reasons, never message text."""
 
 from datetime import datetime, timezone
-from pathlib import Path
 import sqlite3
-from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from agent.capabilities.member_lifecycle.test_agent_member_lifecycle import AgentMemberLifecycleTests
+from agent.capabilities.member_lifecycle import test_agent_member_lifecycle as lifecycle_fixtures
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE
-from elbow_helper.agent.capabilities.member_lifecycle.history import read_member_history
+from elbow_helper.agent.tool_support.adapters.member_lifecycle.history import read_member_history
 from elbow_helper.data.events.testing import MemoryEventsStore
 from elbow_helper.features.member_lifecycle.queries import LifecycleRecordSource, MemberLifecycleQueries
 from elbow_helper.features.member_lifecycle.state import LifecycleState
@@ -37,7 +35,7 @@ def iso(at):
     return datetime.fromtimestamp(at / 1_000_000, timezone.utc).isoformat()
 
 
-class MemberHistoryTests(AgentMemberLifecycleTests):
+class MemberHistoryTests(lifecycle_fixtures.AgentMemberLifecycleTests):
     # Reuse the parent's guild and permissions only; its snapshot tests run there.
     test_snapshot_filters_activity_by_channel_access_and_retains_sources = None
     test_overseeing_access_is_required_before_state_read = None
@@ -47,9 +45,7 @@ class MemberHistoryTests(AgentMemberLifecycleTests):
     async def asyncSetUp(self):
         self.events = MemoryEventsStore()
         self.addCleanup(self.events.close)
-        directory = TemporaryDirectory(dir=Path.cwd())
-        self.addCleanup(directory.cleanup)
-        self.lifecycle = LifecycleState(self.events, Path(directory.name) / "snapshot_intel.json")
+        self.lifecycle = LifecycleState(self.events)
         await self.lifecycle.startup()
         self.reads = Reads()
         object.__setattr__(self.context, "member_lifecycle_queries", MemberLifecycleQueries(

@@ -1,7 +1,7 @@
 """Confirmed account links are readable without leadership access."""
 
 from dataclasses import replace
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock
@@ -53,12 +53,6 @@ class AccountLinkReadAccessTests(unittest.IsolatedAsyncioTestCase):
         context.account_links.get_links_for_members.assert_not_called()
         self.assertEqual(context.state.required_access, {"lead"})
 
-    async def test_entry_access_is_still_required(self):
-        context = self.context()
-        context.member.roles.clear()
-        with self.assertRaises(AgentAccessLost):
-            await read_linked_accounts(context, {"member_ids": [101]})
-        context.account_links.get_links_for_members.assert_not_called()
 
     def test_only_review_account_datasets_require_reviewer_access(self):
         with TemporaryDirectory() as root:

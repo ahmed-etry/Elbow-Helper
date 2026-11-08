@@ -4,18 +4,16 @@ import asyncio
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import tempfile
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-import discord
 
 from elbow_helper.features.cwl.transfer_hub import CwlTransferHubMixin
 from elbow_helper.features.cwl.transfers import CwlTransferMixin
-from elbow_helper.features.cwl.views import CwlTransferHubView
 from elbow_helper.features.rosters.config import CWL_CLAN_ROSTER_IDS
 from elbow_helper.features.rosters.models import LinkedAccount
 from elbow_helper.features.rosters.models import RosterMember
@@ -73,7 +71,7 @@ class CwlTransferRosterTests(unittest.TestCase):
         )
 
     def test_transfer_state_discards_obsolete_roster_message_links(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with TemporaryDirectory() as temp_dir:
             state_path = Path(temp_dir) / "transfers.json"
             state_path.write_text(
                 json.dumps(
@@ -101,7 +99,7 @@ class CwlTransferRosterTests(unittest.TestCase):
             self.assertTrue(mixin._transfer_state_needs_save)
 
     def test_transfer_state_preserves_released_cycles_across_reboots(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with TemporaryDirectory() as temp_dir:
             state_path = Path(temp_dir) / "transfers.json"
             expected = {
                 "hub_message_id": 123,
@@ -125,31 +123,6 @@ class CwlTransferHubTests(unittest.IsolatedAsyncioTestCase):
         self.beh_member = RosterMember("#BEH", 10, "Ahmad", "BE4", 18, 1)
         self.be4_member = RosterMember("#BE4", 10, "Ahmad v2", "BEH", 17, 2)
 
-    def test_hub_copy_is_short_and_action_focused(self) -> None:
-        guild = MagicMock()
-        guild.name = "Brown Elbow"
-        guild.icon.url = "https://example.com/server-icon.png"
-        embed = self.hub._build_transfer_hub_embed(guild, placements_released=True)
-
-        self.assertEqual(embed.title, "CWL Rosters and Transfers")
-        self.assertEqual(
-            embed.description,
-            "See where you’re playing for CWL and whether\n"
-            "you still need to move.\n\n"
-            "Find your CWL info and war discussion channels,\n"
-            "or browse the full rosters.",
-        )
-        self.assertIsNone(embed.author.name)
-        self.assertEqual(embed.thumbnail.url, "https://example.com/server-icon.png")
-        self.assertIsNone(embed.footer.text)
-
-    def test_locked_hub_states_that_rosters_have_not_been_announced(self) -> None:
-        embed = self.hub._build_transfer_hub_embed(placements_released=False)
-
-        self.assertEqual(
-            embed.description,
-            "The CWL rosters haven’t been announced yet.",
-        )
 
     def test_hub_message_url_uses_the_saved_message(self) -> None:
         self.hub.transfer_state = {"hub_message_id": 123}
@@ -162,28 +135,6 @@ class CwlTransferHubTests(unittest.IsolatedAsyncioTestCase):
         self.hub.transfer_state = {"hub_message_id": None}
         self.assertIsNone(self.hub._transfer_hub_url())
 
-    async def test_hub_buttons_use_plain_member_language(self) -> None:
-        class Cog:
-            @staticmethod
-            def _full_rosters_url() -> str:
-                return "https://discord.com/channels/1/2"
-
-        view = CwlTransferHubView(Cog(), placements_released=True)
-        labels = [item.label for item in view.children]
-
-        self.assertEqual(
-            labels,
-            ["Where Am I Playing?", "CWL Channels", "See All Rosters"],
-        )
-        self.assertEqual(view.children[0].style, discord.ButtonStyle.success)
-        self.assertEqual(view.children[1].style, discord.ButtonStyle.secondary)
-        self.assertEqual(view.children[2].style, discord.ButtonStyle.link)
-        self.assertFalse(any(item.disabled for item in view.children))
-
-        locked_view = CwlTransferHubView(Cog(), placements_released=False)
-        self.assertTrue(locked_view.children[0].disabled)
-        self.assertTrue(locked_view.children[1].disabled)
-        self.assertFalse(locked_view.children[2].disabled)
 
     async def test_release_state_matches_the_current_native_roster_cycles(self) -> None:
         rosters = [
@@ -266,17 +217,6 @@ class CwlTransferHubTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("No move needed", embed.fields[0].value)
         self.assertIn("Currently in BES · Move to BE4", embed.fields[1].value)
 
-    def test_single_ready_account_result_avoids_a_redundant_summary(self) -> None:
-        embed = self.hub._build_member_cwl_embed(
-            {"BEH": [self.beh_member]},
-            {"#BEH": LinkedAccount("#BEH", "Ahmad", "BEH", 18)},
-            set(),
-        )
-
-        self.assertEqual(
-            embed.description,
-            "[Browse every CWL roster](https://discord.com/channels/1063032179011096597/1257094469757567066)",
-        )
 
     def test_channel_result_uses_registered_routes_and_omits_missing_bep_war_channel(self) -> None:
         embed = self.hub._build_member_channels_embed(

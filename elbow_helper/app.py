@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from functools import partial
+
+from elbow_helper.storage_move import prepare_storage
 
 import discord
 from discord import app_commands
@@ -18,7 +21,7 @@ from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.files import (
-    EVENTS_DATABASE, FAMILY_DATABASE, MEMBER_LIFECYCLE_FILE,
+    EVENTS_DATABASE, FAMILY_DATABASE,
 )
 from elbow_helper.data.collectors import FamilyCollectors
 from elbow_helper.data.store import FamilyStore
@@ -103,6 +106,7 @@ def create_bot(
         workbook_writer=workbook_writer,
         publishing=PublishingQueue(),
     )
+    bot.prepare_storage = partial(prepare_storage, paths.data_root)
     bot.tree.error(handle_app_command_error)
     store = FamilyStore(paths.data_root / FAMILY_DATABASE)
     bot.workflow_events = EventsStore(paths.data_root / EVENTS_DATABASE)
@@ -118,7 +122,6 @@ def create_bot(
     bot.stay_reads = StayReads(store)
     bot.family_collectors = FamilyCollectors(
         bot, store, clash_client, CLANS.values(),
-        old_last_seen=paths.data_root / MEMBER_LIFECYCLE_FILE,
     )
 
     bot.add_listener(on_app_command_completion)
@@ -131,7 +134,8 @@ async def main() -> None:
 
     paths = ApplicationPaths.discover()
     settings = load_runtime_settings(paths)
-    configure_logging(paths)
+    await asyncio.to_thread(prepare_storage, paths.data_root)
+    await asyncio.to_thread(configure_logging, paths)
     install_asyncio_exception_handler(asyncio.get_running_loop())
 
     google_publisher = GoogleSheetsPublisher(

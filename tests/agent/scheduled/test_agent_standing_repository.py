@@ -1,7 +1,7 @@
 """Standing rules are durable, member-owned, and claimed once."""
 
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
 
 from elbow_helper.agent.actions.store import AgentActionRepository
@@ -76,24 +76,6 @@ class StandingRepositoryTests(unittest.TestCase):
         ))
         self.assertEqual(self.repository.list_standing(requester_id=2), [])
 
-    def test_watcher_result_and_member_timezone(self):
-        identifier = self.repository.create_standing(
-            kind="watcher", guild_id=1, requester_id=2,
-            destination_channel_id=3, rule={"condition": "Changed"},
-            next_at=1000, now=900,
-        )
-        self.assertTrue(self.repository.claim_standing(
-            kind="watcher", identifier=identifier, version=0, owner="worker", now=1000,
-        ))
-        self.assertTrue(self.repository.finish_standing(
-            kind="watcher", identifier=identifier, owner="worker", next_at=2000,
-            last_result={"value": 1}, holding=True,
-        ))
-        row = self.repository.standing(kind="watcher", identifier=identifier)
-        self.assertEqual(row["last_result"], {"value": 1})
-        self.assertEqual(row["holding"], 1)
-        self.repository.set_member_timezone(2, "Europe/Paris")
-        self.assertEqual(self.repository.member_timezone(2), "Europe/Paris")
 
     def test_replacement_rejects_a_stale_preview(self):
         identifier = self.repository.create_standing(

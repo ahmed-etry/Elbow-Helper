@@ -20,6 +20,7 @@ from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import LocalExportStore
 from elbow_helper.infrastructure.exports import WorkbookWriter
 
+from elbow_helper.infrastructure.persistence.documents import read_document, write_document
 from .logging import log_box
 from .paths import ApplicationPaths
 
@@ -171,29 +172,40 @@ def build_intents() -> discord.Intents:
     return intents
 
 
+def _read_avatar_update(paths: ApplicationPaths) -> tuple[float, bytes] | None:
+    if not paths.avatar_file.exists():
+        LOGGER.warning("Avatar file not found at %s; skipping avatar update", paths.avatar_file)
+        return None
+
+    current_mtime = paths.avatar_file.stat().st_mtime
+    if paths.avatar_state_file.exists():
+        try:
+            last_mtime = float(read_document(paths.avatar_state_file)["avatar_uploaded_mtime"])
+        except ValueError:
+            last_mtime = 0.0
+        if current_mtime <= last_mtime:
+            return None
+    return current_mtime, paths.avatar_file.read_bytes()
+
+
+def _save_avatar_upload(paths: ApplicationPaths, current_mtime: float) -> None:
+    write_document(paths.avatar_state_file, {"avatar_uploaded_mtime": current_mtime})
+
+
 async def update_bot_avatar(bot: commands.Bot, paths: ApplicationPaths) -> None:
-    """Upload the configured avatar only when its local file has changed."""
+    """Upload a changed local avatar, keeping file I/O off the event loop."""
 
     try:
-        if not paths.avatar_file.exists():
-            LOGGER.warning("Avatar file not found at %s; skipping avatar update", paths.avatar_file)
-            return
         if bot.user is None:
             LOGGER.warning("Bot user is unavailable; skipping avatar update")
             return
 
-        current_mtime = paths.avatar_file.stat().st_mtime
-        if paths.avatar_state_file.exists():
-            try:
-                last_mtime = float(paths.avatar_state_file.read_text(encoding="utf-8").strip())
-            except ValueError:
-                last_mtime = 0.0
-            if current_mtime <= last_mtime:
-                return
-
-        await bot.user.edit(avatar=paths.avatar_file.read_bytes())
-        paths.avatar_directory.mkdir(parents=True, exist_ok=True)
-        paths.avatar_state_file.write_text(str(current_mtime), encoding="utf-8")
+        update = await asyncio.to_thread(_read_avatar_update, paths)
+        if update is None:
+            return
+        current_mtime, avatar = update
+        await bot.user.edit(avatar=avatar)
+        await asyncio.to_thread(_save_avatar_upload, paths, current_mtime)
     except (OSError, ValueError, discord.HTTPException) as error:
         LOGGER.exception("Error setting bot avatar: %s", error)
 
@@ -224,7 +236,7 @@ class ElbowHelperBot(commands.Bot):
         self.google_publisher = google_publisher
         self.workbook_writer = workbook_writer
         self.publishing = publishing if publishing is not None else PublishingQueue()
-        self.local_exports = LocalExportStore(paths.data_root / ".exports")
+        self.local_exports = LocalExportStore(paths.data_root / "exports")
         self.required_extensions = required_extensions
         self.optional_extensions = optional_extensions
         self.boot_complete = asyncio.Event()
@@ -245,6 +257,9 @@ class ElbowHelperBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         self._boot_started_at = time.perf_counter()
+        prepare_storage = getattr(self, "prepare_storage", None)
+        if prepare_storage is not None:
+            await asyncio.to_thread(prepare_storage)
         workflow_events = getattr(self, "workflow_events", None)
         if workflow_events is not None:
             await workflow_events.initialize()
