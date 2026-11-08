@@ -7,9 +7,9 @@ Enable:
 - Server Members Intent
 - Message Content Intent
 
-## Scopes and permissions
+## Invite and permissions
 
-The application uses the `bot` and `applications.commands` scopes. Its role
+Invite the bot with the `bot` and `applications.commands` scopes. Its role
 must sit above the members and roles it manages.
 
 Across its features, the bot needs permission to:
@@ -19,8 +19,8 @@ Across its features, the bot needs permission to:
 - attach files and add reactions;
 - manage roles and nicknames;
 - create and manage channels or threads;
-- manage the server for invite tracking;
-- view the audit log for departure reports;
-- kick members through applicant cleanup.
+- manage the server, to see which invite each member used;
+- view the audit log, for departure reports;
+- kick members, for removing overdue applicants.
 
 Make sure channel permissions do not block the bot in any channel it uses.

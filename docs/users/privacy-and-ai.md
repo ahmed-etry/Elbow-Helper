@@ -10,7 +10,7 @@ permissions.
   voice channels, joins, leaves, and activity in tickets;
 - linked Clash account tags, profiles, clan membership, activity, and
   progression history;
-- recruitment answers and notes, trial status, leadership records, roster
+- recruitment answers and notes, trial status, roster
   signups, and support topics.
 
 The bot logs ticket transcripts and saves spreadsheet exports to the
@@ -25,7 +25,7 @@ and attachment filenames may be sent. Attachment contents stay in Discord
 for these requests.
 
 Support tickets use the member's Discord display name and ticket topic to write
-a welcome sentence. The ticket conversation stays in Discord for this request.
+a welcome sentence. This request includes no ticket conversation.
 
 These requests are currently processed through the DeepSeek API. See
 [DeepSeek's privacy policy](https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html)
@@ -42,19 +42,22 @@ preview and asks you to confirm.
 Agent requests use DeepSeek. To answer you, the bot may send:
 
 - your message, nearby messages, and earlier parts of the conversation;
-- community references and Discord or Clash information it reads;
+- community reference files and the Discord or Clash information it looks up;
 - images and GIFs from your message, messages you reply to or link, and
   earlier parts of the conversation;
 - text and spreadsheet contents it reads for your request.
 
-If the bot cannot confirm that everyone in the channel can see the sources
-used for an answer, it offers **View result** so you can read it privately.
-**Post here** shares the answer with the channel. Later answers to you in
-that conversation can then appear in the channel when their sources and
-required permissions are already covered by your sharing choices.
-Answers using the Discord audit log stay private, with no **Post here** button.
+An answer in a channel only uses what everyone in that channel can see. If
+something only you can see would help, **Show full answer** gets you a private
+answer, but only after you click it. **Post here** shares that answer with the
+channel. Some results appear behind **View result** instead, with their own
+button to share them. The bot checks your access again before it shares
+anything or answers a follow-up. Answers that use the Discord audit log stay
+private, with no **Post here** button.
 
-The bot saves agent request and reply text with no automatic deletion. It
-also keeps troubleshooting records for 30 days, including questions, planned
-steps, lookup results, and answers. These records remain saved when the
-conversation expires.
+The bot forgets a conversation, and drops any longer Discord search it started,
+after six hours with no new messages. Separately, it keeps request and reply
+text, attachment names, a short note of each lookup and what it looked up, and
+reports of wrong answers, with no automatic deletion. Detailed troubleshooting
+records, including what each lookup found, are kept for 30 days. Forgetting a
+conversation doesn't delete these.

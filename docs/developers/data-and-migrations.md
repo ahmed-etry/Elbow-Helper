@@ -1,44 +1,67 @@
 # Data and migrations
 
-`data/store` owns the family database's format and writes. Features own their
-remaining files and expose services or readers for other consumers.
+The bot's saved files live under the root `data/` directory. Code for the
+family database and workflow history lives in `elbow_helper/data/`.
+[Saved data](../reference/storage.md) lists the files and what each holds.
 
-## JSON
+## Family database
 
-A feature defines its path, fields, defaults, supported older formats, and
-handling for missing or malformed files. Write replacements atomically. Other
-features use an owning service or reader instead of opening the file.
+`data/store` handles `data/family.sqlite3`. Times are UTC epoch microseconds.
+Internal member and account IDs link records together; `members.discord_id`
+and `accounts.player_tag` identify them outside the database.
 
-## SQLite
+| Tables | Contents |
+|---|---|
+| `members`, `accounts`, `member_aliases`, `account_aliases` | People, accounts, and their names over time |
+| `guild_membership`, `member_roles`, `account_links`, `clan_membership` | Server membership, roles, account ownership, and clan ranks over time; `to_at IS NULL` means it still holds |
+| `clan_observations`, `clan_counters`, `donation_snapshots` | Clan details and account counters at the time they were seen |
+| `player_observations`, `item_catalog`, `player_items`, `hero_equipment`, `player_counters` | Profile values, named items, equipment, and progress |
+| `wars`, `war_sides`, `war_members`, `war_attacks` | War type, both lineups, scores, and individual attacks |
+| `cwl_seasons`, `cwl_clans`, `cwl_players`, `cwl_rounds` | League groups, the clans and players in them, and which war belongs to each round |
+| `family_api_entities`, `api_records`, `api_field_changes` | Ranked and other Clash API records, with each changed field saved compressed |
+| `raid_member_lines`, `member_last_messages` | Raid participation; each Discord member's last message time and channel, without message text |
+| `collection_runs`, `collection_items` and the other collection tables | The result of each data check, failures, and when each check is next due |
 
-Each database owner controls its schema, queries, row conversion, current
-version, and supported upgrades. Change `PRAGMA user_version` only after a
-complete transaction. Reject unknown newer versions and non-empty unversioned
-databases whose history cannot be proven.
+`FamilyStore.call` runs blocking work one call at a time on a background
+thread. `data/reads` goes through it, with a read-only transaction for each
+read.
 
-New databases may begin at a later baseline. For example, a blank roster
-database starts at version 4; retired pre-baseline migrations do not need to
-run against it.
+## Workflow history
 
-Family database reads in `data/reads` use a read-only transaction on a background
-thread and return facts and say what is missing. They never ask the Clash API for
-missing facts and never open features' own files. Ownership changes go through
-`data.links.LinkService`. See [Saved data](../reference/storage.md) for the
-files still owned by features.
+`data.events.EventsStore` handles `data/workflows.sqlite3`. `workflow_events`
+records the workflow, case, kind, time, subject, actor, details, and source
+message. A unique event key stops a retry from saving the same event twice.
+`workflow_state` holds each workflow's current data; `examination_cases` keeps
+one row per examination ticket. A workflow's data and its events save in one
+transaction through `EventsStore.call`, on a background thread.
 
-## Changing a format
+Feature services decide what their data and events mean and check them. Other
+code goes through those services or the event readers.
+`EventsStore.delete_member` removes a member's workflow history and any open
+workflow data that names them; it does not delete their family database
+records or Discord transcripts.
 
-1. Record the deployed format and supported backups.
-2. Stop the bot and back up the affected data.
-3. Add the smallest compatible reader or migration.
-4. Make the change atomic or transactional.
-5. Test blank, current, supported-old, failed, and unknown-newer states.
-6. Update the [saved-data reference](../reference/storage.md).
-7. Verify the deployed version after release.
+Other feature data is kept in `feature_documents` in the same database, through
+`infrastructure.persistence.documents`. Health-report overrides and the record
+of who changed them are also here. The editable health defaults are
+`data/settings/health-defaults.json`.
 
-Keep a migration while the live deployment or a usable backup may still
-contain the older format.
+## Databases and format changes
 
-Paths, JSON fields, spreadsheet labels, component IDs, and saved Discord
-message IDs may outlive a Python rename. Change them only with an explicit
-migration or transition plan.
+Achievements and the economy use `data/economy.sqlite3`; rosters use
+`data/rosters.sqlite3`. Agent conversations, transcripts, Discord searches,
+actions, and schedules share `data/agent.sqlite3`, upgraded by one set of migrations in
+`agent/persistence/schema.py`.
+
+The code for each database defines its tables, how rows are read and written,
+its version, and the upgrades it supports. Shared SQLite helpers run upgrades
+in transactions and refuse a database newer than the code knows. Features that
+keep documents define their defaults and checks; a document is replaced in one
+SQLite transaction on a background thread.
+
+For a format change, look at the live data and any backup you might restore,
+add the smallest upgrade that works, and test an empty database, the current
+version, each older version still supported, a failed upgrade, and an unknown
+newer version. Keep an upgrade while the live data or a usable backup may
+still need it. Update [Saved data](../reference/storage.md) when paths or
+contents change.

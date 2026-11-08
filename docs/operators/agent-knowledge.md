@@ -25,7 +25,7 @@ The settings apply to the whole file:
 |---|---|---|
 | `visibility` | `public`, `lead`, `lead_plus`, `core`, `recruiter`, `cwl_helper`, `examiner` | `public` |
 | `status` | `approved`, `draft`, `retired` | `approved` |
-| `always_loaded` | `true` or `false`, without quotes; accepted for existing files, without preloading bodies into requests | `false` |
+| `always_loaded` | `true` or `false`, without quotes; either way the agent opens a section only when a question needs it | `false` |
 
 Each visibility requires a role in the listed
 [access group](../reference/commands-and-permissions.md#access-groups):
@@ -40,16 +40,16 @@ Each visibility requires a role in the listed
 | `cwl_helper` | CWL helpers or Lead Plus |
 | `examiner` | Examiners or Lead Plus |
 
-Members with several roles can read material for each matching group. Searches
-cover all material the asker may read. The agent first tries to answer using
-sections everyone in the channel can read; other matches contribute only their
-titles and a note that they are available privately. Members without access
-receive no titles or hints about those sections.
+Members with several roles can read material for each matching group. An
+answer in a channel uses only sections everyone in that channel may read. If a
+restricted section matches, the agent can say more is available privately,
+without seeing that section's title or contents while it answers.
 
-If the channel's material answers the question, the reply stays public. If it
-does not and restricted sections matched, the agent uses those sections in one
-additional pass and gives the asker a private answer to open. An unrelated
-restricted match does not make an otherwise public answer private.
+When that section could change the answer, **Show full answer** gives the
+asker a private answer that uses their own access, but only after they click
+it. **Post here** checks access again, then shares that answer; later answers
+in the channel still can't use the restricted section. Answers that use the
+audit log can't be posted.
 
 Files without settings are approved and public as soon as they load. Use
 `status = "draft"` while editing new material. Only `+++` settings control
@@ -60,7 +60,7 @@ code blocks start sections titled with their full path, such as
 `Rank rules › Co-Leader › Requirements`. Headings without body text become
 part of their children's paths. Text before the first heading uses the filename
 as its title, without `.md`. Long sections split at paragraph boundaries;
-an individual paragraph or code block stays whole.
+an individual paragraph or code block is kept whole.
 
 ## Add or change material
 
@@ -68,9 +68,10 @@ an individual paragraph or code block stays whole.
    sections that different members can read.
 2. Check every section against the community's approved rules and workflows,
    then set `status = "approved"`.
-3. Research requests start with the visible heading index. The agent opens only
-   sections needed for the question, including references marked `always_loaded`.
-   All approved sections remain searchable within their visibility.
+3. For each question, the agent first sees the list of headings the asker may
+   read, then opens only the sections it needs, including those marked
+   `always_loaded`. Every approved section can still be found by searching,
+   within its visibility.
 4. To retire a file, set `status = "retired"` or remove it. To retire one
    section, remove it from the approved file or move it to a retired file.
 5. After reloading, ask the agent about the changed topic. For restricted
@@ -83,10 +84,9 @@ at most once a minute. After saving, wait a minute and ask about the changed
 topic, or restart the bot. A reload writes `Community knowledge loaded` to
 the log.
 
-If the log says the core is too long, shorten the references marked
-`always_loaded` or set that field to `false`. If it says the topic or file
-index is too long, shorten headings or filenames. Sections left out of these
-lists remain searchable.
+If the log warns that the topic or file index is over its limit, shorten
+headings or filenames. Sections left out of those lists can still be found by
+searching.
 
 ## Missing content
 
@@ -96,5 +96,6 @@ lists remain searchable.
   Correct its TOML, field values, encoding, size, or file permissions, then
   save it again. Valid files still load; the rejected file is left out.
 - If there is no load error, check the file's location, status, visibility,
-  and headings. Exact-title searches ignore case and accept the full heading
-  path. A plain heading also works when it identifies one accessible path.
+  and headings. A search by title ignores case and works with the full heading
+  path, or with just the heading when only one section the asker can read has
+  it.

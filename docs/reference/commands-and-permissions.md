@@ -1,8 +1,8 @@
 # Commands and access
 
-This is the complete slash-command list. The wording below matches the
-implemented `/help` catalogue. Run `/help command:<command>` in Discord for
-current options, examples, notes, and restrictions.
+This is the complete slash-command list, described in the same words as
+`/help`. Run `/help command:<command>` in Discord for options, examples,
+notes, and restrictions.
 
 ## Access groups
 
@@ -35,13 +35,13 @@ channel permissions also apply.
 | `/achievement leaderboard` | See which members have earned the most achievements. | Member |
 | `/inventory` | Check your coins and raffle ticket. | Member |
 | `/economyinfo` | See how coins, tickets, and rewards work. | Member |
-| `/grant coins` | Add coins to a member's balance. | Lead Plus |
-| `/grant ticket` | Give a raffle ticket to a member. | Lead Plus |
+| `/grant coins` | Add coins to a member's balance. | Lead Plus or Core leadership |
+| `/grant ticket` | Give a raffle ticket to a member. | Lead Plus or Core leadership |
 | `/coinlog` | Check a member's coin history. | Core leadership |
-| `/raffle list` | See who has raffle tickets right now. | Lead Plus |
-| `/raffle draw` | Draw raffle winners for this month or an earlier month. | Lead Plus |
-| `/raffle reroll` | Draw this month's raffle winners again. | Lead Plus |
-| `/raffle history` | See the raffle prize and winners for a selected month. | Lead Plus |
+| `/raffle list` | See who has raffle tickets right now. | Lead Plus or Core leadership |
+| `/raffle draw` | Draw raffle winners for this month or an earlier month. | Lead Plus or Core leadership |
+| `/raffle reroll` | Draw this month's raffle winners again. | Lead Plus or Core leadership |
+| `/raffle history` | See the raffle prize and winners for a selected month. | Lead Plus or Core leadership |
 | `/raffle prize` | Choose the prize shown in this month's raffle posts. | Core leadership |
 | `/raffle remove` | Remove a member's raffle ticket. | Core leadership |
 | `/raffle clear` | Clear this month's raffle winners. | Core leadership |
