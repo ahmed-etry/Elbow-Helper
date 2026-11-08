@@ -10,8 +10,8 @@ explains how coins, raffle tickets, and rewards work.
 
 [Lead](../../reference/commands-and-permissions.md#access-groups) can award or
 remove achievements.
-[Lead Plus](../../reference/commands-and-permissions.md#access-groups) can grant
-coins or monthly raffle tickets and run or review raffle draws.
+[Lead Plus and Core leadership](../../reference/commands-and-permissions.md#access-groups)
+can grant coins or monthly raffle tickets and run or review raffle draws.
 [Core leadership](../../reference/commands-and-permissions.md#access-groups)
 can review coin history, set raffle prizes, remove tickets, and reset draws.
 Achievement awards can skip the public announcement with the `silent` option.

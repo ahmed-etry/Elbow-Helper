@@ -6,7 +6,7 @@ commands; choose one for its options, examples, and important restrictions.
 ## Your Clash accounts
 
 One Discord member can have several linked Clash accounts. Those links let
-recruitment, rosters, CWL, wars, records, and reports use the correct account.
+recruitment, rosters, CWL, wars, and reports use the correct account.
 
 [Recruiters and Core leadership](../reference/commands-and-permissions.md#access-groups)
 manage links with `/account add`, `/account list`, and `/account remove`. If a

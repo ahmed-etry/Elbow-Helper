@@ -1,6 +1,6 @@
 # Recruitment and account links
 
-## Recruitment flow
+## Recruitment steps
 
 1. The application answers appear in the recruitment ticket.
 2. The bot summarizes those answers for recruiters.
@@ -27,7 +27,7 @@ have several linked accounts.
 - `/account list` shows a member's accounts or finds the member linked to a tag.
 - `/account remove` unlinks the selected Clash accounts.
 
-The same links are used across recruitment, rosters, CWL, wars, records, and
+The same links are used across recruitment, rosters, CWL, wars, and
 reports.
 
 ## Recruiter tools

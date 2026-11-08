@@ -26,9 +26,21 @@ maintain by hand.
 - rosters, schedules, posts, roles, and exports;
 - CWL signups, planning, clan transfers, briefs, war boards, and bonus reports;
 - regular war boards, summaries, role updates, and follow-up messages;
-- clan and account activity history, health reports, records, and workbooks;
-- hibernation and return flows, promotion examinations, support tickets, role
-  connections, and community news.
+- clan and account activity history, health reports, and workbooks;
+- hibernation and returns, promotion examinations, support tickets, role
+  connections, and community news;
+- the agent, which answers questions, builds reports and makes changes you approve.
+
+## Code layout
+
+`elbow_helper/app.py` starts the bot. Inside `elbow_helper/`, `features/` holds
+each Discord feature and `agent/` holds the agent. `data/` saves and reads the
+family database, `domain/` has rules several features share, `configuration/`
+lists the server's clans, roles and channels, `core/` starts things up, and
+`infrastructure/` talks to Discord and the Clash API.
+
+The `data/` folder at the top of the repository holds the bot's saved data and
+is kept out of Git.
 
 ## Documentation
 
@@ -56,8 +68,18 @@ Copy `.env.example` to `.env`, fill the deployment credentials, and review the
 uv run python -m elbow_helper
 ```
 
-Runtime databases, state, logs, and exports live under `data/` and
-are excluded from Git.
+For host setup and updates, see [Deployment](docs/operators/deployment.md).
+
+## Tests
+
+Run the suite from the repository root:
+
+```bash
+uv run python -m unittest discover -s tests
+```
+
+Tests use made-up data and never reach Discord or the Clash API. See
+[Testing](docs/developers/testing.md) for focused checks.
 
 ## Attribution
 

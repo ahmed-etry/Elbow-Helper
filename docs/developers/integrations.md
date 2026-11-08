@@ -1,49 +1,41 @@
 # External services
 
-## Clash of Clans
+## The Clash API
 
-Every request uses the application-owned
-`elbow_helper.infrastructure.clash.ClashClient`. It owns the HTTP session, API
-authentication, request attempts, timeouts, response handling, and rate-limit
-details. Family collectors fetch the wars and league groups used by features;
-war and CWL consumers read `data/reads` rather than requesting them again.
-Ranked history returns saved battles and when each battle log was checked, without
-asking the Clash API for missing battles. Health reports read the family database as well. Only the agent's live Clash API
-lookup asks the Clash API itself, through the shared client.
+Every request goes through the one
+`elbow_helper.infrastructure.clash.ClashClient` that the app creates. It
+handles the HTTP session, the API key, timeouts, retries, and the request
+limits all features share. It reuses a response for as long as the API's
+Cache-Control header allows, and requests for the same data made at the same
+time share one fetch.
 
-Use `elbow_helper.domain.player_tags` for tag normalization and URL encoding.
+Family collectors fetch profiles, wars, league groups, ranked history, and
+raids. Features read that data from the family database and ask the
+collectors' profile service when they need a fresh profile. Agent lookups that
+ask the Clash API directly, and `/api`, use the same client. Clean up tags and
+encode them for URLs with `elbow_helper.domain.player_tags`.
 
 ## AI text generation
 
-Recruitment and Support Tickets request text through `TextGenerator`.
-`elbow_helper.app` creates the `DeepSeekTextClient` that implements it.
+`elbow_helper.app` creates one `DeepSeekTextClient`. Recruitment and Support
+Tickets use its `TextGenerator` interface for application summaries,
+`/opinion`, and a support welcome sentence. The [agent](agent.md) uses its
+`AgentModel` interface and `AgentSession` for planning and answers.
 
-- Recruitment uses it to summarize application answers and provide second
-  opinions through `/opinion`.
-- The support-ticket feature uses it for one welcome sentence.
-
-The [agent](agent.md) uses the same application-owned client through
-`AgentModel` and `AgentSession`. The client sends messages, tool results, and
-images to DeepSeek and reports usage and request failures. The agent feature
-plans and runs tools, checks permissions and answers, and sends the reply to
-Discord. See [Privacy and AI](../users/privacy-and-ai.md#agent) for the data
-these requests may include.
-
-Before adding another use, identify the exact data sent, audience, output
-checks, privacy impact, and failure tests.
+Feature and agent code choose what to send and check the results. The client
+sends the requests and reports usage and failures. [Privacy and AI](../users/privacy-and-ai.md)
+lists what is sent. Before adding a new use, check what it sends, who sees the
+result, and what happens when a request fails.
 
 ## Google Drive and Sheets
 
-Roster, CWL, and clan-health reports publish through the
-application-owned `GoogleSheetsPublisher`. Google OAuth credentials provide
-access. `GOOGLE_DRIVE_FOLDER_ID` selects the destination; if it is empty,
-exports go to the authenticated account's default location.
+Roster, CWL, and health reports use the shared `GoogleSheetsPublisher`.
+The Google OAuth credentials give it access. `GOOGLE_DRIVE_FOLDER_ID` picks
+the Drive folder; if it's empty, exports go to the main My Drive folder of
+that Google account. Each export deletes the bot's exports older than 30 days. Features also use `WorkbookWriter` and `LocalExportStore` for local
+Excel files.
 
 ## HTML transcripts
 
 Support and hibernation use `chat-exporter` to create HTML transcripts and
 upload them to configured private Discord log channels.
-
-New integrations use one app-owned client and expose a narrow interface to
-features. Load their settings in `elbow_helper.app`, document what data leaves
-the bot, and define what the feature does when the service is unavailable.

@@ -5,7 +5,7 @@
 War boards track each clan's regular war, showing the opponent, war state,
 score, attacks remaining, destruction, and Town Hall breakdown for both clans.
 When the war ends, leadership receives a summary with the result and missed
-attacks. The bot also gives the clan's war role to linked members in the live
+attacks. The bot also gives the clan's war role to linked members in the war
 lineup and removes it after the war when no roster still needs it.
 
 The `/warstatement` commands send follow-up messages for:
@@ -24,8 +24,8 @@ wars, CWL, Raid Weekends, Clan Games, donations, and progression. The player
 report also includes clan history. `/health settings` changes the expectations
 used to evaluate future reports.
 
-Reports depend on history collected during the selected dates. The default
-period is 30 days, and the command also accepts custom dates.
+Reports only cover what the bot saved during the selected dates. The default
+is 30 days, and you can also pick your own dates.
 
 ## War summaries and Elder reminders
 
