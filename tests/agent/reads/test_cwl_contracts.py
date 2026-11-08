@@ -138,7 +138,7 @@ class CollectedCwlContracts(unittest.IsolatedAsyncioTestCase):
             'season': '2026-08', 'top_n': 1})
         self.assertEqual(len(partial['rows']), 1)
         self.assertEqual(sum(row['selected_accounts'] for row in partial['selected_group_metrics']), 4)
-        self.assertTrue(any(row['cause'] == 'incomplete_season' for row in partial['missing_sources']))
+        self.assertEqual(partial['missing_sources'], [])
 
     async def test_each_score_surface_refuses_wrong_clan_unfinished_and_unknown_ids(self):
         for key, error in (('CWL:#CQ0', 'another clan'), ('CWL:#C8', 'Unfinished'), ('#UNKNOWN', 'Unknown')):
@@ -168,6 +168,8 @@ class CollectedCwlContracts(unittest.IsolatedAsyncioTestCase):
             self.assertNotEqual(threading.get_ident(), main_thread)
             return original(*args, **kwargs)
         with patch.object(self.queries._history, 'scoring_wars', side_effect=score):
+            self.assertNotIn('error', await cwl_results(self.context,
+                {'metric': 'performance', 'clan_codes': ['BES'], 'season': '2026-08'}))
             for metric, legacy in (('ass', cwl_ass_scores), ('bonus', cwl_bonus_scores)):
                 self.assertNotIn('error', await cwl_results(self.context,
                     {'metric': metric, 'clan_codes': ['BEH'], 'war_ids': ['CWL:#CP0']}))
