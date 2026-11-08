@@ -78,7 +78,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                                 get_links_for_members=lambda ids: {41: [{"player_tag": "#P0"}, {"player_tag": "#P2"}]})
         self.reads = WarReads(self.store)
         # League wars come from the same record, through the CWL queries.
-        history = CwlHistory(CwlReads(self.store, FAMILY), None, FAMILY)
+        history = CwlHistory(CwlReads(self.store), None, FAMILY)
         self.context = replace(_context(), cwl_queries=CwlQueries(history, lambda: {}), account_links=links,
                                bot=SimpleNamespace(war_reads=self.reads))
 

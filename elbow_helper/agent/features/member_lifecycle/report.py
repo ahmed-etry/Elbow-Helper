@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
 import json
 from typing import Any
+
+from elbow_helper.agent.reports.values import channel_snapshot_payload
+from elbow_helper.agent.reports.values import valid_timestamp as _valid_time
 
 from elbow_helper.features.member_lifecycle.queries import MemberLifecycleSnapshot
 
@@ -76,12 +78,7 @@ class MemberLifecycleReport:
         })
 
     def storage_payload(self) -> dict[str, Any]:
-        return {
-            "report_id": self.report_id,
-            "guild_id": self.guild_id,
-            "source_channel_id": self.source_channel_id,
-            "snapshot": asdict(self.snapshot),
-        }
+        return channel_snapshot_payload(self)
 
     def manifest(self) -> dict[str, Any]:
         return {
@@ -187,15 +184,6 @@ def _valid_platform_counts(values: Any) -> bool:
 
 def _valid_optional_time(value: Any) -> bool:
     return value is None or _valid_time(value)
-
-
-def _valid_time(value: Any) -> bool:
-    if not isinstance(value, str) or not value or len(value) > 64:
-        return False
-    try:
-        return datetime.fromisoformat(value).tzinfo is not None
-    except ValueError:
-        return False
 
 
 __all__ = ["MemberLifecycleReport"]

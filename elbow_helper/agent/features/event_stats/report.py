@@ -9,6 +9,8 @@ import json
 import re
 from typing import Any
 
+from elbow_helper.agent.reports.values import snapshot_payload
+
 from elbow_helper.features.event_stats.queries import EventScheduleSnapshot
 
 
@@ -41,10 +43,7 @@ class EventScheduleReport:
         ).encode("utf-8")))
 
     def storage_payload(self) -> dict[str, Any]:
-        return {
-            "report_id": self.report_id, "guild_id": self.guild_id,
-            "snapshot": asdict(self.snapshot),
-        }
+        return snapshot_payload(self)
 
     def manifest(self) -> dict[str, Any]:
         rows = self.snapshot.rows

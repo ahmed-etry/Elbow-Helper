@@ -4,9 +4,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.engine.assessment import (
-    assessment_limits, decision_answer, discussion_ids, read_decision_discussions, select_decision_sources,
-)
+from elbow_helper.agent.engine.assessment import assessment_limits, discussion_ids, read_decision_discussions, select_decision_sources
+from tests.agent.engine.answer_helpers import decision_answer
 from elbow_helper.infrastructure.ai import AgentToolCall
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.agent.reads.snapshots import family_tool

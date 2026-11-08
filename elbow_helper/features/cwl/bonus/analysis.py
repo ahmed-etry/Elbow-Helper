@@ -21,6 +21,16 @@ LOGGER = logging.getLogger(__name__)
 PROFILE_MAX_AGE_SECONDS = 60 * 60
 
 
+def bonus_ranking_key(row):
+    return (
+        -float(row["avg_adjusted_delta"]),
+        -float(row["total_adjusted_delta"]),
+        -float(row["total_actual"]),
+        -int(row["attack_count"]),
+        str(row["player_name"]).lower(),
+    )
+
+
 class BonusWarSource(Protocol):
     def bonus_seasons(
         self,
@@ -395,15 +405,7 @@ class BonusAnalysisService:
                 }
             )
 
-        summary_rows.sort(
-            key=lambda row: (
-                -float(row["avg_adjusted_delta"]),
-                -float(row["total_adjusted_delta"]),
-                -float(row["total_actual"]),
-                -int(row["attack_count"]),
-                str(row["player_name"]).lower(),
-            )
-        )
+        summary_rows.sort(key=bonus_ranking_key)
         for idx, row in enumerate(summary_rows, start=1):
             row["rank"] = idx
 

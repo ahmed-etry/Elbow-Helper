@@ -54,9 +54,7 @@ REPORT_READERS = {
     "xlsx_import": "read_xlsx_import",
     "text_import": "read_text_import",
 }
-REPORT_COMPARERS = {}
 READ_NAME = "read_saved_report"
-COMPARE_NAME = "compare_saved_reports"
 
 
 def original_tool(registry: Mapping[str, RegisteredAgentTool], name: str,
@@ -97,7 +95,7 @@ def unsupported_field_error(selected: RegisteredAgentTool,
                             arguments: Mapping[str, Any]) -> str:
     extra = unsupported_fields(selected, arguments)
     supported = tuple(sorted(set(selected.definition.parameters["properties"]) -
-                             {"report_id", "before_report_id", "after_report_id"}))
+                             {"report_id"}))
     return (f"Unsupported field: {', '.join(extra)}. Supported filters: "
             f"{', '.join(supported) if supported else 'none'}.")
 
@@ -115,9 +113,7 @@ class ReportRouter:
         extra = unsupported_fields(selected, arguments)
         if extra:
             return {"error": unsupported_field_error(selected, arguments)}
-        ids = (("before_report_id", "after_report_id") if self.name == COMPARE_NAME
-               else ("report_id",))
-        for field in ids:
+        for field in ("report_id",):
             report_id = arguments[field]
             report = context.state.reports.get(report_id)
             if report is None or report.manifest().get("kind") != kind:
@@ -132,7 +128,7 @@ def _properties(specs: Mapping[str, RegisteredAgentTool]) -> dict[str, dict[str,
     fields: dict[str, dict[str, Any]] = {}
     for tool in specs.values():
         for key, schema in tool.definition.parameters["properties"].items():
-            if key in ("report_id", "before_report_id", "after_report_id"):
+            if key == "report_id":
                 continue
             if key not in fields:
                 fields[key] = dict(schema)
@@ -155,19 +151,14 @@ def _properties(specs: Mapping[str, RegisteredAgentTool]) -> dict[str, dict[str,
 
 
 def _tool(name: str, specs: Mapping[str, RegisteredAgentTool]) -> RegisteredAgentTool:
-    comparing = name == COMPARE_NAME
-    ids = ("before_report_id", "after_report_id") if comparing else ("report_id",)
+    ids = ("report_id",)
     properties = {
         "report_kind": {"type": "string", "enum": sorted(specs),
         },
         **{field: {"type": "string", "minLength": 1, "maxLength": 32} for field in ids},
         **_properties(specs),
     }
-    description = (
-        "Compare two retained reports of the same kind using that kind's page fields."
-        if comparing else
-        "Read a retained report using its kind's filters and page fields."
-    )
+    description = "Read a retained report using its kind's filters and page fields."
     return RegisteredAgentTool(
         AgentToolDefinition(
             name=name, description=description,
@@ -184,7 +175,7 @@ def _tool(name: str, specs: Mapping[str, RegisteredAgentTool]) -> RegisteredAgen
         ReportRouter(name, specs),
         contract=CapabilityContract(
             entity_fields=tuple((field, "saved_report") for field in ids),
-            filter_fields=() if comparing else tuple(sorted({
+            filter_fields=tuple(sorted({
                 field for tool in specs.values()
                 for field in (
                     *(key for key, _ in tool.contract.entity_fields),
@@ -200,8 +191,7 @@ def _tool(name: str, specs: Mapping[str, RegisteredAgentTool]) -> RegisteredAgen
 def replace_report_tools(tools: Sequence[RegisteredAgentTool]) -> tuple[RegisteredAgentTool, ...]:
     by_name = {tool.definition.name: tool for tool in tools}
     readers = {kind: by_name[name] for kind, name in REPORT_READERS.items() if name in by_name}
-    comparers = {kind: by_name[name] for kind, name in REPORT_COMPARERS.items() if name in by_name}
-    replaced = set(REPORT_READERS.values()) | set(REPORT_COMPARERS.values())
+    replaced = set(REPORT_READERS.values())
     retained = []
     for tool in tools:
         if tool.definition.name in replaced:
@@ -209,13 +199,8 @@ def replace_report_tools(tools: Sequence[RegisteredAgentTool]) -> tuple[Register
         description = tool.definition.description
         for previous in REPORT_READERS.values():
             description = description.replace(previous, READ_NAME)
-        for previous in REPORT_COMPARERS.values():
-            description = description.replace(previous, COMPARE_NAME)
         if description != tool.definition.description:
             tool = replace(tool, definition=replace(tool.definition, description=description))
         retained.append(tool)
-    routed = tuple(
-        _tool(name, specs)
-        for name, specs in ((READ_NAME, readers), (COMPARE_NAME, comparers)) if specs
-    )
+    routed = (_tool(READ_NAME, readers),) if readers else ()
     return (*retained, *routed)

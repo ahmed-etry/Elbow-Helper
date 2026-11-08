@@ -1,5 +1,6 @@
 """Implementation reference for automatic work, without starting any jobs."""
 
+from elbow_helper.agent.scheduled.config import POLL_SECONDS
 from elbow_helper.features.account_links.config import POLL_INTERVAL_MINUTES
 from elbow_helper.features.achievements.config import RAFFLE_HUB_UPDATE_HOURS
 from elbow_helper.features.clan_transfers.config import REQUEST_TTL_HOURS
@@ -111,7 +112,7 @@ def automatic_workflows():
          'effects': ['Clean up expired transfer requests'], 'keeps': ['Unexpired requests']},
         {'workflow': 'confirmed_agent_schedules',
          'sources': ['elbow_helper/agent/scheduled/runner.py:ScheduledRunner'],
-         'schedule': {'check_every_seconds': 30, 'due': 'Confirmed once, interval, weekly or monthly schedule'},
+         'schedule': {'check_every_seconds': POLL_SECONDS, 'due': 'Confirmed once, interval, weekly or monthly schedule'},
          'effects': ['Send fixed reminders', 'Run saved requests', 'Evaluate watchers within confirmed scope'],
          'keeps': ['Confirmed values, recipient scope and run limits; pause when access is lost']},
     ]

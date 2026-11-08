@@ -20,7 +20,7 @@ from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 
-from .logic import PROMO_SOURCES
+from .logic import PROMO_LADDER, PROMO_SOURCES
 from .logic import apply_completed_route
 from .logic import default_case_fields
 from .logic import is_valid_route
@@ -191,7 +191,7 @@ class PromoToClanSelect(discord.ui.Select["PromoIntakeView"]):
     def __init__(self, case: Optional[Dict[str, Any]] = None, *, register_all: bool = False) -> None:
         current = str((case or {}).get("to_clan") or "").upper()
         from_clan = str((case or {}).get("from_clan") or "").upper()
-        values = valid_targets_for_source(from_clan) if not register_all else ("BEC", "BEM", "BE1", "BES", "BE4", "BEH")
+        values = valid_targets_for_source(from_clan) if not register_all else PROMO_LADDER[1:]
         if not values:
             values = ("BEH",)
         options = [

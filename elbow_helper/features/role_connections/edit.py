@@ -86,7 +86,7 @@ class RemoveConnectionSelect(discord.ui.Select):
             await interaction.response.send_message("That role connection is no longer available.", ephemeral=True)
 
 
-class RemoveConnectionView(BaseTimeoutView):
+class _ConnectionSelectorView(BaseTimeoutView):
     def __init__(self, cog: "RoleConnections", channel: discord.TextChannel, page: int = 0):
         super().__init__(timeout=300)
         self.cog = cog
@@ -94,7 +94,7 @@ class RemoveConnectionView(BaseTimeoutView):
         self.page, self.total_pages, options = _connection_page(cog, channel, page)
 
         if options:
-            self.add_item(RemoveConnectionSelect(self, options))
+            self.add_item(self.selector(self, options))
 
         if self.total_pages > ADAPTIVE_JUMP_THRESHOLD:
             self.first_button = discord.ui.Button(label=FIRST_PAGE_LABEL, style=discord.ButtonStyle.secondary)
@@ -127,34 +127,40 @@ class RemoveConnectionView(BaseTimeoutView):
         self.add_item(cancel_button)
 
     def build_embed(self) -> discord.Embed:
-        embed = build_embed("Remove Connection", "Choose a role connection to remove.")
+        embed = build_embed(self.title, self.description)
         if self.total_pages > 1:
             embed.set_footer(text=format_page_footer(self.page + 1, self.total_pages))
         return embed
 
     async def prev_page(self, interaction: discord.Interaction) -> None:
-        view = RemoveConnectionView(self.cog, self.channel, page=self.page - 1)
+        view = type(self)(self.cog, self.channel, page=self.page - 1)
         self.stop()
         await edit_bound_view(interaction, embed=view.build_embed(), view=view)
 
     async def first_page(self, interaction: discord.Interaction) -> None:
-        view = RemoveConnectionView(self.cog, self.channel, page=0)
+        view = type(self)(self.cog, self.channel, page=0)
         self.stop()
         await edit_bound_view(interaction, embed=view.build_embed(), view=view)
 
     async def next_page(self, interaction: discord.Interaction) -> None:
-        view = RemoveConnectionView(self.cog, self.channel, page=self.page + 1)
+        view = type(self)(self.cog, self.channel, page=self.page + 1)
         self.stop()
         await edit_bound_view(interaction, embed=view.build_embed(), view=view)
 
     async def last_page(self, interaction: discord.Interaction) -> None:
-        view = RemoveConnectionView(self.cog, self.channel, page=self.total_pages - 1)
+        view = type(self)(self.cog, self.channel, page=self.total_pages - 1)
         self.stop()
         await edit_bound_view(interaction, embed=view.build_embed(), view=view)
 
     async def cancel(self, interaction: discord.Interaction) -> None:
         self.stop()
         await interaction.response.edit_message(content="No changes made.", embed=None, view=None)
+
+
+class RemoveConnectionView(_ConnectionSelectorView):
+    selector = RemoveConnectionSelect
+    title = "Remove Connection"
+    description = "Choose a role connection to remove."
 
 
 class EditConnectionSelect(discord.ui.Select):
@@ -169,75 +175,10 @@ class EditConnectionSelect(discord.ui.Select):
         await edit_bound_view(interaction, embed=view.build_embed(), view=view)
 
 
-class EditConnectionView(BaseTimeoutView):
-    def __init__(self, cog: "RoleConnections", channel: discord.TextChannel, page: int = 0):
-        super().__init__(timeout=300)
-        self.cog = cog
-        self.channel = channel
-        self.page, self.total_pages, options = _connection_page(cog, channel, page)
-
-        if options:
-            self.add_item(EditConnectionSelect(self, options))
-
-        if self.total_pages > ADAPTIVE_JUMP_THRESHOLD:
-            self.first_button = discord.ui.Button(label=FIRST_PAGE_LABEL, style=discord.ButtonStyle.secondary)
-            self.first_button.callback = self.first_page
-            self.first_button.disabled = self.page <= 0
-            self.add_item(self.first_button)
-        else:
-            self.first_button = None
-
-        self.prev_button = discord.ui.Button(label=PREV_PAGE_LABEL, style=discord.ButtonStyle.secondary)
-        self.prev_button.callback = self.prev_page
-        self.prev_button.disabled = self.page <= 0
-        self.add_item(self.prev_button)
-
-        self.next_button = discord.ui.Button(label=NEXT_PAGE_LABEL, style=discord.ButtonStyle.secondary)
-        self.next_button.callback = self.next_page
-        self.next_button.disabled = self.page >= self.total_pages - 1
-        self.add_item(self.next_button)
-
-        if self.total_pages > ADAPTIVE_JUMP_THRESHOLD:
-            self.last_button = discord.ui.Button(label=LAST_PAGE_LABEL, style=discord.ButtonStyle.secondary)
-            self.last_button.callback = self.last_page
-            self.last_button.disabled = self.page >= self.total_pages - 1
-            self.add_item(self.last_button)
-        else:
-            self.last_button = None
-
-        cancel_button = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.secondary)
-        cancel_button.callback = self.cancel
-        self.add_item(cancel_button)
-
-    def build_embed(self) -> discord.Embed:
-        embed = build_embed("Edit Connection", "Choose a role connection to edit.")
-        if self.total_pages > 1:
-            embed.set_footer(text=format_page_footer(self.page + 1, self.total_pages))
-        return embed
-
-    async def prev_page(self, interaction: discord.Interaction) -> None:
-        view = EditConnectionView(self.cog, self.channel, page=self.page - 1)
-        self.stop()
-        await edit_bound_view(interaction, embed=view.build_embed(), view=view)
-
-    async def first_page(self, interaction: discord.Interaction) -> None:
-        view = EditConnectionView(self.cog, self.channel, page=0)
-        self.stop()
-        await edit_bound_view(interaction, embed=view.build_embed(), view=view)
-
-    async def next_page(self, interaction: discord.Interaction) -> None:
-        view = EditConnectionView(self.cog, self.channel, page=self.page + 1)
-        self.stop()
-        await edit_bound_view(interaction, embed=view.build_embed(), view=view)
-
-    async def last_page(self, interaction: discord.Interaction) -> None:
-        view = EditConnectionView(self.cog, self.channel, page=self.total_pages - 1)
-        self.stop()
-        await edit_bound_view(interaction, embed=view.build_embed(), view=view)
-
-    async def cancel(self, interaction: discord.Interaction) -> None:
-        self.stop()
-        await interaction.response.edit_message(content="No changes made.", embed=None, view=None)
+class EditConnectionView(_ConnectionSelectorView):
+    selector = EditConnectionSelect
+    title = "Edit Connection"
+    description = "Choose a role connection to edit."
 
 
 class EditConnectionActionView(BaseTimeoutView):

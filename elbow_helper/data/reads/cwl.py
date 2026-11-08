@@ -43,9 +43,6 @@ def profile_league(connection, clan, at):
 class CwlReads(RecordReads):
     """Bounded league facts; all timestamps are UTC epoch microseconds."""
 
-    def __init__(self, store, clans=None):
-        super().__init__(store)
-
     def cache_revision(self):
         """The record's commit revision; any write changes it."""
         path = getattr(self.store, "path", None)

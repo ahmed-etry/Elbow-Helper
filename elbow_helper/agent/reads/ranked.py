@@ -83,7 +83,6 @@ async def read_ranked(context, arguments, *, selection_maximum=200, starts=None)
     """Return the complete selected facts; family_tool owns retained paging and compact delivery.
 
     starts supplies per-account hibernation windows internally, never a second fact reader.
-    The seasonal population resolver remains unchanged until the people migration.
     """
     await require_evidence_access(context)
     if ranked_reads(context) is None:

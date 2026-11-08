@@ -26,11 +26,6 @@ def _prev_month(year: int, month: int) -> Tuple[int, int]:
         return year - 1, 12
     return year, month - 1
 
-def _next_month(year: int, month: int) -> Tuple[int, int]:
-    if month == 12:
-        return year + 1, 1
-    return year, month + 1
-
 def _season_end_dt(year: int, month: int) -> datetime:
     # CWL cycle cutoff for reporting windows.
     return datetime(year, month, 11, 8, 0, 0, tzinfo=UTC)

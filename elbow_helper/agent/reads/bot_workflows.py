@@ -117,7 +117,7 @@ def bot_workflows(context=None):
         {'workflow': 'recruitment_history',
          'sources': ['elbow_helper/features/recruitment/trials.py:_build_trial_tracking_embed',
                      'elbow_helper/features/recruitment/trials.py:check_expired_trials',
-                     'elbow_helper/features/recruitment/trials.py:end_trial_ticket',
+                     'elbow_helper/features/recruitment/trials.py:complete_trial_end',
                      'elbow_helper/features/recruitment/helpers.py:_get_clan_role_mentions',
                      'elbow_helper/configuration/channels.py'],
          'tracking_channel_id': TRIAL_LIST, 'ticket_log_channel_id': TICKETS_LOG,

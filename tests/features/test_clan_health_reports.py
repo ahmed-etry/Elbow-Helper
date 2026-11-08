@@ -123,7 +123,7 @@ class PlayerReportTests(unittest.IsolatedAsyncioTestCase):
         reports = Reports(record)
         start = NOW - timedelta(days=30)
         result = await reports.build_player_health_export(
-            player_tag="#PP29L", now=NOW, window_mode="last_30d", season_key="last 30d", trend_season_key="2026-10",
+            player_tag="#PP29L", season_key="last 30d", trend_season_key="2026-10",
             cycle_start=start, cycle_end=NOW, window_label="Last 30 days")
         reports.clash_client.get.assert_not_awaited()
         return result

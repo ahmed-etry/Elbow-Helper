@@ -90,9 +90,13 @@ def legacy_capability_names():
     }
 
 
-def validate_command_names(adapters: Sequence[CommandAdapter]) -> None:
-    from ..engine.registry import build_agent_tools
-    names = set(build_agent_tools()) | {"find_gif"}
+def validate_command_names(
+    adapters: Sequence[CommandAdapter], reserved_names: set[str] | None = None,
+) -> None:
+    if reserved_names is None:
+        from ..engine.registry import build_agent_tools
+        reserved_names = set(build_agent_tools())
+    names = reserved_names | {"find_gif"}
     for adapter in adapters:
         name = command_capability_name(adapter)
         if name in names:
@@ -104,9 +108,9 @@ def build_command_capabilities(
     bot: Any, adapters: Sequence[CommandAdapter],
 ) -> dict[str, CommandCapability]:
     """Expose only adapters backed by both a command and a help entry."""
-    validate_command_names(adapters)
     from ..engine.registry import build_agent_tools
     reserved_names = set(build_agent_tools())
+    validate_command_names(adapters, reserved_names)
     commands = discover_commands(bot)
     help_entries = {entry.path: entry for entry in HELP_ENTRIES}
     result: dict[str, CommandCapability] = {}

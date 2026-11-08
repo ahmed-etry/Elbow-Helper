@@ -267,10 +267,6 @@ def parse_csv(
     columns = tuple(value.strip() for value in header)
     if not columns or any(not value for value in columns):
         raise AttachmentValidationError("CSV headings must not be empty")
-    issues = []
-    duplicates = sorted({value for value in columns if columns.count(value) > 1})
-    if duplicates:
-        issues.append("duplicate_headings:" + ",".join(duplicates))
     rows = []
     try:
         for row_number, row in enumerate(reader, start=2):
@@ -285,14 +281,9 @@ def parse_csv(
     except csv.Error as error:
         raise AttachmentValidationError("CSV data is malformed") from error
     result = tuple(rows)
-    formula_like = sum(
-        value.startswith(("=", "+", "-", "@"))
-        for row in result for value in row if value
-    )
-    if formula_like:
-        issues.append(f"formula_like_cells:{formula_like}")
+    issues = table_issues(columns, result)
     validate_shape(columns, result)
-    return columns, result, delimiter, tuple(issues)
+    return columns, result, delimiter, issues
 
 
 def parse_xlsx(data: bytes) -> tuple[tuple[XlsxSheet, ...], int]:

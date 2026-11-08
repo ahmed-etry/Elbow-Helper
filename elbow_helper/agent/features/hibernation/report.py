@@ -7,6 +7,8 @@ from datetime import datetime
 import json
 from typing import Any
 
+from elbow_helper.agent.reports.values import aware_timestamp, channel_snapshot_payload
+
 from elbow_helper.configuration.channels import HIBERNATION_LOG
 from elbow_helper.features.hibernation.queries import ActiveHibernationRecord, ActiveHibernationSnapshot
 
@@ -62,11 +64,7 @@ class HibernationReport:
         ).encode("utf-8")))
 
     def storage_payload(self) -> dict[str, Any]:
-        return {
-            "report_id": self.report_id, "guild_id": self.guild_id,
-            "source_channel_id": self.source_channel_id,
-            "snapshot": asdict(self.snapshot),
-        }
+        return channel_snapshot_payload(self)
 
     def manifest(self) -> dict[str, Any]:
         return {
@@ -127,15 +125,7 @@ def _validate_record(row: ActiveHibernationRecord) -> None:
 
 
 def _timestamp(value: str) -> datetime:
-    if not isinstance(value, str) or not value:
-        raise ValueError("Invalid hibernation timestamp")
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError as error:
-        raise ValueError("Invalid hibernation timestamp") from error
-    if parsed.tzinfo is None:
-        raise ValueError("Invalid hibernation timestamp")
-    return parsed
+    return aware_timestamp(value, "Invalid hibernation timestamp")
 
 
 __all__ = ["HibernationReport"]

@@ -167,15 +167,6 @@ class AchievementTrackingMixin:
         await self.check_reaction_achievements(reaction, user)
     
     @commands.Cog.listener()
-    async def on_message_edit(self, before, after):
-        """Observe edits; reaction increments are counted in on_reaction_add."""
-        if before.author.bot:
-            return
-
-        if len(after.reactions) > len(before.reactions):
-            return
-    
-    @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         """Track voice activity"""
         if member.bot:

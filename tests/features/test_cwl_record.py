@@ -59,7 +59,7 @@ def now(at):
 class LeagueFixture(CwlFixture):
     async def asyncSetUp(self):
         await super().asyncSetUp()
-        self.reads = CwlReads(self.store, CLANS)
+        self.reads = CwlReads(self.store)
         self.history = CwlHistory(self.reads, None, CLANS)
         self.groups = CwlGroups(self.reads, CLANS)
 
@@ -131,7 +131,7 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         await self.assert_league("Crystal League I", end_of(3) + DAY)
         await self.finish_november()
         await self.assert_league("Crystal League I", end_of(3) + DAY)
-        fresh = CwlReads(self.store, CLANS)
+        fresh = CwlReads(self.store)
         weeks = await fresh.weeks(["#PY"], as_of=end_of(3) + DAY)
         self.assertEqual(weeks["weeks"][0]["league_name"], "Crystal League I")
         self.assertEqual((await fresh.group("#PY", as_of=end_of(3) + DAY))["league"], "Crystal League I")

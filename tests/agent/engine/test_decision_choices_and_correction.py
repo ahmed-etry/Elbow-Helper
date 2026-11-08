@@ -4,7 +4,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.agent.engine.assessment import decision_answer, parse_decision, without_new_choices
+from elbow_helper.agent.engine.assessment import parse_decision, without_new_choices
+from tests.agent.engine.answer_helpers import decision_answer
 from elbow_helper.agent.engine.budgets import ASSESSMENT_LIMITS
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from tests.agent.engine import test_request_cost as cost

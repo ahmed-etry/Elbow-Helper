@@ -195,13 +195,6 @@ def _render_decision(result, parts, lists, accounts, *, delivered=False):
     return json.dumps({'answer': answer, 'needs_private_evidence': True}) if result.get('needs_private_evidence') else answer
 
 
-def decision_answer(content, discussion_message_ids, *, accounts=None, advice=True):
-    """Render the validated inline answer, including the private-answer envelope."""
-    accounts = accounts or {}
-    result, parts, lists = _decision_parts(content, discussion_message_ids, accounts, advice)
-    return _render_decision(result, parts, lists, accounts)
-
-
 async def deliver_decision_answer(context, content, discussion_message_ids, *, accounts=None, advice=True):
     """Use the same resolved lists for the fallback and the prepared workbook."""
     accounts = accounts or {}

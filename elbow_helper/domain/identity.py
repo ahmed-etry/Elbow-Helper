@@ -68,8 +68,7 @@ def small_spelling_edit(query, name):
 
 
 def name_parts(value):
-    normalized = unicodedata.normalize("NFKC", value).casefold()
-    return tuple(''.join(char if char.isalnum() else ' ' for char in normalized).split())
+    return tuple(name_segments(value))
 
 
 def identity_query(query):

@@ -68,7 +68,7 @@ class ClanReportingWarMixin:
         if not clan_tag:
             return False
 
-        status, (wins, losses, ties) = await self._month_war_counts(clan_tag, month_start, month_end)
+        status, (wins, losses, ties) = await self._month_war_counts(clan_tag, month_start)
         if status == "waiting":
             return False
         log_available = status == "available"
@@ -121,7 +121,7 @@ class ClanReportingWarMixin:
         return log_available
 
     async def _month_war_counts(
-        self, clan_tag: str, month_start: datetime, month_end: datetime
+        self, clan_tag: str, month_start: datetime
     ) -> tuple[str, tuple[int, int, int]]:
         """Regular log results and individual CWL rounds ended in the calendar month.
 
