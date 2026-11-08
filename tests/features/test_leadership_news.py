@@ -151,6 +151,79 @@ class LeadNewsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.saved_state())["published"]["7"]["message_id"], 101)
 
 
+    async def test_all_selected_attachments_are_prepared_before_publication(self) -> None:
+        files = [MagicMock(spec=discord.File) for _ in range(3)]
+        attachments = [SimpleNamespace(id=i, to_file=AsyncMock(return_value=file))
+                       for i, file in enumerate(files)]
+        unselected = SimpleNamespace(id=4, to_file=AsyncMock())
+        self.source.attachments = [*attachments, unselected]
+
+        async def send(**kwargs):
+            for attachment in attachments:
+                attachment.to_file.assert_awaited_once()
+            self.assertEqual(kwargs["files"], files)
+            for file in files:
+                file.close.assert_not_called()
+            self.assertEqual((await self.saved_state())["published"], {})
+            return self.sent
+
+        self.target.send.side_effect = send
+        await self.cog.publish_public_news(self.source, self.target)
+
+        unselected.to_file.assert_not_awaited()
+        self.target.send.assert_awaited_once()
+        for file in files:
+            file.close.assert_called_once_with()
+        self.assertEqual((await self.saved_state())["published"]["7"]["message_id"], 101)
+
+    async def test_attachment_failure_uses_existing_message_and_can_be_retried(self) -> None:
+        files = []
+
+        async def prepare_file():
+            file = MagicMock(spec=discord.File)
+            files.append(file)
+            return file
+
+        attachments = [SimpleNamespace(id=i, to_file=AsyncMock(side_effect=prepare_file))
+                       for i in range(3)]
+        self.source.attachments = attachments
+        await self.cog.on_message(self.source)
+        view = self.cog._prompt_views[self.prompt.id]
+        before = await self.saved_state()
+
+        for failed_index, status in ((0, 404), (1, 503), (2, 403)):
+            with self.subTest(failed_index=failed_index, status=status):
+                attachments[failed_index].to_file.side_effect = self.http_error(status)
+                interaction = self.interaction()
+                await view.publish_btn.callback(interaction)
+
+                interaction.response.send_message.assert_awaited_once_with(
+                    "I couldn't publish that post. Try again in a moment.", ephemeral=True,
+                )
+                self.target.send.assert_not_awaited()
+                self.prompt.delete.assert_not_awaited()
+                self.assertEqual(await self.saved_state(), before)
+                self.assertEqual(self.cog._uncommitted_publications, {})
+                self.assertEqual(await self.bot.workflow_events.read(), [])
+                for file in files:
+                    file.close.assert_called_once_with()
+                attachments[failed_index].to_file.side_effect = prepare_file
+
+        retry = self.interaction()
+        await view.publish_btn.callback(retry)
+
+        self.target.send.assert_awaited_once()
+        self.assertEqual(len(self.target.send.await_args.kwargs["files"]), 3)
+        for file in files:
+            file.close.assert_called_once_with()
+        retry.response.send_message.assert_awaited_once_with(
+            f"Published to <#{PUBLIC_NEWS}>", ephemeral=True,
+        )
+        self.assertEqual((await self.saved_state())["published"]["7"]["message_id"], 101)
+        self.assertEqual((await self.saved_state())["prompts"], {})
+        self.assertEqual(len(await self.bot.workflow_events.read()), 1)
+
+
     async def test_receipt_is_saved_before_prompt_cleanup_and_survives_its_failure(self) -> None:
         async def failed_cleanup():
             self.assertEqual((await self.saved_state())["published"]["7"]["message_id"], 101)
