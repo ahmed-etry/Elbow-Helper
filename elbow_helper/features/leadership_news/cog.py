@@ -167,18 +167,19 @@ class LeadNews(commands.Cog):
                 if pending is None:
                     prepared = prepared or self.public_news_preview(source_message)
                     files = []
-                    for attachment in prepared["attachments"]:
-                        try:
+                    try:
+                        for attachment in prepared["attachments"]:
                             files.append(await attachment.to_file())
-                        except discord.HTTPException:
-                            LOGGER.debug("Failed converting attachment %s", attachment.id)
-                    sent = await target_channel.send(
-                        content=prepared["content"] or None,
-                        files=files or None,
-                        allowed_mentions=discord.AllowedMentions(
-                            everyone=False, roles=False, users=True,
-                        ),
-                    )
+                        sent = await target_channel.send(
+                            content=prepared["content"] or None,
+                            files=files or None,
+                            allowed_mentions=discord.AllowedMentions(
+                                everyone=False, roles=False, users=True,
+                            ),
+                        )
+                    finally:
+                        for file in files:
+                            file.close()
                     pending = {"source": source_message, "target": target_channel, "sent": sent,
                                "occurred_at": now_us(),
                                "actor_kind": actor_kind, "actor_discord_id": actor_discord_id, "via": via}
