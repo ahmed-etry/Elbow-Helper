@@ -93,3 +93,16 @@ __all__ = [
     "DiscordArchivedThreadPage", "DiscordThreadDiscovery",
     "DiscordThreadDiscoveryError",
 ]
+
+
+async def fetch_thread(bot: Any, thread_id: int) -> discord.Thread | None:
+    """The thread from cache or Discord, or None when it is missing, hidden or not a thread."""
+
+    channel = bot.get_channel(thread_id)
+    if isinstance(channel, discord.Thread):
+        return channel
+    try:
+        fetched = await bot.fetch_channel(thread_id)
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        return None
+    return fetched if isinstance(fetched, discord.Thread) else None

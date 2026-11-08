@@ -13,19 +13,30 @@ def managed_role_ids() -> frozenset[int]:
 TRIAL_DAYS_DEFAULT = 7
 TRIAL_RESOLVED_REMINDER_RETENTION_HOURS = 12
 REMINDER_HOURS = 18
-TICKET_STATUS_ORDER = ["🚧", "🔗", "⛔", "⏳", "🤔", "✅"]
-TICKET_RENAME_EMOJIS = ["🚧", "⏳", "🤔", "✅"]
 APPLICANT_AI_CLEANUP_HOURS = 12
 
+# Each status is the emoji at the front of a recruitment ticket channel name.
+TICKET_OPEN = "🚧"
+TICKET_LINKED = "🔗"
+TICKET_DECLINED = "⛔"
+TICKET_ON_TRIAL = "⏳"
+TICKET_TRIAL_ENDED = "🤔"
+TICKET_ACCEPTED = "✅"
+
+TICKET_STATUS_ORDER = [
+    TICKET_OPEN, TICKET_LINKED, TICKET_DECLINED,
+    TICKET_ON_TRIAL, TICKET_TRIAL_ENDED, TICKET_ACCEPTED,
+]
+TICKET_RENAME_EMOJIS = [TICKET_OPEN, TICKET_ON_TRIAL, TICKET_TRIAL_ENDED, TICKET_ACCEPTED]
+
+TICKET_BASE_PREFIX = "ticket-"
 TRIAL_TICKET_PREFIXES_START = [
-    ("🚧ticket-", "⏳ticket-"),
+    (f"{TICKET_OPEN}{TICKET_BASE_PREFIX}", f"{TICKET_ON_TRIAL}{TICKET_BASE_PREFIX}"),
 ]
 TRIAL_TICKET_PREFIXES_END = [
-    ("⏳ticket-", "🤔ticket-"),
+    (f"{TICKET_ON_TRIAL}{TICKET_BASE_PREFIX}", f"{TICKET_TRIAL_ENDED}{TICKET_BASE_PREFIX}"),
 ]
 DECLINED_TICKET_PREFIXES = [
-    ("🚧ticket-", "⛔ticket-"),
-    ("⏳ticket-", "⛔ticket-"),
-    ("🤔ticket-", "⛔ticket-"),
-    ("ticket-", "⛔ticket-"),
-]
+    (f"{status}{TICKET_BASE_PREFIX}", f"{TICKET_DECLINED}{TICKET_BASE_PREFIX}")
+    for status in (TICKET_OPEN, TICKET_ON_TRIAL, TICKET_TRIAL_ENDED)
+] + [(TICKET_BASE_PREFIX, f"{TICKET_DECLINED}{TICKET_BASE_PREFIX}")]

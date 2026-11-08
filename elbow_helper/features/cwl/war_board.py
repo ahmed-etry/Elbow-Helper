@@ -18,28 +18,22 @@ from elbow_helper.domain.wars import normalize_war_state
 from elbow_helper.configuration.channels import CLAN_CWL_INFO_CHANNELS
 
 from .config import CWL_CLAN_TAGS
-from .helpers import coc_time_to_dt
+from elbow_helper.infrastructure.discord.war_boards import coc_time_to_datetime
+from elbow_helper.domain.numbers import non_negative_int
 
 
 LOGGER = logging.getLogger(__name__)
 
 
-def _positive_int(value: Any) -> int:
-    try:
-        return max(int(value or 0), 0)
-    except (TypeError, ValueError):
-        return 0
-
-
 def _war_round(war: dict[str, Any]) -> int:
-    return _positive_int(war.get("_round"))
+    return non_negative_int(war.get("_round"))
 
 
 def cwl_board_snapshot_is_complete(wars: list[dict[str, Any]]) -> bool:
     """Reject partial snapshots that would temporarily drop an overlapping day."""
     total_rounds = max(
         (
-            _positive_int(war.get("_total_rounds"))
+            non_negative_int(war.get("_total_rounds"))
             for war in wars
             if war.get("_total_rounds") is not None
         ),
@@ -117,7 +111,7 @@ def select_cwl_board_wars(wars: list[dict[str, Any]]) -> list[dict[str, Any]]:
             ended_wars,
             key=lambda war: (
                 _war_round(war),
-                coc_time_to_dt(war.get("endTime"))
+                coc_time_to_datetime(war.get("endTime"))
                 or datetime.min.replace(tzinfo=timezone.utc),
             ),
         )

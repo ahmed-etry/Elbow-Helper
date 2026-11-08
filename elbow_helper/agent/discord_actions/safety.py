@@ -112,6 +112,17 @@ async def resolve_member(guild: Any, member_id: int, *, fresh: bool = False) -> 
         raise DiscordActionRefused("That member is unavailable.") from error
 
 
+async def find_member(guild: Any, member_id: int) -> Any:
+    """The member from cache or Discord, or None when Discord cannot return them."""
+    member = guild.get_member(member_id)
+    if member is not None:
+        return member
+    try:
+        return await guild.fetch_member(member_id)
+    except discord.DiscordException:
+        return None
+
+
 async def resolve_channel(context: Any, channel_id: int) -> Any:
     channel = context.guild.get_channel_or_thread(channel_id)
     if channel is None:

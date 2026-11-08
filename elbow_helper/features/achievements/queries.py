@@ -17,7 +17,7 @@ from .economy_queries import (
     AchievementEconomyQueries, CoinTransactionRow, CoinTransactionSnapshot,
     EconomyRulesSnapshot, MAX_COIN_TRANSACTIONS,
     MAX_COIN_TRANSACTION_PAYLOAD_BYTES, MAX_RAFFLE_ROWS, MemberInventorySnapshot,
-    RaffleSnapshot, RaffleWinnerRow,
+    RaffleSnapshot, RaffleWinnerRow, ReadOnlyAchievementQueries,
 )
 
 
@@ -122,15 +122,14 @@ def achievement_leaderboard_eligible(
     return include_leadership or not bool(role_ids & LEAD)
 
 
-class AchievementQueries:
+class AchievementQueries(ReadOnlyAchievementQueries):
     """Read progress and counts without exposing economy or mutation internals."""
 
     def __init__(
         self, database_path: Path,
         *, clock: Callable[[], datetime] | None = None,
     ) -> None:
-        self._path = Path(database_path)
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        super().__init__(database_path, clock=clock)
         self.economy = AchievementEconomyQueries(
             self._path, clock=self._clock,
         )
@@ -257,21 +256,6 @@ class AchievementQueries:
 
     def economy_rules(self) -> EconomyRulesSnapshot:
         return self.economy.rules()
-
-    def _observed(self) -> datetime:
-        value = self._clock()
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
-
-    def _connect(self) -> sqlite3.Connection:
-        if not self._path.is_file():
-            raise RuntimeError("Achievement data is unavailable")
-        return sqlite3.connect(
-            f"{self._path.resolve().as_uri()}?mode=ro",
-            uri=True, timeout=5.0,
-        )
-
 
 __all__ = [
     "AchievementCountRow", "AchievementCountSnapshot", "CoinTransactionRow",

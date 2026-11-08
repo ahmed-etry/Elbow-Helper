@@ -24,7 +24,7 @@ from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.cwl import is_cwl_window
 from elbow_helper.domain.war_views import board_payload
 
-from .helpers import coc_time_to_dt
+from elbow_helper.infrastructure.discord.war_boards import coc_time_to_datetime
 from .record_rows import feature_week
 
 LOGGER = logging.getLogger(__name__)
@@ -73,7 +73,7 @@ def league_wars(group: dict[str, Any]) -> list[dict[str, Any]]:
         war = board_payload(item["war"])
         state = war.get("state")
         war.update(_warTag=item["war_tag"], _round=item["round"], _state=state,
-                   _start_dt=coc_time_to_dt(war.get("startTime")), _total_rounds=total,
+                   _start_dt=coc_time_to_datetime(war.get("startTime")), _total_rounds=total,
                    _season_label=season, _season=season, _league=group.get("league"),
                    _coverage=item["war"]["coverage"],
                    # An ended war is final; a running one is stale once its checks stop.

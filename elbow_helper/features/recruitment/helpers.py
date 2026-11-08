@@ -8,8 +8,6 @@ from typing import Optional
 import discord
 from elbow_helper.configuration.clans import CLAN_INFO_BOARDS
 
-from elbow_helper.domain.player_tags import normalize_player_tag
-
 # In-memory rename throttle.
 channel_rename_timestamps = {}
 
@@ -25,8 +23,10 @@ def can_rename(guild_id):
     return True
 
 
-def rename_ticket_channel(channel: discord.TextChannel, prefixes: list[tuple[str, str]]) -> Optional[str]:
-    """Rename a ticket channel if it matches a known prefix."""
+def new_ticket_name(channel: discord.TextChannel, prefixes: list[tuple[str, str]]) -> Optional[str]:
+    """Return the channel's name with its first matching prefix swapped, or None if none match.
+
+    This only works out the name; the caller does the rename."""
     for old_prefix, new_prefix in prefixes:
         if channel.name.startswith(old_prefix):
             return channel.name.replace(old_prefix, new_prefix, 1)
@@ -115,28 +115,5 @@ class HelperMixin:
         invalid_clans = [clan for clan in unique_clans if clan not in available_clans]
 
         return valid_clans, invalid_clans
-
-    def parse_player_tag_input(self, raw_input: str) -> tuple[list[str], list[str]]:
-        """Parse player tags from comma, semicolon, newline, or space-separated input."""
-        if not raw_input:
-            return [], []
-
-        normalized = raw_input.replace(",", " ").replace(";", " ").replace("\n", " ")
-        values = [value.strip() for value in normalized.split(" ") if value.strip()]
-
-        valid: list[str] = []
-        invalid: list[str] = []
-        seen: set[str] = set()
-        for value in values:
-            tag = normalize_player_tag(value)
-            if not tag:
-                invalid.append(value.strip())
-                continue
-            if tag in seen:
-                continue
-            seen.add(tag)
-            valid.append(tag)
-
-        return valid, invalid
 
 

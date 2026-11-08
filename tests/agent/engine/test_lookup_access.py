@@ -13,24 +13,6 @@ from elbow_helper.agent.conversation.wording import ACTION_UNAVAILABLE
 
 
 class LookupAccessTests(unittest.IsolatedAsyncioTestCase):
-<<<<<<< f5976790
-=======
-    def test_levels_equal_help_access_groups(self):
-        mirrors = {
-            "lead": ("/event list",),
-            "lead_plus": ("/health clan",),
-            "recruiter": ("/health player",),
-            "lead_plus_or_core": ("/raffle list", "/raffle history"),
-            "core": ("/coinlog",),
-            "recruiter_or_core": ("/account list",),
-            "lead_plus_or_cwl_helper": ("/cwl bonus",),
-        }
-        entries = {entry.path: entry for entry in HELP_ENTRIES}
-        for level, paths in mirrors.items():
-            for path in paths:
-                with self.subTest(level=level, path=path):
-                    self.assertEqual(ACCESS_ROLE_SETS[level], entries[path].visible_to)
->>>>>>> 917f2109
 
     def test_departments_are_any_role_but_combined_levels_are_all_required(self):
         member = SimpleNamespace(roles=[])

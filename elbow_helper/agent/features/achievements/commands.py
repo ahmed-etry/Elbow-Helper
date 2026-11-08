@@ -3,12 +3,12 @@
 from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
-import discord
 from elbow_helper.configuration.channels import GENERAL_CHAT
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
 from elbow_helper.agent.conversation.wording import ACTION_ACHIEVEMENT_ANNOUNCE_LINE, ACTION_ACHIEVEMENT_AWARD_LABEL, ACTION_ACHIEVEMENT_AWARD_LINE, ACTION_ACHIEVEMENT_COIN_LINE, ACTION_ACHIEVEMENT_COIN_ADD, ACTION_ACHIEVEMENT_COIN_REMOVE, ACTION_ACHIEVEMENT_COIN_PLURAL, ACTION_ACHIEVEMENT_COIN_SINGULAR, ACTION_ACHIEVEMENT_REMOVE_LABEL, ACTION_ACHIEVEMENT_REMOVE_LINE, ACTION_COIN_GRANT_BALANCE, ACTION_COIN_GRANT_LABEL, ACTION_COIN_GRANT_LINE, ACTION_REASON_LINE, ACTION_RAFFLE_HUB_UPDATE, ACTION_TICKET_GRANT_LABEL, ACTION_TICKET_GRANT_LINE, ACTION_RAFFLE_REMOVE_LINE, ACTION_RAFFLE_REMOVE_LABEL
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter
+from elbow_helper.agent.discord_actions.safety import find_member
 
 
 def achievement_workflow(context: Any):
@@ -16,16 +16,6 @@ def achievement_workflow(context: Any):
     if workflow is None:
         raise ActionRefused("The raffle is unavailable")
     return workflow
-
-
-async def _member(context: Any, member_id: int):
-    member = context.guild.get_member(member_id)
-    if member is not None:
-        return member
-    try:
-        return await context.guild.fetch_member(member_id)
-    except discord.DiscordException:
-        return None
 
 
 async def _achievement_state(workflow: Any, member_id: int, query: str):
@@ -49,7 +39,7 @@ def _coin_line(action: str, count: int) -> str:
 async def prepare_achievement_award(context: Any,
                                     values: Mapping[str, Any]) -> ChangePreview:
     workflow = achievement_workflow(context)
-    member = await _member(context, values["user"])
+    member = await find_member(context.guild, values["user"])
     if member is None:
         raise ActionRefused('That member is unavailable.')
     state = await _achievement_state(workflow, member.id, values["achievement"])
@@ -68,7 +58,7 @@ async def prepare_achievement_award(context: Any,
         ))
 
     async def recheck() -> bool:
-        if await _member(context, member.id) is None:
+        if await find_member(context.guild, member.id) is None:
             return False
         return (await workflow.achievement_change_state(member.id, state["id"]) == state
                 and (not silent and workflow.bot.get_channel(GENERAL_CHAT) is not None)
@@ -81,7 +71,7 @@ async def prepare_achievement_award(context: Any,
 async def run_achievement_award(context: Any,
                                 values: Mapping[str, Any]) -> ActionOutcome:
     workflow = achievement_workflow(context)
-    member = await _member(context, values["user"])
+    member = await find_member(context.guild, values["user"])
     if member is None:
         return ActionOutcome.unavailable()
     state = await _achievement_state(workflow, member.id, values["achievement"])
@@ -101,7 +91,7 @@ async def run_achievement_award(context: Any,
 async def prepare_achievement_remove(context: Any,
                                      values: Mapping[str, Any]) -> ChangePreview:
     workflow = achievement_workflow(context)
-    member = await _member(context, values["user"])
+    member = await find_member(context.guild, values["user"])
     if member is None:
         raise ActionRefused('That member is unavailable.')
     state = await _achievement_state(workflow, member.id, values["achievement"])
@@ -114,7 +104,7 @@ async def prepare_achievement_remove(context: Any,
         lines.append(_coin_line(ACTION_ACHIEVEMENT_COIN_REMOVE, state["reward"]))
 
     async def recheck() -> bool:
-        if await _member(context, member.id) is None:
+        if await find_member(context.guild, member.id) is None:
             return False
         return await workflow.achievement_change_state(member.id, state["id"]) == state
 
@@ -125,7 +115,7 @@ async def prepare_achievement_remove(context: Any,
 async def run_achievement_remove(context: Any,
                                  values: Mapping[str, Any]) -> ActionOutcome:
     workflow = achievement_workflow(context)
-    member = await _member(context, values["user"])
+    member = await find_member(context.guild, values["user"])
     if member is None:
         return ActionOutcome.unavailable()
     state = await _achievement_state(workflow, member.id, values["achievement"])
@@ -144,7 +134,7 @@ async def run_achievement_remove(context: Any,
 async def prepare_grant_coins(context: Any,
                               values: Mapping[str, Any]) -> ChangePreview:
     workflow = achievement_workflow(context)
-    member = await _member(context, values["user"])
+    member = await find_member(context.guild, values["user"])
     if member is None:
         raise ActionRefused('That member is unavailable.')
     category = values["category"]
@@ -156,7 +146,7 @@ async def prepare_grant_coins(context: Any,
         raise ActionRefused(state["issue"])
 
     async def recheck() -> bool:
-        if await _member(context, member.id) is None:
+        if await find_member(context.guild, member.id) is None:
             return False
         return await workflow.manual_coin_grant_state(
             member, category, amount, context.member,
@@ -179,7 +169,7 @@ async def prepare_grant_coins(context: Any,
 async def run_grant_coins(context: Any,
                           values: Mapping[str, Any]) -> ActionOutcome:
     workflow = achievement_workflow(context)
-    member = await _member(context, values["user"])
+    member = await find_member(context.guild, values["user"])
     if member is None:
         return ActionOutcome.unavailable()
     category = values["category"]
@@ -204,7 +194,7 @@ async def run_grant_coins(context: Any,
 async def prepare_grant_ticket(context: Any,
                                values: Mapping[str, Any]) -> ChangePreview:
     workflow = achievement_workflow(context)
-    member = await _member(context, values["user"])
+    member = await find_member(context.guild, values["user"])
     if member is None:
         raise ActionRefused('That member is unavailable.')
     state = await workflow.ticket_grant_state(member.id)
@@ -212,7 +202,7 @@ async def prepare_grant_ticket(context: Any,
         raise ActionRefused(state["issue"])
 
     async def recheck() -> bool:
-        if await _member(context, member.id) is None:
+        if await find_member(context.guild, member.id) is None:
             return False
         return await workflow.ticket_grant_state(member.id) == state
 
@@ -227,7 +217,7 @@ async def prepare_grant_ticket(context: Any,
 async def run_grant_ticket(context: Any,
                            values: Mapping[str, Any]) -> ActionOutcome:
     workflow = achievement_workflow(context)
-    member = await _member(context, values["user"])
+    member = await find_member(context.guild, values["user"])
     if member is None:
         return ActionOutcome.unavailable()
     ok, message = await workflow.grant_raffle_ticket(member.id, values["reason"])
@@ -243,7 +233,7 @@ async def run_grant_ticket(context: Any,
 async def prepare_raffle_remove(context: Any,
                                 values: Mapping[str, Any]) -> ChangePreview:
     workflow = achievement_workflow(context)
-    member = await _member(context, values["user"])
+    member = await find_member(context.guild, values["user"])
     if member is None:
         raise ActionRefused('That member is unavailable.')
     state = await workflow.raffle_member_ticket_state(member.id)
@@ -251,7 +241,7 @@ async def prepare_raffle_remove(context: Any,
         raise ActionRefused('That member has no raffle ticket this month.')
 
     async def recheck() -> bool:
-        if await _member(context, member.id) is None:
+        if await find_member(context.guild, member.id) is None:
             return False
         return await workflow.raffle_member_ticket_state(member.id) == state
 
@@ -264,7 +254,7 @@ async def prepare_raffle_remove(context: Any,
 async def run_raffle_remove(context: Any,
                             values: Mapping[str, Any]) -> ActionOutcome:
     workflow = achievement_workflow(context)
-    member = await _member(context, values["user"])
+    member = await find_member(context.guild, values["user"])
     if member is None:
         return ActionOutcome.unavailable()
     message = await workflow.remove_raffle_ticket(member.id)

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import chat_exporter
 import discord
 from discord import app_commands
-from elbow_helper.infrastructure.discord.embeds import build_status_embed
+from elbow_helper.infrastructure.discord.embeds import build_reopened_ticket_embed, build_status_embed
 from elbow_helper.infrastructure.discord.interactions import deny
 from elbow_helper.infrastructure.discord.interactions import fail
 from elbow_helper.infrastructure.discord.interactions import warn
@@ -438,19 +438,9 @@ class SupportCommandMixin:
         if guild is not None and isinstance(channel, discord.TextChannel):
             owner_member, _ = await self.reopen_support_ticket(guild, channel, interaction.user)
 
-        restored_text = (
-            f"Restored messaging access for {owner_member.mention}."
-            if owner_member is not None
-            else "Messaging access restored."
+        embed = build_reopened_ticket_embed(
+            owner_member, interaction.user, footer="Support Ticket Controls",
         )
-        embed = discord.Embed(
-            title="Ticket Reopened",
-            description=restored_text,
-            color=discord.Color.green(),
-            timestamp=datetime.now(timezone.utc),
-        )
-        embed.add_field(name="Reopened By", value=interaction.user.mention, inline=True)
-        embed.set_footer(text="Support Ticket Controls")
         await interaction.response.edit_message(embed=embed, view=None)
 
     @app_commands.command(name="close", description="Close this ticket and save the transcript.")

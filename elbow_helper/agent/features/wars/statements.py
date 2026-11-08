@@ -5,9 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-import discord
-
-from elbow_helper.agent.discord_actions.safety import check_post_access, check_view_access
+from elbow_helper.agent.discord_actions.safety import check_post_access, check_view_access, find_member
 from elbow_helper.features.wars.commands import resolve_statement_members
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
@@ -16,23 +14,13 @@ from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter
 
 
-async def _member(guild: Any, member_id: int):
-    member = guild.get_member(member_id)
-    if member is not None:
-        return member
-    try:
-        return await guild.fetch_member(member_id)
-    except discord.DiscordException:
-        return None
-
-
 async def _statement(context: Any, values: Mapping[str, Any], kind: str):
     workflow = context.bot.get_cog("WarStatements")
     if workflow is None:
         raise ActionRefused("War statements are unavailable")
     if kind == "first_claim":
-        victim = await _member(context.guild, values["victim"])
-        attacker = await _member(context.guild, values["attacker"])
+        victim = await find_member(context.guild, values["victim"])
+        attacker = await find_member(context.guild, values["attacker"])
         if victim is None or attacker is None:
             raise ActionRefused('That player is unavailable.')
         prepared = workflow.prepare_statement(

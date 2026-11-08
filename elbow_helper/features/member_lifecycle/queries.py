@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from elbow_helper.domain.numbers import positive_int_or_none
 
 
 MAX_LIFECYCLE_MEMBERS = 10_000
@@ -181,10 +182,10 @@ class MemberLifecycleQueries:
             raise ValueError("Invalid member activity state")
         registrations = []
         for raw_member_id, value in last_seen.items():
-            member_id = _positive_int(raw_member_id)
+            member_id = positive_int_or_none(raw_member_id)
             if member_id not in current or not isinstance(value, Mapping):
                 continue
-            channel_id = _positive_int(value.get("channel_id"))
+            channel_id = positive_int_or_none(value.get("channel_id"))
             if channel_id is not None:
                 registrations.append(LifecycleActivityRegistration(
                     member_id, channel_id,
@@ -216,7 +217,7 @@ class MemberLifecycleQueries:
         skipped_members = 0
         represented = set()
         for raw_member_id, value in members.items():
-            member_id = _positive_int(raw_member_id)
+            member_id = positive_int_or_none(raw_member_id)
             if member_id is None or not isinstance(value, Mapping):
                 skipped_members += 1
                 continue
@@ -236,7 +237,7 @@ class MemberLifecycleQueries:
             activity_channel_id = None
             activity = last_seen.get(str(member_id), last_seen.get(member_id))
             if isinstance(activity, Mapping):
-                channel_id = _positive_int(activity.get("channel_id"))
+                channel_id = positive_int_or_none(activity.get("channel_id"))
                 observed_at = _timestamp(activity.get("ts_iso"))
                 if (
                     channel_id is not None and observed_at is not None
@@ -339,7 +340,7 @@ def _overdue_members(
     result = {}
     skipped = 0
     for value in values:
-        member_id = _positive_int(value)
+        member_id = positive_int_or_none(value)
         if member_id is None:
             skipped += 1
         elif member_id in current:
@@ -362,15 +363,6 @@ def _platform_counts(value: Any) -> tuple[tuple[tuple[str, int], ...], int]:
         rows.append((platform, count))
     rows.sort(key=lambda item: (-item[1], item[0].casefold()))
     return tuple(rows), skipped
-
-
-def _positive_int(value: Any) -> int | None:
-    if type(value) is int:
-        return value if value > 0 else None
-    if isinstance(value, str) and value.isdigit():
-        parsed = int(value)
-        return parsed if parsed > 0 else None
-    return None
 
 
 def _optional_timestamp(value: Any) -> str | None:

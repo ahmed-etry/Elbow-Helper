@@ -8,6 +8,7 @@ import discord
 from discord.ext import commands
 
 from elbow_helper.configuration.channels import SUPPORT_TICKET_CATEGORY
+from elbow_helper.infrastructure.discord.message_text import normalize_message
 
 from .config import SCAN_RETRY_COUNT, SCAN_RETRY_DELAY_SECONDS, STARTUP_SCAN_DELAY_SECONDS, TICKET_TYPES
 
@@ -15,17 +16,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 class RoutingMixin:
-    def normalize_message(self, content: str) -> str:
-        content = re.sub(r"<@!?\d+>", "", content)
-        content = re.sub(r"<@&\d+>", "", content)
-        content = re.sub(r"<#[0-9]+>", "", content)
-        content = re.sub(r"\|\|.*?\|\|", "", content)
-        return re.sub(r"\s+", " ", content).strip().lower()
-
     async def detect_ticket_type(self, channel: discord.TextChannel) -> tuple[str | None, str | None]:
         try:
             async for msg in channel.history(limit=10, oldest_first=True):
-                norm = self.normalize_message(msg.content)
+                norm = normalize_message(msg.content)
                 if not norm:
                     continue
                 for _, info in TICKET_TYPES.items():

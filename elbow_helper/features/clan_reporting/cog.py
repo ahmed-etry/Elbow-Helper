@@ -10,7 +10,7 @@ from typing import Any, Optional
 import discord
 from discord.ext import commands
 
-from elbow_helper.core.background import start_resilient_loop
+from elbow_helper.core.background import start_resilient_loop, start_tracked_task
 from elbow_helper.configuration.channels import CLAN_LEADERSHIP_CHANNELS
 from elbow_helper.configuration.roles import ELDER_ROLE_ID
 
@@ -61,20 +61,13 @@ class ClanReporting(
         *,
         name: str,
     ) -> asyncio.Task[None]:
-        task = asyncio.create_task(coroutine, name=name)
-        self._background_tasks.add(task)
-
-        def finish(completed: asyncio.Task[None]) -> None:
-            self._background_tasks.discard(completed)
-            try:
-                completed.result()
-            except asyncio.CancelledError:
-                return
-            except Exception:
-                LOGGER.exception("Clan Reporting background task failed: %s", name)
-
-        task.add_done_callback(finish)
-        return task
+        return start_tracked_task(
+            coroutine,
+            name=name,
+            tracked=self._background_tasks,
+            logger=LOGGER,
+            label="Clan Reporting",
+        )
 
     @commands.Cog.listener()
     async def on_ready(self):

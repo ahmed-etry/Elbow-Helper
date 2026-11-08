@@ -22,7 +22,7 @@ from elbow_helper.configuration.clans import CLAN_NAMES
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 from elbow_helper.domain.player_tags import normalize_player_tag
-from .helpers import coc_time_to_dt
+from elbow_helper.infrastructure.discord.war_boards import coc_time_to_datetime
 from .helpers import wait_for_boot_complete
 from .record import group_checked, league_wars
 from elbow_helper.infrastructure.persistence.documents import read_document as read_json
@@ -216,7 +216,7 @@ class CwlRouterMixin:
             now = datetime.now(timezone.utc)
             for running in wars:
                 if running.get("_state") != "warEnded":
-                    running_end = coc_time_to_dt(running.get("endTime"))
+                    running_end = coc_time_to_datetime(running.get("endTime"))
                     if running_end is not None and int(running_end.timestamp()) <= poll_ts:
                         awaiting_end = True
             in_war = next((w for w in wars if w.get("_state") == "inWar"), None)
@@ -244,7 +244,7 @@ class CwlRouterMixin:
             ended_wars = [w for w in wars if w.get("_state") == "warEnded" and w.get("_warTag")]
             ended_candidates: List[tuple[int, Dict[str, Any]]] = []
             for ended in ended_wars:
-                end_dt = coc_time_to_dt(ended.get("endTime"))
+                end_dt = coc_time_to_datetime(ended.get("endTime"))
                 if not end_dt:
                     continue
                 end_ts = int(end_dt.timestamp())

@@ -7,12 +7,11 @@ import asyncio
 from collections.abc import Mapping
 from typing import Any
 
-import discord
-
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.conversation.wording import ACTION_ACCOUNT_ADD_LABEL, ACTION_ACCOUNT_ADD_LINE, ACTION_ACCOUNT_ADD_UNDO_LABEL, ACTION_ACCOUNT_BOARD, ACTION_ACCOUNT_LOCATION_CLEAR, ACTION_ACCOUNT_NAME_LINE, ACTION_ACCOUNT_NO_LINK, ACTION_ACCOUNT_REASSIGN_LINE, ACTION_ACCOUNT_REMOVE_LABEL, ACTION_ACCOUNT_REMOVE_LINE, ACTION_UNDO_CHANGED
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter
+from elbow_helper.agent.discord_actions.safety import find_member
 
 
 def _workflow(context: Any):
@@ -20,16 +19,6 @@ def _workflow(context: Any):
     if workflow is None:
         raise ActionRefused("Account links are unavailable")
     return workflow
-
-
-async def _member(context: Any, member_id: int):
-    member = context.guild.get_member(member_id)
-    if member is not None:
-        return member
-    try:
-        return await context.guild.fetch_member(member_id)
-    except discord.DiscordException:
-        return None
 
 
 def _add_lines(prepared: Mapping[str, Any], member: Any) -> tuple[str, ...]:
@@ -66,7 +55,7 @@ def _add_lines(prepared: Mapping[str, Any], member: Any) -> tuple[str, ...]:
 async def prepare_account_add(context: Any,
                               values: Mapping[str, Any]) -> ChangePreview:
     workflow = _workflow(context)
-    member = await _member(context, values["member"])
+    member = await find_member(context.guild, values["member"])
     if member is None:
         raise ActionRefused('That member is unavailable.')
     prepared = await workflow.account_add_operation(member, values["tags"], commit=False)
@@ -74,7 +63,7 @@ async def prepare_account_add(context: Any,
         raise ActionRefused(prepared["error"])
 
     async def recheck() -> bool:
-        if await _member(context, member.id) is None:
+        if await find_member(context.guild, member.id) is None:
             return False
         current = await workflow.account_add_operation(member, values["tags"], commit=False)
         return (current["before"] == prepared["before"]
@@ -92,7 +81,7 @@ async def prepare_account_add(context: Any,
 async def run_account_add(context: Any,
                           values: Mapping[str, Any]) -> ActionOutcome:
     workflow = _workflow(context)
-    member = await _member(context, values["member"])
+    member = await find_member(context.guild, values["member"])
     if member is None:
         return ActionOutcome.unavailable()
     result = await workflow.account_add_operation(member, values["tags"])

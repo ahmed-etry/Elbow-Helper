@@ -42,6 +42,25 @@ def encode_clash_tag(value: object) -> str:
     return quote(tag or "", safe="")
 
 
+def parse_player_tag_list(raw_input: str) -> tuple[list[str], list[str]]:
+    """Split comma, semicolon, newline or space separated input into (valid, invalid) tags.
+
+    Valid tags are canonical and appear once, in input order; invalid entries are kept as typed."""
+
+    separated = raw_input.replace(",", " ").replace(";", " ").replace("\n", " ") if raw_input else ""
+    valid: list[str] = []
+    invalid: list[str] = []
+    for value in (part.strip() for part in separated.split(" ")):
+        if not value:
+            continue
+        tag = normalize_player_tag(value)
+        if tag is None:
+            invalid.append(value)
+        elif tag not in valid:
+            valid.append(tag)
+    return valid, invalid
+
+
 def find_player_tags(text: str) -> frozenset[str]:
     """Find distinct, valid canonical tags explicitly written in text."""
     return frozenset(tag for candidate in _TAG_IN_TEXT.findall(text)

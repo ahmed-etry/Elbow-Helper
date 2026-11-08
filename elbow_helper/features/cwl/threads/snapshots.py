@@ -8,7 +8,8 @@ from typing import Any
 
 from elbow_helper.domain.wars import normalize_war_state
 
-from ..helpers import coc_time_to_dt
+from elbow_helper.infrastructure.discord.war_boards import coc_time_to_datetime
+from elbow_helper.domain.numbers import non_negative_int
 
 
 @dataclass(frozen=True)
@@ -40,16 +41,9 @@ class CwlThreadSnapshot:
         return self.battle is not None or self.preparation is not None
 
 
-def _positive_int(value: object) -> int:
-    try:
-        return max(int(value or 0), 0)
-    except (TypeError, ValueError):
-        return 0
-
-
 def _runtime_state(war: dict[str, Any], now: datetime) -> str:
     state = normalize_war_state(war.get("_state") or war.get("state"))
-    start_at = coc_time_to_dt(war.get("startTime"))
+    start_at = coc_time_to_datetime(war.get("startTime"))
     if state == "inwar" and start_at is not None and start_at > now:
         return "preparation"
     return state
@@ -65,24 +59,24 @@ def cwl_thread_snapshot_is_complete(
         return False
 
     total_rounds = max(
-        (_positive_int(war.get("_total_rounds")) for war in wars),
+        (non_negative_int(war.get("_total_rounds")) for war in wars),
         default=0,
     )
     if total_rounds <= 0:
         return False
 
     battle_rounds = {
-        _positive_int(war.get("_round"))
+        non_negative_int(war.get("_round"))
         for war in wars
         if _runtime_state(war, now) == "inwar"
     }
     preparation_rounds = {
-        _positive_int(war.get("_round"))
+        non_negative_int(war.get("_round"))
         for war in wars
         if _runtime_state(war, now) == "preparation"
     }
     ended_rounds = {
-        _positive_int(war.get("_round"))
+        non_negative_int(war.get("_round"))
         for war in wars
         if _runtime_state(war, now) == "warended"
     }
@@ -143,13 +137,13 @@ def _round_from_war(
         return None
     clan, opponent = sides
     members = clan.get("members") or []
-    attacks_per_member = _positive_int(
+    attacks_per_member = non_negative_int(
         war.get("attacksPerMember") or clan.get("attacksPerMember") or 1
     ) or 1
     attacks_total = (
-        _positive_int(war.get("teamSize")) or len(members)
+        non_negative_int(war.get("teamSize")) or len(members)
     ) * attacks_per_member
-    attacks_used = _positive_int(clan.get("attacks"))
+    attacks_used = non_negative_int(clan.get("attacks"))
     if not attacks_used:
         attacks_used = sum(
             len(member.get("attacks") or [])
@@ -157,7 +151,7 @@ def _round_from_war(
             if isinstance(member, dict)
         )
 
-    end_at = coc_time_to_dt(war.get("endTime"))
+    end_at = coc_time_to_datetime(war.get("endTime"))
     show_missing = bool(
         state == "inwar"
         and end_at is not None
@@ -175,7 +169,7 @@ def _round_from_war(
     raw_war_tag = str(war.get("_warTag") or "")
     raw_season = war.get("_season")
     return CwlThreadRound(
-        round_number=_positive_int(war.get("_round")),
+        round_number=non_negative_int(war.get("_round")),
         war_tag=raw_war_tag,
         season=str(raw_season) if raw_season else None,
         clan_name=str(clan.get("name") or "Clan"),
@@ -184,7 +178,7 @@ def _round_from_war(
         opponent_name=str(opponent.get("name") or "Unknown"),
         opponent_tag=str(opponent.get("tag") or ""),
         state=state,
-        start_at=coc_time_to_dt(war.get("startTime")),
+        start_at=coc_time_to_datetime(war.get("startTime")),
         end_at=end_at,
         attacks_used=attacks_used,
         attacks_total=attacks_total,

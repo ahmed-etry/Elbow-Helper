@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
+from elbow_helper.domain.numbers import positive_int_or_none
 
 
 MAX_ACTIVE_EXAMINATION_CASES = 250
@@ -86,7 +87,7 @@ class ExaminationQueries:
         cases = self._load()
         registrations = []
         for raw_channel_id, value in cases.items():
-            channel_id = _positive_int(raw_channel_id)
+            channel_id = positive_int_or_none(raw_channel_id)
             if channel_id is not None and isinstance(value, Mapping):
                 registrations.append(ExaminationCaseRegistration(channel_id))
         registrations.sort(key=lambda row: row.ticket_channel_id)
@@ -122,7 +123,7 @@ class ExaminationQueries:
 
         selected_entries: dict[int, Any] = {}
         for raw_channel_id, value in cases.items():
-            channel_id = _positive_int(raw_channel_id)
+            channel_id = positive_int_or_none(raw_channel_id)
             if channel_id not in selected:
                 continue
             if channel_id in selected_entries:
@@ -162,7 +163,7 @@ def _case_status(
 ) -> ExaminationCaseStatus | None:
     if not isinstance(value, Mapping):
         return None
-    stored_channel_id = _positive_int(value.get("ticket_channel_id"))
+    stored_channel_id = positive_int_or_none(value.get("ticket_channel_id"))
     case_type = value.get("type")
     if (
         stored_channel_id != channel_id
@@ -170,7 +171,7 @@ def _case_status(
         or case_type not in CASE_TYPES
     ):
         return None
-    applicant_id = _positive_int(value.get("opener_id"))
+    applicant_id = positive_int_or_none(value.get("opener_id"))
     raw_applicant_id = value.get("opener_id")
     if raw_applicant_id is not None and applicant_id is None:
         return None
@@ -195,7 +196,7 @@ def _case_status(
     if type(routing_inflight) is not bool:
         return None
     routing_message_id = value.get("routing_message_id")
-    if routing_message_id is not None and _positive_int(routing_message_id) is None:
+    if routing_message_id is not None and positive_int_or_none(routing_message_id) is None:
         return None
     if routing_inflight:
         routing_status = "in_progress"
@@ -267,15 +268,6 @@ def _stages(rows: Iterable[tuple[str, int]]) -> tuple[ExaminationCaseStage, ...]
         moment = datetime.fromtimestamp(at / 1_000_000, timezone.utc)
         stages.append(ExaminationCaseStage(kind, moment.isoformat()))
     return tuple(stages)
-
-
-def _positive_int(value: Any) -> int | None:
-    if type(value) is int:
-        return value if value > 0 else None
-    if isinstance(value, str) and value.isdigit():
-        parsed = int(value)
-        return parsed if parsed > 0 else None
-    return None
 
 
 __all__ = [

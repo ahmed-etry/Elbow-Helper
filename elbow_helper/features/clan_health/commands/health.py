@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import sqlite3
 from typing import Any, Optional
 
 import discord
 from discord import app_commands
 
+from elbow_helper.infrastructure.discord.autocomplete import player_choices
 from elbow_helper.infrastructure.discord.interactions import deny
 from elbow_helper.infrastructure.discord.views import BaseErrorModal
 
@@ -92,28 +91,10 @@ class ClanHealthRootCommandMixin:
         current: str,
     ) -> list[app_commands.Choice[str]]:
         del interaction
-        try:
-            rows = await asyncio.wait_for(
-                asyncio.to_thread(self.record.search_players, current, 25),
-                timeout=1.5,
-            )
-            return [
-                app_commands.Choice(
-                    name=(
-                        f"{row.get('player_name') or row['player_tag']} - "
-                        f"{row.get('clan_code') or '-'} - "
-                        f"TH{int(row.get('townhall') or 0)} - {row['player_tag']}"
-                    )[:100],
-                    value=str(row["player_tag"]),
-                )
-                for row in rows
-            ]
-        except TimeoutError:
-            LOGGER.warning("Health player autocomplete timed out")
-            return []
-        except (KeyError, TypeError, ValueError, sqlite3.Error):
-            LOGGER.exception("Health player autocomplete failed")
-            return []
+        return await player_choices(
+            self.record.search_players, current,
+            logger=LOGGER, label="Health player autocomplete",
+        )
 
     @health.command(name="player", description="Export a health report for a Clash account.")
     @app_commands.describe(
