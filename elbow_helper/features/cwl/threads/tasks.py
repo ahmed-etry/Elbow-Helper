@@ -35,22 +35,26 @@ class CwlThreadTasksMixin:
         *,
         archived: bool,
         reason: str,
-    ) -> bool:
+    ) -> discord.Thread | None:
+        # discord.py returns a fresh Thread from edit; callers must preserve it.
         if archived:
             if thread.archived:
-                return True
-            return bool(await self.bot.publishing.edit_channel(thread, archived=True, reason=reason))
+                return thread
+            result = await self.bot.publishing.edit_channel(thread, archived=True, reason=reason)
+            return result.value if result else None
 
         if not thread.archived and not thread.locked:
-            return True
-        return bool(await self.bot.publishing.edit_channel(thread, archived=False, locked=False, reason=reason))
+            return thread
+        result = await self.bot.publishing.edit_channel(thread, archived=False, locked=False, reason=reason)
+        return result.value if result else None
 
 
-    async def clear_thread_messages_except_first(self, thread: discord.Thread) -> None:
+    async def clear_thread_messages_except_first(self, thread: discord.Thread) -> bool:
         """Clear all messages in a thread except the first message and protected messages."""
         try:
             messages_to_delete = []
             deleted_count = 0
+            all_success = True
             current_time = self._utc_now()
             thread_id = str(thread.id)
             thread_data = self.data["threads"].get(thread_id, {})
@@ -63,7 +67,7 @@ class CwlThreadTasksMixin:
 
             if not first_message:
                 LOGGER.info("No messages found in thread %s (%s)", thread.name, thread.id)
-                return
+                return True
 
             async for message in thread.history(limit=None):
                 if message.id == first_message.id:
@@ -86,7 +90,10 @@ class CwlThreadTasksMixin:
                         deleted_count += 1
                         LOGGER.debug("Deleted old message %s in %s", message.id, thread.name)
                         await asyncio.sleep(1)
-                    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                    except discord.NotFound:
+                        pass
+                    except discord.HTTPException as e:
+                        all_success = False
                         LOGGER.warning("Error deleting old message %s in %s: %s", message.id, thread.name, e)
                 else:
                     messages_to_delete.append(message)
@@ -107,14 +114,13 @@ class CwlThreadTasksMixin:
                                     await msg.delete()
                                     deleted_count += 1
                                     await asyncio.sleep(1)
-                                except (discord.NotFound, discord.HTTPException):
+                                except discord.NotFound:
                                     pass
+                                except discord.HTTPException:
+                                    all_success = False
                         else:
                             LOGGER.warning("HTTP error during bulk delete in %s: %s", thread.name, http_e)
-                            break
-                    except discord.HTTPException as e:
-                        LOGGER.warning("Error during bulk delete in %s: %s", thread.name, e)
-                        break
+                            return False
 
             if messages_to_delete:
                 while messages_to_delete:
@@ -133,21 +139,22 @@ class CwlThreadTasksMixin:
                                     await msg.delete()
                                     deleted_count += 1
                                     await asyncio.sleep(1)
-                                except (discord.NotFound, discord.HTTPException):
+                                except discord.NotFound:
                                     pass
+                                except discord.HTTPException:
+                                    all_success = False
                         else:
                             LOGGER.warning("HTTP error during bulk delete in %s: %s", thread.name, http_e)
-                            break
-                    except discord.HTTPException as e:
-                        LOGGER.warning("Error during bulk delete in %s: %s", thread.name, e)
-                        break
+                            return False
 
                 LOGGER.info("Cleared %s messages in %s (except first message)", deleted_count, thread.name)
             else:
                 LOGGER.info("No messages to clear in %s (only first message remains)", thread.name)
+            return all_success
 
         except (discord.Forbidden, discord.HTTPException, RuntimeError) as e:
             LOGGER.exception("Error clearing messages in %s (%s): %s", thread.name, thread.id, e)
+            return False
 
 
     async def _open_registered_cwl_threads_for_season(self) -> None:
@@ -202,53 +209,66 @@ class CwlThreadTasksMixin:
                     all_success = False
                     LOGGER.warning("Auto-reset: invalid thread data for %s; skipping", thread_id)
                     continue
+                # A retry only touches threads the last pass left unfinished,
+                # so messages posted since a thread's reset are never deleted.
+                if thread_data.get("auto_reset_ym") == month_key:
+                    continue
+                thread_success = True
                 try:
                     thread_obj = await self._resolve_registered_thread(str(thread_id))
                     if thread_obj:
                         clan_name = thread_data.get("clan_name", "Unknown Clan")
                         opened_for_reset = False
                         try:
-                            if not await self._set_registered_thread_archived(
+                            opened_thread = await self._set_registered_thread_archived(
                                 thread_obj,
                                 archived=False,
                                 reason="Reset registered CWL thread for the new cycle",
-                            ):
+                            )
+                            if opened_thread is None:
                                 all_success = False
                                 continue
+                            thread_obj = opened_thread
                             opened_for_reset = True
 
+                            # Board removal may have finished before an earlier
+                            # pass failed to delete its stale copies.
+                            if not thread_data.get("sticky_message_id"):
+                                await self._cleanup_stale_sticky_messages(
+                                    thread_obj, thread_data, current_sticky_id=None,
+                                )
                             board_removed = await self._remove_thread_status_board(
                                 str(thread_id),
                                 thread_data,
                             )
-                            if not board_removed:
-                                all_success = False
-                            await self.clear_thread_messages_except_first(thread_obj)
+                            if not board_removed or self._get_pending_stale_sticky_ids(thread_data):
+                                thread_success = False
+                            if not await self.clear_thread_messages_except_first(thread_obj):
+                                thread_success = False
 
-                            thread_data["cc_status"] = {}
-                            thread_data["cc_statuses"] = {}
-                            thread_data.pop("active_prep", None)
-                            thread_data["last_activity"] = self._utc_now_iso()
-
-                            LOGGER.info("Auto-reset and message clear completed for %s", clan_name)
+                            LOGGER.info("Auto-reset cleanup attempted for %s", clan_name)
                         finally:
                             if opened_for_reset and not await self._set_registered_thread_archived(
                                 thread_obj,
                                 archived=True,
                                 reason="Archive registered CWL thread after monthly reset",
                             ):
-                                all_success = False
+                                thread_success = False
                     else:
-                        # Keep stored data consistent even if thread lookup fails.
-                        thread_data["cc_status"] = {}
-                        thread_data["cc_statuses"] = {}
-                        thread_data.pop("active_prep", None)
-                        thread_data["last_activity"] = self._utc_now_iso()
-                        all_success = False
-                        LOGGER.warning("Auto-reset: thread %s not found; status cleared in data only", thread_id)
+                        thread_success = False
+                        LOGGER.warning("Auto-reset: thread %s not found; keeping preparation state", thread_id)
                 except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError) as e:
-                    all_success = False
+                    thread_success = False
                     LOGGER.warning("Error auto-resetting thread %s: %s", thread_id, e)
+
+                if thread_success:
+                    thread_data["cc_status"] = {}
+                    thread_data["cc_statuses"] = {}
+                    thread_data.pop("active_prep", None)
+                    thread_data["last_activity"] = self._utc_now_iso()
+                    thread_data["auto_reset_ym"] = month_key
+                else:
+                    all_success = False
 
             if all_success:
                 settings["auto_reset_last_ym"] = month_key
