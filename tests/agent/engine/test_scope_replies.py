@@ -1,17 +1,17 @@
 """Generated privacy claims must match the destination and a usable control."""
 
 import json
-from elbow_helper.agent.wording import AGENT_ANSWER_UNFINISHED
+from elbow_helper.agent.conversation.wording import AGENT_ANSWER_UNFINISHED
 import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.agent.actions.outcomes import ActionOutcome, command_reply
 from elbow_helper.agent.engine.budgets import RequestLimits
 from elbow_helper.agent.knowledge.answers import private_check_offered, scoped_answer, scope_reply_issue
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from agent.engine import test_request_cost as cost
-from agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine import test_request_cost as cost
+from tests.agent.engine.test_agent_plan_flow import _context
 
 
 CLAIM = "The names and dates only open privately here."

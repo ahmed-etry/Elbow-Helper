@@ -13,7 +13,7 @@ from elbow_helper.agent.files.images import request_images
 from elbow_helper.infrastructure.ai.agent import AgentImage
 from elbow_helper.infrastructure.ai.client import _DeepSeekAgentSession
 from elbow_helper.agent.conversation.state import ConversationRecord, ConversationTurn
-from agent.discord_actions.management_helpers import fixture
+from tests.agent.discord_actions.management_helpers import fixture
 
 
 class ImageTests(unittest.IsolatedAsyncioTestCase):

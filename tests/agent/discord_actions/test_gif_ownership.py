@@ -3,7 +3,7 @@
 import unittest
 
 from elbow_helper.agent.discord_actions.gif_ownership import consume_gifs
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 
 
 class GifOwnershipTests(unittest.TestCase):

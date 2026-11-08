@@ -3,7 +3,7 @@
 from dataclasses import replace
 from elbow_helper.infrastructure.discord.message_search import DiscordMessageHistoryError
 
-from ..read_cache import read_scope
+from elbow_helper.agent.reads.cache import read_scope
 
 
 HISTORY_PAGE_SECONDS = 5 * 60

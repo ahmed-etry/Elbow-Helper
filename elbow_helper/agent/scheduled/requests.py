@@ -13,10 +13,10 @@ from uuid import uuid4
 import discord
 from discord.ext import commands
 
-from ..disclosure import can_show_in_dm
-from ..access import AgentAccessLost
+from elbow_helper.agent.safety.disclosure import can_show_in_dm
+from elbow_helper.agent.safety.access import AgentAccessLost
 
-from ..models import AgentRequestContext, AgentTurnState, AgentIdentity
+from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState, AgentIdentity
 from ..engine.service import AgentService
 from ..actions.runner import AgentActionRunner
 from ..actions.outcomes import command_reply

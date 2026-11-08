@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.plan.executor import execute_plan
 from elbow_helper.infrastructure.ai import AgentToolDefinition

@@ -10,7 +10,7 @@ from elbow_helper.configuration.roles import (
     AGENT_TESTER_ROLE_ID, CORE, LEAD_PLUS, MEMBER_ROLE_ID,
     SLEEPING_CO_ROLE_ID, SLEEPING_CROSS_ROLE_ID,
 )
-from elbow_helper.agent.delivery import AgentDeliveryMixin
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.actions.answer_view import PrivateAnswerView
 from elbow_helper.agent.engine.member_usage import (
     DAY_SECONDS, HOUR_SECONDS, MemberUsageLimit, MemberUsageLimiter,
@@ -18,8 +18,8 @@ from elbow_helper.agent.engine.member_usage import (
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from agent.engine.helpers import social_step
-from agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
+from tests.agent.engine.helpers import social_step
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 
 
 def member_context(role=MEMBER_ROLE_ID, *, guild_id=1, member_id=42):

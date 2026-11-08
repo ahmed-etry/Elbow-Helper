@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from ..disclosure import can_disclose_provenance
+from elbow_helper.agent.safety.disclosure import can_disclose_provenance
 from .contracts import PreparedAction
 
 

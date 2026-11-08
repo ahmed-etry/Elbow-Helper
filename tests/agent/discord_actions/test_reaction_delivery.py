@@ -3,10 +3,10 @@
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.agent.access import AgentAccessLost
-from elbow_helper.agent.delivery import AgentDeliveryMixin
-from elbow_helper.agent.models import AgentDelivery
-from agent.engine.test_agent_service import _context
+from elbow_helper.agent.safety.access import AgentAccessLost
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
+from elbow_helper.agent.engine.models import AgentDelivery
+from tests.agent.engine.test_agent_service import _context
 
 
 class ReactionDeliveryTests(unittest.IsolatedAsyncioTestCase):

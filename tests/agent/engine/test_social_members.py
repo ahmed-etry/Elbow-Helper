@@ -10,10 +10,10 @@ from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.research.member_identity import clarification
 from elbow_helper.agent.research.members import find_discord_members
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-from agent.engine.helpers import social_step
-from agent.engine.test_agent_service import _AgentModel, _AgentSession
-from agent.engine.test_banter_gifs import gif_context
-from agent.research.test_member_identity import context, member
+from tests.agent.engine.helpers import social_step
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession
+from tests.agent.engine.test_banter_gifs import gif_context
+from tests.agent.research.test_member_identity import context, member
 
 
 LOOKUP = "elbow_helper.agent.engine.social_members.find_discord_members"

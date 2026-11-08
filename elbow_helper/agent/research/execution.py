@@ -10,9 +10,9 @@ import discord
 
 from elbow_helper.infrastructure.discord.message_search import DiscordMessageSearchError
 
-from ..access import AgentAccessLost, accessible_message_channel, require_evidence_access
+from elbow_helper.agent.safety.access import AgentAccessLost, accessible_message_channel, require_evidence_access
 from .repository import ResearchJobBusy, ResearchJobConflict
-from ..models import AgentRequestContext
+from elbow_helper.agent.engine.models import AgentRequestContext
 from .history import read_discord_channel_history
 from .search import search_discord_messages
 

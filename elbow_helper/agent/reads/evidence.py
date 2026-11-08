@@ -1,0 +1,320 @@
+"""Compact typed family evidence before generic result size limits remove rows."""
+
+from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID
+from elbow_helper.agent.research.history import readable_history_row
+from elbow_helper.features.cwl.results_summary import CWL_ANALYSIS_FIELDS
+
+
+# Member lookups return these only on include_profile or include_standing; the retained report keeps them all.
+MEMBER_PROFILE_FIELDS = ('nickname', 'joined_at', 'family_membership_roles', 'home_clans',
+                         'participation_clans', 'home_clan_status')
+ACCOUNT_PROFILE_FIELDS = ('role',)
+ACCOUNT_STANDING_FIELDS = ('ranked_league', 'legacy_league', 'trophies', 'donations', 'war_stars')
+
+
+def pick(value, fields):
+    return {key: value[key] for key in fields if key in value}
+
+
+def omit(value, fields):
+    return {key: item for key, item in value.items() if key not in fields}
+
+
+def name_resolution_view(resolution):
+    """Keep selection provenance and only the choices still needing a decision."""
+    result = pick(resolution, ('query', 'status', 'look_in', 'found_in'))
+    result['selected_accounts'] = [pick(account, ('player_tag',))
+                                   for account in record_rows(resolution.get('selected_accounts', []))]
+    if resolution.get('status') == 'ambiguous' and resolution.get('found_in') == 'game':
+        result['candidates'] = [pick(account, ('player_tag', 'player_name', 'member_id', 'member_name'))
+                                for account in record_rows(resolution.get('candidates', []))]
+    if (resolution.get('status') == 'ambiguous' and resolution.get('found_in') == 'discord'
+            or any(member.get('account_links_status') in ('no_linked_accounts', 'links_unavailable')
+                   for member in record_rows(resolution.get('matching_members', [])))):
+        result['matching_members'] = []
+        for member in record_rows(resolution.get('matching_members', [])):
+            item = pick(member, ('member_id', 'member_name', 'account_links_status'))
+            item['accounts'] = [pick(account, ('player_tag', 'player_name'))
+                                for account in record_rows(member.get('accounts', []))]
+            result['matching_members'].append(item)
+    return result
+
+
+def record_rows(value):
+    if isinstance(value, dict) and set(value) == {'columns', 'rows'}:
+        return [dict(zip(value['columns'], row)) for row in value['rows']]
+    return value
+
+
+def account_view(row, *, nested=False, requested_role_ids=()):
+    result = pick(row, ('player_tag', 'player_name', 'townHallLevel', 'clan', 'clan_status', 'clan_code', 'donations', 'war_stars', 'ranked_league', 'role',
+                       'profile_status', 'war_activity', 'account_purpose', 'observed_at')) if nested else dict(row)
+    if isinstance(result.get('roles'), list):
+        result['roles'] = [role for role in result['roles']
+                           if role.get('role_id') != AGENT_TESTER_ROLE_ID
+                           or role.get('role_id') in requested_role_ids]
+    if 'record_history' in row:
+        result['record_history'] = row['record_history']
+    for field in ('ranked_league', 'legacy_league'):
+        if isinstance(result.get(field), dict):
+            result[field] = pick(result[field], ('id', 'name'))
+    if isinstance(result.get('clan'), dict):
+        result['clan'] = pick(result['clan'], ('tag', 'name'))
+    return result
+
+
+def roster_role_view(row):
+    return pick(row, ('member_id', 'member_name', 'player_tag', 'player_name',
+                      'profile_status'))
+
+
+def ranked_view(row):
+    # A fixed schema lets the transport encode large selections once as a
+    # column table, including accounts whose names or ranking are unknown.
+    fields = ('player_tag', 'member_id', 'player_name', 'status', 'selection_rank',
+        'attacks_used', 'attacks_available', 'counts_complete', 'ranked_league', 'watch_status',
+        'watched_from', 'historical_counts_complete')
+    result = {field: row.get(field) for field in fields}
+    result.update(pick(row, ('observed_at', 'ranking_observed_at')))
+    for field in ('observed_attacks', 'observed_defenses'):
+        metric = row.get(field)
+        if isinstance(metric, dict):
+            result[field] = pick(metric, ('selection', 'battles', 'stars_total', 'triples',
+                'missing_stars', 'missing_destruction', 'average_stars',
+                'average_destruction_percent', 'triple_rate_percent'))
+            result[field]['observed_range'] = metric.get('coverage', {}).get('available_range')
+        else:
+            result[field] = metric
+    return result
+
+
+def participation_view(clans, rows):
+    """Page identity lists with their measure rows; counts retain their scope."""
+    tags = {tag for row in rows for tag in (
+        ([row['player_tag']] if row.get('player_tag') else [])
+        + row.get('account_tags', []))}
+    members = {row['member_id'] for row in rows
+               if row.get('unit') == 'member' and row.get('member_id')}
+    result = []
+    for clan in clans:
+        item = dict(clan)
+        for status in ('warring', 'joined_without_attacking', 'unknown'):
+            if status not in clan:
+                continue
+            identities = []
+            for identity in record_rows(clan[status].get('identities', [])):
+                if identity.get('member_id'):
+                    selected = [tag for tag in identity.get('account_tags', []) if tag in tags]
+                    if selected or identity['member_id'] in members:
+                        identities.append({'member_id': identity['member_id'],
+                            'account_tags': selected})
+                elif identity.get('player_tag') in tags:
+                    identities.append({'player_tag': identity['player_tag']})
+            item[status] = {**clan[status], 'identities': identities}
+        result.append(item)
+    return result
+
+
+def cohort_profile_fields(selection):
+    """Member fields a cohort keeps without include_profile: those its selection is made of."""
+    kept = set()
+    if selection.get('basis') in ('joined_discord', 'accepted_recruitment'):
+        kept.update(('joined_at', 'family_membership_roles'))
+    if (selection.get('basis') == 'clan_rosters' or selection.get('clan_codes')
+            or selection.get('clan_role')):
+        kept.update(('home_clans', 'participation_clans', 'home_clan_status'))
+    return kept
+
+
+def account_profile_drops(selection):
+    """Account fields left out unless include_profile or include_standing asks for them."""
+    drops = set()
+    if not selection.get('include_profile'):
+        drops.update(ACCOUNT_PROFILE_FIELDS)
+    if not selection.get('include_standing'):
+        drops.update(ACCOUNT_STANDING_FIELDS)
+    if not (selection.get('include_profile') or selection.get('include_standing')):
+        drops.add('observed_at')
+    return drops
+
+
+def plain_member_row(item, data, family, selection):
+    """Drop profile, roles, history and the repeated home clan explanation unless requested."""
+    item = dict(item)
+    basis = item.pop('home_clan_basis', None)
+    if basis is not None:
+        # One copy on the view; it was identical on every row.
+        data.setdefault('home_clan_basis', basis)
+    roster = family == 'read_member_cohort' and selection.get('basis') == 'clan_rosters'
+    if not selection.get('include_profile'):
+        kept = cohort_profile_fields(selection) if family == 'read_member_cohort' else set()
+        item = omit(item, set(MEMBER_PROFILE_FIELDS) - kept)
+    if isinstance(item.get('accounts'), list) and not roster:
+        item['accounts'] = [omit(account, account_profile_drops(selection)) for account in item['accounts']]
+    if not selection.get('include_roles') and selection.get('basis') != 'role_holders':
+        item.pop('roles', None)
+    if not selection.get('include_history'):
+        item.pop('record_history', None)
+        if isinstance(item.get('accounts'), list):
+            item['accounts'] = [omit(account, ('record_history',)) for account in item['accounts']]
+    return item
+
+
+def family_model_view(payload):
+    """Keep every selected identity and computed metric; full detail stays retained."""
+    data = dict(payload)
+    if isinstance(data.get('name_resolutions'), list):
+        data['name_resolutions'] = [name_resolution_view(item) for item in data['name_resolutions']]
+    family = data.get('family')
+    rows = data.get('rows')
+    if not isinstance(rows, list):
+        return data
+    selection = data.get('selection') if isinstance(data.get('selection'), dict) else {}
+    plain_accounts = family == 'read_member_accounts' and not selection.get('include_profile')
+    account_drops = account_profile_drops(selection) if family == 'read_member_accounts' else set()
+    # Cohorts and recruitment rows follow member lookups: profile, roles and history only on request.
+    plain_rows = family in ('read_member_cohort', 'read_recruitment_pipeline')
+    if isinstance(data.get('members'), list):
+        selected_members = {row.get('member_id') or row.get('applicant_member_id') for row in rows}
+        data['members'] = [account_view(member) for member in data['members']
+                           if member.get('member_id') in selected_members]
+        if family == 'read_member_accounts':
+            # The home clan explanation is stated once in the planner context, never per member.
+            data['members'] = [omit(member, ('home_clan_basis', *(MEMBER_PROFILE_FIELDS if plain_accounts else ())))
+                               for member in data['members']]
+        if family == 'read_member_accounts' and not selection.get('include_roles'):
+            for member in data['members']:
+                member.pop('roles', None)
+    if family == 'read_conversation_evidence' and data.get('mode') == 'channel_window':
+        data.setdefault('message_content_complete', all(row.get('content_complete') for row in rows))
+        data.setdefault('attachment_contents_read', False)
+        data['rows'] = [readable_history_row(row) for row in rows]
+    if family == 'read_conversation_evidence':
+        # The jump link is rebuilt from guild, channel and message IDs when an answer cites a message.
+        data['rows'] = [{key: value for key, value in row.items() if key != 'source'}
+                        for row in data['rows']]
+    # Source channels are retained access bookkeeping; nothing the model is told to use reads them.
+    data.pop('provenance', None)
+    if isinstance(data.get('unknown_accounts'), list):
+        projection = roster_role_view if 'home_role_comparisons' in data else account_view
+        selected = {row.get('player_tag') for row in rows}
+        data['unknown_accounts'] = [projection(row) for row in data['unknown_accounts']
+                                   if row.get('player_tag') in selected]
+        data['unknown_accounts'] = [omit(row, account_drops) for row in data['unknown_accounts']]
+    if isinstance(data.get('clan_facts'), list):
+        data['clan_facts'] = [pick(row, ('clan_code', 'name', 'tag', 'operational_cwl_only',
+            'configured_cwl_only', 'membership_basis', 'configured_membership_basis',
+            'operational_policy_status', 'unknown_policy')) for row in data['clan_facts']]
+    if isinstance(data.get('performance_coverage'), dict):
+        coverage = data['performance_coverage']
+        data['performance_coverage'] = pick(coverage, ('coverage', 'resolved_selection', 'error', 'cause'))
+        if 'war_ids' in coverage:
+            data['performance_coverage']['wars_checked'] = len(coverage['war_ids'])
+    if family == 'read_clan_rosters':
+        if isinstance(data.get('clans'), list):
+            data['clans'] = [dict(clan) for clan in data['clans']]
+        for clan in data.get('clans', []):
+            if isinstance(clan.get('ownership'), dict):
+                # Owner names and per-owner counts are on the rows and members.
+                clan['ownership'] = {key: value for key, value in clan['ownership'].items()
+                                     if key != 'owners'}
+            if isinstance(clan.get('profile'), dict):
+                clan['profile'] = pick(clan['profile'], ('clan_code', 'purpose', 'branch',
+                    'is_utility', 'configured_cwl_only', 'home_placement_eligible',
+                    'home_placement_eligibility_basis', 'operational_status', 'operational_cwl_only',
+                    'membership_basis', 'has_placeholders', 'town_hall_min', 'town_hall_max'))
+    if family == 'read_ranked_activity':
+        if selection.get('detail') != 'detail':
+            data['rows'] = [ranked_view(row) for row in rows]
+            data['detail_projection'] = 'All selected account metrics; battle payloads and daily poll detail remain in the retained report.'
+        mode = data.get('resolved_selection', {}).get('mode', 'ranked_and_legend')
+        data['ranked_modes'] = {'ranked_and_legend': ['RANKED', 'LEGEND'],
+                                'ranked': ['RANKED'], 'legend': ['LEGEND']}[mode]
+    elif family in ('read_member_accounts', 'read_member_cohort', 'read_recruitment_pipeline'):
+        projected = []
+        for row in rows:
+            item = account_view(row, requested_role_ids=data.get('selected_role_ids', ())
+                if family == 'read_member_cohort' and data.get('basis') == 'role_holders' else ())
+            if 'accounts' in item:
+                item['member_name'] = item.get('member_name') or next((account.get('member_name')
+                    for account in item['accounts'] if account.get('member_name')), None)
+                item['accounts'] = [account_view(account, nested=True)
+                                    for account in item['accounts']]
+                if family == 'read_member_cohort' and data.get('basis') == 'clan_rosters':
+                    item['accounts'] = [pick(account, ('clan_code', 'player_tag', 'player_name', 'donations',
+                        'townHallLevel', 'role', 'account_purpose', 'war_activity', 'observed_at'))
+                                        for account in item['accounts']]
+            if family == 'read_member_cohort' and data.get('basis') == 'clan_rosters':
+                item.pop('joined_at', None)
+                item.pop('nickname', None)
+            if family == 'read_recruitment_pipeline':
+                for field in ('start_ts', 'expected_end_ts', 'remaining_seconds', 'overdue_seconds'):
+                    item.pop(field, None)
+                if isinstance(item.get('war_attendance'), dict):
+                    item['war_attendance'] = pick(item['war_attendance'], ('attacks_used', 'attacks_expected',
+                        'missed', 'unconfirmed_opportunities', 'totals_complete'))
+                if isinstance(item.get('attack_performance'), dict):
+                    item['attack_performance'] = {kind: {
+                        key: pick(value, ('numerator', 'denominator')) if isinstance(value, dict) else value
+                        for key, value in metrics.items() if key != 'accounts'}
+                        for kind, metrics in item['attack_performance'].items()}
+            item = omit(item, account_drops)
+            if plain_rows:
+                item = plain_member_row(item, data, family, {'basis': data.get('basis'), **selection})
+            projected.append(item)
+            if family == 'read_member_cohort' and data.get('activity_coverage'):
+                projected[-1] = pick(item, ('member_id', 'member_name', 'membership_status',
+                    'home_clans', 'home_clan_status', 'home_clan_basis', 'leadership', 'roles', 'accounts', 'account_tags', 'account_names', 'clan_codes',
+                    'donations', 'war_status', 'wars_observed', 'attacks_used',
+                    'attacks_expected', 'missed', 'attack_completion_percent',
+                    'war_totals_complete', 'discord_activity_status', 'last_active_day', 'active_streak_days', 'lifetime_messages'))
+        data['rows'] = projected
+        if family == 'read_member_accounts' and 'home_role_comparisons' in data:
+            # These comparisons are a projection of the same account rows,
+            # not a second indivisible copy of the complete roster header.
+            selected_tags = {row.get('player_tag') for row in projected}
+            data['home_role_comparisons'] = [pick(row, ('member_id', 'member_name',
+                'player_tag', 'player_name', 'clan_codes')) for row in data['home_role_comparisons']
+                if row.get('player_tag') in selected_tags]
+    elif family == 'read_hibernation':
+        data['rows'] = [pick(row, ('member_id', 'member_name', 'joined_at', 'started_at',
+            'started_ts', 'start_time_status', 'accounts', 'activity_coverage',
+            'war_activity_coverage', 'ownership_basis')) for row in rows]
+    if family == 'read_war_attendance' or (
+            family == 'read_cwl_results' and isinstance(data.get('clan_participation'), list)):
+        # Alias reconciliation detail is retained; model receives the checked
+        # coverage and account metrics instead of repeated source identities.
+        if 'war_ids' in data or 'wars_checked' not in data:
+            data['wars_checked'] = len(data.get('war_ids', []))
+        data.pop('war_ids', None)
+        data.pop('war_aliases', None)
+        # Names and account details already live on the paged measure rows.
+        # Repeating every selected identity in each page makes the header
+        # indivisible. Project it to this page; full restoration projects all
+        # rows and therefore restores every membership without another read.
+        data['clan_participation'] = participation_view(data.get('clan_participation', []), rows)
+        data['participation_scope'] = {
+            'counts': 'full selected report', 'identities': 'accounts on this page'}
+        data['rows'] = [dict(row, wars_observed=len(row['war_ids']))
+                        if isinstance(row.get('war_ids'), list) else dict(row) for row in rows]
+        for row in data['rows']:
+            row.pop('war_ids', None)
+    if family == 'read_cwl_results':
+        # Retain computed full-selection analysis for final composition without
+        # growing every transport page's fixed header with a second full table.
+        for field in CWL_ANALYSIS_FIELDS:
+            data.pop(field, None)
+        # Scores and settings describe the requested account table. Per-attack
+        # examples are retained detail, and otherwise crowd out every table row.
+        data.pop('attack_sample', None)
+        if isinstance(data.get('clan_results'), list):
+            data['clan_results'] = [{key: value for key, value in summary.items()
+                                    if key != 'attack_sample'} for summary in data['clan_results']]
+            for summary in data['clan_results']:
+                if isinstance(summary.get('top_rows'), list):
+                    # These are per-clan navigation summaries. Full score
+                    # components remain on the paged account rows and report.
+                    summary['top_rows'] = [pick(row, ('player_tag', 'player_name', 'rank',
+                        'ass_score', 'score', 'attacks', 'attacks_expected', 'stars'))
+                        for row in summary['top_rows']]
+    return data

@@ -11,7 +11,7 @@ import json
 from elbow_helper.app import load_runtime_settings
 from elbow_helper.core.paths import ApplicationPaths
 from elbow_helper.agent.engine.grounding import GROUNDING_INSTRUCTION, GroundingError, ground_answer
-from elbow_helper.agent.prompts import SYSTEM_PROMPT, RESULT_ANSWER_INSTRUCTION
+from elbow_helper.agent.engine.prompts import SYSTEM_PROMPT, RESULT_ANSWER_INSTRUCTION
 from elbow_helper.infrastructure.ai import DeepSeekTextClient
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 

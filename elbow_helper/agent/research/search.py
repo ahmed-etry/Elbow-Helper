@@ -9,9 +9,9 @@ from typing import Any
 
 import discord
 
-from ..access import accessible_message_channel, message_channel_unavailable
-from ..models import AgentRequestContext
-from ..tool_support.validation import bounded_int, bounded_text
+from elbow_helper.agent.safety.access import accessible_message_channel, message_channel_unavailable
+from elbow_helper.agent.engine.models import AgentRequestContext
+from elbow_helper.agent.engine.validation import bounded_int, bounded_text
 from .history import (
     SEARCH_RESULT_LIMIT,
     COMPLETE_HISTORY_CHARACTER_BUDGET,

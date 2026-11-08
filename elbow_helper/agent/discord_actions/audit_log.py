@@ -6,7 +6,7 @@ from typing import Any
 
 import discord
 
-from ..access import ACCESS_VIEW_AUDIT_LOG, require_evidence_access, require_lookup_access
+from elbow_helper.agent.safety.access import ACCESS_VIEW_AUDIT_LOG, require_evidence_access, require_lookup_access
 from .management import ID, guard, text, tool
 from .safety import DiscordActionRefused
 

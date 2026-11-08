@@ -11,7 +11,7 @@ import discord
 from elbow_helper.infrastructure.ai.agent import AgentImage
 from elbow_helper.infrastructure.gifs.images import animation_sheet
 from PIL import Image, UnidentifiedImageError
-from ..access import accessible_message_channel, can_access_message_channel
+from elbow_helper.agent.safety.access import accessible_message_channel, can_access_message_channel
 
 from .gif_media import gif_embed, gif_media
 

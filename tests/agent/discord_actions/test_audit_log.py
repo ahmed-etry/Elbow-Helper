@@ -8,14 +8,14 @@ from unittest.mock import AsyncMock, patch
 
 import discord
 
-from elbow_helper.agent.access import ACCESS_VIEW_AUDIT_LOG, AgentAccessLost
+from elbow_helper.agent.safety.access import ACCESS_VIEW_AUDIT_LOG, AgentAccessLost
 from elbow_helper.agent.discord_actions.audit_log import read_audit
-from elbow_helper.agent.models import EvidenceScope
-from elbow_helper.agent.disclosure import can_show
-from elbow_helper.agent.delivery import AgentDeliveryMixin
-from agent.discord_actions.management_helpers import Entity, fixture
-from agent.discord_actions.test_channel_management import history
-from agent.files.test_agent_spreadsheets import _context
+from elbow_helper.agent.engine.models import EvidenceScope
+from elbow_helper.agent.safety.disclosure import can_show
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
+from tests.agent.discord_actions.management_helpers import Entity, fixture
+from tests.agent.discord_actions.test_channel_management import history
+from tests.agent.files.test_agent_spreadsheets import _context
 
 
 class AuditLogTests(unittest.IsolatedAsyncioTestCase):

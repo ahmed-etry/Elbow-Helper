@@ -9,8 +9,8 @@ import discord
 
 from elbow_helper.agent.conversation.context import compile_context
 from elbow_helper.agent.conversation.reply_context import prepare_reply_context
-from agent.engine.test_agent_plan_flow import _context
-from agent.conversation.test_agent_context import _turn
+from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.conversation.test_agent_context import _turn
 
 
 class ReplyContextTests(unittest.IsolatedAsyncioTestCase):
@@ -30,7 +30,7 @@ class ReplyContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(member_target_issue(context, {'target_member_id': 77}), '')
 
     async def test_authorized_family_selection_survives_as_structured_reply_metadata(self):
-        from elbow_helper.agent.tool_support.core import family_tool
+        from elbow_helper.agent.reads.snapshots import family_tool
         async def source(context, arguments):
             return {'rows': []}
         context = self.context()

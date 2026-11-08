@@ -7,14 +7,14 @@ import discord
 
 from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
 from elbow_helper.features.examination.queries import CASE_TYPES
-from elbow_helper.agent.tool_support.core import family_tool, IDS
+from elbow_helper.agent.reads.snapshots import family_tool, IDS
 from elbow_helper.agent.reads.identity_reads import member_fields
 from elbow_helper.agent.reads.projections import PERFORMANCE, performance_projection
 from elbow_helper.agent.reads.workflow_events import workflow_events, event_order, group_pipeline
-from elbow_helper.agent.access import accessible_message_channel, can_access_message_channel, has_lookup_access, require_evidence_access, ACCESS_RECRUITMENT, ACCESS_PROMOTION
-from elbow_helper.agent.tool_support.adapters.hibernation.reads import read_active_hibernation
-from elbow_helper.agent.tool_support.adapters.examination.promotion_route import read_promotion_review
-from elbow_helper.agent.tool_support.adapters.member_lifecycle.reads import read_member_lifecycle
+from elbow_helper.agent.safety.access import accessible_message_channel, can_access_message_channel, has_lookup_access, require_evidence_access, ACCESS_RECRUITMENT, ACCESS_PROMOTION
+from elbow_helper.agent.features.hibernation.reads import read_active_hibernation
+from elbow_helper.agent.features.examination.promotion_route import read_promotion_review
+from elbow_helper.agent.features.member_lifecycle.reads import read_member_lifecycle
 from elbow_helper.agent.reads.ranked import read_ranked
 from elbow_helper.agent.research.history import read_discord_channel_history
 

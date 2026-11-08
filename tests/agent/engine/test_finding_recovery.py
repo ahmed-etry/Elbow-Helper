@@ -1,12 +1,12 @@
 """Keep useful read findings when independent operations cannot finish."""
-from elbow_helper.agent.wording import AGENT_ANSWER_UNFINISHED
+from elbow_helper.agent.conversation.wording import AGENT_ANSWER_UNFINISHED
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from elbow_helper.agent.cog import AgentCog
 from elbow_helper.agent.actions.outcomes import ActionOutcome, command_reply
 from elbow_helper.agent.knowledge.answers import scoped_answer
-from agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine.test_agent_plan_flow import _context
 
 
 class FindingRecoveryTests(unittest.TestCase):

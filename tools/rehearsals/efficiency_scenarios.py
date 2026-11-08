@@ -1,6 +1,6 @@
 """Scripted engine cost comparison for the archived workloads' failure modes.
 
-PYTHONPATH=tests python -m tools.rehearsals.efficiency_scenarios [RUN_DIRECTORY]
+python -m tools.rehearsals.efficiency_scenarios [RUN_DIRECTORY]
 
 Models, identities and results are synthetic. Optional archived schema/knowledge
 text supplies a realistic shared prefix, read-only. Token totals use the same
@@ -23,8 +23,8 @@ from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.knowledge.store import KnowledgePrompt
 from .cost_scenarios import MeasuredModel
-from agent.engine.test_agent_plan_flow import _context
-from agent.engine.test_efficiency import planned, scores, step
+from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine.test_efficiency import planned, scores, step
 
 
 def ref(identity, *path):

@@ -41,12 +41,12 @@ from ..files.spreadsheet_tools import spreadsheet_tools
 from ..research.threads import thread_tools
 from ..conversation.instruction_tools import working_state_tools
 from ..scheduled.tools import standing_tools
-from ..tool_support.sql.tools import dataset_tools
+from elbow_helper.agent.reads.sql.tools import dataset_tools
 from elbow_helper.agent.reads.clash import clash_tools
 from elbow_helper.agent.reads.membership import membership_tools
-from ..models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from ..actions.contracts import ActionClass
-from ..models import AgentCapabilityEffect
+from elbow_helper.agent.engine.models import AgentCapabilityEffect
 from .capability_contract import validate_contract_catalogue
 from ..plan.results import result_handler
 from .result_hints import capability_returns

@@ -25,7 +25,7 @@ from elbow_helper.configuration.files import (
 )
 from elbow_helper.data.collectors import FamilyCollectors
 from elbow_helper.data.store import FamilyStore
-from elbow_helper.data.links import LinkService
+from elbow_helper.data.links.service import LinkService
 from elbow_helper.data.events import EventsStore
 from elbow_helper.data.reads import (
     ActivityReads, CwlReads, PeopleReads, MembershipReads, RaidReads, RankedReads, StayReads, WarReads,

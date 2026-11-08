@@ -8,10 +8,10 @@ import emoji as emoji_library
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..actions.contracts import ActionClass
 from ..engine.capability_contract import CapabilityContract
-from ..models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from .reaction_meanings import REACTION_MEANINGS
 
 

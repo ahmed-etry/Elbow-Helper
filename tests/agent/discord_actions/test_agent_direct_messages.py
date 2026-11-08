@@ -13,7 +13,7 @@ from elbow_helper.agent.discord_actions.direct_messages import (
     dm_recipients,
 )
 from elbow_helper.agent.actions.contracts import ActionRefused
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.actions.report import format_run_report
 
 

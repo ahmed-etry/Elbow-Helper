@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent.engine.helpers import patch_engine
+from tests.agent.engine.helpers import patch_engine
 
 import json
 from contextlib import nullcontext
@@ -11,23 +11,23 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import time
-from elbow_helper.agent.wording import AGENT_ANSWER_UNFINISHED
+from elbow_helper.agent.conversation.wording import AGENT_ANSWER_UNFINISHED
 import unittest
 from unittest.mock import AsyncMock, patch
 
 import discord
 
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.agent.models import AgentRequestContext, RegisteredAgentTool, AgentCapabilityEffect
+from elbow_helper.agent.engine.models import AgentRequestContext, RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.commands.bridge import build_command_tools
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.actions.contracts import ActionRefused, ChangePreview
 from elbow_helper.agent.actions.contracts import ActionClass, PreparedAction
 from elbow_helper.agent.commands.registry import CommandAdapter
-from elbow_helper.agent.prompts import LIMIT_ANSWER_INSTRUCTION
+from elbow_helper.agent.engine.prompts import LIMIT_ANSWER_INSTRUCTION
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
-from elbow_helper.agent.access import AgentAccessLost
+from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.engine.budgets import ContextBudget
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDefinition, AgentUsage
@@ -104,7 +104,7 @@ class _Model:
 
     def create_agent_session(self, **kwargs):
         from elbow_helper.agent.engine.routing import ROUTE_INSTRUCTION
-        from agent.engine.helpers import RoutingSession
+        from tests.agent.engine.helpers import RoutingSession
         if kwargs["system_prompt"] == ROUTE_INSTRUCTION:
             self.routing_request = kwargs
             self.routing_session = RoutingSession(self.route)

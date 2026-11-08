@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from agent.engine.helpers import LegacyCatalogueMixin
+from tests.agent.engine.helpers import LegacyCatalogueMixin
 
 import json
 from types import SimpleNamespace
@@ -12,16 +12,16 @@ from unittest.mock import AsyncMock, Mock, patch
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.actions.preview import ConfirmationView, preview_text
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.delivery import AgentDeliveryMixin
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.engine.budgets import RequestLimits
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.engine.change_answers import unprepared_change_issue
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import AgentCapabilityEffect, RegisteredAgentTool
-from elbow_helper.agent.wording import ACTION_NOT_PREPARED
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, RegisteredAgentTool
+from elbow_helper.agent.conversation.wording import ACTION_NOT_PREPARED
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
-from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan
+from tests.agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan
 
 
 class ProtocolSession(_Session):

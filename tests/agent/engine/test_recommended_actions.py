@@ -10,18 +10,18 @@ import discord
 
 from elbow_helper.agent.actions.contracts import ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.preview import ConfirmationView, preview_text
-from elbow_helper.agent.tool_support.adapters.account_links.commands import account_link_adapters
-from elbow_helper.agent.tool_support.adapters.recruitment.commands import recruitment_adapters
+from elbow_helper.agent.features.account_links.commands import account_link_adapters
+from elbow_helper.agent.features.recruitment.commands import recruitment_adapters
 from elbow_helper.agent.commands.bridge import build_command_tools
 from elbow_helper.agent.discord_actions.roles import discord_role_tools
 from elbow_helper.agent.discord_actions.timeouts import timeout_tools
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.engine.recommended_actions import action_catalogue
-from elbow_helper.agent.models import AgentCapabilityEffect, RegisteredAgentTool
-from elbow_helper.agent.wording import ACTION_PREVIEW_OWNER
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, RegisteredAgentTool
+from elbow_helper.agent.conversation.wording import ACTION_PREVIEW_OWNER
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from agent.engine import test_request_cost as cost
+from tests.agent.engine import test_request_cost as cost
 
 
 def decision(items=(), **overrides):

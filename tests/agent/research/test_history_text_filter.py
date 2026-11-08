@@ -15,7 +15,7 @@ from elbow_helper.agent.research.repository import ResearchJobRepository
 from elbow_helper.agent.research.tools import (
     continue_discord_research_job, start_discord_history_job,
 )
-from agent.research.test_agent_search import _context
+from tests.agent.research.test_agent_search import _context
 
 
 def history(context, records, *, reply_to_message_id=None):

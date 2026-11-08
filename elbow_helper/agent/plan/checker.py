@@ -14,7 +14,7 @@ from ..engine.capability_contract import (
     CapabilityBindError,
     compile_capability_call,
 )
-from ..models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from ..actions.contracts import ActionClass
 from ..reports.tools import (COMPARE_NAME, READ_NAME, original_arguments, original_tool,
                             unsupported_fields, unsupported_field_error)

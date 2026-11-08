@@ -5,11 +5,11 @@ from contextlib import ExitStack
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.discord_actions.roles import (
     prepare_add_roles, prepare_remove_roles, prepare_role_undo,
 )
-from agent.discord_actions.helpers import register_requester
+from tests.agent.discord_actions.helpers import register_requester
 from elbow_helper.features.hibernation.queries import HibernationQueries
 from elbow_helper.features.recruitment.queries import RecruitmentQueries
 

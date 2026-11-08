@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from ..files.gif_media import URLS, provider_url
 from ..files.images import EXTENSIONS
-from ..text import chunk_response
+from elbow_helper.agent.conversation.text import chunk_response
 
 
 def image_attachment(attachment):

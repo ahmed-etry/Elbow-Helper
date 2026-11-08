@@ -3,22 +3,22 @@
 from copy import deepcopy
 from dataclasses import replace
 from types import SimpleNamespace
-from agent.engine.helpers import LegacyCatalogueMixin
-from elbow_helper.agent.wording import AGENT_ANSWER_UNFINISHED
+from tests.agent.engine.helpers import LegacyCatalogueMixin
+from elbow_helper.agent.conversation.wording import AGENT_ANSWER_UNFINISHED
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from elbow_helper.agent.delivery import AgentDeliveryMixin
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.agent.engine.routing import ROUTE_INSTRUCTION
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import AgentDelivery
+from elbow_helper.agent.engine.models import AgentDelivery
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage, DeepSeekTextClient, TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from elbow_helper.agent.wording import FAILURE_MESSAGE
-from agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
-from agent.engine.helpers import social_step
-from agent.engine.test_banter_gifs import gif_context
+from elbow_helper.agent.conversation.wording import FAILURE_MESSAGE
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
+from tests.agent.engine.helpers import social_step
+from tests.agent.engine.test_banter_gifs import gif_context
 
 
 class NativeSocialTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
@@ -81,8 +81,8 @@ class NativeSocialTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
             surface.transcript_archive = None
             surface._send_response = AsyncMock()
             with (
-                patch("elbow_helper.agent.delivery.assert_answer_scope", AsyncMock()),
-                patch("elbow_helper.agent.delivery.assert_answer_scope", AsyncMock(return_value=True)),
+                patch("elbow_helper.agent.conversation.delivery.assert_answer_scope", AsyncMock()),
+                patch("elbow_helper.agent.conversation.delivery.assert_answer_scope", AsyncMock(return_value=True)),
             ):
                 await surface.send_response(context.source_message, answer, None, context=context, delivery=delivery)
             context.source_message.reply.assert_awaited_once()
@@ -117,7 +117,7 @@ class NativeSocialTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         delivery = AgentDelivery()
         surface = AgentDeliveryMixin()
         surface._send_response = AsyncMock()
-        with patch("elbow_helper.agent.delivery.require_evidence_access", AsyncMock()):
+        with patch("elbow_helper.agent.conversation.delivery.require_evidence_access", AsyncMock()):
             await surface.send_response(context.source_message, answer, None, context=context, delivery=delivery)
         surface._send_response.assert_awaited_once()
 

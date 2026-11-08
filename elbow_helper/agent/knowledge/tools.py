@@ -5,11 +5,11 @@ import hashlib
 from dataclasses import replace
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from ..access import has_reader_access_requirements, require_evidence_access, require_lookup_access
-from ..disclosure import request_scope, exclude_source
+from elbow_helper.agent.safety.access import has_reader_access_requirements, require_evidence_access, require_lookup_access
+from elbow_helper.agent.safety.disclosure import request_scope, exclude_source
 
 from ..engine.capability_contract import CapabilityContract
-from ..models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from .store import VISIBILITIES
 
 

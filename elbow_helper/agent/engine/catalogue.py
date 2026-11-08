@@ -1,9 +1,9 @@
 """Explicit specialist discovery; no classification of request prose."""
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from ..models import RegisteredAgentTool, AgentCapabilityEffect
+from elbow_helper.agent.engine.models import RegisteredAgentTool, AgentCapabilityEffect
 from ..actions.contracts import ActionClass
-from ..access import has_lookup_access
-from ..tool_support.sql.query import reader_levels
+from elbow_helper.agent.safety.access import has_lookup_access
+from elbow_helper.agent.reads.sql.query import reader_levels
 from .capability_contract import CapabilityContract
 from ..plan.format import capability_list
 

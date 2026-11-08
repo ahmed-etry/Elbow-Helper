@@ -5,8 +5,8 @@ import unittest
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.agent.reads.reference import community_reference
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
-from elbow_helper.agent.models import EvidenceScope
-from agent.engine.test_agent_plan_flow import _context
+from elbow_helper.agent.engine.models import EvidenceScope
+from tests.agent.engine.test_agent_plan_flow import _context
 
 
 class ExistingMemberLinkingTests(unittest.IsolatedAsyncioTestCase):

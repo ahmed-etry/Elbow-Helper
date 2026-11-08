@@ -12,7 +12,7 @@ from elbow_helper.infrastructure.persistence import (
 
     sqlite_transaction,
 )
-from ..storage import agent_connection, initialize_agent
+from elbow_helper.agent.persistence.schema import agent_connection, initialize_agent
 from .contracts import (
     DiscordResearchJob,
     JOB_IDLE_SECONDS,

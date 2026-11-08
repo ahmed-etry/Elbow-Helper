@@ -11,9 +11,9 @@ import discord
 
 from elbow_helper.configuration.channels import SUPPORT_TICKET_CATEGORY
 from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID
-from elbow_helper.agent import disclosure
-from elbow_helper.agent.access import AgentAccessLost, require_evidence_access
-from elbow_helper.agent.models import AgentRequestContext
+from elbow_helper.agent.safety import disclosure
+from elbow_helper.agent.safety.access import AgentAccessLost, require_evidence_access
+from elbow_helper.agent.engine.models import AgentRequestContext
 from elbow_helper.agent.research.directory import scoped_channel_directory
 
 

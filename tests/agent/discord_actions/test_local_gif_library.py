@@ -9,13 +9,13 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.core.paths import ApplicationPaths
-from elbow_helper.agent.delivery import AgentDeliveryMixin
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID, channel_gif_urls
 from elbow_helper.agent.discord_actions.gifs import channel_gif_history, find_gif, gif_tools
 from elbow_helper.agent.engine.service import AgentService
-from agent.engine.helpers import social_step
-from agent.engine.test_agent_service import _AgentModel, _AgentSession
-from agent.engine.test_banter_gifs import gif_context
+from tests.agent.engine.helpers import social_step
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession
+from tests.agent.engine.test_banter_gifs import gif_context
 
 
 class LocalGifLibraryTests(unittest.IsolatedAsyncioTestCase):
@@ -111,7 +111,7 @@ class LocalGifLibraryTests(unittest.IsolatedAsyncioTestCase):
         self.context.guild.filesize_limit = 1
         surface = AgentDeliveryMixin()
         surface._send_response = AsyncMock()
-        with self.assertLogs("elbow_helper.agent.delivery", level="WARNING"):
+        with self.assertLogs("elbow_helper.agent.conversation.delivery", level="WARNING"):
             await surface.send_response(self.context.source_message, answer, None, context=self.context)
         self.assertEqual(surface._send_response.await_args.args[1], "Synthetic fallback.")
         self.context.source_message.reply.assert_not_awaited()

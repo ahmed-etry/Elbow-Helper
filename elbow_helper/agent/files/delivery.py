@@ -8,7 +8,7 @@ import re
 
 import discord
 
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from .workbooks import publish_workbook_bytes
 
 

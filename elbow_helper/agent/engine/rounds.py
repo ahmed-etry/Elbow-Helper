@@ -10,24 +10,18 @@ import json
 import time
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import AgentToolResult, AgentUsage
-from ..access import AgentAccessLost, require_evidence_access
+from elbow_helper.agent.safety.access import AgentAccessLost, require_evidence_access
 from ..conversation.context import estimate_tokens
-from ..wording import AGENT_ANSWER_UNFINISHED, AGENT_RESEARCH_UNFINISHED
+from elbow_helper.agent.conversation.wording import AGENT_ANSWER_UNFINISHED, AGENT_RESEARCH_UNFINISHED
 from . import budgets as limits
 from .tool_call import discard_unpublished_results
-from ..models import AgentRequestContext
+from elbow_helper.agent.engine.models import AgentRequestContext
 from .budgets import ContextBudget
 from .usage import RequestUsage
 from .routing import EXPAND_CONTEXT
 from .self_knowledge import ability_claim, capability_question
 from elbow_helper.infrastructure.ai.agent import AgentSession
-from ..prompts import (
-    REPEAT_TOOL_CALL_INSTRUCTION,
-    CONTINUE_ANSWER_INSTRUCTION,
-    AUTHORIZED_CONTEXT_INSTRUCTION,
-    INCOMPLETE_PLAN_INSTRUCTION,
-    LIMIT_ANSWER_INSTRUCTION,
-)
+from elbow_helper.agent.engine.prompts import REPEAT_TOOL_CALL_INSTRUCTION, CONTINUE_ANSWER_INSTRUCTION, AUTHORIZED_CONTEXT_INSTRUCTION, INCOMPLETE_PLAN_INSTRUCTION, LIMIT_ANSWER_INSTRUCTION
 
 LOGGER = logging.getLogger(__name__)
 

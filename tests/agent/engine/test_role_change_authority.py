@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import discord
 from elbow_helper.agent.discord_actions.roles import read_role_change_preview
 from elbow_helper.agent.engine.service import AgentService
-from agent.engine.test_agent_plan_flow import _context, _Model, _Session
+from tests.agent.engine.test_agent_plan_flow import _context, _Model, _Session
 
 
 class RoleChangeAuthorityTests(unittest.IsolatedAsyncioTestCase):

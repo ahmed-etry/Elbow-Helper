@@ -4,7 +4,7 @@ from __future__ import annotations
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
 from ..actions.contracts import ActionClass
-from ..models import AgentCapabilityEffect, RegisteredAgentTool
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, RegisteredAgentTool
 from .messages import prepare_post, prepare_edit, prepare_delete, find_agent_files, content_options
 
 

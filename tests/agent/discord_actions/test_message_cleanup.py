@@ -8,7 +8,7 @@ import discord
 
 from elbow_helper.agent.discord_actions.message_cleanup import prepare_cleanup, selected_messages
 from elbow_helper.agent.actions.contracts import ActionClass
-from agent.discord_actions.management_helpers import Entity, fixture
+from tests.agent.discord_actions.management_helpers import Entity, fixture
 
 
 def add_messages(channel, member, ages=(1, 2, 15)):

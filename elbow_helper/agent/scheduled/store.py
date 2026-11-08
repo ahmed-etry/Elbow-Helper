@@ -12,7 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from elbow_helper.infrastructure.persistence import sqlite_transaction
-from ..storage import agent_connection
+from elbow_helper.agent.persistence.schema import agent_connection
 from ..actions.codec import encode_record
 from .time_rules import schedule_expired
 from .destination_limits import require_destination_spacing

@@ -4,9 +4,9 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import unittest
 
-from agent.scheduled import test_agent_scheduled_runner as fixtures
+from tests.agent.scheduled import test_agent_scheduled_runner as fixtures
 from elbow_helper.agent.actions.store import AgentActionRepository
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.scheduled.time_rules import (
     next_occurrences, remaining_runs, schedule_preview,
 )

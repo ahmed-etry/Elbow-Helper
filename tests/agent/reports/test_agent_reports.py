@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.research.members import find_discord_roles
 
 

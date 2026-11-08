@@ -5,10 +5,10 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.engine.cohort_evidence import share_discussion_rows, cohort_writer_evidence
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
-from elbow_helper.agent.tool_support.core import family_tool
+from elbow_helper.agent.reads.snapshots import family_tool
 from elbow_helper.agent.engine.grounding import messages_from
-from agent.engine.test_agent_plan_flow import _context
-from agent.engine.test_writer_tables import expand
+from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine.test_writer_tables import expand
 
 
 def discussion(rows, *, after=None, complete=False, channel=91):

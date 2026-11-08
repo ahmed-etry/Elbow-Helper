@@ -5,10 +5,10 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
-from agent.engine.test_agent_plan_flow import _Model, _Session, _context, _model_step, _plan
-from agent.engine.test_strict_answers import players, query
+from tests.agent.engine.test_agent_plan_flow import _Model, _Session, _context, _model_step, _plan
+from tests.agent.engine.test_strict_answers import players, query
 
 
 class AnswerRecoveryFlowTests(unittest.IsolatedAsyncioTestCase):

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 from elbow_helper.agent.engine.assessment import decision_answer, parse_decision, without_new_choices
 from elbow_helper.agent.engine.budgets import ASSESSMENT_LIMITS
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-from agent.engine import test_request_cost as cost
+from tests.agent.engine import test_request_cost as cost
 
 
 def decision(**overrides):

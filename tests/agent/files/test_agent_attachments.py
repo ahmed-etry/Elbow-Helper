@@ -9,10 +9,10 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from openpyxl import Workbook
 
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.agent.access import AgentAccessLost
+from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.files.contracts import AttachmentValidationError, CsvImportArtifact
 from elbow_helper.agent.files.attachments import acquire_csv_attachment, parse_csv, parse_text, parse_xlsx
-from elbow_helper.agent.models import AgentRequestContext
+from elbow_helper.agent.engine.models import AgentRequestContext
 from elbow_helper.agent.files.attachment_tools import import_csv_attachment, import_text_attachment, import_xlsx_attachment, read_csv_import, read_text_import, read_xlsx_import
 
 

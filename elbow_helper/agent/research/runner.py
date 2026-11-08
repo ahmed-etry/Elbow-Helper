@@ -11,11 +11,11 @@ from uuid import uuid4
 
 import discord
 
-from ..access import AgentAccessLost, has_agent_entry_access
+from elbow_helper.agent.safety.access import AgentAccessLost, has_agent_entry_access
 from .repository import ResearchJobBusy, ResearchJobConflict, ResearchJobRepository
-from ..models import AgentRequestContext
+from elbow_helper.agent.engine.models import AgentRequestContext
 from .execution import advance_discord_research_job
-from ..read_cache import ReadCache
+from elbow_helper.agent.reads.cache import ReadCache
 
 
 LOGGER = logging.getLogger(__name__)

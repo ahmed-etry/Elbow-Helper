@@ -8,14 +8,11 @@ from typing import Any
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audit_reason
 from ..actions.outcomes import ActionOutcome
-from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from ..wording import (
-    ACTION_NICKNAME_LABEL, ACTION_NICKNAME_LINE,
-    ACTION_NICKNAME_RESET_LINE, ACTION_UNDO_CHANGED,
-)
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.conversation.wording import ACTION_NICKNAME_LABEL, ACTION_NICKNAME_LINE, ACTION_NICKNAME_RESET_LINE, ACTION_UNDO_CHANGED
 from .safety import DiscordActionRefused, check_raw_nickname, resolve_member
 
 

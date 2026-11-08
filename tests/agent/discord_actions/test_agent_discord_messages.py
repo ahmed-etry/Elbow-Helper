@@ -10,7 +10,7 @@ from elbow_helper.agent.actions.contracts import (
     ActionClass, ChangePreview, PreparedAction,
 )
 from elbow_helper.agent.actions.store import AgentActionRepository
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.discord_actions.messages import (
     find_agent_files, prepare_delete, prepare_edit, prepare_post,
 )

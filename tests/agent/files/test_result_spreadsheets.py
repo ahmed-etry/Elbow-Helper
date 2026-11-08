@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock, patch
 
 from openpyxl import load_workbook
 
-from agent.files.test_agent_spreadsheets import _context
+from tests.agent.files.test_agent_spreadsheets import _context
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.files.spreadsheet_tools import (
     prepare_spreadsheet, spreadsheet_tools,
 )
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.agent.plan.checker import check_plan, valid_arguments
 from elbow_helper.agent.plan.executor import execute_plan, resolve_arguments

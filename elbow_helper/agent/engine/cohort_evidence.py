@@ -2,8 +2,8 @@
 import json
 from dataclasses import replace
 
-from ..tool_support.core import FamilyReport
-from ..tool_support.model_view import family_model_view, record_rows
+from elbow_helper.agent.reads.snapshots import FamilyReport
+from elbow_helper.agent.reads.evidence import family_model_view, record_rows
 from elbow_helper.features.cwl.results_summary import CWL_ANALYSIS_FIELDS
 from ..reports.tools import authorize_report
 from ..plan.results import compact_result, model_result

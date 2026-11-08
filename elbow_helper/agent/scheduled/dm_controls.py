@@ -4,7 +4,7 @@ import asyncio
 
 import discord
 
-from ..wording import ACTION_REMINDER_DM_STOP, ACTION_REMINDER_DM_STOPPED, ACTION_UNAVAILABLE
+from elbow_helper.agent.conversation.wording import ACTION_REMINDER_DM_STOP, ACTION_REMINDER_DM_STOPPED, ACTION_UNAVAILABLE
 
 
 class ReminderStopButton(

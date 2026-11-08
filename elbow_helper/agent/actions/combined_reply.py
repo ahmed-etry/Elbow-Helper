@@ -8,7 +8,7 @@ from typing import Any
 
 import discord
 
-from ..text import DISCORD_MESSAGE_LIMIT, chunk_response
+from elbow_helper.agent.conversation.text import DISCORD_MESSAGE_LIMIT, chunk_response
 
 LOGGER = logging.getLogger(__name__)
 _UNSET = object()

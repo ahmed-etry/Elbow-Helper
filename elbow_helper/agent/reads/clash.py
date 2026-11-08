@@ -11,16 +11,16 @@ from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.player_tags import normalize_player_tag, encode_clash_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from elbow_helper.agent.access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from elbow_helper.agent.engine import budgets
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.research.history import search_date
-from elbow_helper.agent.tool_support.validation import invalid_arguments
+from elbow_helper.agent.engine.validation import invalid_arguments
 from elbow_helper.agent.plan.input_rules import RULES
 from elbow_helper.agent.reads.battle_logs import select_battles
-from elbow_helper.agent.tool_support.clash_cache import MAX_AGE_SECONDS
-from elbow_helper.agent.read_cache import LIVE_READ_SECONDS, read_scope
+from elbow_helper.agent.reads.clash_cache import MAX_AGE_SECONDS
+from elbow_helper.agent.reads.cache import LIVE_READ_SECONDS, read_scope
 from elbow_helper.agent.reads.findings import FIELD_MEANINGS
 
 
@@ -44,7 +44,6 @@ CLAN_FIELDS = (
 PLAYER_CLAN_FIELDS = ("tag", "name", "clanLevel")
 LEAGUE_FIELDS = ("name",)
 RANKED_LEAGUE_FIELDS = ("id", "name")
-HERO_FIELDS = ("name", "level", "maxLevel", "village")
 CLAN_MEMBER_FIELDS = tuple(
     "tag name townHallLevel role trophies".split()
 )

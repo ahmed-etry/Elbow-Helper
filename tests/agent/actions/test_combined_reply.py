@@ -8,13 +8,11 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.agent.actions.preview import preview_text
-from elbow_helper.agent.access import ACCESS_LEAD
+from elbow_helper.agent.safety.access import ACCESS_LEAD
 from elbow_helper.agent.conversation.state import ConversationRecord, ConversationStore, ConversationTurn
-from elbow_helper.agent.delivery import AgentDeliveryMixin, AgentDeliveryUnknown, _delivery_nonce
-from elbow_helper.agent.models import (
-    AgentAttachment, AgentDelivery, AgentRequestContext, AgentTurnState,
-)
-from elbow_helper.agent.wording import ACTION_CANCELLED, ACTION_PREVIEW_EXPIRED, ACTION_PREVIEW_DETAILS_BUTTON
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin, AgentDeliveryUnknown, _delivery_nonce
+from elbow_helper.agent.engine.models import AgentAttachment, AgentDelivery, AgentRequestContext, AgentTurnState
+from elbow_helper.agent.conversation.wording import ACTION_CANCELLED, ACTION_PREVIEW_EXPIRED, ACTION_PREVIEW_DETAILS_BUTTON
 
 
 class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
@@ -60,8 +58,8 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         )
         self.allowed = AsyncMock(return_value=True)
         for target, mock in (
-            ("elbow_helper.agent.delivery.assert_answer_scope", self.allowed),
-            ("elbow_helper.agent.delivery.require_evidence_access", AsyncMock(return_value=())),
+            ("elbow_helper.agent.conversation.delivery.assert_answer_scope", self.allowed),
+            ("elbow_helper.agent.conversation.delivery.require_evidence_access", AsyncMock(return_value=())),
             ("elbow_helper.agent.actions.answer_view.require_evidence_access", AsyncMock(return_value=())),
         ):
             patched = patch(target, mock)

@@ -6,7 +6,7 @@ from contextlib import contextmanager
 import sqlite3
 from typing import Any, Iterable, Iterator, Mapping
 
-from elbow_helper.data.link_facade import LinkFacade
+from elbow_helper.data.links.table import LinkFacade
 from elbow_helper.data.store.link_state import LinkConflict
 
 from .config import DB_PATH

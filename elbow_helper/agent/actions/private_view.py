@@ -7,15 +7,11 @@ from collections.abc import Awaitable, Callable
 
 import discord
 
-from ..wording import (
-    ACTION_PRIVATE_BUTTON,
-    ACTION_PRIVATE_SELECT, ACTION_RESULT_EXPIRED,
-    ACTION_RESULT_OWNER,
-)
-from ..models import AgentAttachment
+from elbow_helper.agent.conversation.wording import ACTION_PRIVATE_BUTTON, ACTION_PRIVATE_SELECT, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER
+from elbow_helper.agent.engine.models import AgentAttachment
 from ..files.delivery import attachment_files, spreadsheet_links, spreadsheet_warnings
 from ..discord_actions.message_parts import image_attachment
-from ..text import chunk_response
+from elbow_helper.agent.conversation.text import chunk_response
 from .message_cleanup import log_cleanup_failure
 
 

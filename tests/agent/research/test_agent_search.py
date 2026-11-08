@@ -12,7 +12,7 @@ from elbow_helper.infrastructure.discord.message_search import (
     DiscordHistoryPage, DiscordSearchMessage, DiscordSearchPage,
 )
 from elbow_helper.infrastructure.discord.thread_discovery import DiscordArchivedThreadPage
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.research.history import read_discord_channel_history
 from elbow_helper.agent.research.search import search_discord_messages
 from elbow_helper.agent.research.threads import find_discord_threads

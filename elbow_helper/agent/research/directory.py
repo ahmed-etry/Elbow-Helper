@@ -5,7 +5,7 @@ import json
 
 import discord
 
-from ..access import can_access_message_channel
+from elbow_helper.agent.safety.access import can_access_message_channel
 
 
 async def scoped_channel_directory(context):

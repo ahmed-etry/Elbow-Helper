@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import discord
 
 from elbow_helper.agent.discord_actions.polls import prepare_poll, read_poll, undo_poll
-from agent.discord_actions.management_helpers import Entity, fixture
+from tests.agent.discord_actions.management_helpers import Entity, fixture
 
 
 class PollTests(unittest.IsolatedAsyncioTestCase):

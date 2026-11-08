@@ -7,11 +7,11 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID, LEAD
-from elbow_helper.agent.delivery import AgentDeliveryMixin
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
 from elbow_helper.agent.knowledge.tools import search_approved_knowledge
-from elbow_helper.agent.models import AgentRequestContext, AgentTurnState
-from tests.agent.test_agent_audiences import Channel, Member, Role, Thread
+from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState
+from tests.agent.safety.test_agent_audiences import Channel, Member, Role, Thread
 
 
 class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
@@ -101,7 +101,7 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
     async def test_private_thread_checks_unjoined_moderators_and_unknown_members(self):
         destination = Thread(11, self.channel, private=True, members=[self.requester])
         self.context = replace(self.context, delivery_channel=destination)
-        with patch("elbow_helper.agent.disclosure.discord.Thread", Thread):
+        with patch("elbow_helper.agent.safety.disclosure.discord.Thread", Thread):
             result = await search_approved_knowledge(self.context, {})
             self.assertIn("lead", {s.get("visibility") for s in result["sections"]})
             # Knowledge checks access before and after loading; each recheck

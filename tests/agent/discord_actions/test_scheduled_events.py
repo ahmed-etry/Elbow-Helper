@@ -9,7 +9,7 @@ import discord
 from elbow_helper.agent.discord_actions.scheduled_events import (
     prepare_cancel, prepare_create, prepare_edit, undo_edit,
 )
-from agent.discord_actions.management_helpers import Entity, fixture
+from tests.agent.discord_actions.management_helpers import Entity, fixture
 
 
 class ScheduledEventTests(unittest.IsolatedAsyncioTestCase):

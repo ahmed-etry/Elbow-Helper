@@ -7,7 +7,7 @@ import discord
 from elbow_helper.configuration.guild import TEST_ACCOUNT_IDS
 from elbow_helper.domain.identity import (identity_query, matches_discord_identity,
                                           name_parts, discord_names)
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..reads.people import PeopleAdapter, PeopleSelection
 
 __all__ = ["identity_query", "matches_discord_identity", "name_parts", "discord_names",

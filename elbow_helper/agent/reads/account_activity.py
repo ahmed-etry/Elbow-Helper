@@ -3,7 +3,7 @@
 import asyncio
 import sqlite3
 
-from elbow_helper.agent.tool_support.model_view import pick, ranked_view
+from elbow_helper.agent.reads.evidence import pick, ranked_view
 from elbow_helper.agent.reads.wars import attendance, period
 
 

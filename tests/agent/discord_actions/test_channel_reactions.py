@@ -6,9 +6,9 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.discord_actions.reactions import channel_reaction_history, react_to_request
-from elbow_helper.agent.models import ChannelReactions
-from agent.discord_actions.test_agent_reactions import _server_emoji
-from agent.engine.test_agent_service import _context
+from elbow_helper.agent.engine.models import ChannelReactions
+from tests.agent.discord_actions.test_agent_reactions import _server_emoji
+from tests.agent.engine.test_agent_service import _context
 
 
 class ChannelReactionTests(unittest.IsolatedAsyncioTestCase):
@@ -73,8 +73,8 @@ class ChannelReactionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_history_skips_reactions_and_keeps_the_line(self):
         from elbow_helper.agent.engine.service import AgentService
-        from agent.engine.helpers import social_step
-        from agent.engine.test_agent_service import _AgentModel, _AgentSession
+        from tests.agent.engine.helpers import social_step
+        from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession
 
         context = self.context(ChannelReactions(emojis=None))
         session = _AgentSession([social_step("Synthetic line.", form="text_reactions", reactions=["\U0001f914"])])

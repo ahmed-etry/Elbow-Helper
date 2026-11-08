@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
 from elbow_helper.agent.knowledge.tools import knowledge_tools
-from agent.engine import test_request_cost as cost
-from agent.engine.test_agent_plan_flow import _context, _model_step, _plan, _step
+from tests.agent.engine import test_request_cost as cost
+from tests.agent.engine.test_agent_plan_flow import _context, _model_step, _plan, _step
 
 
 class PersonaBrevitySelectionTests(unittest.IsolatedAsyncioTestCase):

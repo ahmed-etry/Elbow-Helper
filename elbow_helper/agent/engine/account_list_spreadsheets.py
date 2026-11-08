@@ -2,7 +2,7 @@
 import logging
 import re
 
-from ..access import AgentAccessLost, require_evidence_access
+from elbow_helper.agent.safety.access import AgentAccessLost, require_evidence_access
 from ..files.delivery import delivery_manifest
 from ..files.spreadsheet_tools import _store_spreadsheet
 from ..files.spreadsheets import AgentSpreadsheet, AgentSpreadsheetSheet, valid_text

@@ -13,10 +13,7 @@ from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import AgentToolResult
 from elbow_helper.infrastructure.ai import TextGenerationError
 from ..actions.contracts import ActionClass
-from ..access import (
-    leadership_asker,
-    require_access, require_evidence_access,
-)
+from elbow_helper.agent.safety.access import leadership_asker, require_access, require_evidence_access
 from ..plan.checker import check_plan, step_dependencies
 from ..plan.format import PLAN_TOOL_NAME, REPLY_CAPABILITIES, answer_instructions, plan_definition
 from ..plan.planning import PlanNotSettled, read_request, request_plan, reuse_reply_target, social_reply_issue
@@ -29,13 +26,7 @@ from ..actions.outcomes import command_reply
 from ..actions.preview import is_preview_reply, preview_text
 from ..actions.details import prepare_preview
 from ..research.member_provenance import member_target_issue, harmless_member_mentions
-from ..wording import (
-    AGENT_ANSWER_UNFINISHED,
-    AGENT_PLAN_UNFINISHED,
-    AGENT_RESEARCH_UNFINISHED,
-    ACTION_NOT_PREPARED,
-    ACTION_UNAVAILABLE,
-)
+from elbow_helper.agent.conversation.wording import AGENT_ANSWER_UNFINISHED, AGENT_PLAN_UNFINISHED, AGENT_RESEARCH_UNFINISHED, ACTION_NOT_PREPARED, ACTION_UNAVAILABLE
 from . import budgets as limits
 from .rounds import AgentGracefulEnd, AgentLimitReached, ModelRounds
 from .steps import PlanRunner
@@ -56,16 +47,11 @@ from .recommended_actions import action_catalogue, prepare_recommended_actions
 from ..research.directory import scoped_channel_directory
 from ..files.delivery import delivery_manifest
 from ..conversation.context import estimate_tokens
-from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from ..identity import guild_identity
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.conversation.identity import guild_identity
 from .budgets import ContextBudget
 from elbow_helper.infrastructure.ai.agent import AgentSession
-from ..prompts import (
-    RESULT_ANSWER_INSTRUCTION,
-    EVENT_CONTEXT_INSTRUCTION,
-    MISSING_VALUES_INSTRUCTION,
-    LIMIT_ANSWER_INSTRUCTION,
-)
+from elbow_helper.agent.engine.prompts import RESULT_ANSWER_INSTRUCTION, EVENT_CONTEXT_INSTRUCTION, MISSING_VALUES_INSTRUCTION, LIMIT_ANSWER_INSTRUCTION
 
 LOGGER = logging.getLogger(__name__)
 

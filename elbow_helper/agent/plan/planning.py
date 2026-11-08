@@ -11,14 +11,12 @@ from typing import Any
 from elbow_helper.infrastructure.ai import AgentToolResult
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort, AgentSession
 
-from ..models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from ..engine.budgets import INITIAL_MAX_OUTPUT_TOKENS
 from .checker import PlanCheck, check_plan
 from .format import PLAN_TOOL_NAME, REPLY_CAPABILITIES
 from .results import plan_feedback
-from ..prompts import (
-    ONE_PLAN_INSTRUCTION,
-)
+from elbow_helper.agent.engine.prompts import ONE_PLAN_INSTRUCTION
 
 
 LOGGER = logging.getLogger(__name__)

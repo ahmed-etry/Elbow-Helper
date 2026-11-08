@@ -1,7 +1,7 @@
 """Typed account projections and authorized cohort references shared by family reads."""
 import json
 
-from ..tool_support.core import FamilyReport, UNKEPT_REPORT
+from elbow_helper.agent.reads.snapshots import FamilyReport, UNKEPT_REPORT
 from ..reports.tools import authorize_report
 from .wars import performance_projection
 from .people import PeopleAdapter, PeopleSelection

@@ -4,11 +4,7 @@ from collections.abc import Mapping, Sequence
 import json
 from typing import Any
 
-from ..wording import (
-    ACTION_RUN_DONE, ACTION_RUN_NONE, ACTION_RUN_PARTIAL, ACTION_RUN_PERMISSION,
-    ACTION_RUN_RESTARTED, ACTION_RUN_UNCONFIRMED,
-    ACTION_RUN_NOT_DONE,
-)
+from elbow_helper.agent.conversation.wording import ACTION_RUN_DONE, ACTION_RUN_NONE, ACTION_RUN_PARTIAL, ACTION_RUN_PERMISSION, ACTION_RUN_RESTARTED, ACTION_RUN_UNCONFIRMED, ACTION_RUN_NOT_DONE
 
 
 def _labels(steps: Sequence[Mapping[str, Any]]) -> str:

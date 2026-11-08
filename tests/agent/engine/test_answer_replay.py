@@ -5,11 +5,11 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock
 
-from elbow_helper.agent.access import AgentAccessLost
+from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.conversation.replay import replay_answer
 from elbow_helper.agent.conversation.state import ConversationRecord, ConversationTurn
-from elbow_helper.agent.wording import ACTION_EMPTY, ACTION_PRIVATE_ANSWER
-from agent.engine.test_agent_plan_flow import _context
+from elbow_helper.agent.conversation.wording import ACTION_EMPTY, ACTION_PRIVATE_ANSWER
+from tests.agent.engine.test_agent_plan_flow import _context
 
 
 def turn(*, delivered="Exact answer.\nSecond line.", generated="Different generated answer.",

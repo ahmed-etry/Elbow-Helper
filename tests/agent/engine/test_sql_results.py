@@ -7,11 +7,11 @@ import unittest
 from tests.temp_directory import TemporaryDirectory
 from unittest.mock import Mock, patch
 
-from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan
-from agent.engine.test_writer_tables import expand
-from agent.dataset_helpers import synthetic_datasets
-from elbow_helper.agent.tool_support.sql.guide import DataGuide
-from elbow_helper.agent.tool_support.sql.tools import dataset_tools
+from tests.agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan
+from tests.agent.engine.test_writer_tables import expand
+from tests.agent.reads.dataset_helpers import synthetic_datasets
+from elbow_helper.agent.reads.sql.guide import DataGuide
+from elbow_helper.agent.reads.sql.tools import dataset_tools
 from elbow_helper.agent.engine.answer_inputs import answer_evidence, bounded_answer_evidence
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.tool_call import bound_tool_result

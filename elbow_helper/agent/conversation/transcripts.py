@@ -9,7 +9,7 @@ from pathlib import Path
 import sqlite3
 
 from elbow_helper.infrastructure.persistence import sqlite_transaction
-from ..storage import agent_connection, initialize_agent
+from elbow_helper.agent.persistence.schema import agent_connection, initialize_agent
 from .feedback import ReplyReportArchiveMixin, store_diagnostics
 
 LOGGER = logging.getLogger(__name__)

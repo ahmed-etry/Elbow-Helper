@@ -5,7 +5,7 @@ from unittest.mock import patch
 from elbow_helper.agent.reports.base import (
     ArtifactCapacityError, retain_report, retain_reports,
 )
-from agent.report_helpers import make_event_report
+from tests.agent.reports.report_helpers import make_event_report
 
 
 class ArtifactTests(unittest.TestCase):

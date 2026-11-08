@@ -15,7 +15,7 @@ from .tool_call import bound_tool_result
 from .member_facts import reader_roles, reference_facts
 from .writer_tables import writer_tables
 from .writer_rows import WRITER_ROW_FAMILIES, compact_writer_rows
-from ..tool_support.model_view import record_rows
+from elbow_helper.agent.reads.evidence import record_rows
 
 
 def serialized_answer_evidence(evidence):

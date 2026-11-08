@@ -10,16 +10,11 @@ import discord
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audit_reason
 from ..actions.outcomes import ActionOutcome
-from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from ..wording import (
-    ACTION_PIN_ADD, ACTION_PIN_LABEL, ACTION_PIN_LINE,
-    ACTION_PIN_REMOVE, ACTION_REACTION_ADD_LINE,
-    ACTION_REACTION_LABEL, ACTION_REACTION_REMOVE_LINE,
-    ACTION_UNDO_CHANGED,
-)
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.conversation.wording import ACTION_PIN_ADD, ACTION_PIN_LABEL, ACTION_PIN_LINE, ACTION_PIN_REMOVE, ACTION_REACTION_ADD_LINE, ACTION_REACTION_LABEL, ACTION_REACTION_REMOVE_LINE, ACTION_UNDO_CHANGED
 from .safety import DiscordActionRefused, check_view_access, resolve_channel
 
 

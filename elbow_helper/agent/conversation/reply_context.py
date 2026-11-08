@@ -4,8 +4,8 @@ import json
 from dataclasses import replace
 from types import SimpleNamespace
 
-from ..access import accessible_message_channel
-from ..text import message_text
+from elbow_helper.agent.safety.access import accessible_message_channel
+from elbow_helper.agent.conversation.text import message_text
 
 
 REPLY_CONTEXT_INSTRUCTION = (
@@ -102,7 +102,7 @@ async def prepare_reply_context(context):
                             "delivered_answer": record.delivered_answer,
                             "delivery_complete": record.delivery_complete,
                             "report_ids": [key for key in record.report_ids if key in context.state.reports]}
-            from ..tool_support.core import FamilyReport
+            from elbow_helper.agent.reads.snapshots import FamilyReport
             from ..reports.tools import authorize_report
             inputs, entities, authorized = [], [], []
             for identifier in conversation['report_ids']:

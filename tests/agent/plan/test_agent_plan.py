@@ -9,7 +9,7 @@ from elbow_helper.agent.plan import check_plan
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.reports.tools import original_tool
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from elbow_helper.agent.engine.capability_contract import contract_catalogue

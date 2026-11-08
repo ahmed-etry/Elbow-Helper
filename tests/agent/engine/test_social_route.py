@@ -1,7 +1,7 @@
 """Short social replies combine reactions with text or a GIF."""
 
 from dataclasses import replace
-from agent.engine.helpers import LegacyCatalogueMixin
+from tests.agent.engine.helpers import LegacyCatalogueMixin
 
 import json
 from types import SimpleNamespace
@@ -17,9 +17,9 @@ from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.conversation.state import ConversationTurn
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage, TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from agent.engine.test_agent_service import _AgentSession, _AgentModel, _context
+from tests.agent.engine.test_agent_service import _AgentSession, _AgentModel, _context
 from tests.features.agent_plan_helpers import plan_call
-from agent.engine.helpers import social_step
+from tests.agent.engine.helpers import social_step
 
 
 class SocialRouteTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):

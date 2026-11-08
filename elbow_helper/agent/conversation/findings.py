@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 import json
 
-from ..read_cache import named_source, source_revision
+from elbow_helper.agent.reads.cache import named_source, source_revision
 
 
 LIVE_FIGURE_GRACE_SECONDS = 3 * 60

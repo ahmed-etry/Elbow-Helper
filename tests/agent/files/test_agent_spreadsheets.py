@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, patch
 from openpyxl import load_workbook
 
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.agent.access import AgentAccessLost
-from elbow_helper.agent.models import AgentAttachment, AgentRequestContext
+from elbow_helper.agent.safety.access import AgentAccessLost
+from elbow_helper.agent.engine.models import AgentAttachment, AgentRequestContext
 from elbow_helper.agent.files.spreadsheets import parse_agent_spreadsheet
 from elbow_helper.agent.files.spreadsheet_tools import prepare_spreadsheet
 from elbow_helper.infrastructure.exports import LocalExportStore, WorkbookWriter

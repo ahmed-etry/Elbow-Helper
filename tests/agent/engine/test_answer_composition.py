@@ -20,14 +20,14 @@ from PIL import Image
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.agent.engine.routing import ROUTE_INSTRUCTION
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.access import AgentAccessLost
+from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.conversation.context import build_history_checkpoint
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.plan.format import IMAGE_EVIDENCE_INSTRUCTION, WRITER_INSTRUCTION, answer_instructions
 from elbow_helper.infrastructure.ai import AgentToolDefinition, DeepSeekTextClient
-from agent.engine.test_agent_plan_flow import _context, _plan
-from agent.engine.test_writer_tables import expand
-from agent.conversation.test_agent_context import _turn
+from tests.agent.engine.test_agent_plan_flow import _context, _plan
+from tests.agent.engine.test_writer_tables import expand
+from tests.agent.conversation.test_agent_context import _turn
 
 
 def provider_response(content="", calls=()):
@@ -66,7 +66,7 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
     async def test_channel_clan_policy_uses_current_host_heading_and_keeps_unreadable_rule_unknown(self):
         from elbow_helper.agent.reads.reference import TOOLS
         from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
-        from elbow_helper.agent.models import EvidenceScope
+        from elbow_helper.agent.engine.models import EvidenceScope
 
         for title, visibility in (('Cat battle plan revision 8', 'public'),
                                   ('Renamed instructions for Cat', 'public'),

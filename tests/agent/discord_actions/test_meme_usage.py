@@ -12,15 +12,15 @@ from uuid import uuid4
 import discord
 
 from elbow_helper.agent.actions.store import AgentActionRepository
-from elbow_helper.agent.delivery import AgentDeliveryMixin, AgentDeliveryUnknown
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin, AgentDeliveryUnknown
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.agent.discord_actions.gifs import find_gif
 from elbow_helper.agent.discord_actions.meme_usage import RETENTION_SECONDS, record_delivered_meme, select_meme
 from elbow_helper.agent.conversation.state import Conversation, ConversationRecord, ConversationTurn
 from elbow_helper.agent.engine.social_reply import social_plan
-from elbow_helper.agent.models import AgentDelivery
-from agent.discord_actions.test_gif_library import _choice
-from agent.engine.test_agent_service import _context
+from elbow_helper.agent.engine.models import AgentDelivery
+from tests.agent.discord_actions.test_gif_library import _choice
+from tests.agent.engine.test_agent_service import _context
 
 
 def usage(item_id, posted_at, channel_id=22):
@@ -112,8 +112,8 @@ class MemeUsageTests(unittest.IsolatedAsyncioTestCase):
         surface = AgentDeliveryMixin()
         surface._send_response = AsyncMock()
         with (patch.dict(ITEM_BY_ID, {'a_2': item}, clear=True),
-              patch('elbow_helper.agent.delivery.require_evidence_access', AsyncMock()),
-              patch('elbow_helper.agent.delivery.assert_answer_scope', AsyncMock())):
+              patch('elbow_helper.agent.conversation.delivery.require_evidence_access', AsyncMock()),
+              patch('elbow_helper.agent.conversation.delivery.assert_answer_scope', AsyncMock())):
             await find_gif(self.context, {'query': 'a_2'})
             self.assertEqual(self.repository.recent_memes(guild_id=self.context.guild.id), [])
             for error in (discord.Forbidden(SimpleNamespace(status=403, reason='Forbidden'), 'no'),

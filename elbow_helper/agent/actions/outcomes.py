@@ -8,8 +8,8 @@ from typing import Any, Mapping
 
 import discord
 
-from ..models import AgentAttachment
-from ..wording import ACTION_EMPTY, ACTION_PRIVATE_NOTE, ACTION_UNAVAILABLE
+from elbow_helper.agent.engine.models import AgentAttachment
+from elbow_helper.agent.conversation.wording import ACTION_EMPTY, ACTION_PRIVATE_NOTE, ACTION_UNAVAILABLE
 
 
 @dataclass(frozen=True, slots=True)

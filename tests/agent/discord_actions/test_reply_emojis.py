@@ -4,10 +4,10 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.agent.delivery import AgentDeliveryMixin
+from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.reactions import render_server_emojis
-from elbow_helper.agent.models import AgentDelivery
-from agent.discord_actions.test_agent_reactions import _server_emoji
+from elbow_helper.agent.engine.models import AgentDelivery
+from tests.agent.discord_actions.test_agent_reactions import _server_emoji
 
 
 class ReplyEmojiTests(unittest.IsolatedAsyncioTestCase):

@@ -13,8 +13,8 @@ from elbow_helper.agent.engine.steps import PlanRunner
 from elbow_helper.agent.reads.reference import TOOLS, conversation_evidence
 from elbow_helper.agent.research.search import search_discord_messages
 from elbow_helper.infrastructure.discord.message_search import DiscordSearchMessage, DiscordSearchPage
-from agent.engine.test_agent_plan_flow import _context as runner_context
-from agent.research.test_agent_search import _context
+from tests.agent.engine.test_agent_plan_flow import _context as runner_context
+from tests.agent.research.test_agent_search import _context
 
 
 def message(identifier, channel_id=100, *, content="Synthetic evidence.", author_id=1):

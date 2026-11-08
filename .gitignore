@@ -18,13 +18,7 @@ __pycache__/
 /build/
 /dist/
 
-# --- Local test and review artifacts ---
-/.test-tmp/
-/.test-cut/
-/.stores-map-audit/
-/.stores-move-check/
-/.repo-clean/
-/test-cut-probe/
+# --- Temporary folders ---
 /tmp*/
 
 # --- Virtual environments ---

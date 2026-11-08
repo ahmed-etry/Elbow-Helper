@@ -7,15 +7,12 @@ import logging
 
 import discord
 
-from ..access import ACCESS_VIEW_AUDIT_LOG, AgentAccessLost, assert_answer_scope, require_evidence_access
-from ..disclosure import log_scope_override
-from ..wording import (
-    ACTION_POST_HERE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER,
-    ACTION_UNAVAILABLE, FAILURE_MESSAGE, AGENT_PRIVATE_CHECK_BUTTON,
-)
+from elbow_helper.agent.safety.access import ACCESS_VIEW_AUDIT_LOG, AgentAccessLost, assert_answer_scope, require_evidence_access
+from elbow_helper.agent.safety.disclosure import log_scope_override
+from elbow_helper.agent.conversation.wording import ACTION_POST_HERE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER, ACTION_UNAVAILABLE, FAILURE_MESSAGE, AGENT_PRIVATE_CHECK_BUTTON
 from ..files.delivery import attachment_files
 from ..discord_actions.message_parts import image_attachment
-from ..text import chunk_response
+from elbow_helper.agent.conversation.text import chunk_response
 from ..engine.service import AgentUnavailableError
 from .message_cleanup import log_cleanup_failure
 from .private_view import PRIVATE_RESULT_TIMEOUT, PrivateResultView

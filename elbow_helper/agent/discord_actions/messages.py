@@ -16,21 +16,13 @@ import discord
 from ..plan.executor import resolve_arguments
 
 
-from ..access import can_access_message_channel, require_evidence_access
+from elbow_helper.agent.safety.access import can_access_message_channel, require_evidence_access
 from ..actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, earlier_result_label,
 )
 from ..actions.outcomes import ActionOutcome
-from ..models import AgentAttachment, AgentRequestContext
-from ..wording import (
-    ACTION_ATTACH_LINE,
-    ACTION_DELETE_LABEL, ACTION_DELETE_LINE,
-    ACTION_EDIT_LABEL, ACTION_EDIT_LINE,
-    ACTION_PINGS_LINE, ACTION_POST_FUTURE_LINE,
-    ACTION_POST_LABEL, ACTION_POST_LINE,
-    ACTION_UNDO_CHANGED, ACTION_PREVIEW_BLANK,
-    ACTION_REPLY_NO_PING, ACTION_REPLY_WITH_PING,
-)
+from elbow_helper.agent.engine.models import AgentAttachment, AgentRequestContext
+from elbow_helper.agent.conversation.wording import ACTION_ATTACH_LINE, ACTION_DELETE_LABEL, ACTION_DELETE_LINE, ACTION_EDIT_LABEL, ACTION_EDIT_LINE, ACTION_PINGS_LINE, ACTION_POST_FUTURE_LINE, ACTION_POST_LABEL, ACTION_POST_LINE, ACTION_UNDO_CHANGED, ACTION_PREVIEW_BLANK, ACTION_REPLY_NO_PING, ACTION_REPLY_WITH_PING
 from .safety import (DiscordActionRefused, check_post_access,
                              check_view_access, resolve_channel)
 from .message_parts import image_attachment, media_links, outgoing_parts

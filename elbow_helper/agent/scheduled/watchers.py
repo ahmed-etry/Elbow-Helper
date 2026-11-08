@@ -15,13 +15,11 @@ from ..engine.capability_contract import compile_capability_call
 from ..engine.service import AgentService
 from ..engine.service import AgentUnavailableError
 from ..engine.registry import build_agent_tools
-from ..prompts import WATCHER_SYSTEM_PROMPT
-from ..text import chunk_response
-from ..access import require_evidence_access
-from ..disclosure import can_show
-from ..prompts import (
-    WATCHER_CONTINUATION_INSTRUCTION,
-)
+from elbow_helper.agent.engine.prompts import WATCHER_SYSTEM_PROMPT
+from elbow_helper.agent.conversation.text import chunk_response
+from elbow_helper.agent.safety.access import require_evidence_access
+from elbow_helper.agent.safety.disclosure import can_show
+from elbow_helper.agent.engine.prompts import WATCHER_CONTINUATION_INSTRUCTION
 
 LOGGER = logging.getLogger(__name__)
 WATCHER_OUTPUT_TOKENS = 2_000

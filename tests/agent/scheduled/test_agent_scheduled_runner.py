@@ -11,7 +11,7 @@ import discord
 from elbow_helper.agent.actions.store import AgentActionRepository
 from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
-from elbow_helper.agent.models import AgentRequestContext, AgentTurnState
+from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState
 from elbow_helper.agent.scheduled.runner import ScheduledRunner
 from elbow_helper.agent.engine.service import AgentUnavailableError
 from elbow_helper.agent.scheduled.requests import ScheduledResult, check_watcher, run_saved_request

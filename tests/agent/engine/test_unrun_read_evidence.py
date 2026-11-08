@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.engine.steps import PlanRunner
 from elbow_helper.agent.engine.routing import ROUTE_INSTRUCTION
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.plan.format import answer_instructions
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from agent.engine.test_agent_plan_flow import _context, _plan
-from agent.engine.test_answer_composition import call, client, provider_response, writer_payload
+from tests.agent.engine.test_agent_plan_flow import _context, _plan
+from tests.agent.engine.test_answer_composition import call, client, provider_response, writer_payload
 
 
 class UnrunReadEvidenceTests(unittest.IsolatedAsyncioTestCase):

@@ -12,10 +12,10 @@ from elbow_helper.agent.engine.assessment import select_decision_sources
 from elbow_helper.agent.engine.routing import RouteDecision, judge_route
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.scheduled.watchers import evaluate
-from elbow_helper.agent.prompts import LIMIT_ANSWER_INSTRUCTION
+from elbow_helper.agent.engine.prompts import LIMIT_ANSWER_INSTRUCTION
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
 from elbow_helper.infrastructure.ai.client import _FINAL_ANSWER_INSTRUCTION
-from agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine.test_agent_plan_flow import _context
 
 
 class RecordingModel:
@@ -176,8 +176,8 @@ class PromptLayoutTests(unittest.IsolatedAsyncioTestCase):
         from elbow_helper.agent.engine.routing import SOCIAL_INSTRUCTION
         from elbow_helper.agent.engine.social_reply import SOCIAL_REPLY_INSTRUCTION
         from elbow_helper.agent.knowledge.answers import CHANNEL_FIRST_INSTRUCTION
-        from elbow_helper.agent.prompts import RESEARCH_RULES
-        from agent.engine.test_agent_plan_flow import _Model, _Session
+        from elbow_helper.agent.engine.prompts import RESEARCH_RULES
+        from tests.agent.engine.test_agent_plan_flow import _Model, _Session
 
         for route, rules in ((None, (RESEARCH_RULES, CHANNEL_FIRST_INSTRUCTION, REPLY_CONTEXT_INSTRUCTION)),
                              (RouteDecision(social=True), (SOCIAL_INSTRUCTION, SOCIAL_REPLY_INSTRUCTION,

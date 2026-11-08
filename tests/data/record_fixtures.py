@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from elbow_helper.data.links import LinkService
+from elbow_helper.data.links.service import LinkService
 from tests.data.store_fixtures import empty_store
 from elbow_helper.data.store.battles import _find, identity, save_battle
 from elbow_helper.data.store.battle_coverage import observe, save_watch, watch_fact
@@ -22,7 +22,7 @@ from elbow_helper.data.store.sources import record_source
 from elbow_helper.data.store.war_completeness import upgrade_cwl_completeness
 from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
 
-from .link_fixtures import CLANS
+from tests.data.links.link_fixtures import CLANS
 from .test_family_store import link, player, response
 from .test_wars import END, SECOND, WarFixture
 

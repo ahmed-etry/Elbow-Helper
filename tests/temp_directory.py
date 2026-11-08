@@ -12,7 +12,7 @@ from uuid import uuid4
 
 class TemporaryDirectory:
     def __init__(self, suffix=None, prefix=None, dir=None):
-        root = Path(dir) if dir is not None else Path(__file__).resolve().parents[1] / ".test-tmp"
+        root = Path(dir) if dir is not None else Path(__file__).resolve().parents[1] / "tmp-tests"
         root.mkdir(parents=True, exist_ok=True)
         path = root / f"{prefix or 'tmp'}{uuid4().hex}{suffix or ''}"
         path.mkdir()

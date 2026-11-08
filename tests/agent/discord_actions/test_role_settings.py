@@ -8,7 +8,7 @@ import discord
 from elbow_helper.agent.discord_actions.role_settings import (
     prepare_create, prepare_edit, undo_create, undo_edit,
 )
-from agent.discord_actions.management_helpers import fixture
+from tests.agent.discord_actions.management_helpers import fixture
 
 
 class RoleSettingsTests(unittest.IsolatedAsyncioTestCase):

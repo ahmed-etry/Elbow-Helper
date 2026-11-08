@@ -1,7 +1,7 @@
 """Select typed reconstruction for a retained conversation report."""
 
 from typing import Any
-from ..tool_support.core import decode_family
+from elbow_helper.agent.reads.snapshots import decode_family
 
 from .community_codec import (
     decode_achievement_progress,

@@ -8,12 +8,7 @@ import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..access import (
-    ACCESS_LEAD,
-    LookupAccessDenied,
-    has_access_requirements,
-    require_evidence_access,
-)
+from elbow_helper.agent.safety.access import ACCESS_LEAD, LookupAccessDenied, has_access_requirements, require_evidence_access
 from ..actions.contracts import (
     PreparedAction,
     ChangePreview,
@@ -22,10 +17,8 @@ from ..actions.contracts import (
 )
 from ..actions.outcomes import ActionOutcome
 from ..engine.capability_contract import CapabilityContract
-from ..models import RegisteredAgentTool, AgentCapabilityEffect
-from ..wording import (
-    ACTION_DM_LINE, ACTION_DM_LABEL, ACTION_DM_TARGET, ACTION_PINGS_LINE, DM_SENT_FOR,
-)
+from elbow_helper.agent.engine.models import RegisteredAgentTool, AgentCapabilityEffect
+from elbow_helper.agent.conversation.wording import ACTION_DM_LINE, ACTION_DM_LABEL, ACTION_DM_TARGET, ACTION_PINGS_LINE, DM_SENT_FOR
 from .messages import resolve_post_attachment
 from .message_parts import image_attachment, outgoing_parts
 from .member_labels import member_label, mentioned_member_labels

@@ -5,9 +5,9 @@ from types import SimpleNamespace
 import unittest
 
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.models import AgentIdentity
-from agent.engine.test_agent_plan_flow import _context
-from agent.engine.test_planner_fix2_evidence import WriterModel
+from elbow_helper.agent.engine.models import AgentIdentity
+from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine.test_writer_delivery_evidence import WriterModel
 
 
 class WriterBotIdentityTests(unittest.IsolatedAsyncioTestCase):

@@ -20,7 +20,7 @@ import statistics
 
 from elbow_helper.agent.conversation.context import estimate_tokens
 from elbow_helper.agent.plan.results import model_view
-from elbow_helper.agent.prompts import RESULT_ANSWER_INSTRUCTION
+from elbow_helper.agent.engine.prompts import RESULT_ANSWER_INSTRUCTION
 
 
 def _counts(text):

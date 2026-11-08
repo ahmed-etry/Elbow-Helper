@@ -1,25 +1,9 @@
 """Collect feature adapters without making features import the agent runtime."""
 
-from ..tool_support.adapters import (
-    account_links,
-    achievements,
-    attack_plans,
-    clan_reporting,
-    clan_transfers,
-    cwl,
-    diagnostics,
-    events,
-    hibernation,
-    leadership_news,
-    recruitment,
-    role_connections,
-    rosters,
-    support_tickets,
-    wars,
-)
-from elbow_helper.agent.tool_support.adapters import clan_health, examination, member_lifecycle
-from elbow_helper.agent.tool_support.adapters.clan_health.commands import run_health_player
-from ..tool_support.adapters.recruitment.commands import run_opinion
+from elbow_helper.agent.features import account_links, achievements, attack_plans, clan_reporting, clan_transfers, cwl, diagnostics, event_stats as events, hibernation, leadership_news, recruitment, role_connections, rosters, support_tickets, wars
+from elbow_helper.agent.features import clan_health, examination, member_lifecycle
+from elbow_helper.agent.features.clan_health.commands import run_health_player
+from elbow_helper.agent.features.recruitment.commands import run_opinion
 FEATURES = {
     "clan_health": clan_health,
     "account_links": account_links,

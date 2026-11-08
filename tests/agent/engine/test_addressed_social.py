@@ -4,8 +4,8 @@ import unittest
 from types import SimpleNamespace
 
 from elbow_helper.agent.engine.service import AgentService
-from agent.engine.helpers import social_step
-from agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
+from tests.agent.engine.helpers import social_step
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 
 
 def recipient():

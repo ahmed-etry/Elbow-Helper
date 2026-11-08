@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from math import gcd
 
 from ..actions.contracts import ActionRefused
-from ..wording import ACTION_SCHEDULE_DESTINATION_LIMIT
+from elbow_helper.agent.conversation.wording import ACTION_SCHEDULE_DESTINATION_LIMIT
 from .time_rules import MIN_MESSAGE_INTERVAL_SECONDS, _utc, next_occurrences, schedule_expired
 
 MIN_DESTINATION_INTERVAL_SECONDS = MIN_MESSAGE_INTERVAL_SECONDS

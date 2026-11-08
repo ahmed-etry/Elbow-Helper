@@ -1,6 +1,6 @@
 """Member-target provenance is request-scoped and independent of phrasing."""
 
-from agent.engine.helpers import LegacyCatalogueMixin
+from tests.agent.engine.helpers import LegacyCatalogueMixin
 
 import json
 from types import SimpleNamespace
@@ -12,13 +12,13 @@ from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.tool_call import execute_tool
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.research.members import find_discord_members
 from elbow_helper.agent.research.member_provenance import member_target_issue
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDefinition, AgentUsage
 from tests.features.agent_plan_helpers import plan_call
-from agent.engine.test_agent_service import _AgentModel, _AgentSession
-from agent.research.test_member_identity import context
+from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession
+from tests.agent.research.test_member_identity import context
 
 
 def reply(text, *, self_target=False):

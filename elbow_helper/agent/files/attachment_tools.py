@@ -6,7 +6,7 @@ from uuid import uuid4
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import accessible_message_channel, require_evidence_access
+from elbow_helper.agent.safety.access import accessible_message_channel, require_evidence_access
 from ..reports.base import ArtifactCapacityError, retain_report
 from .contracts import (
     AttachmentValidationError,
@@ -21,7 +21,7 @@ from .attachments import (
     acquire_xlsx_attachment,
     attachment_metadata,
 )
-from ..models import AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.engine.models import AgentRequestContext, RegisteredAgentTool
 
 
 USAGE_NOTES = {

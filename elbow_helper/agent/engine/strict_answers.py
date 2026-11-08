@@ -3,7 +3,7 @@
 import re
 
 from elbow_helper.domain.player_tags import find_player_tags, normalize_player_tag
-from ..wording import ACTION_EMPTY
+from elbow_helper.agent.conversation.wording import ACTION_EMPTY
 from .grounding import GroundingError
 from .answer_evidence import observations
 

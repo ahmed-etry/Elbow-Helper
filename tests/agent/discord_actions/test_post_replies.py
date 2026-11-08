@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from agent.discord_actions import test_agent_discord_messages as fixtures
+from tests.agent.discord_actions import test_agent_discord_messages as fixtures
 from elbow_helper.agent.discord_actions.messages import prepare_post
 
 

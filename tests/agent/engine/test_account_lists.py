@@ -179,7 +179,7 @@ class FinalAnswerFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_final_composition_indexes_the_rows_it_sends_to_the_writer(self):
         from elbow_helper.agent.engine.budgets import ASSESSMENT_LIMITS
         from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-        from agent.engine import test_request_cost as cost
+        from tests.agent.engine import test_request_cost as cost
         flow, _, _, _ = cost.RequestCostTests().flow([])
         flow.assessment_requested = True
         flow.budget.request_limits = ASSESSMENT_LIMITS

@@ -9,7 +9,7 @@ from elbow_helper.configuration.clans import CLANS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
-from elbow_helper.agent.models import RegisteredAgentTool
+from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.reads.people import read_membership_history
 
 def membership_tools():

@@ -7,8 +7,8 @@ from elbow_helper.agent.engine.budgets import ContextBudget
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.steps import PlanRunner
 from elbow_helper.agent.plan.checker import check_plan, step_dependencies
-from agent.engine.test_agent_plan_flow import _context
-from agent.engine.test_pending_report_retention import _plan, _report_size, _step, _tools
+from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine.test_pending_report_retention import _plan, _report_size, _step, _tools
 
 BARE = {'step': 'cohort', 'path': ['report_id']}
 

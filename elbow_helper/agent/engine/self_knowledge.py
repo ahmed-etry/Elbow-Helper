@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 
-from ..access import has_access_requirements, has_reader_access_requirements
+from elbow_helper.agent.safety.access import has_access_requirements, has_reader_access_requirements
 from ..actions.contracts import ActionClass
 from ..plan.format import PLAN_TOOL_NAME, REPLY_CAPABILITIES
 

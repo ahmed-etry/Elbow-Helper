@@ -5,11 +5,11 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.discord_actions.roles import prepare_add_roles
 from elbow_helper.agent.discord_actions.messages import prepare_post
 from elbow_helper.agent.scheduled.scope import validate_scope, within_scope
-from agent.discord_actions.helpers import register_requester
+from tests.agent.discord_actions.helpers import register_requester
 
 
 class CheckedActionScopeTests(unittest.IsolatedAsyncioTestCase):

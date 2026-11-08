@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import discord
 
 from elbow_helper.agent.discord_actions.channels import prepare_create, prepare_delete, prepare_edit, undo_create, undo_edit
-from agent.discord_actions.management_helpers import Entity, fixture
+from tests.agent.discord_actions.management_helpers import Entity, fixture
 
 
 async def history(messages):

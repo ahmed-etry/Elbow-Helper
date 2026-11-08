@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import discord
 
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..actions.values import display_value
 from .management import ID, complete, guard, queue, state_action, text, tool
 from .safety import DiscordActionRefused, resolve_channel

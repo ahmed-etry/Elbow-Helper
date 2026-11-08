@@ -8,15 +8,11 @@ from typing import Any
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audit_reason
 from ..actions.outcomes import ActionOutcome
-from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from ..wording import (
-    ACTION_ROLE_ADD_LABEL, ACTION_ROLE_ADD_LINE,
-    ACTION_ROLE_REMOVE_LABEL, ACTION_ROLE_REMOVE_LINE,
-    ACTION_ROLE_UNDO_LABEL, ACTION_UNDO_CHANGED,
-)
+from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.conversation.wording import ACTION_ROLE_ADD_LABEL, ACTION_ROLE_ADD_LINE, ACTION_ROLE_REMOVE_LABEL, ACTION_ROLE_REMOVE_LINE, ACTION_ROLE_UNDO_LABEL, ACTION_UNDO_CHANGED
 from .safety import (
     DiscordActionRefused, check_member, check_member_role_ownership, check_raw_role,
     managed_role_commands, resolve_member,

@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-from ..access import ACCESS_ROLE_SETS, READ_ACCESS_ROLE_SETS
+from elbow_helper.agent.safety.access import ACCESS_ROLE_SETS, READ_ACCESS_ROLE_SETS
 from elbow_helper.configuration.roles import CO_APPLICANT_ROLE_ID, ELDER_ROLE_ID, MEMBER_ROLE_ID
 
 
@@ -36,7 +36,7 @@ def read_topics(overview):
 
 
 def _rows(payload):
-    from ..tool_support.model_view import record_rows
+    from elbow_helper.agent.reads.evidence import record_rows
     return record_rows(payload.get('rows', []))
 
 

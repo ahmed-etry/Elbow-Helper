@@ -8,7 +8,7 @@ from elbow_helper.agent.conversation.context import build_history_checkpoint, co
 from elbow_helper.agent.conversation.state import (
     ConversationRecord, ConversationTurn,
 )
-from elbow_helper.agent.models import AgentTurnState
+from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 

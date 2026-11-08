@@ -2,14 +2,14 @@
 
 import asyncio
 from dataclasses import replace
-from elbow_helper.agent.wording import AGENT_ANSWER_UNFINISHED
+from elbow_helper.agent.conversation.wording import AGENT_ANSWER_UNFINISHED
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.agent.engine.budgets import ContextBudget, RequestLimits
-from elbow_helper.agent.wording import FAILURE_MESSAGE, AGENT_RESEARCH_UNFINISHED
+from elbow_helper.agent.conversation.wording import FAILURE_MESSAGE, AGENT_RESEARCH_UNFINISHED
 from elbow_helper.infrastructure.ai import AgentUsage
-from agent.engine import test_request_cost as cost
+from tests.agent.engine import test_request_cost as cost
 
 plan, response, Session = cost.plan, cost.response, cost.Session
 
@@ -19,9 +19,9 @@ class ResearchCompletionTests(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_five_parallel_checks_follow_cohort_read_in_one_round(self):
-        from elbow_helper.agent.models import RegisteredAgentTool
+        from elbow_helper.agent.engine.models import RegisteredAgentTool
         from elbow_helper.infrastructure.ai import AgentToolDefinition
-        from agent.engine.test_agent_plan_flow import _model_step, _plan
+        from tests.agent.engine.test_agent_plan_flow import _model_step, _plan
 
         active, peak = 0, 0
         async def check(_, arguments):

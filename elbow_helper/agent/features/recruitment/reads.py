@@ -1,0 +1,191 @@
+"""Status-only, permission-filtered active recruitment trial tools."""
+
+from __future__ import annotations
+
+from typing import Any, Mapping
+from uuid import uuid4
+
+import discord
+
+from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
+from elbow_helper.infrastructure.ai import AgentToolDefinition
+
+from elbow_helper.agent.engine.capability_contract import CapabilityContract
+from elbow_helper.agent.safety.access import accessible_message_channel, require_evidence_access
+from elbow_helper.agent.reports.base import ArtifactCapacityError, retain_report
+from elbow_helper.agent.engine.models import AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.features.recruitment.report import RecruitmentTrialReport
+
+
+_TIMING_STATUSES = {"due", "in_progress"}
+
+
+TOOL_CONTRACTS = {
+    "read_active_recruitment_trials": CapabilityContract(
+        entity_fields=(("ticket_channel_id", "recruitment_ticket_channel"),),
+        source_scope="channel_status", channel_fields=("ticket_channel_id",),
+        result_channel_lists=(("trials", "ticket_channel_id"),),
+        result_sources_within_query=True,
+    ),
+    "read_active_recruitment_trial_report": CapabilityContract(
+        entity_fields=(
+            ("report_id", "recruitment_trial_report"),
+            ("ticket_channel_id", "recruitment_ticket_channel"),
+            ("applicant_member_id", "discord_member"),
+        ),
+        source_scope="retained_channel_evidence", channel_fields=("ticket_channel_id",),
+        result_channel_lists=(("trials", "ticket_channel_id"),),
+        result_sources_within_query=True, filter_fields=("timing_status",),
+        retained_fields=("report_id",),
+    ),
+}
+
+
+def recruitment_tools() -> tuple[RegisteredAgentTool, ...]:
+    definitions = (
+        (
+            "read_active_recruitment_trials",
+            "Read accessible recruitment trials and their configured dates.",
+            {"ticket_channel_id": {"type": "integer", "minimum": 1}},
+            (),
+            read_active_recruitment_trials,
+        ),
+        (
+            "read_active_recruitment_trial_report",
+            "Read a page of the retained active recruitment trial report.",
+            {
+                "report_id": {"type": "string", "maxLength": 32},
+                "offset": {"type": "integer", "minimum": 0},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 25},
+                "ticket_channel_id": {"type": "integer", "minimum": 1},
+                "applicant_member_id": {"type": "integer", "minimum": 1},
+                "timing_status": {
+                    "type": "string",
+                    "enum": sorted(_TIMING_STATUSES),
+                },
+            },
+            ("report_id",),
+            read_active_recruitment_trial_report,
+        ),
+    )
+    return tuple(
+        RegisteredAgentTool(
+            AgentToolDefinition(
+                name=name,
+                description=description,
+                parameters={
+                    "type": "object",
+                    "properties": properties,
+                    "required": list(required),
+                    "additionalProperties": False,
+                },
+            ),
+            handler,
+            contract=TOOL_CONTRACTS[name],
+        )
+        for name, description, properties, required, handler in definitions
+    )
+
+
+async def read_active_recruitment_trials(
+    context: AgentRequestContext,
+    arguments: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    if context.recruitment_queries is None:
+        return {"error": "Recruitment trial status is not available."}
+    selected_ticket_id = arguments.get("ticket_channel_id")
+    if selected_ticket_id is not None and (
+        type(selected_ticket_id) is not int or selected_ticket_id <= 0
+    ):
+        return {"error": "A valid ticket channel ID is required."}
+    selected_channel = None
+    if selected_ticket_id is not None:
+        selected_channel = await accessible_message_channel(context, selected_ticket_id)
+        if (selected_channel is None
+                or getattr(selected_channel, "category_id", None) != RECRUITMENT_TICKET_CATEGORY
+                or getattr(selected_channel, "type", None) != discord.ChannelType.text):
+            return {"error": "That recruitment trial is not accessible."}
+    try:
+        registrations = tuple(
+            row for row in context.recruitment_queries.active_trial_registrations()
+            if selected_ticket_id is None or row.ticket_channel_id == selected_ticket_id
+        )
+    except ValueError:
+        return {"error": "Stored recruitment trials could not be listed."}
+    accessible_ids = [selected_ticket_id] if selected_channel is not None else []
+    for registration in registrations:
+        channel = await accessible_message_channel(
+            context, registration.ticket_channel_id,
+        )
+        if (
+            channel is not None
+            and getattr(channel, "category_id", None) == RECRUITMENT_TICKET_CATEGORY
+            and getattr(channel, "type", None) == discord.ChannelType.text
+        ):
+            if registration.ticket_channel_id not in accessible_ids:
+                accessible_ids.append(registration.ticket_channel_id)
+    try:
+        snapshot = context.recruitment_queries.active_trial_snapshot(
+            ticket_channel_ids=tuple(accessible_ids),
+        )
+        if not {row.ticket_channel_id for row in snapshot.trials}.issubset(
+            accessible_ids
+        ):
+            raise ValueError("Recruitment snapshot includes an unauthorized channel")
+        report = RecruitmentTrialReport(uuid4().hex, context.guild.id, snapshot)
+    except ValueError:
+        return {"error": "Stored recruitment trial status could not be read."}
+    context.state.source_channels.update(accessible_ids)
+    await require_evidence_access(context)
+    if not report.snapshot.trials:
+        return {**report.manifest(), "report_id": None, "trials": [],
+                "workflow_status": "no_active_trial",
+                "selected_ticket_channel_id": selected_ticket_id}
+    try:
+        retain_report(context.state.reports, report)
+    except ArtifactCapacityError:
+        return {
+            "error": (
+                "The complete recruitment trial report is too large to retain "
+                "in this conversation."
+            )
+        }
+    return {**report.page(), "selected_ticket_channel_id": selected_ticket_id}
+
+
+async def read_active_recruitment_trial_report(
+    context: AgentRequestContext,
+    arguments: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    report = context.state.reports.get(arguments["report_id"])
+    if not isinstance(report, RecruitmentTrialReport) or report.guild_id != context.guild.id:
+        return {
+            "error": (
+                "That recruitment trial report is not available in this "
+                "conversation. Read the active trials again."
+            )
+        }
+    for key in ("ticket_channel_id", "applicant_member_id"):
+        value = arguments.get(key)
+        if value is not None and (type(value) is not int or value <= 0):
+            return {"error": f"A valid {key.replace('_', ' ')} is required."}
+    timing_status = arguments.get("timing_status")
+    if timing_status is not None and timing_status not in _TIMING_STATUSES:
+        return {
+            "error": "Unknown recruitment trial timing status.",
+            "known_timing_statuses": sorted(_TIMING_STATUSES),
+        }
+    result = report.page(
+        offset=arguments.get("offset", 0),
+        limit=arguments.get("limit", 25),
+        ticket_channel_id=arguments.get("ticket_channel_id"),
+        applicant_member_id=arguments.get("applicant_member_id"),
+        timing_status=timing_status,
+    )
+    await require_evidence_access(context)
+    return result
+
+
+__all__ = ["recruitment_tools"]

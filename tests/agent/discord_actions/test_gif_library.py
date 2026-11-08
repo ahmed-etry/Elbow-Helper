@@ -5,7 +5,7 @@ from unittest.mock import patch
 from elbow_helper.agent.discord_actions.gif_library import LIBRARY, ITEM_BY_ID, library_gif
 from elbow_helper.agent.discord_actions.gifs import find_gif
 from elbow_helper.agent.engine.social_reply import MEME_SEND_FIT, salvage_choice, social_plan
-from agent.engine.test_agent_service import _context
+from tests.agent.engine.test_agent_service import _context
 
 ORIGINAL_MEDIA = {'reaction-24.jpg', 'smart-ass.gif', 'reaction-04.jpg', 'reaction-05.jpg', 'reaction-21.webp', 'reaction-15.gif', 'reaction-20.webp', 'reaction-27.jpg', 'bait-or-low-iq.gif', 'is-this-guy-really-talking-back-to-me-rn.gif', 'reaction-13.gif', 'reaction-22.jpg', 'reaction-09.png', 'son-ts-was-not-tuff.gif', 'reaction-07.jpg', 'ts-lowkey-tuff.gif', 'reaction-12.jpg', 'reaction-18.jpg', 'reaction-06.gif', 'my-fault-g.gif', 'reaction-14.gif', 'reaction-02.jpg', 'reaction-08.gif', 'reaction-28.gif', 'reaction-10.gif', 'reaction-11.png', 'reaction-26.jpg', 'reaction-17.jpg', 'reaction-01.jpg', 'reaction-25.jpg', 'watch-yo-tone-mf.gif', 'reaction-16.gif', 'reaction-19.gif', 'reaction-23.jpg'}
 

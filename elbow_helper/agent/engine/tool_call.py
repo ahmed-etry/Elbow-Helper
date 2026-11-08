@@ -12,12 +12,12 @@ import json
 import time
 from typing import Any
 from elbow_helper.infrastructure.ai import AgentToolResult
-from ..models import AgentRequestContext
+from elbow_helper.agent.engine.models import AgentRequestContext
 from ..actions.contracts import ActionClass, ActionRefused, PreparedAction
-from ..wording import ACTION_UNAVAILABLE
-from ..access import AgentAccessLost, LookupAccessDenied
-from ..access import has_lookup_access
-from ..access import require_evidence_access
+from elbow_helper.agent.conversation.wording import ACTION_UNAVAILABLE
+from elbow_helper.agent.safety.access import AgentAccessLost, LookupAccessDenied
+from elbow_helper.agent.safety.access import has_lookup_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from .capability_contract import CapabilityBindError
 from .capability_contract import require_source_provenance
 from ..reports.base import ArtifactCapacityError, retain_reports
@@ -397,7 +397,7 @@ def bound_tool_result(content: str, limit: int) -> str:
     except ValueError:
         payload = None
     if isinstance(payload, dict):
-        from ..tool_support.paging import bound_family_page
+        from elbow_helper.agent.reads.paging import bound_family_page
         family = bound_family_page(payload, limit)
         if family is not None:
             return family

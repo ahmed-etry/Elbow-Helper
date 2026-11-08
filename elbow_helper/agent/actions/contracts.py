@@ -9,7 +9,7 @@ import logging
 from typing import Any
 import discord
 
-from ..wording import ACTION_AUDIT_REASON, ACTION_PREVIEW_BLANK, ACTION_UNAVAILABLE
+from elbow_helper.agent.conversation.wording import ACTION_AUDIT_REASON, ACTION_PREVIEW_BLANK, ACTION_UNAVAILABLE
 
 LOGGER = logging.getLogger(__name__)
 

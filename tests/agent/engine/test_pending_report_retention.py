@@ -6,9 +6,9 @@ from unittest.mock import patch
 from elbow_helper.agent.engine.budgets import ContextBudget
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.steps import PlanRunner
-from elbow_helper.agent.tool_support.core import family_tool
+from elbow_helper.agent.reads.snapshots import family_tool
 from elbow_helper.agent.reads.projections import COHORT_REF, cohort_selection
-from agent.engine.test_agent_plan_flow import _context
+from tests.agent.engine.test_agent_plan_flow import _context
 
 ROWS = [{'member_id': index, 'pad': 'x' * 120} for index in range(1, 4)]
 

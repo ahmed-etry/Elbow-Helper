@@ -7,13 +7,13 @@ from typing import Mapping, Sequence
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..models import AgentRequestContext
+from elbow_helper.agent.engine.models import AgentRequestContext
 from .state import (
     MAX_CHECKPOINT_BYTES, MAX_CHECKPOINT_REQUEST_IDS, ConversationCheckpoint,
     ConversationTurn, checkpoint_input_hash,
 )
-from ..prompts import SYSTEM_PROMPT, build_request_prompt
-from ..identity import agent_identity, guild_identity
+from elbow_helper.agent.engine.prompts import SYSTEM_PROMPT, build_request_prompt
+from elbow_helper.agent.conversation.identity import agent_identity, guild_identity
 from .reply_context import pinned_turns
 from .findings import FINDINGS_INSTRUCTION, retained_finding
 from elbow_helper.features.help.catalog import HELP_ENTRIES
@@ -61,7 +61,7 @@ def requester_command_overview(context):
     Detailed command help still checks destination scope in its own reader.
     Keep the public self-description separate from the requester's catalogue.
     """
-    from ..access import ACCESS_ROLE_SETS
+    from elbow_helper.agent.safety.access import ACCESS_ROLE_SETS
 
     bot = getattr(context, 'bot', None)
     registered = (discover_commands(bot)
@@ -82,7 +82,7 @@ def requester_command_overview(context):
 def bot_read_overview(context):
     """Describe implemented family reads independently of slash-command help."""
     from ..reads.tools import TOOLS
-    from ..access import has_access_requirements
+    from elbow_helper.agent.safety.access import has_access_requirements
     levels = context.state.scope.levels if context.state.scope else None
     reads = []
     for tool in TOOLS:

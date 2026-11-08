@@ -6,11 +6,11 @@ from dataclasses import replace
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition, AgentToolResult, TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from ..access import require_evidence_access
+from elbow_helper.agent.safety.access import require_evidence_access
 from ..plan.checker import PlanCheck, check_plan, valid_arguments
 from ..plan.results import result_handler
 from ..research.member_provenance import member_target_issue
-from ..wording import FAILURE_MESSAGE
+from elbow_helper.agent.conversation.wording import FAILURE_MESSAGE
 from ..discord_actions.gif_library import ITEM_BY_ID, catalogue_text, channel_used_items
 from ..discord_actions.meme_usage import recent_memes, select_meme
 from ..discord_actions.gifs import gif_tools
