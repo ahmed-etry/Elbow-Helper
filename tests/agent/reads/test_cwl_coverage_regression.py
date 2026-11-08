@@ -39,7 +39,7 @@ class CwlCoverageRegressionTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(partial['totals_complete'])
             self.assertIsNone(partial['score'])
             self.assertIsNone(partial['rank'])
-            self.assertEqual(partial['scoring_status'], 'incomplete_season')
+            self.assertEqual(partial['scoring_status'], 'finished_wars_so_far')
             self.assertTrue(any(item['clan_code'] == 'BES' and item['season'] == '2026-09'
                                 for item in combined['missing_sources']))
             coverage = next(item for item in combined['clan_seasons'] if item['clan_code'] == 'BES')

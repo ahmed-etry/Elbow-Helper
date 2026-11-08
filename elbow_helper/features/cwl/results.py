@@ -188,15 +188,30 @@ class CwlResults:
                             continue
                         source_rows = [row for row in partial['rows'] if row['clan_code'] == code]
                         attendance_rows = aggregate_attendance(source_rows, {}, 'account')
-                        rows.extend(dict(row, clan_code=code, season=season, score=None, rank=None,
-                                         scoring_status='incomplete_season', league=None) for row in attendance_rows)
                         war_ids = {row['war_id'] for row in source_rows}
                         war_ids.update(row['war_id'] for row in partial.get('war_aliases', []) if row['clan_code'] == code)
+                        scores, scoring_status = {}, 'incomplete_season'
+                        if metric == 'performance' and war_ids:
+                            try:
+                                scored = self.snapshot('ass', clan_code=code, war_ids=sorted(war_ids))
+                            except ValueError:
+                                # Missing attack details leave the running season unscored.
+                                scored = None
+                            if scored is not None:
+                                scores = {row.player_tag: row for row in scored.rows if row.attacks}
+                                scoring_status = 'finished_wars_so_far'
+                        season_rows = [dict(row, clan_code=code, season=season,
+                            score=scores[row['player_tag']].ass_score if row['player_tag'] in scores else None,
+                            rank=scores[row['player_tag']].rank if row['player_tag'] in scores else None,
+                            scoring_status=scoring_status, league=None) for row in attendance_rows]
+                        rows.extend(season_rows)
                         data['clan_seasons'].append({'clan_code': code, 'season': season, 'wars': len(war_ids),
                             'accounts': len(attendance_rows), 'complete': False, 'league': None,
-                            'coverage': partial['coverage']})
-                        data['missing_sources'].append({'source': 'CWL performance', 'clan_code': code,
-                            'season': season, 'cause': 'incomplete_season' if war_ids else 'missing_history'})
+                            'coverage': partial['coverage'],
+                            **({'scoring_status': scoring_status} if scoring_status == 'finished_wars_so_far' else {})})
+                        if not season_rows or any(row['score'] is None for row in season_rows):
+                            data['missing_sources'].append({'source': 'CWL performance', 'clan_code': code,
+                                'season': season, 'cause': 'incomplete_season' if war_ids else 'missing_history'})
                 if metric == 'mega_ass':
                     unique = {}
                     for row in rows:
