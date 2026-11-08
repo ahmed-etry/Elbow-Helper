@@ -203,7 +203,6 @@ def result_handler(handler):
     @wraps(handler)
     async def wrapped(context, arguments):
         return model_result(await handler(context, arguments))
-    wrapped.normalizes_results = True
     return wrapped
 
 

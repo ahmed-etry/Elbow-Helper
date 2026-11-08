@@ -309,12 +309,8 @@ class Rosters(commands.Cog):
         return None
 
     @staticmethod
-    def _clean_roster_name(value: str) -> str | None:
-        return clean_roster_name(value)
-
-    @staticmethod
     def validate_roster_name(value: str) -> str | None:
-        return Rosters._clean_roster_name(value)
+        return clean_roster_name(value)
 
     async def roster_name_available(self, guild_id: int, name: str) -> bool:
         rows = await self.service.list_for_guild(guild_id)

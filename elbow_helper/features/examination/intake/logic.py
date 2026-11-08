@@ -6,15 +6,10 @@ from typing import Any
 from typing import Dict
 
 
-PROMO_SOURCES: tuple[str, ...] = ("BEE", "BEC", "BEM", "BE1", "BES", "BE4")
-
+PROMO_LADDER = ("BEE", "BEC", "BEM", "BE1", "BES", "BE4", "BEH")
+PROMO_SOURCES: tuple[str, ...] = PROMO_LADDER[:-1]
 PROMO_ROUTE_MAP: dict[str, tuple[str, ...]] = {
-    "BEE": ("BEC", "BEM", "BE1", "BES", "BE4", "BEH"),
-    "BEC": ("BEM", "BE1", "BES", "BE4", "BEH"),
-    "BEM": ("BE1", "BES", "BE4", "BEH"),
-    "BE1": ("BES", "BE4", "BEH"),
-    "BES": ("BE4", "BEH"),
-    "BE4": ("BEH",),
+    code: PROMO_LADDER[index + 1:] for index, code in enumerate(PROMO_SOURCES)
 }
 
 NO_EXAM_TARGETS = {"BEC", "BEM", "BE1"}

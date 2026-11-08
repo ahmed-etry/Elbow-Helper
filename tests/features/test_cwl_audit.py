@@ -49,8 +49,7 @@ class LeagueAuditRecordTests(fixtures.LeagueFixture, unittest.IsolatedAsyncioTes
         manager = ClanReportingWarMixin()
         manager.war_reads = WarReads(self.store)
         with fixtures.now(at):
-            status, _ = await manager._month_war_counts("#PY", datetime(2026, 11, 1, tzinfo=timezone.utc),
-                                                       datetime(2026, 12, 1, tzinfo=timezone.utc))
+            status, _ = await manager._month_war_counts("#PY", datetime(2026, 11, 1, tzinfo=timezone.utc))
         self.assertEqual(status, "waiting")
 
 

@@ -14,7 +14,7 @@ from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import LocalExportStore
 
 from ..config import CWL_CLAN_CODES
-from .analysis import BonusAnalysisService
+from .analysis import BonusAnalysisService, bonus_ranking_key
 from .config import BonusConfigRepository
 from .export import BonusWorkbookWriter
 
@@ -246,13 +246,7 @@ class BonusReportService:
             if all_summary:
                 overall_rows = sorted(
                     all_summary,
-                    key=lambda row: (
-                        -float(row["avg_adjusted_delta"]),
-                        -float(row["total_adjusted_delta"]),
-                        -float(row["total_actual"]),
-                        -int(row["attack_count"]),
-                        str(row["player_name"]).lower(),
-                    ),
+                    key=bonus_ranking_key,
                 )
                 for overall_rank, row in enumerate(
                     overall_rows,

@@ -9,7 +9,7 @@ import discord
 
 from elbow_helper.configuration.channels import EXAMINATION_ROOM
 from elbow_helper.features.examination.queries import CASE_TYPES, WORKFLOW_STATUSES
-from elbow_helper.infrastructure.ai import AgentToolDefinition
+from elbow_helper.agent.engine.tool_factory import read_tools
 
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.safety.access import accessible_message_channel, require_evidence_access
@@ -73,23 +73,7 @@ def examination_tools() -> tuple[RegisteredAgentTool, ...]:
             read_examination_case_report,
         ),
     )
-    return tuple(
-        RegisteredAgentTool(
-            AgentToolDefinition(
-                name=name,
-                description=description,
-                parameters={
-                    "type": "object",
-                    "properties": properties,
-                    "required": list(required),
-                    "additionalProperties": False,
-                },
-            ),
-            handler,
-            contract=TOOL_CONTRACTS[name],
-        )
-        for name, description, properties, required, handler in definitions
-    )
+    return read_tools(definitions, TOOL_CONTRACTS)
 
 
 async def read_accessible_examination_cases(

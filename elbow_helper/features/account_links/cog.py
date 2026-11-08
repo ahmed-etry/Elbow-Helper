@@ -109,7 +109,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         except (discord.Forbidden, discord.HTTPException):
             return []
 
-    async def _rebuild_snapshots(self, *, fresh: bool = False) -> None:
+    async def _rebuild_snapshots(self) -> None:
         fresh_members: dict[str, dict[str, dict[str, Any]]] = {}
         player_locations: dict[str, dict[str, Any]] = {}
         snapshot = await self.membership_reads.rosters(clans=TRACKED_CLAN_CODES)
@@ -415,9 +415,9 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             embed.add_field(name="Most Recent Clan Role", value=str(row["last_seen_role"]), inline=True)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    async def refresh_now(self, *, refresh_boards: bool = True, fresh: bool = False) -> None:
+    async def refresh_now(self, *, refresh_boards: bool = True) -> None:
         async with self._snapshot_lock:
-            await self._rebuild_snapshots(fresh=fresh)
+            await self._rebuild_snapshots()
             await self._prune_departed_suggestions()
             await self._process_unlinked_players()
             self._snapshot_ready.set()

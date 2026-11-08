@@ -17,6 +17,7 @@ from ..discord_actions.direct_messages import deliver_dms
 from ..discord_actions.messages import post_mentions
 from elbow_helper.agent.conversation.text import chunk_response
 from elbow_helper.agent.conversation.wording import ACTION_STANDING_ACCESS_PAUSED, ACTION_STANDING_INTERRUPTED, ACTION_STANDING_REQUEST_NAME, ACTION_STANDING_RUN_FAILED, ACTION_STANDING_WATCHER_NAME, ACTION_STANDING_AI_UNAVAILABLE, ACTION_STANDING_REMINDER_NAME, ACTION_STANDING_DM_PAUSED
+from .config import POLL_SECONDS
 from .time_rules import next_occurrences, schedule_expired
 from .dm_controls import ReminderStopButton, reminder_stop_view
 from .requests import (
@@ -32,7 +33,6 @@ from ..actions.store import AgentActionRepository
 from discord.ext import commands
 
 LOGGER = logging.getLogger(__name__)
-POLL_SECONDS = 30
 MAX_DUE_PER_KIND = 20
 
 

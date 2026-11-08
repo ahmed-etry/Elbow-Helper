@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
 import json
 from typing import Any
 
+from elbow_helper.agent.reports.values import valid_timestamp as _valid_time
 from elbow_helper.configuration.channels import CLAN_LEADERSHIP_CHANNELS
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.features.clan_reporting.queries import MissingElderSnapshot
@@ -141,15 +141,6 @@ def _valid_row(row: Any, selected: tuple[str, ...]) -> bool:
         and row.clan_code in selected
         and isinstance(row.ingame_role, str) and len(row.ingame_role) <= 40
     )
-
-
-def _valid_time(value: Any) -> bool:
-    if not isinstance(value, str) or not value or len(value) > 64:
-        return False
-    try:
-        return datetime.fromisoformat(value).tzinfo is not None
-    except ValueError:
-        return False
 
 
 __all__ = ["MissingElderReport"]

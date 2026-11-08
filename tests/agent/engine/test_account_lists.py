@@ -1,8 +1,9 @@
 import json
 import unittest
 
-from elbow_helper.agent.engine.account_lists import account_index, insert_account_lists, render_list
-from elbow_helper.agent.engine.assessment import decision_answer
+from elbow_helper.agent.engine.account_lists import account_index, render_list
+from tests.agent.engine.answer_helpers import insert_account_lists
+from tests.agent.engine.answer_helpers import decision_answer
 from elbow_helper.configuration.clans import CLANS
 
 

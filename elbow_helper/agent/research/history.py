@@ -5,10 +5,11 @@ from __future__ import annotations
 from typing import Any
 from typing import Mapping
 from datetime import datetime, timezone
-import hashlib
 import json
 from types import SimpleNamespace
 from dataclasses import replace
+
+from .cursors import scope_digest as _scope_digest
 
 import discord
 
@@ -331,11 +332,6 @@ def _history_cursor(before_id: int, scope: Mapping[str, Any]) -> str:
         f"h1.{before_id}.{scope['effective_before_id']}."
         f"{_scope_digest(scope)}"
     )
-
-
-def _scope_digest(scope: Mapping[str, Any]) -> str:
-    payload = json.dumps(scope, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def request_message_boundary(context: AgentRequestContext) -> int:

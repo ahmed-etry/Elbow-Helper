@@ -8,6 +8,8 @@ from datetime import datetime
 import json
 from typing import Any
 
+from elbow_helper.agent.reports.values import aware_timestamp, snapshot_payload
+
 from elbow_helper.features.examination.queries import CASE_TYPES, FOLLOWUP_STAGES, INTAKE_STATUSES, MAX_ACTIVE_EXAMINATION_CASES, STAGES, ExaminationCaseSnapshot, ExaminationCaseStatus, examination_workflow_status
 
 
@@ -56,11 +58,7 @@ class ExaminationCaseReport:
         )
 
     def storage_payload(self) -> dict[str, Any]:
-        return {
-            "report_id": self.report_id,
-            "guild_id": self.guild_id,
-            "snapshot": asdict(self.snapshot),
-        }
+        return snapshot_payload(self)
 
     def manifest(self) -> dict[str, Any]:
         type_counts = Counter(row.case_type for row in self.snapshot.cases)
@@ -186,15 +184,7 @@ def _validate_case(row: ExaminationCaseStatus) -> None:
 
 
 def _timestamp(value: str) -> datetime:
-    if not isinstance(value, str) or not value:
-        raise ValueError("Invalid examination report timestamp")
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError as error:
-        raise ValueError("Invalid examination report timestamp") from error
-    if parsed.tzinfo is None:
-        raise ValueError("Invalid examination report timestamp")
-    return parsed
+    return aware_timestamp(value, "Invalid examination report timestamp")
 
 
 __all__ = ["ExaminationCaseReport"]

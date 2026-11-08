@@ -51,7 +51,7 @@ class LeagueRecord:
         return self
 
     def reads(self):
-        return CwlReads(self.store, self.clans)
+        return CwlReads(self.store)
 
     def history(self, directory=None):
         return CwlHistory(self.reads(), directory, self.clans)

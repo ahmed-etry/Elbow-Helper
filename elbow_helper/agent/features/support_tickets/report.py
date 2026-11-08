@@ -8,6 +8,7 @@ from datetime import datetime
 import json
 from typing import Any
 
+from elbow_helper.agent.reports.values import aware_timestamp
 from elbow_helper.features.support_tickets.queries import MAX_SUPPORT_TICKET_CHANNELS, SupportTicketMetadata, SupportTicketSnapshot
 
 
@@ -168,15 +169,7 @@ def _validate_ticket(row: SupportTicketMetadata, *, observed: datetime) -> None:
 
 
 def _timestamp(value: str | None) -> datetime:
-    if not isinstance(value, str) or not value:
-        raise ValueError("Invalid support ticket timestamp")
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError as error:
-        raise ValueError("Invalid support ticket timestamp") from error
-    if parsed.tzinfo is None:
-        raise ValueError("Invalid support ticket timestamp")
-    return parsed
+    return aware_timestamp(value, "Invalid support ticket timestamp")
 
 
 __all__ = ["SupportTicketReport"]

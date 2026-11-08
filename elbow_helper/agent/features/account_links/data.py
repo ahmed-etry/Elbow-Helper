@@ -9,14 +9,14 @@ import sqlite3
 from elbow_helper.agent.reads.sql.sources import DataSource
 
 
-def link_snapshot(paths, legacy_path, readable):
+def link_snapshot(paths, database_path, readable):
     result = {}
     if 'links' in readable:
         result['links'] = query_links(paths.data_root / FAMILY_DATABASE)
     # Review tables share the family file. Ownership is projected above.
     auxiliary = set(readable) & {'suggestions', 'ignored_tags'}
-    if auxiliary and legacy_path.is_file():
-        with closing(sqlite3.connect(legacy_path.resolve().as_uri() + '?mode=ro', uri=True)) as connection:
+    if auxiliary and database_path.is_file():
+        with closing(sqlite3.connect(database_path.resolve().as_uri() + '?mode=ro', uri=True)) as connection:
             for table in sorted(auxiliary):
                 columns = [(row[1], row[2] + (' NOT NULL' if row[3] else '')
                             + (' PRIMARY KEY' if row[5] else ''))

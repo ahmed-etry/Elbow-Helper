@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 import chat_exporter
 import discord
+from elbow_helper.infrastructure.discord.transcript_participants import transcript_participants
 from elbow_helper.infrastructure.discord.embeds import build_reopened_ticket_embed, build_status_embed
 from elbow_helper.infrastructure.discord.thread_discovery import fetch_thread
 from elbow_helper.infrastructure.discord.views import TranscriptLinkPromptView
@@ -659,16 +660,7 @@ class HibernationTicketMixin:
                 )
                 messages = []
 
-            user_counts: dict[int, int] = {}
-            user_labels: dict[int, str] = {}
-            for message in messages:
-                user_counts[message.author.id] = user_counts.get(message.author.id, 0) + 1
-                user_labels.setdefault(
-                    message.author.id,
-                    f"{message.author.mention} - {getattr(message.author, 'display_name', message.author.name)}",
-                )
-            sorted_users = sorted(user_counts.items(), key=lambda item: item[1], reverse=True)
-            top_users = sorted_users[:5]
+            top_users, participant_summary = transcript_participants(messages)
 
             channel_topic = getattr(channel, "topic", None)
             if channel_topic:
@@ -693,22 +685,9 @@ class HibernationTicketMixin:
             detail_embed.add_field(name="Ticket Name", value=channel_name, inline=True)
             detail_embed.add_field(name="Messages", value=str(len(messages)), inline=True)
 
-            participant_lines = []
-            for user_id, count in top_users:
-                label = user_labels.get(user_id, f"<@{user_id}>")
-                message_count = "1 message" if count == 1 else f"{count} messages"
-                participant_lines.append(f"{label} — {message_count}")
-            if len(sorted_users) > len(top_users):
-                additional = len(sorted_users) - len(top_users)
-                additional_text = (
-                    "+1 more participant"
-                    if additional == 1
-                    else f"+{additional} more participants"
-                )
-                participant_lines.append(additional_text)
             detail_embed.add_field(
                 name="Participants",
-                value="\n".join(participant_lines) if participant_lines else "No participants",
+                value=participant_summary,
                 inline=True,
             )
             detail_embed.set_footer(text="Ticket closed • Reactivation Ticket")

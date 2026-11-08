@@ -10,17 +10,13 @@ from .api_fields import collect_fields
 from .people import account, account_name
 from .player_projection import ARRAYS, COUNTERS, HOUR_US, TRANSIENT, item_identity, project_profile
 from . import player_state
+from .sources import family_accounts
 from .projections import canonical_json, nonnegative_int
 
 
 def due_accounts(connection, at):
     """Reuse complete clan membership and shadow links; never fetch clans here."""
-    rows = connection.execute(
-        "SELECT a.id,a.player_tag FROM accounts a WHERE EXISTS ("
-        "SELECT 1 FROM clan_membership m JOIN clans c ON c.id=m.clan_id "
-        "WHERE m.account_id=a.id AND m.to_at IS NULL AND c.is_family=1) OR EXISTS ("
-        "SELECT 1 FROM account_links l WHERE l.account_id=a.id AND l.to_at IS NULL) ORDER BY a.id",
-    ).fetchall()
+    rows = family_accounts(connection)
     due = []
     for row in rows:
         next_due = connection.execute("SELECT next_due_at FROM player_collection_state WHERE account_id=?",

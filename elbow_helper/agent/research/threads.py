@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-import hashlib
-import json
 from typing import Any, Mapping
 
 import discord
@@ -15,6 +13,7 @@ from ..engine.capability_contract import CapabilityContract
 from elbow_helper.agent.safety.access import accessible_message_channel, can_access_message_channel
 from elbow_helper.agent.engine.models import AgentRequestContext, RegisteredAgentTool
 from elbow_helper.agent.engine.validation import bounded_int, positive_int
+from .cursors import scope_digest as _scope_digest
 
 
 THREAD_RESULT_LIMIT = 10
@@ -229,11 +228,6 @@ def _thread_cursor_state(value: Any, scope: Mapping[str, Any]) -> int | None:
 
 def _thread_cursor(before_id: int, scope: Mapping[str, Any]) -> str:
     return f"t1.{before_id}.{_scope_digest(scope)}"
-
-
-def _scope_digest(scope: Mapping[str, Any]) -> str:
-    payload = json.dumps(scope, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 __all__ = ["thread_tools"]

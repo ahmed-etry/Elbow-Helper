@@ -269,12 +269,11 @@ class ClanHealthPlayerCommandMixin:
         if on_valid is not None:
             await on_valid()
         report = await self.build_player_health_export(
-            player_tag=player_tag, now=selected.now, window_mode=selected.mode,
+            player_tag=player_tag,
             season_key=selected.season_key,
             trend_season_key=selected.trend_season_key,
             cycle_start=selected.start, cycle_end=selected.end,
-            window_label=selected.label, partial=False,
-            date_from=date_from, date_to=date_to,
+            window_label=selected.label,
         )
         if report is None:
             return PlayerHealthCommandResult("empty")
@@ -358,21 +357,10 @@ class ClanHealthPlayerCommandMixin:
         return statuses
 
     async def build_player_health_export(
-        self, *, player_tag: str, now: datetime, window_mode: str,
+        self, *, player_tag: str,
         season_key: str, trend_season_key: str, cycle_start: datetime,
-        cycle_end: datetime, window_label: str, partial: bool = False,
-        date_from: str | None = None, date_to: str | None = None,
+        cycle_end: datetime, window_label: str,
     ) -> PlayerHealthExport | None:
-        del now, partial
-        if window_mode == "last_7d":
-            window_label = "Last 7 days"
-        elif window_mode == "last_14d":
-            window_label = "Last 14 days"
-        elif window_mode == "custom":
-            window_label = f"Custom: {date_from} to {date_to}"
-        else:
-            window_label = "Last 30 days"
-
         found = await asyncio.to_thread(self._scored_player_row, player_tag, cycle_start, cycle_end)
         if found is None:
             LOGGER.info("Command no data /health player tag=%s season=%s", player_tag, season_key)

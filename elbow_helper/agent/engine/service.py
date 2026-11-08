@@ -373,7 +373,6 @@ class AgentService:
             answer_images=images,
             recommendation_registry=specialist_registry,
         )
-        flow.fixed_system_prompt = system_prompt
         return flow, usage
 
     @staticmethod

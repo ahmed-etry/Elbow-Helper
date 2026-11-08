@@ -7,7 +7,7 @@ from typing import Any, Mapping
 from uuid import uuid4
 
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE
-from elbow_helper.infrastructure.ai import AgentToolDefinition
+from elbow_helper.agent.engine.tool_factory import read_tools
 
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.safety.access import accessible_message_channel, can_access_message_channel, require_evidence_access
@@ -75,17 +75,7 @@ def member_lifecycle_tools() -> tuple[RegisteredAgentTool, ...]:
             ("report_id",), read_member_lifecycle_report,
         ),
     )
-    return tuple(RegisteredAgentTool(
-        AgentToolDefinition(
-            name=name, description=description,
-            parameters={
-                "type": "object", "properties": properties,
-                "required": list(required), "additionalProperties": False,
-            },
-            usage_note=USAGE_NOTES.get(name, ""),
-        ), handler,
-        contract=TOOL_CONTRACTS[name],
-    ) for name, description, properties, required, handler in definitions)
+    return read_tools(definitions, TOOL_CONTRACTS, USAGE_NOTES)
 
 
 async def read_member_lifecycle(

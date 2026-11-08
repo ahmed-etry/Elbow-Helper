@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 import json
 from typing import Any
 
+from elbow_helper.agent.reports.values import aware_timestamp, snapshot_payload
+
 from elbow_helper.features.recruitment.queries import ActiveRecruitmentTrial, ActiveRecruitmentTrialSnapshot, MAX_ACTIVE_RECRUITMENT_TRIALS
 
 
@@ -52,11 +54,7 @@ class RecruitmentTrialReport:
         )
 
     def storage_payload(self) -> dict[str, Any]:
-        return {
-            "report_id": self.report_id,
-            "guild_id": self.guild_id,
-            "snapshot": asdict(self.snapshot),
-        }
+        return snapshot_payload(self)
 
     def manifest(self) -> dict[str, Any]:
         timing_counts = Counter(row.timing_status for row in self.snapshot.trials)
@@ -173,15 +171,7 @@ def _validate_trial(row: ActiveRecruitmentTrial, *, observed: datetime) -> None:
 
 
 def _timestamp(value: str) -> datetime:
-    if not isinstance(value, str) or not value:
-        raise ValueError("Invalid recruitment trial timestamp")
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError as error:
-        raise ValueError("Invalid recruitment trial timestamp") from error
-    if parsed.tzinfo is None:
-        raise ValueError("Invalid recruitment trial timestamp")
-    return parsed
+    return aware_timestamp(value, "Invalid recruitment trial timestamp")
 
 
 __all__ = ["RecruitmentTrialReport"]

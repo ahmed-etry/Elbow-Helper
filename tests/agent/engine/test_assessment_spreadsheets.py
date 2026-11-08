@@ -12,7 +12,8 @@ from openpyxl import load_workbook
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.engine.account_lists import account_index
-from elbow_helper.agent.engine.assessment import decision_answer, deliver_decision_answer
+from elbow_helper.agent.engine.assessment import deliver_decision_answer
+from tests.agent.engine.answer_helpers import decision_answer
 from elbow_helper.agent.files.delivery import delivery_manifest, publish_spreadsheet
 from elbow_helper.agent.files.spreadsheet_tools import prepare_spreadsheet
 from elbow_helper.agent.knowledge.answers import scoped_answer

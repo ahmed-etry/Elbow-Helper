@@ -89,7 +89,7 @@ def build_agent_tools() -> dict[str, RegisteredAgentTool]:
     """Build the complete catalogue without exposing arbitrary capabilities."""
 
     originals = tuple(
-        replace(tool, default_visible=owner == "families", specialist_group=group_for(owner, tool))
+        replace(tool, specialist_group=group_for(owner, tool))
         for owner, group in build_agent_tool_groups().items()
         for tool in group
     )

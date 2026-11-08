@@ -16,7 +16,7 @@ from ..engine.capability_contract import (
 )
 from elbow_helper.agent.engine.models import RegisteredAgentTool
 from ..actions.contracts import ActionClass
-from ..reports.tools import (COMPARE_NAME, READ_NAME, original_arguments, original_tool,
+from ..reports.tools import (READ_NAME, original_arguments, original_tool,
                             unsupported_fields, unsupported_field_error)
 from .format import REPLY_CAPABILITIES, output_forms
 from .arguments import argument_errors, schema_variant
@@ -196,7 +196,7 @@ def check_step(
     schema = tool.definition.parameters
     selected = (
         original_tool(registry, capability, arguments)
-        if capability in (READ_NAME, COMPARE_NAME) else None
+        if capability == READ_NAME else None
     )
     if selected is not None and unsupported_fields(selected, arguments):
         return _error(unsupported_field_error(selected, arguments), step_id)
@@ -206,7 +206,7 @@ def check_step(
     if not valid_arguments(arguments, schema, set(dependencies)):
         issues = argument_errors(arguments, schema, set(dependencies), _valid_value)
         return _error("Invalid arguments: " + "; ".join(issues), step_id)
-    if capability in (READ_NAME, COMPARE_NAME):
+    if capability == READ_NAME:
         if selected is None or not valid_arguments(
             original_arguments(arguments), selected.definition.parameters,
             set(dependencies),

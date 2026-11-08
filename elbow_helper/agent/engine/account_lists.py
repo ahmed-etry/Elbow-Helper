@@ -201,11 +201,6 @@ def resolve_account_lists(declarations, index):
     return resolved
 
 
-def insert_account_lists(parts, declarations, index):
-    """Replace [[accounts:ID]] markers; a list without a marker follows the first part."""
-    return insert_resolved_lists(parts, resolve_account_lists(declarations, index), index)
-
-
 def insert_resolved_lists(parts, declarations, index, *, delivered=False):
     """Give inline lists block boundaries; prepared workbooks leave no marker text."""
     parts = list(parts)

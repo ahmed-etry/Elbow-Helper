@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 from uuid import uuid4
 
-from elbow_helper.infrastructure.ai import AgentToolDefinition
+from elbow_helper.agent.engine.tool_factory import read_tools
 
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.safety.access import require_evidence_access
@@ -66,17 +66,7 @@ def event_tools() -> tuple[RegisteredAgentTool, ...]:
             ("report_id",), read_event_schedule_report,
         ),
     )
-    return tuple(RegisteredAgentTool(
-        AgentToolDefinition(
-            name=name, description=description,
-            parameters={
-                "type": "object", "properties": properties,
-                "required": list(required), "additionalProperties": False,
-            },
-            usage_note=USAGE_NOTES.get(name, ""),
-        ), handler,
-        contract=TOOL_CONTRACTS[name],
-    ) for name, description, properties, required, handler in definitions)
+    return read_tools(definitions, TOOL_CONTRACTS, USAGE_NOTES)
 
 
 async def read_event_schedule(
