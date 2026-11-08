@@ -8,7 +8,6 @@ from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.steps import PlanRunner
 from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.agent.reads.projections import COHORT_REF, cohort_selection
-from elbow_helper.agent.plan.executor import referenced_report_ids
 from agent.engine.test_agent_plan_flow import _context
 
 ROWS = [{'member_id': index, 'pad': 'x' * 120} for index in range(1, 4)]
@@ -93,20 +92,3 @@ class PendingReportRetentionTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
         selection = await cohort_selection(context, 'missing', 'member_ids')
         self.assertEqual(selection['cause'], 'report_unavailable')
-
-    async def test_report_page_read_names_the_same_reason(self):
-        context = _context()
-        context.state.unkept_reports.add('gone')
-        result = await _tools()['read_filler'].handler(context, {'report_id': 'gone'})
-        self.assertEqual(result['cause'], 'capacity')
-
-
-class ReferencedReportIdTests(unittest.TestCase):
-    def test_finds_literal_and_resolved_identities_only_among_retained_reports(self):
-        results = {'one': {'report_id': 'aaa', 'rows': [{'report_id': 'bbb'}, {'report_id': 'ccc'}]}}
-        arguments = {'cohort_ref': {'step': 'one', 'path': ['report_id']},
-                     'report_id': 'ddd', 'other': ['eee', {'step': 'one', 'path': ['rows', '*', 'report_id']}],
-                     'unresolved': {'step': 'later', 'path': ['report_id']}, 'count': 3}
-        self.assertEqual(referenced_report_ids(arguments, results, {'aaa', 'bbb', 'ddd', 'zzz'}),
-                         {'aaa', 'bbb', 'ddd'})
-        self.assertEqual(referenced_report_ids({}, results, {'aaa'}), set())

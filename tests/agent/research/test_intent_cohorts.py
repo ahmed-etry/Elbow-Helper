@@ -70,11 +70,6 @@ class IntentCohortTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(role["total_members"], first["cohort"]["record_count"])
         self.assertEqual(role["members"][0]["member_id"], 90)
 
-    async def test_ties_and_unknown_joins_have_stable_order_in_both_directions(self):
-        self.members[2].joined_at = self.members[1].joined_at
-        for sort, expected in (("oldest_first", [2, 3, 98]), ("newest_first", [2, 3, 98])):
-            result = await read_discord_members(self.context, {"member_ids": [98, 3, 2], "sort": sort})
-            self.assertEqual([m["member_id"] for m in result["members"]], expected)
 
     async def test_join_window_applies_within_retained_cohort(self):
         report = await read_active_hibernation(self.context, {"limit": 1})

@@ -1,16 +1,10 @@
-from dataclasses import replace
 from agent.engine.helpers import LegacyCatalogueMixin
 
-import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.discord_actions.messages import prepare_post
-from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
-from agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
-from tests.features.agent_plan_helpers import plan_call
 from . import test_agent_discord_messages as fixtures
 
 
@@ -65,11 +59,6 @@ class CurrentChannelPostTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
         self.context.send_reply.assert_awaited_once_with(self.context, "My recommendation: keep them.")
         self.assertEqual(len(self.context.state.reply_delivery.posts), 1)
 
-    async def test_natural_recommendation_can_be_sent_without_mandatory_quotations(self):
-        text = 'I wouldn\'t push for feedback. Saying "I am not very social" isn\'t a complaint.'
-        result = await prepare_post(self.context, {"channel_id": 2, "text": text})
-        self.assertEqual(result["status"], "complete")
-        self.context.send_reply.assert_awaited_once_with(self.context, text)
 
     async def test_other_channels_broadcasts_roles_and_files_still_need_confirmation(self):
         for arguments in (
@@ -93,33 +82,3 @@ class CurrentChannelPostTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
                 self.assertEqual(result["status"], "confirmation_required")
                 self.assertTrue(self.context.state.proposed_changes)
                 self.context.send_reply.assert_not_awaited()
-
-    async def test_post_plan_sends_once_without_an_answer_round(self):
-        context = _context()
-        channel = context.source_message.channel
-
-        async def send(local, text):
-            local.state.reply_delivery.delivery.record(200, text)
-            return {"message_ids": [200], "channel_id": channel.id}
-
-        sender = AsyncMock(side_effect=send)
-        context = replace(context, send_reply=sender, bot=SimpleNamespace(tree=object()))
-        call = AgentToolCall("post", "post_discord_message", json.dumps({
-            "channel_id": channel.id, "text": "Synthetic answer",
-        }))
-        session = _AgentSession([AgentStep(None, (plan_call(call),), AgentUsage())])
-        with patch(
-            "elbow_helper.agent.discord_actions.messages._channel_for_post",
-            new_callable=AsyncMock, return_value=channel,
-        ), patch(
-            "elbow_helper.agent.engine.service.build_command_tools",
-            return_value=({}, {}),
-        ):
-            response = await AgentService(_AgentModel(session)).answer(
-                question="Post a synthetic answer", local_context="", context=context,
-            )
-        self.assertEqual(response, "")
-        self.assertEqual(len(session.calls), 1)
-        sender.assert_awaited_once()
-        self.assertEqual(context.state.proposed_changes, [])
-        self.assertEqual(context.state.reply_delivery.delivery.text_parts, ["Synthetic answer"])

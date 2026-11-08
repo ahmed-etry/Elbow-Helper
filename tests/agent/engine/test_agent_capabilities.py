@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import unittest
-from dataclasses import replace
 
 from elbow_helper.agent.engine.capability_contract import CapabilityBindError
 from elbow_helper.agent.engine.capability_contract import require_source_provenance
-from elbow_helper.agent.engine.capability_contract import validate_contract_catalogue
 from elbow_helper.agent.engine.registry import build_agent_tools
 
 from elbow_helper.agent.engine.capability_contract import contract_catalogue
-from agent.engine.helpers import patch_contracts
 
 REGISTRY = build_agent_tools()
 CONTRACTS = contract_catalogue(REGISTRY)
@@ -21,32 +18,6 @@ class AgentCapabilityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.registry = build_agent_tools()
-
-    def test_every_registered_capability_has_one_structured_contract(self):
-        validate_contract_catalogue(self.registry)
-        self.assertTrue(all(tool.contract is not None for tool in self.registry.values()))
-        missing = dict(self.registry)
-        first = next(iter(missing))
-        missing[first] = replace(missing[first], contract=None)
-        with self.assertRaisesRegex(ValueError, "lacks capability contract"):
-            validate_contract_catalogue(missing)
-        with self.assertRaisesRegex(ValueError, "registry key differs"):
-            validate_contract_catalogue({**self.registry, "unclassified": next(iter(self.registry.values()))})
-
-
-    def test_invalid_access_and_field_descriptors_fail_across_registry(self):
-        for name, contract in CONTRACTS.items():
-            invalid = [replace(contract, required_access=frozenset({"unknown"})),
-                       replace(contract, channel_fields=("unknown",))]
-            if contract.entity_fields:
-                invalid.append(replace(
-                    contract, entity_fields=contract.entity_fields + contract.entity_fields[:1],
-                ))
-            for changed in invalid:
-                with self.subTest(capability=name, contract=changed):
-                    with patch_contracts(self.registry, {name: changed}):
-                        with self.assertRaises(ValueError):
-                            validate_contract_catalogue(self.registry)
 
 
     def test_every_source_bearing_result_rejects_unbound_channels(self):

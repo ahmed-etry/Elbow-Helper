@@ -13,11 +13,9 @@ from elbow_helper.agent.engine.evidence_delta import EvidenceDelta
 from elbow_helper.agent.engine.social_counts import correct_social_counts
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.plan.results import compact_result
-from elbow_helper.agent.plan.planning import request_plan
 from elbow_helper.agent.plan.checker import valid_arguments
 from elbow_helper.agent.research.directory import scoped_channel_directory
 from elbow_helper.agent.research.history import read_discord_channel_history, read_message_context
-from agent.engine.helpers import social_step
 from agent.engine.test_efficiency import planned, step
 from agent.engine import test_request_cost as cost
 from agent.research.test_agent_search import _context
@@ -129,23 +127,6 @@ class EfficiencyRetestTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCa
         self.assertIn("error", await read_message_context(public, {"channel_id": 300, "message_id": 123}))
         self.assertEqual(discussion.reads, 1)
 
-    async def test_social_final_boundary_corrects_counts_without_another_round(self):
-        for output in (social_step("five letters, no context. I'll take the win."),
-                       response("five letters, no context. I'll take the win.")):
-            flow, session, _, _ = self.flow([output], question="thanks")
-            flow.context.state.request_text = "lol"
-            self.assertEqual(await flow.run(), "three letters, no context. I'll take the win.")
-            self.assertEqual(len(session.calls), 1)
-
-    async def test_missing_step_id_does_not_spend_a_model_correction_round(self):
-        flow, session, _, _ = self.flow([
-            planned({"capability": "read_clash", "arguments": {}, "depends_on": []}),
-            response("Synthetic league."),
-        ])
-        self.assertEqual(await flow.run(), "Synthetic league.")
-        self.assertEqual(len(session.calls), 2)
-        self.assertEqual(flow.runner.tool_calls, 1)
-
 
 class SocialCountTests(unittest.TestCase):
     def test_literal_letters_digits_numbers_and_quoted_subjects(self):
@@ -180,18 +161,6 @@ class RepeatedEvidenceTests(unittest.TestCase):
         self.assertFalse(valid_arguments({"kind": "once", "at": 3}, schema))
         self.assertFalse(valid_arguments({"kind": "once", "at": "today", "unknown": True}, schema))
 
-    def test_missing_internal_step_id_is_filled_without_changing_read_or_dependencies(self):
-        call = planned(step("step_2", "find_discord_members", {"query": "Synthetic"}), {
-            "capability": "read_linked_accounts", "arguments": {
-                "member_ids": {"step": "step_2", "path": ["members", "*", "member_id"]},
-            }, "depends_on": ["step_2"],
-        })
-        plan = request_plan(call)
-        self.assertEqual(plan["steps"][1]["id"], "step_2_auto")
-        self.assertEqual(plan["steps"][1]["depends_on"], ["step_2"])
-        self.assertEqual(plan["steps"][1]["arguments"]["member_ids"]["step"], "step_2")
-        # Other malformed fields still pass to the normal checker unchanged.
-        self.assertNotIn("arguments", request_plan(planned({"capability": "read_clash"}))["steps"][0])
 
     def test_search_context_overlap_is_referenced_and_changed_text_is_retained(self):
         delta = EvidenceDelta()

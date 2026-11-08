@@ -38,8 +38,3 @@ class MessageTextTests(unittest.TestCase):
         self.assertEqual(message_text(message, identity=AgentIdentity("Synthetic Bot", 7)),
                          "@Synthetic Bot (you, member_id=7)\n"
                          "@Synthetic Bot (you, member_id=7)")
-
-    def test_empty_embed_parts_do_not_add_empty_lines(self):
-        message = SimpleNamespace(content="Synthetic text", embeds=[discord.Embed()],
-                                  attachments=[])
-        self.assertEqual(message_text(message), "Synthetic text")

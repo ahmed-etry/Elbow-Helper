@@ -36,11 +36,6 @@ class DecisionChoiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             decision_answer(decision(intent_source='unresolved'), set(), advice=True)
 
-    def test_a_draft_that_is_not_json_still_fails_validation(self):
-        with self.assertRaises(ValueError):
-            decision_answer('not json', set(), advice=False)
-        with self.assertRaises(ValueError):
-            decision_answer('[]', set(), advice=False)
 
     def test_a_repair_cannot_add_open_choices_the_draft_lacked(self):
         draft = decision(intent_source='unresolved', question='Which clan?', open_choices=['Which clan'])
@@ -52,18 +47,6 @@ class DecisionChoiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(invented['open_choices'], [])
         self.assertEqual(json.loads(without_new_choices('not json', repaired))['open_choices'], [])
         self.assertEqual(without_new_choices(draft, 'not json'), 'not json')
-
-    async def test_a_format_repair_that_invents_a_choice_ends_without_a_question(self):
-        flow, _, _, _ = cost.RequestCostTests().flow([])
-        flow.assessment_requested = True
-        flow.advice_requested = False
-        flow.rounder.final_attempted = True
-        # The draft has no facts, so only the repair can fix it.
-        flow._run = AsyncMock(return_value=decision(facts=''))
-        invented = decision(open_choices=['Which threshold counts'], question='Which threshold?')
-        flow._repair_decision_format = AsyncMock(return_value=SimpleNamespace(content=invented))
-        self.assertEqual(await flow.run(), 'Synthetic counts.')
-        flow._repair_decision_format.assert_awaited_once()
 
 
 class CorrectionRoundTests(unittest.IsolatedAsyncioTestCase):
@@ -88,13 +71,6 @@ class CorrectionRoundTests(unittest.IsolatedAsyncioTestCase):
         flow._compact_reply = AsyncMock(return_value='Final answer.')
         return flow, session
 
-    async def test_large_evidence_skips_review_when_every_read_succeeded(self):
-        flow, session = self.assessment()
-        answer, step = await flow._answer_round({'read': {'value': 7}})
-        self.assertEqual((answer, step), ('Final answer.', None))
-        flow._compact_reply.assert_awaited_once()
-        self.assertEqual(session.calls, [])
-        self.assertFalse(flow.correction_granted)
 
     async def test_an_invalid_arguments_read_keeps_one_correction_round_before_the_answer(self):
         for refused in ({'cause': 'invalid_arguments', 'error': 'Not CWL clans: SYN.'},

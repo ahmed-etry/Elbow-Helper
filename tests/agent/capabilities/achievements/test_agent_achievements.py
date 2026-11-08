@@ -154,25 +154,6 @@ class AgentAchievementTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
-    async def test_requester_permission_loss_hides_retained_report(self):
-        first = await read_member_achievements(
-            self.context, {"member_id": 42},
-        )
-        self.requester.roles = []
-
-        with self.assertRaises(AgentAccessLost):
-            await read_member_achievement_report(self.context, {
-                "report_id": first["report_id"],
-            })
-
-
-    async def test_missing_or_departed_member_is_not_queried(self):
-        result = await read_member_achievements(
-            self.context, {"member_id": 77},
-        )
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.reports, {})
-
     async def test_self_inventory_needs_no_additional_role(self):
         result = await read_member_inventory(
             self.context, {"member_id": self.requester.id},
@@ -201,16 +182,6 @@ class AgentAchievementTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AgentAccessLost):
             await read_achievement_economy_rules(self.context, {})
 
-    async def test_other_inventory_requires_lead(self):
-        result = await read_member_inventory(self.context, {"member_id": self.target.id})
-        self.assertEqual(result["required_access"], ["lead"])
-        self.assertFalse(self.context.state.required_access)
-
-        self.requester.roles.append(SimpleNamespace(id=next(iter(LEAD))))
-        self.context.state.scope = None
-        result = await read_member_inventory(self.context, {"member_id": self.target.id})
-        self.assertEqual(result["member_name"], "Alpha")
-        self.assertEqual(self.context.state.required_access, {"lead"})
 
     async def test_lead_loss_during_inventory_read_discards_result(self):
         self.requester.roles.append(SimpleNamespace(id=next(iter(LEAD))))

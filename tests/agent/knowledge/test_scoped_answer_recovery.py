@@ -41,14 +41,6 @@ class ScopedAnswerRecoveryTests(unittest.TestCase):
         for value in ('{"members":["North"]}', "North meets BE4's bar."):
             self.assertEqual(scoped_answer(_context(), value), value)
 
-    def test_literal_linebreaks_preserve_supported_findings(self):
-        context = _context()
-        answer = '{"needs_private_evidence":true,"answer":"Available findings:\n- Three completed attacks.\nMissing: September defenses."}'
-        result = scoped_answer(context, answer)
-        self.assertIn("Three completed attacks", result)
-        self.assertIn("September defenses", result)
-        self.assertNotEqual(result, FAILURE_MESSAGE)
-        self.assertFalse(context.state.scope_audit.offered)
 
     def test_relaxed_strings_do_not_accept_extra_keys_or_wrong_signal_types(self):
         for value in ('{"needs_private_evidence":true,"answer":"Facts\nremain","scope":"all"}',

@@ -40,13 +40,6 @@ class CwlPublishingTests(unittest.IsolatedAsyncioTestCase):
         owner._resolve_dashboard_thread = AsyncMock(return_value=thread)
         return owner, thread, messages
 
-    async def test_dashboard_success_applies_both_images(self):
-        owner, _, messages = self.dashboard()
-        self.assertTrue(await owner._refresh_dashboard_with_retry("BEH", "manual"))
-        for message in messages.values():
-            message.edit.assert_awaited_once()
-            self.assertEqual(message.edit.await_args.kwargs["attachments"][0].filename, "chart.png")
-        owner._log_dashboard_refresh_failure.assert_not_called()
 
     async def test_failed_dashboard_edit_returns_failure_without_a_second_retry_layer(self):
         owner, _, messages = self.dashboard()

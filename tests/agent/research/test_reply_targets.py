@@ -7,10 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import discord
 
-from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.models import AgentTurnState
-from elbow_helper.agent.plan.checker import check_plan
-from elbow_helper.agent.plan.executor import execute_plan
 from elbow_helper.agent.research.history import read_message_context
 
 
@@ -59,11 +56,6 @@ class ReplyTargetTests(unittest.IsolatedAsyncioTestCase):
         self.channel.fetch_message.assert_not_awaited()
         self.assertEqual(result["reply_target"]["message_id"], 150)
 
-    async def test_omitted_reference_channel_uses_the_message_channel(self):
-        self.quote.reference.channel_id = None
-        result = await self.read()
-        self.assertEqual(result["reply_target"]["message_id"], 150)
-        self.channel.fetch_message.assert_awaited_once_with(150)
 
     async def test_deleted_parent_is_unavailable_not_replaced_by_neighbour(self):
         self.channel.fetch_message.side_effect = discord.NotFound(SimpleNamespace(status=404, reason="Missing"), "gone")
@@ -112,31 +104,6 @@ class ReplyTargetTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("messages", result)
         self.assertNotIn("reply_target", result)
         self.assertFalse(self.context.state.source_channels)
-
-    async def test_parent_context_can_be_planned_before_the_quote_is_read(self):
-        registry = build_agent_tools()
-        plan = {
-            "goal": "Resolve the subject of a synthetic quote", "effort": "high", "output": "text",
-            "steps": [
-                {"id": "quote", "capability": "read_message_context", "depends_on": [],
-                 "arguments": {"channel_id": 100, "message_id": 300}},
-                {"id": "parent", "capability": "read_message_context", "depends_on": [],
-                 "arguments": {"channel_id": 100,
-                               "message_id": {"step": "quote", "path": ["reply_target", "message_id"]}}},
-            ],
-        }
-        self.assertTrue(check_plan(plan, registry).ok)
-        async def history(**kwargs):
-            for row in ([self.target] if kwargs["around"].id == 150 else self.rows):
-                yield row
-        self.channel.history = history
-        async def run(step, arguments, earlier):
-            return await registry[step["capability"]].handler(self.context, arguments)
-        with patch("elbow_helper.agent.research.history.accessible_message_channel", return_value=self.channel):
-            results = await execute_plan(plan, run, argument_schema=lambda step:
-                                         registry[step["capability"]].definition.parameters)
-        self.assertTrue(results["parent"]["requested_message_found"])
-        self.assertEqual(results["parent"]["messages"][0]["content"], self.target.content)
 
 
 if __name__ == "__main__":

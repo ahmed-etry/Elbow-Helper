@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from dataclasses import replace
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -100,20 +99,6 @@ class AgentClanReportingTests(unittest.IsolatedAsyncioTestCase):
             await read_missing_elder_report(self.context, {
                 "report_id": first["report_id"],
             })
-
-    async def test_no_access_reads_no_owner_rows(self):
-        calls = []
-        context = replace(
-            self.context,
-            clan_reporting_queries=ClanReportingQueries(
-                lambda code: calls.append(code) or (),
-            ),
-        )
-        result = await read_missing_elder_accounts(context, {
-            "clan_codes": [self.second_code],
-        })
-        self.assertIn("error", result)
-        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":

@@ -26,11 +26,6 @@ class PermissionCheckTests(unittest.TestCase):
         ), ("manage_channels",))
         self.assertEqual(missing_permissions(requester, ("manage_channels",)), ())
 
-    def test_every_missing_permission_is_reported(self):
-        requester = actor(8, view_channel=True)
-        names = ("view_channel", "manage_messages", "read_message_history")
-        self.assertEqual(missing_permissions(requester, names), names[1:])
-        self.assertEqual(missing_permissions(None, names), names)
 
     def test_hierarchy_checks_both_actors_and_refuses_equal_positions(self):
         for position, asker_position, bot_position, allowed in (

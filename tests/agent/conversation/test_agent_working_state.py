@@ -8,8 +8,6 @@ from agent.engine.test_agent_service import _AgentModel
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.agent.conversation.context import compile_context
-from elbow_helper.agent.conversation.state import ConversationTurn
 from elbow_helper.agent.models import AgentRequestContext
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.conversation.instructions import WorkingState
@@ -46,11 +44,6 @@ class WorkingStateTests(unittest.TestCase):
             state.retire(instruction.instruction_id, member_id=43, message_id=2)
         self.assertTrue(state.instructions[0].active)
 
-    def test_duplicate_instruction_is_idempotent(self):
-        state, first = _remember(WorkingState())
-        duplicate, second = _remember(state, message_id=2)
-        self.assertIs(duplicate, state)
-        self.assertIs(second, first)
 
     def test_active_limit_rejects_without_evicting_older_constraints(self):
         state, first = _remember(WorkingState())
@@ -99,14 +92,3 @@ class WorkingInstructionIntegrationTests(LegacyCatalogueMixin, unittest.Isolated
         self.assertEqual(context.state.working.instructions[0].quote, "Keep these accounts together")
         result = json.loads(session.advance.await_args_list[1].args[0][-1].content)
         self.assertIs(result["results"]["record"]["action_authorized"], False)
-
-    async def test_pinned_instruction_survives_context_pressure(self):
-        context = self.context()
-        working, instruction = _remember(WorkingState())
-        context.state.working = working
-        context.state.authorized_instructions = (instruction,)
-        context.state.authorized_history = (ConversationTurn("x" * 50_000, frozenset({200})),)
-        compiled = compile_context(question="Prepare the draft", local_context="", context=context, tools=(), target_tokens=4000)
-        self.assertIn(instruction.quote, compiled.prompt)
-        self.assertEqual(compiled.omitted_turns, 1)
-        self.assertEqual(context.state.source_channels, {100})

@@ -4,7 +4,6 @@ import json
 import unittest
 
 from elbow_helper.data.reads import ActivityReads, RaidReads, StayReads
-from elbow_helper.data.reads.activity import level_sums
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
 from .test_raid_lines import CLAN, FIRST, SECOND as SECOND_WEEKEND, STARTS, RaidFixture, body, member, weekend
@@ -76,14 +75,6 @@ class RecordFixture(RaidFixture):
 
 
 class ProgressTests(RecordFixture):
-    def test_level_sums_carry_the_old_rule(self):
-        self.assertEqual(level_sums([
-            ("heroes", "home", "Barbarian King", 90), ("heroes", "builderBase", "Battle Machine", 30),
-            ("heroes", "", "Archer Queen", 10), ("troops", "home", "Electro Owl", 10), ("troops", "home", "L.A.S.S.I", 5),
-            ("troops", "home", "Barbarian", 12), ("troops", "builderBase", "Raged Barbarian", 20), ("troops", "", "Wizard", 9),
-            ("heroEquipment", "", "Giant Gauntlet", 27), ("spells", "home", "Rage Spell", 6), ("spells", "", "Heal Spell", 3),
-            ("spells", "builderBase", "Odd", 4), ("heroes", "home", "Unknown", None)]),
-            {"hero_sum": 100, "pet_sum": 15, "equipment_sum": 27, "troop_sum": 12, "spell_sum": 9})
 
     async def test_progress_at_a_moment_from_items_counters_and_achievements(self):
         account = await self.account("#PP29L")

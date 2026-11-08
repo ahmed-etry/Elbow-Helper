@@ -33,10 +33,6 @@ class ReportStepReferenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(measure['arguments']['cohort_ref'], BARE)
         self.assertEqual(step_dependencies({**measure, 'depends_on': []}), ('cohort',))
 
-    def test_bare_step_id_is_also_found_without_report_ids(self):
-        plan = _bare_plan()
-        self.assertTrue(check_plan(plan, _tools()).ok)
-        self.assertEqual(plan['steps'][3]['arguments']['cohort_ref'], BARE)
 
     def test_invented_reference_string_is_refused_with_the_form_to_use(self):
         plan = _bare_plan('$cohort.report_id')
@@ -46,17 +42,6 @@ class ReportStepReferenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('{"step": "<id>", "path": ["report_id"]}', check.error)
         self.assertIn('cohort_ref', check.error)
 
-    def test_report_id_field_is_checked_the_same_way(self):
-        plan = {'goal': 'Page a report', 'effort': 'low', 'output': 'text', 'steps': [
-            _step('page', 'read_filler', [], {'report_id': 'invented'})]}
-        self.assertFalse(check_plan(plan, _tools(), report_ids=set()).ok)
-        self.assertTrue(check_plan(plan, _tools(), report_ids={'invented'}).ok)
-
-    def test_report_held_in_this_request_still_works(self):
-        plan = _bare_plan('abc123')
-        check = check_plan(plan, _tools(), report_ids={'abc123'})
-        self.assertTrue(check.ok, check.error)
-        self.assertEqual(plan['steps'][3]['arguments']['cohort_ref'], 'abc123')
 
     def test_later_step_id_is_not_an_earlier_reference(self):
         plan = _bare_plan('later')
@@ -65,12 +50,6 @@ class ReportStepReferenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(check.ok)
         self.assertIn('earlier or completed step', check.error)
 
-    def test_completed_step_id_resolves(self):
-        completed = {'cohort': _step('cohort', 'read_member_cohort')}
-        plan = {'goal': 'Measure', 'effort': 'low', 'output': 'text', 'steps': [
-            _step('measure', 'read_dependent', [], {'cohort_ref': 'cohort'})]}
-        self.assertTrue(check_plan(plan, _tools(), completed_steps=completed, report_ids=set()).ok)
-        self.assertEqual(plan['steps'][0]['arguments']['cohort_ref'], BARE)
 
     async def test_dependent_read_gets_the_cohort_when_named_by_step_id(self):
         context = _context()

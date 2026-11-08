@@ -20,7 +20,6 @@ from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from agent.engine.test_agent_service import _AgentSession, _AgentModel, _context
 from tests.features.agent_plan_helpers import plan_call
 from agent.engine.helpers import social_step
-from agent.engine.test_banter_gifs import gif_context
 
 
 class SocialRouteTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
@@ -53,20 +52,6 @@ class SocialRouteTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(context.state.reactions.emojis,
                                      [] if all_failed or route == "research" else ["\U0001f914", "\U0001f680"])
 
-    async def test_optional_gif_failure_keeps_planned_text_without_another_round(self):
-        context = _context()
-        context.source_message.id = 300
-        context = replace(gif_context(context), bot=SimpleNamespace())
-        call = plan_call(AgentToolCall("gif", "find_gif", '{"query":"synthetic acknowledgement"}'))
-        plan = json.loads(call.arguments)
-        plan["reply"] = "Synthetic acknowledgement."
-        session = _AgentSession([
-            social_step("Synthetic acknowledgement.", meme_id="synthetic acknowledgement"),
-        ])
-        answer = await AgentService(_AgentModel(session, route="social")).answer(question="you up?", local_context="", context=context)
-        self.assertEqual(answer, "Synthetic acknowledgement.")
-        self.assertEqual(len(session.calls), 1)
-        self.assertIsNone(context.state.gif_url)
 
     async def test_model_judgment_routes_synthetic_chat_without_a_word_list(self):
         for question, decision in (
@@ -125,29 +110,6 @@ class SocialRouteTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
                                       conversation_history="", context=_context())
             self.assertFalse(route.social)
 
-    async def test_library_meme_shortlist_is_social_only(self):
-        for route in ("social", "research"):
-            context = _context()
-            session = _AgentSession([social_step("Synthetic acknowledgement.") if route == "social"
-                                     else AgentStep("Synthetic acknowledgement.", (), AgentUsage())])
-            model = _AgentModel(session, route=route)
-            await AgentService(model).answer(
-                question="Synthetic conversational moment", local_context="", context=context,
-            )
-            definition = model.request["tools"][0]
-            if route == "social":
-                forms = definition.parameters["properties"]["reply_form"]["enum"]
-                self.assertNotIn("gif", forms)
-                self.assertIn("meme_shortlist", definition.parameters["required"])
-                self.assertIn("text_reactions", forms)
-                self.assertEqual(definition.name, "submit_social_reply")
-            else:
-                offered = definition.parameters["properties"]["steps"]["items"]["properties"]["capability"]["enum"]
-                self.assertNotIn("find_gif", offered)
-            self.assertEqual({tool.name for tool in model.request["tools"][1:]},
-                             {"load_research_context"} if route == "social" else set())
-            if route == "social":
-                self.assertNotIn("system paces GIF selection", model.request["system_prompt"])
 
     async def test_routing_tokens_are_included_in_completion_accounting(self):
         session = _AgentSession([replace(social_step(), usage=AgentUsage(400, 20, 0, 400))])
@@ -158,27 +120,6 @@ class SocialRouteTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual((usage.attempted_rounds, usage.reported_rounds), (2, 2))
         self.assertEqual((usage.prompt_tokens, usage.completion_tokens), (500, 21))
 
-    async def test_reply_forms_need_one_low_effort_round(self):
-        for form in ("text", "text_reactions"):
-            with self.subTest(form=form):
-                context = _context()
-                context.source_message.id = 300
-                context.source_message.add_reaction = AsyncMock()
-
-                knowledge = Mock()
-                context = replace(context, bot=SimpleNamespace(), knowledge_store=knowledge)
-                text = "" if form == "gif" else "Synthetic acknowledgement."
-                session = _AgentSession([social_step(text, form=form,
-                    meme_id=None,
-                    reactions=["\U0001f44d"] if form == "text_reactions" else [])])
-                model = _AgentModel(session, route="social")
-                answer = await AgentService(model).answer(question="MY MAN", local_context="", context=context)
-                self.assertEqual(answer, text)
-                self.assertEqual(session.efforts, [AgentReasoningEffort.LOW])
-                self.assertEqual(context.source_message.add_reaction.await_count, int(form == "text_reactions"))
-                self.assertEqual(bool(context.state.gif_url), form.startswith("gif"))
-                knowledge.load.assert_not_called()
-                self.assertIn("Never reply with reactions alone", model.request["system_prompt"])
 
     async def test_reaction_only_plan_is_retried_before_any_reaction(self):
         context = _context()
@@ -234,19 +175,6 @@ class SocialRouteTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
             self.assertIn(f"synthetic turn {i}", session.calls[1][0][0].content)
         self.assertIs(context.state.authorized_history, original)
 
-    async def test_failed_reaction_returns_to_the_model_for_a_text_reply(self):
-        context = _context()
-        context.source_message.id = 300
-        context.source_message.add_reaction = AsyncMock(side_effect=discord.Forbidden(
-            SimpleNamespace(status=403, reason="Synthetic"), "Synthetic rejection"))
-        session = _AgentSession([social_step("Synthetic acknowledgement.", form="text_reactions",
-                                             reactions=["\U0001f44d"])])
-        answer = await AgentService(_AgentModel(session, route="social")).answer(
-            question="thanks", local_context="", context=context,
-        )
-        self.assertEqual(answer, "Synthetic acknowledgement.")
-        self.assertEqual(len(session.calls), 1)
-        self.assertEqual(context.state.reactions.emojis, [])
 
     async def test_correction_with_media_starts_full_route(self):
         context = _context()

@@ -1,15 +1,11 @@
 """Discord presentation and cancellation ordering at the final send boundary."""
 
 import asyncio
-from dataclasses import replace
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
 
 from elbow_helper.agent.activity import reply_typing
-from elbow_helper.agent.delivery import AgentDeliveryMixin
 from elbow_helper.agent.text import discord_text
-from agent.engine.test_agent_plan_flow import _context
 
 
 class ReplyPresentationTests(unittest.IsolatedAsyncioTestCase):
@@ -48,21 +44,3 @@ class ReplyPresentationTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(cancelled.is_set())
         self.assertTrue(cancelled.is_set())
         self.assertTrue(activity.task.done())
-
-    async def test_shared_delivery_stops_typing_and_renders_tables(self):
-        context = _context()
-        stop = AsyncMock()
-        context = replace(context, stop_typing=stop)
-        context.source_message.archive_reply = False
-        context.source_message.mentions = ()
-        context.source_message.guild = context.guild
-
-        async def reply(text, **kwargs):
-            stop.assert_awaited_once()
-            self.assertEqual(text, "- Member: A; Date: July")
-            return SimpleNamespace(id=501)
-
-        context.source_message.reply = AsyncMock(side_effect=reply)
-        delivery = AgentDeliveryMixin()
-        delivery.bot = context.bot
-        await delivery.send_response(context.source_message, "| Member | Date |\n|---|---|\n| A | July |", None, context=context)

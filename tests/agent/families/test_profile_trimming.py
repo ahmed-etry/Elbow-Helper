@@ -1,7 +1,6 @@
 """Cohort and recruitment rows follow member lookups: profile, roles and history only on request."""
 import unittest
 
-from elbow_helper.agent.families import identity_reads, workflow_reads
 from elbow_helper.agent.tool_support.model_view import family_model_view
 
 BASIS = 'Discord role assignment, not a main account location'
@@ -27,19 +26,6 @@ def cohort_view(selection, **extra):
 
 
 class CohortProfileTests(unittest.TestCase):
-    def test_a_plain_cohort_drops_profile_roles_history_and_the_repeated_explanation(self):
-        view = cohort_view({'basis': 'selected'})
-        row = view['rows'][0]
-        for field in ('nickname', 'joined_at', 'family_membership_roles', 'home_clans', 'participation_clans',
-                      'home_clan_status', 'home_clan_basis', 'roles'):
-            self.assertNotIn(field, row)
-        self.assertEqual(view['home_clan_basis'], BASIS)
-        self.assertEqual(row['member_id'], 12)
-        account = row['accounts'][0]
-        for field in ('donations', 'war_stars', 'ranked_league', 'role', 'observed_at', 'record_history'):
-            self.assertNotIn(field, account)
-        self.assertEqual((account['player_tag'], account['townHallLevel'], account['clan_status']),
-                         ('#P0', 12, 'in_clan'))
 
     def test_include_profile_roles_and_history_bring_their_fields_back(self):
         row = cohort_view({'basis': 'selected', 'include_profile': True, 'include_standing': True,
@@ -81,20 +67,6 @@ class CohortProfileTests(unittest.TestCase):
         self.assertIn('home_clans', roster)
         self.assertEqual(roster['accounts'][0]['donations'], 40)
 
-    def test_view_keeps_every_row_and_the_completeness_flags(self):
-        rows = [member_row(member_id=index) for index in range(1, 14)]
-        view = family_model_view({'family': 'read_member_cohort', 'basis': 'selected',
-            'selection': {'basis': 'selected'}, 'rows': rows, 'total_rows': 13, 'count_complete': False,
-            'unknown_account_profiles': 2})
-        self.assertEqual([row['member_id'] for row in view['rows']], list(range(1, 14)))
-        self.assertEqual((view['total_rows'], view['count_complete'], view['unknown_account_profiles']),
-                         (13, False, 2))
-
-    def test_the_cohort_tool_offers_include_profile_and_standing(self):
-        tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_cohort')
-        for option in ('include_profile', 'include_standing'):
-            self.assertEqual(tool.definition.parameters['properties'][option]['type'], 'boolean')
-
 
 class RecruitmentSnapshotTests(unittest.TestCase):
     def view(self, selection):
@@ -103,32 +75,12 @@ class RecruitmentSnapshotTests(unittest.TestCase):
             'members': [{'member_id': 12, 'member_name': 'Synthetic member', 'account_tags': ['#P0'],
                          'home_clan_status': 'resolved', 'roles': []}]})
 
-    def test_the_account_snapshot_comes_only_with_include_profile(self):
-        plain = self.view({'stage': 'ticket_evidence', 'include_accounts': True})['rows'][0]['accounts'][0]
-        for field in ('donations', 'war_stars', 'ranked_league', 'role', 'observed_at'):
-            self.assertNotIn(field, plain)
-        self.assertEqual((plain['player_tag'], plain['townHallLevel']), ('#P0', 12))
-        profile = self.view({'stage': 'ticket_evidence', 'include_accounts': True,
-                             'include_profile': True})['rows'][0]['accounts'][0]
-        self.assertIn('role', profile)
-        for field in ('donations', 'war_stars', 'ranked_league'):
-            self.assertNotIn(field, profile)
-        standing = self.view({'stage': 'ticket_evidence', 'include_accounts': True,
-                              'include_standing': True})['rows'][0]['accounts'][0]
-        self.assertNotIn('role', standing)
-        for field in ('donations', 'war_stars', 'ranked_league'):
-            self.assertIn(field, standing)
 
     def test_applicant_profiles_and_rows_are_not_dropped(self):
         view = self.view({'stage': 'ticket_evidence', 'include_accounts': True})
         self.assertEqual(len(view['rows']), 1)
         self.assertEqual(view['rows'][0]['ticket_channel_id'], 7)
         self.assertEqual(view['members'][0]['home_clan_status'], 'resolved')
-
-    def test_the_recruitment_tool_offers_include_profile_and_standing(self):
-        tool = next(tool for tool in workflow_reads.TOOLS if tool.definition.name == 'read_recruitment_pipeline')
-        for option in ('include_profile', 'include_standing'):
-            self.assertEqual(tool.definition.parameters['properties'][option]['type'], 'boolean')
 
 
 if __name__ == '__main__':

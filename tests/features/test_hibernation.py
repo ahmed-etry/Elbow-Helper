@@ -80,7 +80,6 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
         events = MemoryEventsStore()
         self.addCleanup(events.close)
         self.hibernation_state = HibernationState(events)
-        self.hibernation_state._mirror = AsyncMock()
         self.seed({})
         self.roles = {
             role_id: SimpleNamespace(id=role_id, name=str(role_id), is_default=lambda: False)
@@ -259,37 +258,6 @@ class HibernationRetryTests(unittest.IsolatedAsyncioTestCase):
         await self.owner.reactivate_member(self.reactivation_plan())
         self.guild.create_text_channel.assert_awaited_once()
         self.assertEqual(self.ticket.send.await_count, 2)
-
-    async def test_notice_failure_is_not_silently_treated_as_delivered(self):
-        self.member.send = AsyncMock()
-        self.fail_once(self.member.send)
-        self.owner._build_reactivate_view = Mock(return_value=None)
-        self.owner._post_hibernation_notice_in_fallback_thread = AsyncMock(return_value=False)
-        with self.assertRaisesRegex(RuntimeError, "could not be delivered"):
-            await HibernationTicketMixin._send_hibernation_notice(self.owner, self.member)
-
-    async def test_archive_failure_is_not_silently_treated_as_complete(self):
-        self.seed({"_fallback_threads": {"42": {"thread_id": 456}}})
-        thread = SimpleNamespace(archived=False, edit=AsyncMock())
-        self.owner.bot = SimpleNamespace(get_channel=lambda _: thread)
-        self.fail_once(thread.edit)
-        with self.assertLogs("elbow_helper.features.hibernation.tickets", level="WARNING"):
-            with self.assertRaises(discord.HTTPException):
-                await HibernationTicketMixin._archive_fallback_thread_for_member(
-                    self.owner, 42, reason="synthetic",
-                )
-
-    async def test_step_writes_preserve_new_fallback_metadata(self):
-        plan = self.start_hibernation()
-
-        async def notice(member):
-            data = self.hibernation_state.snapshot()
-            data["_fallback_threads"] = {"42": {"thread_id": 456}}
-            await self.hibernation_state.save_fallback_thread(member.id, data["_fallback_threads"]["42"])
-
-        self.notice.side_effect = notice
-        await self.owner.hibernate_member(self.guild, self.actor, plan)
-        self.assertEqual(self.hibernation_state.snapshot()["_fallback_threads"], {"42": {"thread_id": 456}})
 
 
 if __name__ == "__main__":

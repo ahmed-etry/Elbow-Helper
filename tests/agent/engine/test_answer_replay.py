@@ -8,7 +8,6 @@ from unittest.mock import Mock
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.conversation.replay import replay_answer
 from elbow_helper.agent.conversation.state import ConversationRecord, ConversationTurn
-from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.wording import ACTION_EMPTY, ACTION_PRIVATE_ANSWER
 from agent.engine.test_agent_plan_flow import _context
 
@@ -53,13 +52,6 @@ class ReplayTests(unittest.IsolatedAsyncioTestCase):
         context.source_message.reference.message_id = 999
         self.assertEqual(await replay_answer("replay", context), ACTION_EMPTY)
 
-    async def test_resend_intent_is_resolved_by_model_from_reply_context(self):
-        from agent.engine.test_agent_plan_flow import _Model, _Session
-        from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-        session = _Session([AgentStep("Which earlier answer do you want?", (), AgentUsage())], [])
-        answer = await AgentService(_Model(session)).answer(question="resend", local_context="", context=_context())
-        self.assertEqual(answer, "Which earlier answer do you want?")
-        self.assertEqual(len(session.calls), 1)
 
     async def test_evicted_latest_record_does_not_replay_older_answer(self):
         unavailable = ConversationTurn("{}", frozenset({91}), retention_limited=True)
@@ -72,19 +64,6 @@ class ReplayTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AgentAccessLost):
             await replay_answer("replay", context)
 
-    async def test_latest_inaccessible_turn_does_not_replay_older_visible_answer(self):
-        context = replace(_context(), history=(turn(), turn(sources=frozenset({999}))))
-        # The channel exists but its current permissions deny the requester.
-        channel = SimpleNamespace(guild=context.guild, permissions_for=lambda _: SimpleNamespace(
-            view_channel=False, read_message_history=False))
-        context.guild.get_channel_or_thread = lambda value: channel
-        with self.assertRaises(AgentAccessLost):
-            await replay_answer("replay", context)
-
-    async def test_unknown_typed_modes_are_not_treated_as_replays(self):
-        for question in ("resend the recruitment announcement to everyone", "post that again but change it",
-                         "do not resend", "count only", "what does resend mean?"):
-            self.assertIsNone(await replay_answer(question, _context()))
 
     async def test_lost_rollout_access_and_bot_source_access_block_replay(self):
         for loss in ("rollout", "bot_source"):

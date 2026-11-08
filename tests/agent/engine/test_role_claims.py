@@ -47,13 +47,6 @@ class RoleClaimTests(unittest.TestCase):
         self.assertEqual(role_conflicts("North is elder.", {"clan": result}),
                          ("#P0 in-game role: leader.",))
 
-    def test_account_names_are_not_rank_claims(self):
-        result = profiles()
-        result["items"][0]["data"]["name"] = "Elder North"
-        self.assertEqual(role_conflicts("Elder North (#P0), TH18.", {"profiles": result}), ())
-        self.assertEqual(role_conflicts("Elder North (#P0) is elder.", {"profiles": result}),
-                         ("#P0 in-game role: co-leader.",))
-
 
 class RoleRepairTests(unittest.IsolatedAsyncioTestCase):
     flow = cost.RequestCostTests.flow

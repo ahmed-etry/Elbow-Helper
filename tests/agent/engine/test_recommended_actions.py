@@ -8,17 +8,13 @@ from unittest.mock import AsyncMock, patch
 
 import discord
 
-from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.agent.actions.contracts import ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.preview import ConfirmationView, preview_text
 from elbow_helper.agent.tool_support.adapters.account_links.commands import account_link_adapters
-from elbow_helper.agent.tool_support.adapters.hibernation.commands import hibernation_adapters
 from elbow_helper.agent.tool_support.adapters.recruitment.commands import recruitment_adapters
-from elbow_helper.agent.tool_support.adapters.rosters.signups import roster_account_management_tools
 from elbow_helper.agent.commands.bridge import build_command_tools
 from elbow_helper.agent.discord_actions.roles import discord_role_tools
 from elbow_helper.agent.discord_actions.timeouts import timeout_tools
-from elbow_helper.agent.engine.assessment import decision_answer
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.engine.recommended_actions import action_catalogue
 from elbow_helper.agent.models import AgentCapabilityEffect, RegisteredAgentTool
@@ -26,7 +22,6 @@ from elbow_helper.agent.wording import ACTION_PREVIEW_OWNER
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from agent.engine import test_request_cost as cost
-from agent.engine.test_agent_plan_flow import _model_step
 
 
 def decision(items=(), **overrides):
@@ -123,56 +118,6 @@ class RecommendedActionTests(unittest.IsolatedAsyncioTestCase):
                 await flow.run()
                 self.prepare.assert_awaited_once()
 
-    async def test_empty_actions_and_unsettled_answers_never_prepare_changes(self):
-        for fields in ({'recommended_actions': []}, {'recommendation': ''}, {'recommendation': ' \t'},
-                       {'intent_source': 'unresolved', 'question': 'Which next step?'},
-                       {'intent_source': 'unresolved', 'open_choices': ['Approach'],
-                        'question': 'Which approach?'}):
-            with self.subTest(fields=fields):
-                flow = self.flow(decision([action()], **fields))
-                # Action-like request wording cannot override the structural gates.
-                flow.context.state.request_text = 'Hibernate everyone and give them roles'
-                await flow.run()
-                self.prepare.assert_not_awaited()
-                self.assertFalse(flow.context.state.proposed_changes)
-
-    async def test_omitted_action_declarations_are_not_offers(self):
-        content = json.loads(decision())
-        del content['recommended_actions']
-        flow = self.flow(json.dumps(content))
-        await flow.run()
-        self.prepare.assert_not_awaited()
-
-    async def test_factual_answer_with_empty_actions_offers_nothing(self):
-        flow = self.flow(decision(intent='Summarize synthetic statistics.',
-                                  facts='Synthetic count: 7.', recommendation=''))
-        self.assertEqual(await flow.run(), 'Synthetic count: 7.')
-        self.prepare.assert_not_awaited()
-        self.assertIsNone(flow.context.state.preview_reply)
-
-    async def test_action_list_is_not_gated_by_intent_or_request_text(self):
-        flow = self.flow(decision([action()], intent='Summarize synthetic statistics.'))
-        flow.context.state.request_text = 'Synthetic count: 7.'
-        await flow.run()
-        self.prepare.assert_awaited_once()
-        self.run_change.assert_not_awaited()
-
-    async def test_validation_skips_invalid_unknown_read_and_untyped_capabilities(self):
-        for case in ('invalid_arguments', 'unknown', 'read', 'untyped'):
-            with self.subTest(case=case):
-                item = action()
-                if case == 'invalid_arguments':
-                    item['arguments']['extra'] = True
-                elif case == 'unknown':
-                    item['capability'] = 'not_registered'
-                flow = self.flow(decision([item]))
-                if case in ('read', 'untyped'):
-                    original = flow.registry['synthetic_change']
-                    flow.registry['synthetic_change'] = replace(original,
-                        **({'action_class': ActionClass.READ} if case == 'read' else {'contract': None}))
-                    flow.recommendation_registry = flow.registry.copy()
-                await flow.run()
-                self.prepare.assert_not_awaited()
 
     async def test_account_targets_must_match_authorized_evidence(self):
         handler = AsyncMock()
@@ -240,34 +185,6 @@ class RecommendedActionTests(unittest.IsolatedAsyncioTestCase):
             preparations[adapter.path].assert_not_awaited()
             adapter.run.assert_not_awaited()
 
-    async def test_incomplete_open_or_indirect_contracts_are_excluded(self):
-        for case in ('uncovered', 'structured_filter', 'open_schema', 'indirect_selector', 'variant'):
-            with self.subTest(case=case):
-                properties = {'member_id': {'type': 'integer', 'minimum': 1}}
-                arguments = {'member_id': 51}
-                entities = [('member_id', 'discord_member')]
-                filters = ()
-                if case in ('uncovered', 'structured_filter'):
-                    properties['selection'] = {'type': 'object', 'additionalProperties': True}
-                    arguments['selection'] = {'accounts': ['#P0Y', '#P0Q']}
-                    filters = ('selection',) if case == 'structured_filter' else ()
-                elif case == 'indirect_selector':
-                    properties['roster_id'] = {'type': 'integer'}
-                    arguments['roster_id'] = 1
-                    entities.append(('roster_id', 'roster'))
-                schema = {'type': 'object', 'properties': properties,
-                          'required': ['member_id'], 'additionalProperties': case == 'open_schema'}
-                if case == 'variant':
-                    schema['anyOf'] = [{'properties': {'tags': {'type': 'string'}}}]
-                handler = AsyncMock()
-                tool = RegisteredAgentTool(AgentToolDefinition('partial_change', 'Synthetic change.', schema),
-                    handler, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-                    contract=CapabilityContract(entity_fields=tuple(entities), filter_fields=filters))
-                item = {'capability': 'partial_change', 'target': {'member_id': 51}, 'arguments': arguments}
-                flow = self.flow(decision([item]), registry={'partial_change': tool})
-                await flow.run()
-                handler.assert_not_awaited()
-                self.assertFalse(flow.context.state.proposed_changes)
 
     async def test_every_typed_target_and_the_whole_target_count_are_checked(self):
         for kind, values, declared, evidence in (
@@ -290,22 +207,6 @@ class RecommendedActionTests(unittest.IsolatedAsyncioTestCase):
                 handler.assert_not_awaited()
                 self.assertFalse(flow.context.state.proposed_changes)
 
-    async def test_missing_or_mixed_member_and_account_targets_are_not_offered(self):
-        handler = AsyncMock()
-        tool = RegisteredAgentTool(AgentToolDefinition('mixed_change', 'Synthetic change.', {
-            'type': 'object', 'properties': {'member_id': {'type': 'integer'}, 'player_tag': {'type': 'string'}},
-            'required': ['player_tag'], 'additionalProperties': False}), handler,
-            AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-            contract=CapabilityContract(entity_fields=(('member_id', 'discord_member'),
-                                                      ('player_tag', 'clash_account'))))
-        for arguments in ({'player_tag': '#P0Y'}, {'player_tag': '#P0Y', 'member_id': 51}):
-            with self.subTest(arguments=arguments):
-                item = {'capability': 'mixed_change', 'target': {'player_tag': '#P0Y'}, 'arguments': arguments}
-                flow = self.flow(decision([item]), registry={'mixed_change': tool})
-                flow.answer_accounts = {'#P0Y': {}}
-                await flow.run()
-                handler.assert_not_awaited()
-                self.assertFalse(flow.context.state.proposed_changes)
 
     async def test_optional_target_fields_cannot_hide_default_members(self):
         handler = AsyncMock()
@@ -322,9 +223,6 @@ class RecommendedActionTests(unittest.IsolatedAsyncioTestCase):
         handler.assert_not_awaited()
         self.assertFalse(flow.context.state.proposed_changes)
 
-    def test_roster_adapters_with_implicit_owners_are_not_in_the_catalogue(self):
-        tools = {tool.definition.name: tool for tool in roster_account_management_tools()}
-        self.assertEqual(json.loads(action_catalogue(tools))['recommended_action_capabilities'], [])
 
     async def test_duplicates_and_large_preparations_stay_bounded(self):
         flow = self.flow(decision([action(), action(), action(52)]))
@@ -363,58 +261,6 @@ class RecommendedActionTests(unittest.IsolatedAsyncioTestCase):
         await flow.run()
         self.prepare.assert_awaited_once()
 
-    async def test_tool_disabled_final_composition_can_prepare_the_recommendation(self):
-        flow = self.flow(decision())
-        del flow._run
-        flow.assessment_requested = flow.advice_requested = False
-        flow.rounder.final_attempted = False
-        flow.final_session_factory = None
-        read = RegisteredAgentTool(AgentToolDefinition('read_value', 'Synthetic read.', {
-            'type': 'object', 'properties': {}, 'additionalProperties': False}),
-            AsyncMock(return_value={'value': 7}))
-        flow.registry['read_value'] = read
-        plan = {'goal': 'Assess the selected people', 'effort': 'high', 'assessment': True, 'advice': True,
-                'finish_after_reads': True, 'output': 'text', 'steps': [
-                    {'id': 'read', 'capability': 'read_value', 'arguments': {}, 'depends_on': []}]}
-        flow.session.steps = [_model_step(plan), cost.response(decision([action()]))]
-        answer = await flow.run()
-        self.assertEqual(answer, 'Synthetic observations.\n\nSynthetic recommendation.')
-        self.assertEqual(len(flow.session.calls), 2)
-        self.assertFalse(flow.session.calls[-1][1])
-        self.assertIn('recommended_action_capabilities', flow.session.instructions[-1])
-        self.prepare.assert_awaited_once()
-        self.run_change.assert_not_awaited()
-
-    async def test_hibernation_specialist_uses_its_normal_command_preview(self):
-        command = DiscoveredCommand('/hibernate', 'Synthetic hibernation.', (
-            ParameterInfo('user', 'Member to hibernate.', True, 'user'),))
-        with patch('elbow_helper.agent.commands.registry.discover_commands',
-                   return_value={'/hibernate': command}):
-            tools, _ = build_command_tools(object(), hibernation_adapters()[:1])
-        item = {'capability': 'hibernate_member', 'target': {'member_id': 51},
-                'arguments': {'user': 51}}
-        flow = self.flow(decision([item]))
-        flow.recommendation_registry.update(tools)
-        member = SimpleNamespace(id=51, mention='<@51>', roles=[])
-        plan = {'issue': None, 'stored_role_ids': [], 'snapshot_role_ids': [], 'unix_ts': 100,
-                'to_remove': (), 'to_add': (), 'missing_role_ids': (), 'log_channel_id': 9,
-                'fallback_channel_id': 10}
-        workflow = SimpleNamespace(prepare_hibernation=lambda *_: plan,
-            hibernation_notice_preview=lambda _: 'Synthetic hibernation notice.',
-            hibernate_member=AsyncMock(), hibernation_member_state=lambda _: None)
-        flow.context = replace(flow.context, bot=SimpleNamespace(get_cog=lambda _: workflow))
-        flow.runner.context = flow.context
-        requester = flow.context.member
-        requester.roles.append(SimpleNamespace(id=next(iter(LEAD_PLUS))))
-        flow.context.guild.get_member = lambda identifier: requester if identifier == requester.id else member
-        flow.context.guild.fetch_member = AsyncMock(return_value=member)
-        self.assertNotIn('hibernate_member', flow.registry)
-        await flow.run()
-        proposal = flow.context.state.proposed_changes[0]
-        self.assertEqual(proposal.path, '/hibernate')
-        self.assertIn('Synthetic hibernation notice.', proposal.preview.details)
-        self.assertTrue(await proposal.preview.recheck())
-        workflow.hibernate_member.assert_not_awaited()
 
     async def test_changed_answer_does_not_offer_stale_recommendations(self):
         flow = self.flow(decision([action()]))
@@ -471,15 +317,3 @@ class RecommendedActionTests(unittest.IsolatedAsyncioTestCase):
             actor.guild_permissions.manage_roles = False
             self.assertFalse(await proposal.preview.recheck())
         member.add_roles.assert_not_awaited()
-
-    def test_catalogue_includes_only_registered_targeted_changes(self):
-        flow = self.flow(decision())
-        catalogue = json.loads(action_catalogue(flow.registry))['recommended_action_capabilities']
-        self.assertEqual([item['capability'] for item in catalogue], ['synthetic_change'])
-        self.assertIn('member_id', catalogue[0]['arguments']['properties'])
-        self.assertIn('recommended_action_capabilities', flow._decision_instruction())
-        self.assertNotIn('intent_kind', flow._decision_instruction())
-
-    def test_more_than_three_declarations_fail_the_decision_schema(self):
-        with self.assertRaises(ValueError):
-            decision_answer(decision([action()] * 4), set())

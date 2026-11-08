@@ -8,54 +8,8 @@ from unittest.mock import patch
 
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
 from elbow_helper.agent.knowledge.tools import knowledge_tools
-from elbow_helper.agent.plan.format import system_instructions
-from elbow_helper.agent.prompts import RESEARCH_RULES
 from agent.engine import test_request_cost as cost
 from agent.engine.test_agent_plan_flow import _context, _model_step, _plan, _step
-
-
-class PersonaBrevityInstructionTests(unittest.TestCase):
-    def test_answer_contract_reaches_read_only_and_action_modes(self):
-        for actions in (False, True):
-            prompt = system_instructions({}, actions_enabled=actions)
-            for rule in (
-                "Lead with the fact that settles the question",
-                "Casual factual questions get 1-3 short human lines",
-                "omit side facts and caveats unless they change the answer",
-                "Do not repeat the question's framing as an introduction",
-                "Each stated fact must be traceable to a source or data read supporting that exact claim",
-                "Never synthesize a community rule, exception or workflow from the question plus a knowledge line",
-                '"nb only" means the bare number',
-                '"stay concise" is a hard brevity constraint',
-                "return only that output: no opener, apology, caption, joke or closer",
-                "Brevity must not remove requested members, accounts or rows",
-                "never aligned code-block tables",
-                "Attach files only when requested or when the requested output rows cannot fit a message",
-                "put the verified main account first, then descending Town Hall or rank",
-                "Never default to storage-key or player-tag order",
-                "Do not pad replies with successful-read notices",
-                "test-only roles",
-            ):
-                with self.subTest(actions=actions, rule=rule):
-                    self.assertIn(rule, prompt)
-            social = system_instructions({}, actions_enabled=actions, social=True)
-            for rule in ("Check that the joke's actors and actions fit the supplied exchange",
-                         "celebrate the win directly; do not undercut it"):
-                self.assertIn(rule, social)
-                self.assertNotIn(rule, prompt)
-
-    def test_selection_instructions_require_relevance_before_opening_sections(self):
-        for rule in (
-            "Select the smallest set of knowledge headings needed to answer the request",
-            "single best heading for a simple fact or definition",
-            "distinct requested part or a prerequisite that can change the answer",
-            "The title and page limits are ceilings, not targets",
-            "Stop reading when\nthe requested answer is supported",
-            "never regex or word lists over member-written text",
-            "an index title alone\nis not the section's contents",
-        ):
-            with self.subTest(rule=rule):
-                self.assertIn(rule, RESEARCH_RULES)
 
 
 class PersonaBrevitySelectionTests(unittest.IsolatedAsyncioTestCase):

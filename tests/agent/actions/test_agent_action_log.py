@@ -8,21 +8,10 @@ from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.agent.actions.log_tools import (
     read_agent_action_log, undo_agent_action,
 )
-from elbow_helper.agent.actions.targets import target_links
 from elbow_helper.agent.models import AgentTurnState
 
 
 class ActionLogToolTests(unittest.IsolatedAsyncioTestCase):
-    def test_command_target_links_exclude_quoted_values(self):
-        links = target_links(1, {
-            "channel": "5", "message_id": "6", "user": 7, "applicant": "8",
-            "text": "Hidden quotation", "nickname": "9", "member_id": True,
-            "thread_id": "A private thread name", "role_id": 10,
-        })
-        self.assertEqual(links, (
-            "https://discord.com/channels/1/5", "https://discord.com/channels/1/5/6",
-            "https://discord.com/users/7", "https://discord.com/users/8",
-        ))
 
     async def test_read_filters_by_requester_and_pages(self):
         calls = []

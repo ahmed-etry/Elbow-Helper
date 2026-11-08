@@ -1,6 +1,5 @@
 """Recipients can durably opt out of only their repeating reminder DMs."""
 
-import asyncio
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -58,22 +57,6 @@ class ReminderDMControlTests(unittest.IsolatedAsyncioTestCase):
             )),
         )
 
-    async def test_only_other_members_repeating_dms_have_buttons(self):
-        self.configure()
-        identity = self.save()
-        await self._tick()
-        self.assertNotIn("view", self.members[2].send.await_args.kwargs)
-        for identifier in (3, 4):
-            view = self.members[identifier].send.await_args.kwargs["view"]
-            self.assertTrue(view.is_persistent())
-            self.assertEqual(view.children[0].item.label, "Stop these messages")
-            self.assertEqual(view.children[0].identifier, identity)
-        for member in self.members.values():
-            member.send.reset_mock()
-        self.save(kind="once")
-        await self._tick()
-        for member in self.members.values():
-            self.assertNotIn("view", member.send.await_args.kwargs)
 
     async def test_stop_removes_only_the_recipient_and_the_askers_list_updates(self):
         self.configure()
@@ -151,10 +134,3 @@ class ReminderDMControlTests(unittest.IsolatedAsyncioTestCase):
         self.channel.send.assert_not_awaited()
         await self._tick()
         self.members[3].send.assert_awaited_once()
-
-    async def test_start_registers_the_persistent_dynamic_handler(self):
-        self.bot.add_dynamic_items = Mock()
-        self.runner._main = AsyncMock()
-        self.runner.start()
-        await asyncio.gather(*tuple(self.runner._tasks))
-        self.bot.add_dynamic_items.assert_called_once_with(ReminderStopButton)

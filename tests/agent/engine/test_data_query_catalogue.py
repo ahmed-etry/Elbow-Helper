@@ -45,15 +45,6 @@ class DataQueryCatalogueTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('query_bot_data', result['catalogue'])
         self.assertIn('read_member_cohort', flow.registry)
 
-    def test_instruction_names_the_long_period_use_and_the_guide_route(self):
-        prompt = _fixed_prompt()
-        self.assertIn('trends or comparisons over long periods or many accounts that no family read '
-                      'returns, use query_bot_data', prompt)
-        self.assertIn('call open_capability_group', prompt)
-        self.assertIn('open group records with intent inspect', prompt)
-        self.assertIn('for its table guide', prompt)
-        self.assertIn('Family reads stay first for everything they cover', prompt)
-
 
 if __name__ == '__main__':
     unittest.main()

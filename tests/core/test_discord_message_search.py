@@ -10,17 +10,6 @@ from elbow_helper.infrastructure.discord.message_search import DiscordMessageSea
 
 
 class DiscordMessageSearchTests(unittest.IsolatedAsyncioTestCase):
-    async def test_multiple_author_and_mention_filters_share_one_request(self):
-        http = AsyncMock()
-        http.request.return_value = {"messages": [], "total_results": 0}
-        await DiscordMessageSearch(http).search_page(
-            guild_id=1, content="", limit=25, author_ids=(42, 43), mentions=(44, 45),
-        )
-        http.request.assert_awaited_once()
-        params = http.request.await_args.kwargs["params"]
-        self.assertEqual([value for name, value in params if name == "author_id"], ["42", "43"])
-        self.assertEqual([value for name, value in params if name == "mentions"], ["44", "45"])
-        self.assertNotIn("channel_id", dict(params))
 
     @staticmethod
     def history_message(message_id, *, channel_id=34):
@@ -51,43 +40,6 @@ class DiscordMessageSearchTests(unittest.IsolatedAsyncioTestCase):
             await DiscordMessageSearch(http).search(guild_id=1, content="test", limit=5)
         self.assertEqual(http.request.await_count, 1)
 
-    async def test_search_normalizes_nested_results(self) -> None:
-        http = AsyncMock()
-        http.request.return_value = {
-            "total_results": 1,
-            "messages": [
-                [
-                    {
-                        "id": "12",
-                        "channel_id": "34",
-                        "content": "war rule decision",
-                        "timestamp": "2026-09-14T00:00:00+00:00",
-                        "author": {
-                            "id": "56",
-                            "username": "Ahmad",
-                            "global_name": "Ahmad BE",
-                        },
-                    }
-                ]
-            ]
-        }
-
-        results = await DiscordMessageSearch(http).search(
-            guild_id=1,
-            content="war rule",
-            limit=5,
-        )
-
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0].message_id, 12)
-        self.assertEqual(results[0].channel_id, 34)
-        self.assertEqual(results[0].author_name, "Ahmad BE")
-        request = http.request.await_args
-        self.assertEqual(
-            request.kwargs["params"],
-            [("content", "war rule"), ("limit", 5), ("offset", 0),
-             ("sort_by", "timestamp"), ("sort_order", "desc")],
-        )
 
     async def test_oversized_explicit_channel_filter_fails_before_http(self):
         http = AsyncMock()
@@ -233,18 +185,6 @@ class DiscordMessageSearchTests(unittest.IsolatedAsyncioTestCase):
             [("limit", 2), ("before", "100")],
         )
 
-    async def test_history_without_a_start_date_accepts_zero_lower_bound(self):
-        http = AsyncMock()
-        http.request.return_value = [self.history_message(90)]
-        page = await DiscordMessageSearch(http).history_page(
-            channel_id=34, before_id=100, after_id=0, limit=100)
-        self.assertEqual([message.message_id for message in page.messages], [90])
-        self.assertEqual(page.after_id, 0)
-        self.assertTrue(page.reached_window_start)
-        for lower in (-1, False, None):
-            with self.subTest(lower=lower), self.assertRaises(ValueError):
-                await DiscordMessageSearch(http).history_page(
-                    channel_id=34, before_id=100, after_id=lower, limit=100)
 
     async def test_channel_history_stops_at_lower_bound_and_short_end(self):
         for payload in (

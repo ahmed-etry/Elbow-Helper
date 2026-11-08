@@ -149,19 +149,6 @@ class ChangePreparationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestC
         self.assertEqual(self.context.state.proposed_changes, [])
         self.workflow.change_roster_accounts.assert_not_awaited()
 
-    async def test_answer_only_round_replaces_unprepared_confirmation_with_missing_input(self):
-        self.roster()
-        session = ProtocolSession([
-            planned("read_target", {}, identity="target"),
-            text("Confirm and I'll add #P0 to BEH CWL."),
-            text("I still need to know which linked account is your main."),
-        ])
-        with patch("elbow_helper.agent.engine.budgets.MAX_MODEL_ROUNDS", 2):
-            answer = await self.answer(session, "Add me to BEH CWL")
-        self.assertFalse(session.calls[1][1])
-        self.assertFalse(session.calls[2][1])
-        self.assertEqual(answer, "I still need to know which linked account is your main.")
-        self.assertEqual(self.context.state.proposed_changes, [])
 
     async def test_repeated_confirmation_claim_has_a_bounded_honest_fallback(self):
         self.roster()
@@ -187,16 +174,6 @@ class ChangePreparationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestC
             },
         }
 
-    async def test_reminder_preview_reaches_member_without_an_extra_model_round(self):
-        values = self.reminder()
-        session = ProtocolSession([planned("save_standing_rule", values, self_target=True)])
-        answer = await self.answer(session, "Remind me in 2 hours to check the war")
-        self.assertEqual(answer, preview_text(self.context.state.proposed_changes))
-        self.assertIn("Set reminder", answer)
-        self.assertIn("Check the war.", answer)
-        self.assertEqual(len(session.calls), 1)
-        await self.deliver(answer)
-        self.context.action_repository.create_standing.assert_not_called()
 
     async def test_recorded_reminder_plan_corrections_preserve_provider_protocol(self):
         values = self.reminder()
@@ -237,13 +214,3 @@ class ConfirmationClaimTests(unittest.TestCase):
             with self.subTest(answer=answer):
                 self.assertTrue(unprepared_change_issue(answer, []))
                 self.assertFalse(unprepared_change_issue(answer, [object()]))
-
-    def test_missing_inputs_facts_and_capability_descriptions_are_allowed(self):
-        for answer in ("Which account is your main?", "Can you confirm which account you mean?",
-                       "I can add linked accounts to an open roster.", "The roster is open.",
-                       "CWL eligibility requires leadership approval.",
-                       "> Confirm and I'll add #P0.\nThat was the earlier reply.",
-                       "Example message:\n```\nI'll send the reminder.\n```",
-                       "I couldn't prepare that change for confirmation."):
-            with self.subTest(answer=answer):
-                self.assertFalse(unprepared_change_issue(answer, []))

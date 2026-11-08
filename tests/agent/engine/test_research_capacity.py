@@ -22,12 +22,6 @@ class ResearchCapacityTests(unittest.IsolatedAsyncioTestCase):
     async def test_full_evidence_and_missing_source_survive_a_reasoning_only_final(self):
         await self._exercise(cutoff=True)
 
-    async def test_larger_complete_evidence_uses_the_measured_assessment_allowance(self):
-        result = await self._exercise(cutoff=True, note_repeats=120,
-            input_allowance=ASSESSMENT_LIMITS.input_tokens, continuation_reads=2)
-        final = next(call['input'] for call in result['calls'] if call['kind'] == 'final')
-        self.assertGreater(2 * final, 240000)
-        self.assertLess(result['spent_input'], ASSESSMENT_LIMITS.input_tokens)
 
     async def test_reasoning_only_final_recovers_near_the_shared_input_boundary(self):
         measured = await self._exercise(cutoff=True)

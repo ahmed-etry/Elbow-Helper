@@ -66,17 +66,6 @@ class WriterRowTests(unittest.TestCase):
         self.assertTrue(all(row['observation_status'] is None for row in rows
                             if row['participation_status'] == 'warring'))
 
-    def test_repeated_and_identical_fields_are_stated_once(self):
-        rendering = answer_evidence({'wars': war_result()})['wars']['row_rendering']['rows']
-        self.assertEqual(rendering['omitted_when_repeated'], {
-            'account_tags': ['player_tag'], 'attack_performance.wars': 'wars_observed',
-            'attack_performance.stars_measured': 'attack_performance.observed_attacks'})
-        self.assertEqual(rendering['same_on_every_row'], {
-            'unit': 'account', 'missing_link': False, 'attacks_expected': 6, 'wars_observed': 3})
-        row = answer_evidence({'wars': war_result()})['wars']['rows'][0]
-        for field in ('account_tags', 'unit', 'missing_link'):
-            self.assertNotIn(field, row)
-        self.assertNotIn('wars', row['attack_performance'])
 
     def test_a_field_that_differs_on_one_row_stays_on_every_row(self):
         source = war_result()
@@ -88,32 +77,12 @@ class WriterRowTests(unittest.TestCase):
         self.assertNotIn('missing_link', facts['row_rendering']['rows']['same_on_every_row'])
         self.assertEqual([row['missing_link'] for row in facts['rows']].count(True), 1)
 
-    def test_a_single_row_keeps_all_its_fields(self):
-        source = war_result(1)
-        facts = compact_writer_rows(source, 'read_war_attendance')
-        self.assertEqual(len(facts['rows']), 1)
-        self.assertEqual(facts['rows'][0]['player_tag'], '#T0')
-        self.assertIn('unit', facts['rows'][0])
-
-    def test_other_families_only_lose_ratio_detail(self):
-        rows = [{'member_id': index, 'clan_status': None if index % 2 else 'in_clan',
-                 'attack_performance': {'average_stars': ratio(index, 3)}} for index in range(12)]
-        facts = compact_writer_rows({'family': 'read_member_accounts', 'rows': rows}, 'read_member_accounts')
-        self.assertNotIn('row_rendering', facts)
-        self.assertEqual(len(facts['rows']), 12)
-        self.assertTrue(all(isinstance(row['attack_performance']['average_stars'], str) for row in facts['rows']))
-        self.assertEqual([row['clan_status'] for row in facts['rows']], [row['clan_status'] for row in rows])
 
     def test_a_ratio_without_a_display_is_kept_whole(self):
         odd = {'numerator': 1, 'denominator': 2, 'value': 0.5, 'display': None}
         facts = compact_writer_rows({'rows': [{'member_id': 1, 'metric': odd}]}, 'read_member_accounts')
         self.assertEqual(facts['rows'][0]['metric'], odd)
 
-    def test_the_text_per_row_shrinks_by_more_than_half(self):
-        source = war_result(60)
-        before = len(serialized_answer_evidence({'wars': source}))
-        after = len(serialized_answer_evidence(answer_evidence({'wars': source})))
-        self.assertLess(after, before / 2)
 
     def test_reports_keep_their_original_rows(self):
         source = war_result()

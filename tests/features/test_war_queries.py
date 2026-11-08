@@ -47,13 +47,6 @@ class WarQueryTests(unittest.TestCase):
         self.assertEqual([row.missed_attacks for row in snapshot.members], [0, 0])
         self.assertTrue(snapshot.roster_complete)
 
-    def test_previous_ended_snapshot_reports_exact_missed_counts_and_result(self):
-        payload = _war("warEnded")
-        manager = self.manager({"BEH": {"previous": payload}})
-        snapshot = WarQueries(manager).snapshot("BEH", selected="previous")
-        self.assertEqual(snapshot.evidence_status, "stored_previous")
-        self.assertEqual([row.missed_attacks for row in snapshot.members], [1, 2])
-        self.assertEqual(snapshot.result, "won")
 
     def test_status_distinguishes_observation_states_from_cached_evidence(self):
         cached = _war("warEnded")

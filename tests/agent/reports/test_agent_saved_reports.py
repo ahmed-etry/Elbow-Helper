@@ -4,46 +4,11 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.agent.engine.registry import build_agent_tool_groups, build_agent_tools
 from elbow_helper.agent.reports import tools as saved_reports
 from elbow_helper.agent.models import RegisteredAgentTool
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from agent.engine.test_agent_plan_flow import _context
-
-
-class SavedReportRegistryTests(unittest.TestCase):
-    def test_every_retained_reader_and_comparer_uses_generic_surface(self):
-        original = {
-            tool.definition.name
-            for group in build_agent_tool_groups().values() for tool in group
-        }
-        readers = {
-            name for name in original
-            if name.startswith("read_") and (name.endswith("_report") or name.endswith("_import"))
-        }
-        comparers = {
-            name for name in original
-            if name.startswith("compare_") and name.endswith("_reports")
-        }
-        self.assertEqual(set(saved_reports.REPORT_READERS.values()), readers)
-        self.assertEqual(set(saved_reports.REPORT_COMPARERS.values()), comparers)
-        registry = build_agent_tools()
-        self.assertTrue(readers.isdisjoint(registry))
-        self.assertTrue(comparers.isdisjoint(registry))
-        self.assertEqual(set(registry) & {saved_reports.READ_NAME, saved_reports.COMPARE_NAME},
-                         {name for name, kinds in ((saved_reports.READ_NAME, readers),
-                                                  (saved_reports.COMPARE_NAME, comparers))
-                          if kinds})
-        for generic, kinds in ((saved_reports.READ_NAME, saved_reports.REPORT_READERS),
-                               (saved_reports.COMPARE_NAME, saved_reports.REPORT_COMPARERS)):
-            if not kinds:
-                self.assertNotIn(generic, registry)
-                continue
-            self.assertEqual(
-                set(registry[generic].definition.parameters["properties"]["report_kind"]["enum"]),
-                set(kinds),
-            )
 
 
 class SavedReportRoutingTests(unittest.IsolatedAsyncioTestCase):

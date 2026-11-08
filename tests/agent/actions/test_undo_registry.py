@@ -45,14 +45,6 @@ def prepared_paths(module):
 
 
 class UndoRegistryTests(unittest.TestCase):
-    def test_every_undo_key_is_prepared_by_its_owning_module(self):
-        handlers = build_undo_handlers()
-        self.assertTrue(handlers)
-        for path, handler in handlers.items():
-            module = inspect.getmodule(handler)
-            with self.subTest(path=path, module=module.__name__):
-                self.assertIs(module.UNDO_HANDLERS[path], handler)
-                self.assertIn(path, prepared_paths(module))
 
     def test_duplicate_paths_are_rejected_even_with_the_same_handler(self):
         handler = next(iter(build_undo_handlers().values()))

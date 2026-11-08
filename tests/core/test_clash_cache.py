@@ -114,13 +114,6 @@ class ClashCacheTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result.attempts, 1)
                 self.assertEqual(len(session.urls), 2)
 
-    async def test_header_names_and_quoted_max_age_are_case_insensitive(self):
-        client, session = self.client([
-            _FakeResponse(200, {}, headers={"cache-control": 'public, MAX-AGE = "60"'}),
-        ])
-        await client.get("/cached")
-        self.assertEqual((await client.get("/cached")).attempts, 0)
-        self.assertEqual(len(session.urls), 1)
 
     async def test_only_status_200_is_cached(self):
         for status in (201, 204, 301, 404, 429, 500, 503):

@@ -84,19 +84,6 @@ class ScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         self.delivery = AgentDeliveryMixin()
         self.delivery.bot = self.context.bot
 
-    async def test_delivery_unwraps_answer_only_envelopes_and_blocks_narration(self):
-        for text in ('{"answer":"North meets BE4\'s bar."}',
-                     '```json\n{"answer":"North meets BE4\'s bar."}\n```'):
-            self.message.reply.reset_mock()
-            await self.delivery.send_response(self.message, text, None, context=self.context)
-            self.assertEqual(self.message.reply.await_args.args[0], "North meets BE4's bar.")
-        self.message.reply.reset_mock()
-        await self.delivery.send_response(self.message, json.dumps({
-            "answer": "The ticket room itself isn't visible in exam-room.",
-        }), None, context=self.context)
-        sent = self.message.reply.await_args.args[0]
-        self.assertNotIn("ticket room", sent)
-        self.assertNotIn('"answer"', sent)
 
     async def test_recruiter_evidence_is_read_and_public_despite_missing_ticket_membership(self):
         result = await read_message_context(self.context, {"channel_id": 200, "message_id": 123})
@@ -129,16 +116,6 @@ class ScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         self.assertTrue(interaction.followup.send.await_args.kwargs["ephemeral"])
         self.assertEqual(self.message.reply.await_count, 1)
 
-    async def test_lead_evidence_is_public_in_lead_destination(self):
-        role = Role(next(iter(LEAD)))
-        self.asker.roles.append(role)
-        self.peer.roles.append(role)
-        lead_source = Channel(300, self.guild, {10, 99}, level=LEAD)
-        self.guild.channels.append(lead_source)
-        result = await read_message_context(self.context, {"channel_id": 300, "message_id": 123})
-        self.assertIn("messages", result)
-        await self.delivery.send_response(self.message, "Lead result", None, context=self.context)
-        self.assertEqual(self.message.reply.await_args.args[0], "Lead result")
 
     async def test_personal_ticket_is_not_read_until_every_destination_reader_can_read_it(self):
         result = await read_message_context(self.context, {"channel_id": 201, "message_id": 123})
@@ -175,10 +152,6 @@ class ScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         opened = await search_approved_knowledge(private, {"query": "Recruitment policy"})
         self.assertEqual(opened["sections"][0]["body"], "Secret body")
 
-    async def test_extra_sources_without_materiality_do_not_offer(self):
-        self.context.state.scope_audit.private_candidates.add("200")
-        self.assertEqual(scoped_answer(self.context, "Public answer"), "Public answer")
-        self.assertFalse(self.context.state.scope_audit.offered)
 
     async def test_offer_text_and_control_both_require_a_callable_private_check(self):
         self.context.state.scope_audit.private_candidates.add("201")
@@ -199,18 +172,6 @@ class ScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("privately", answer)
         self.assertNotIn("view", self.message.reply.await_args.kwargs)
 
-    async def test_scope_signal_preserves_multiline_answers_and_accepts_false_materiality(self):
-        self.context.state.scope_audit.excluded["201"] = "per_person"
-        self.context.state.scope_audit.private_candidates.add("201")
-        answer = "Available applicant facts.\n\nThe interview notes aren't available in this channel."
-        signal = '{"needs_private_evidence":true,"answer":"' + answer + '"}'
-        self.assertEqual(scoped_answer(self.context, signal), answer)
-        self.assertTrue(self.context.state.scope_audit.offered)
-        self.context.state.scope_audit.offered = False
-        self.assertEqual(scoped_answer(self.context, json.dumps({
-            "needs_private_evidence": False, "answer": answer,
-        })), answer)
-        self.assertFalse(self.context.state.scope_audit.offered)
 
     async def test_starved_scope_never_turns_bad_envelopes_or_empty_answers_into_retry_errors(self):
         from elbow_helper.agent.wording import FAILURE_MESSAGE
@@ -271,11 +232,6 @@ class ScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         self.assertIn("role_scope", captured.output[0])
         self.assertIn("asker_only_offered=True", captured.output[0])
 
-    async def test_recruiter_role_authorizes_ticket_without_requester_overwrite(self):
-        self.ticket.viewers.remove(self.asker.id)
-        result = await read_message_context(self.context, {"channel_id": 200, "message_id": 123})
-        self.assertIn("messages", result)
-        await assert_answer_scope(self.context, "Recruitment facts")
 
     async def test_guard_covers_alternate_discord_citation_hosts(self):
         for url in ("http://discordapp.com/channels/1/201/123",

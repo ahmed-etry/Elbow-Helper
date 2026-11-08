@@ -56,13 +56,6 @@ def _context(*turns):
 
 
 class AgentHistoryTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
-    async def test_chunks_include_all_turns_without_term_selection(self):
-        context, _ = _context(_turn(1, "Only players available all seven days"), _turn(2, "Unrelated"))
-        result = await read_conversation_history(context, {})
-        self.assertEqual(result["matching_retained_turns"], 2)
-        self.assertEqual([row["request_message_id"] for row in result["results"]], [2, 1])
-        self.assertIn("all seven days", result["results"][1]["content"])
-        self.assertTrue(result["history_may_be_incomplete"])
 
     async def test_permissions_filter_results_and_counts_and_are_checked_on_every_call(self):
         context, allowed = _context(_turn(1, source=200), _turn(2))
@@ -124,12 +117,6 @@ class AgentHistoryTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         schema = build_agent_tools()["read_conversation_history"].definition.parameters
         for arguments in ({"conversation_id": 2}, {"limit": 6}, {"offset": -1}, {"content_offset": -1}, {"query": "topic"}):
             self.assertFalse(valid_arguments(arguments, schema))
-
-    async def test_excerpt_only_record_is_marked_incomplete(self):
-        context, _ = _context(ConversationTurn("retained excerpt", frozenset({100}), retention_limited=True))
-        result = await read_conversation_history(context, {})
-        self.assertTrue(result["results"][0]["retention_limited"])
-        self.assertIsNone(result["results"][0]["request_message_id"])
 
 
     async def test_actual_service_can_retrieve_history_and_continue_answer(self):

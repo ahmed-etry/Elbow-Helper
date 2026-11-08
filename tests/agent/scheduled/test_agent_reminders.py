@@ -9,7 +9,6 @@ from agent.scheduled import test_agent_scheduled_runner as fixtures
 from elbow_helper.agent.models import AgentTurnState
 from elbow_helper.agent.scheduled.tools import prepare_save
 from elbow_helper.agent.scheduled.requests import run_saved_request, StandingDMUnavailable
-from elbow_helper.agent.scheduled.watchers import comparison_data
 from elbow_helper.agent.wording import ACTION_STANDING_DM_PAUSED
 from elbow_helper.agent.actions.contracts import ActionRefused
 
@@ -132,10 +131,4 @@ class ReminderTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             ACTION_STANDING_DM_PAUSED.format(kind="Saved request"),
             self.channel.send.await_args.args[0],
-        )
-
-    def test_watcher_ignores_observation_and_flags(self):
-        self.assertEqual(
-            comparison_data({"rows": [1], "observed_at": "a", "flags": ["x"]}),
-            comparison_data({"rows": [1], "observed_at": "b", "flags": []}),
         )

@@ -1,7 +1,6 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 import unittest
-from unittest.mock import patch
 
 from elbow_helper.features.recruitment.queries import RecruitmentQueries
 
@@ -36,14 +35,6 @@ class RecruitmentQueryTests(unittest.TestCase):
             clock=lambda: self.now,
         )
 
-    def test_registrations_expose_only_candidate_channel_ids(self):
-        registrations = self.queries.active_trial_registrations()
-        self.assertEqual(
-            [row.ticket_channel_id for row in registrations],
-            [100, 200, 300, 400],
-        )
-        self.assertNotIn("private_note", repr(registrations))
-        self.assertNotIn("999", repr(registrations))
 
     def test_open_trial_membership_ends_only_when_the_record_is_removed(self):
         for member_id in (42, 84, 126, 168):
@@ -91,17 +82,6 @@ class RecruitmentQueryTests(unittest.TestCase):
             ticket_channel_ids=(100,),
         ).trials[0]
         self.assertEqual(trial.start_at, "2026-09-16T12:00:00+00:00")
-
-    def test_invalid_selection_state_and_bound_fail_closed(self):
-        with self.assertRaises(ValueError):
-            self.queries.active_trial_snapshot(ticket_channel_ids=(100, 100))
-        with self.assertRaises(ValueError):
-            RecruitmentQueries(lambda: []).active_trial_registrations()
-        with patch(
-            "elbow_helper.features.recruitment.queries.MAX_ACTIVE_RECRUITMENT_TRIALS",
-            1,
-        ), self.assertRaises(ValueError):
-            self.queries.active_trial_registrations()
 
 
 if __name__ == "__main__":

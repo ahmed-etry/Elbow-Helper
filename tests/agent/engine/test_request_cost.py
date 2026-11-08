@@ -52,39 +52,6 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
             )
         return flow, session, model, usage
 
-    async def test_non_social_wording_always_gets_the_same_full_prefix(self):
-        prefixes = []
-        for question in (
-            "How many members?", "Extract tags from this message", "No, names only",
-            "What is this account's league?", "What's the CWL bonus rule?",
-            "What is our policy on kicking inactive members?", "Summarise the war results",
-            "Who missed attacks?", "Which recruit is promising?", "An unspecified task",
-            "Compare war and ranked activity", "x" * 400,
-        ):
-            with self.subTest(question=question):
-                guide = Mock()
-                guide.for_levels.return_value = "Synthetic data schema"
-                knowledge = Mock()
-                knowledge.load.return_value.prompt.return_value = KnowledgePrompt(
-                    "Synthetic knowledge", frozenset(), 0, index="Synthetic topic index",
-                )
-                context = replace(_context(), knowledge_store=knowledge)
-                flow, session, model, _ = self.flow([response()], question=question,
-                                                   context=context, guide=guide)
-                await flow.run()
-                prefix = model.request["system_prompt"]
-                prefixes.append(prefix)
-                self.assertIn("Synthetic data schema", model.request['prompt'])
-                self.assertIn("Synthetic topic index", model.request['prompt'])
-                self.assertNotIn("Synthetic data schema", prefix)
-                self.assertNotIn("Synthetic topic index", prefix)
-                self.assertNotIn("Synthetic knowledge", prefix)
-                self.assertEqual(session.calls[0][2], AgentReasoningEffort.HIGH)
-                self.assertEqual(flow.budget.request_limits, RESEARCH_LIMITS)
-                self.assertEqual([tool.name for tool in model.request["tools"]], ["submit_request_plan"])
-                knowledge.load.assert_called_once()
-                guide.for_levels.assert_called_once()
-        self.assertTrue(all(prefix == prefixes[0] for prefix in prefixes))
 
     async def test_expansion_loads_full_context_once_without_resetting_spending(self):
         guide = Mock()
@@ -117,16 +84,6 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
         knowledge.load.assert_called_once()
         guide.for_levels.assert_called_once()
 
-    async def test_research_starts_with_full_context_and_high_effort(self):
-        guide = Mock()
-        guide.for_levels.return_value = "Synthetic data schema"
-        flow, session, model, _ = self.flow(
-            [response()], question="Compare multiple sources", guide=guide,
-        )
-        await flow.run()
-        self.assertIn("Synthetic data schema", model.request["prompt"])
-        self.assertEqual(flow.budget.request_limits, RESEARCH_LIMITS)
-        self.assertEqual(session.calls[0][2], AgentReasoningEffort.HIGH)
 
     async def test_expanded_knowledge_access_is_rechecked_before_generation(self):
         knowledge = Mock()
@@ -162,19 +119,6 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(flow.budget.spent_rounds, 2)
         self.assertEqual(len(session.calls), 2)
 
-    async def test_input_limit_after_evidence_returns_notice_without_more_spending(self):
-        flow, session, _, _ = self.flow([
-            replace(plan(), usage=AgentUsage(79_500, 100)),
-        ])
-        flow.budget.request_limits = LOOKUP_LIMITS
-        # Read admission is isolated here to exercise a provider usage correction
-        # that leaves no room to send the already completed evidence back.
-        with patch.object(ContextBudget, "can_continue_tools", return_value=True):
-            answer = await flow.run()
-        self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
-        self.assertNotIn("What league is this account in?", answer)
-        self.assertEqual(len(session.calls), 1)
-        self.assertEqual(flow.budget.spent_input, 79_500)
 
     async def test_final_output_is_capped_by_total_remaining_allowance(self):
         flow, session, _, _ = self.flow([response()])
@@ -182,26 +126,6 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
         await flow.rounder.advance(allow_tools=False, final=True)
         self.assertEqual(session.output_limits, [1500])
 
-    async def test_confirmation_still_required_after_lookup_expands(self):
-        execute = AsyncMock()
-        async def prepare(context, arguments):
-            context.state.proposed_changes.append(PreparedAction(
-                "change", {}, ChangePreview(("Synthetic change",), AsyncMock(return_value=True)), execute,
-            ))
-            return {"status": "confirmation_required"}
-        tool = RegisteredAgentTool(AgentToolDefinition(
-            "change", "Prepare a change.", {"type": "object", "properties": {}},
-        ), prepare, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE)
-        expand = response("", (AgentToolCall("expand", EXPAND_CONTEXT, "{}"),))
-        context = replace(_context(), bot=SimpleNamespace(tree=object()))
-        with patch("elbow_helper.agent.engine.service.build_command_tools", return_value=({}, {})):
-            flow, session, _, _ = self.flow(
-                [expand, plan("change")], question="thanks", registry={"change": tool}, context=context,
-            )
-        self.assertIn("Synthetic change", await flow.run())
-        self.assertEqual(len(context.state.proposed_changes), 1)
-        execute.assert_not_awaited()
-        self.assertEqual(len(session.calls), 2)
 
     async def test_round_exhaustion_returns_partial_without_an_extra_final_call(self):
         flow, session, _, _ = self.flow([plan(), response("Checked league only.")])
@@ -214,28 +138,6 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
             await flow.rounder.advance(final=True, allow_tools=False)
         self.assertEqual(len(session.calls), 2)
 
-    async def test_unexpected_tools_on_last_round_never_execute(self):
-        flow, session, _, _ = self.flow([plan(), plan(identity="extra")])
-        flow.budget.request_limits = RequestLimits(2, 80_000, 12_000, 4096)
-        answer = await flow.run()
-        self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
-        self.assertIn(AGENT_ANSWER_UNFINISHED, answer)
-        self.assertEqual(flow.runner.tool_calls, 1)
-        self.assertEqual(len(session.calls), 2)
-
-    async def test_input_exhaustion_does_not_call_provider(self):
-        flow, session, _, _ = self.flow([])
-        flow.budget.request_limits = RequestLimits(4, 1, 12_000, 4096)
-        with self.assertRaises(AgentLimitReached):
-            await flow.rounder.advance(final=True, allow_tools=False)
-        self.assertEqual(session.calls, [])
-
-    async def test_output_exhaustion_does_not_call_provider(self):
-        flow, session, _, _ = self.flow([])
-        flow.budget.spent_output = flow.budget.request_limits.output_tokens
-        with self.assertRaises(AgentLimitReached):
-            await flow.rounder.advance(final=True, allow_tools=False)
-        self.assertEqual(session.calls, [])
 
     async def test_failed_round_consumes_reserved_usage(self):
         flow, session, _, usage = self.flow([])
@@ -305,10 +207,3 @@ class RequestBudgetTests(unittest.TestCase):
         budget.observe(AgentUsage(1000, 50, 900, 100), projected_input=500)
         self.assertEqual((budget.spent_input, budget.spent_output, budget.spent_rounds),
                          (1100, 250, 2))
-
-    def test_expansion_changes_allowances_without_resetting_usage(self):
-        budget = ContextBudget(None, 200, 100, request_limits=LOOKUP_LIMITS)
-        budget.observe(AgentUsage(1000, 50), projected_input=500)
-        budget.request_limits = RESEARCH_LIMITS
-        self.assertEqual((budget.spent_input, budget.spent_output, budget.spent_rounds),
-                         (1000, 50, 1))

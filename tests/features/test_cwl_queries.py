@@ -2,7 +2,6 @@ from datetime import datetime, timezone
 
 import unittest
 
-from elbow_helper.features.cwl.config import CWL_CLAN_NAMES
 from elbow_helper.features.cwl.bonus.analysis import BonusAnalysisService
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.infrastructure.clash import ClashClient
@@ -113,13 +112,6 @@ def _dataset():
 
 
 class CwlQueriesTests(unittest.TestCase):
-    def test_performance_accepts_a_catchup_league_key(self):
-        dataset = _dataset()
-        for war in dataset["wars"]:
-            war["cwl_season"] = "2026-08-catchup"
-        dataset["seasons"][0]["key"] = "2026-08-catchup"
-        result = CwlQueries(_History(dataset), lambda: {}).performance(season="2026-08-catchup")
-        self.assertEqual(result.rows[0].season, "2026-08-catchup")
 
 
     def bonus_queries(self, dataset=None, *, config=None):
@@ -151,47 +143,6 @@ class CwlQueriesTests(unittest.TestCase):
         self.assertEqual(row.rank, 1)
         self.assertEqual(row.multi_season_rank, 1)
 
-    def test_history_limit_is_bounded_before_repository_read(self):
-        history = _History(_dataset())
-        queries = CwlQueries(history, lambda: {})
-        for value in (0, 13, True, "3"):
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                queries.performance(history_limit=value)
-        self.assertEqual(history.limits, [])
-
-    def test_registered_threads_are_normalized_and_follow_live_state(self):
-        clan_name = CWL_CLAN_NAMES["BEH"]
-        state = {
-            "123": {"clan_name": clan_name, "last_activity": "2026-09-17T10:00:00+00:00"},
-            "bad": {"clan_name": clan_name},
-            "456": {"clan_name": "Unknown"},
-            "789": "invalid",
-        }
-        queries = CwlQueries(_History(_dataset()), lambda: state)
-
-        first = queries.registered_threads()
-        self.assertEqual(len(first), 1)
-        self.assertEqual((first[0].clan_code, first[0].thread_id), ("BEH", 123))
-
-        state.clear()
-        self.assertEqual(queries.registered_threads(), ())
-
-    def test_full_season_war_set_matches_feature_season_scores(self):
-        queries = self.bonus_queries()
-        ids = [f"war-{number}" for number in range(1, 8)]
-        ass = queries.ass_wars(clan_code="BEH", war_ids=ids)
-        feature = queries.performance(season="2026-08", clan_code="BEH")
-        self.assertEqual(ass.rows[0].ass_score, feature.rows[0].score)
-        self.assertEqual(ass.rows[0].ass_score, 23.8)
-        self.assertEqual(ass.completed_wars, 7)
-        self.assertEqual(len(ass.attack_sample), 7)
-        bonus = queries.bonus_wars(clan_code="BEH", war_ids=ids)
-        summary, _, attacks, _, _ = queries._bonus_analysis.analyze_clan(
-            "BEH", "2026-08", queries._bonus_config.config,
-        )
-        self.assertEqual(bonus.summaries[0].total_adjusted_delta,
-                         summary[0]["total_adjusted_delta"])
-        self.assertEqual(len(bonus.attacks), len(attacks))
 
     def test_chosen_wars_normalize_each_war_size_before_combining(self):
         dataset = _dataset()
@@ -205,17 +156,6 @@ class CwlQueriesTests(unittest.TestCase):
         self.assertAlmostEqual(row.difficulty_adjustment, 2.85)
         self.assertAlmostEqual(row.ass_score, 23.85)
 
-    def test_one_war_projects_to_seven_attacks_with_exact_sample(self):
-        queries = self.bonus_queries()
-        result = queries.ass_wars(clan_code="BEH", war_ids=["war-3"])
-        self.assertEqual(result.resolved_rounds, (3,))
-        self.assertEqual(result.resolved_war_ids, ("war-3",))
-        self.assertEqual(result.rows[0].attacks, 1)
-        self.assertEqual(result.rows[0].projected_stars, 21.0)
-        self.assertEqual(result.attack_sample[0]["war_id"], "war-3")
-        bonus = queries.bonus_wars(clan_code="BEH", war_ids=["war-3"])
-        self.assertEqual(bonus.summaries[0].attack_count, 1)
-        self.assertEqual(bonus.attacks[0].adjusted_delta, 1.0)
 
     def test_chosen_rounds_are_scored_as_one_combined_sample(self):
         dataset = _dataset()

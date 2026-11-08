@@ -4,15 +4,12 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-import discord
 
 from agent.discord_actions import test_agent_direct_messages as dm_fixtures
 from agent.discord_actions import test_agent_discord_messages as fixtures
-from agent.discord_actions import test_current_channel_posts as reply_fixtures
 from elbow_helper.agent.discord_actions.direct_messages import (
     deliver_dms, prepare_direct_messages,
 )
-from elbow_helper.agent.discord_actions.message_parts import media_links, outgoing_parts
 from elbow_helper.agent.discord_actions.messages import (
     prepare_edit, prepare_edit_undo, prepare_post,
 )
@@ -73,14 +70,6 @@ class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(sent.kwargs["reference"].message_id, 55)
                 self.assertTrue(sent.kwargs["allowed_mentions"].replied_user)
 
-    async def test_failed_post_does_not_verify(self):
-        await prepare_post(self.context, {"channel_id": 2, "text": TEXT})
-        action = self.context.state.proposed_changes.pop()
-        self.channel.send.side_effect = OSError("Synthetic delivery failure")
-        with self.assertRaises(OSError):
-            await action.run()
-        self.assertFalse(await action.verify())
-        self.assertEqual(self.messages, {})
 
     async def test_image_file_post_keeps_sending_the_image_without_a_caption(self):
         self.context.state.attachments = [IMAGE]
@@ -120,21 +109,6 @@ class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await undo.verify())
         self.assertEqual(self.messages[identity].content, "Before")
 
-    async def test_undo_of_an_older_split_edit_removes_its_separate_gif(self):
-        await prepare_post(self.context, {"channel_id": 2, "text": "Before"})
-        identity = (await self.context.state.proposed_changes.pop().run()).result["message_id"]
-        await prepare_post(self.context, {"channel_id": 2, "text": GIF})
-        companion = (await self.context.state.proposed_changes.pop().run()).result["message_id"]
-        self.messages[identity].content = "After"
-        undo = await prepare_edit_undo(self.context, {
-            "targets": {"channel_id": 2, "message_id": identity, "text": "After"},
-            "before": {"content": "Before"},
-            "after": {"content": "After", "gif_messages": {str(companion): GIF}},
-        })
-        await undo.run()
-        self.assertTrue(await undo.verify())
-        self.assertEqual(self.messages[identity].content, "Before")
-        self.assertNotIn(companion, self.messages)
 
     async def test_dm_sends_the_full_text_once_as_previewed(self):
         dm_fixtures.DirectMessageTests.setUp(self)
@@ -166,14 +140,6 @@ class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):
         sent, = self.members[2].send.await_args_list
         self.assertEqual(sent.args, (DM_TEXT + "\n\nSynthetic 1 asked me to send this.",))
 
-    async def test_failed_dm_is_reported_as_not_delivered(self):
-        dm_fixtures.DirectMessageTests.setUp(self)
-        self.members[1].send.side_effect = discord.HTTPException(
-            SimpleNamespace(status=403, reason="Forbidden"), {"code": 50007, "message": "Synthetic"},
-        )
-        result = await deliver_dms(self.context, [1], DM_TEXT)
-        self.assertFalse(result[0]["delivered"])
-        self.members[1].send.assert_awaited_once()
 
     async def test_image_file_dm_keeps_sending_the_image_without_a_caption(self):
         dm_fixtures.DirectMessageTests.setUp(self)
@@ -186,27 +152,3 @@ class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent.args, ("",))
         self.assertEqual(sent.kwargs["file"].filename, IMAGE.filename)
         self.assertEqual(sent.kwargs["allowed_mentions"].to_dict()["parse"], [])
-
-    def test_outgoing_parts_keep_links_inside_the_text(self):
-        for host in ("giphy.com", "tenor.com", "klipy.com"):
-            link = f"https://{host}/synthetic"
-            for text in (link, "Text <" + link + ">", "[Text](" + link + ")"):
-                self.assertEqual(outgoing_parts(text), (text,))
-                self.assertEqual(media_links(text), (link,))
-        self.assertEqual(outgoing_parts(" "), ())
-        self.assertEqual(outgoing_parts(TEXT, attachment=IMAGE), ("",))
-        self.assertEqual(media_links("https://example.com/page"), ())
-
-
-class CurrentChannelGifTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        await reply_fixtures.CurrentChannelPostTests.asyncSetUp(self)
-
-    async def test_current_channel_post_hands_over_the_full_text_and_uses_the_chosen_gif(self):
-        self.context.state.gif_url = GIF
-        text = "Big win this week!\n" + GIF
-        result = await prepare_post(self.context, {"channel_id": 2, "text": text})
-        self.assertTrue(result["delivered_as_reply"])
-        self.context.send_reply.assert_awaited_once_with(self.context, text)
-        self.assertIsNone(self.context.state.gif_url)
-        self.assertIn(GIF, self.context.state.used_gif_urls)

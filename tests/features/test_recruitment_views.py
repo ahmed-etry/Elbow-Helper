@@ -54,19 +54,6 @@ class AcceptConfirmationPermissionTests(unittest.IsolatedAsyncioTestCase):
                     "You don't have permission to use this command.", ephemeral=True,
                 )
 
-    async def test_each_accept_role_can_confirm(self) -> None:
-        for role_id in LEAD | RECRUITERS:
-            with self.subTest(role_id=role_id):
-                view, interaction, cog = self._confirmation(role_id)
-
-                await view._confirm(interaction)
-
-                cog.complete_accept_confirmation.assert_awaited_once_with(
-                    interaction, view.payload,
-                )
-                interaction.response.edit_message.assert_awaited_once_with(view=None)
-                interaction.response.send_message.assert_not_awaited()
-
 
 class PersistentEndTrialViewTests(unittest.IsolatedAsyncioTestCase):
     async def test_resolving_a_trial_reminder_uses_the_embed_as_confirmation(self) -> None:

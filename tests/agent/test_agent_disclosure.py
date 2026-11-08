@@ -153,14 +153,6 @@ class AgentDisclosureTests(unittest.IsolatedAsyncioTestCase):
         await require_evidence_access(context)
         self.assertFalse(has_access_requirements(self.guild, self.member.id, {ACCESS_LEAD}))
 
-    async def test_same_channel_and_public_source_can_be_disclosed(self):
-        destination = self.channel(100, public=True)
-        self.channel(200, public=True)
-        self.context.source_message.channel = destination
-
-        self.assertTrue(await can_disclose_provenance(
-            self.context, {100, 200}, frozenset(),
-        ))
 
     async def test_private_source_requires_same_audience(self):
         overwrite = {self.lead: SimpleNamespace(

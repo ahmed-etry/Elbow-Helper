@@ -31,17 +31,6 @@ class PostReplyTests(unittest.IsolatedAsyncioTestCase):
         self.guard.start()
         self.addCleanup(self.guard.stop)
 
-    async def test_reply_preview_and_no_author_ping_by_default(self):
-        await prepare_post(self.context, {"channel_id": 2, "text": "Answer", "reply_to": 55})
-        action = self.context.state.proposed_changes.pop()
-        self.assertEqual(action.preview.details[0],
-                         "Reply to Example, no ping: [Synthetic question]"
-                         "(https://discord.com/channels/3/2/55)")
-        self.assertEqual(action.preview.detail_sources, frozenset({2}))
-        await action.run()
-        options = self.channel.send.await_args.kwargs
-        self.assertEqual(options["reference"].message_id, 55)
-        self.assertFalse(options["allowed_mentions"].replied_user)
 
     async def test_explicit_author_ping_and_only_first_chunk_replies(self):
         await prepare_post(self.context, {

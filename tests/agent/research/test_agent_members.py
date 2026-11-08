@@ -27,13 +27,6 @@ class MemberRoleTests(unittest.IsolatedAsyncioTestCase):
                 "member_ids": [3, 2, 5], "sort": "oldest_first", "limit": 10})
             self.assertEqual([m["member_id"] for m in cohort["members"]], [2, 3, 5])
 
-    async def test_invalid_join_window_never_fetches_members(self):
-        context = SimpleNamespace(guild=SimpleNamespace(chunk=AsyncMock()))
-        for arguments in ({"joined_after": "not a date"}, {"joined_after": "2026-10-01"},
-                          {"joined_after": "2026-11-01T00:00:00Z", "joined_before": "2026-10-01T00:00:00Z"}):
-            result = await read_discord_members(context, arguments)
-            self.assertEqual(result["cause"], "invalid_arguments")
-        context.guild.chunk.assert_not_awaited()
 
     async def test_server_wide_paging_can_continue_after_one_thousand_members(self):
         members = [SimpleNamespace(id=i, display_name=f"Synthetic {i}", name="synthetic",

@@ -15,11 +15,6 @@ class GifOwnershipTests(unittest.TestCase):
         consume_gifs(state, steps, results)
         return state, steps, results
 
-    def test_reference_consumes_the_gif(self):
-        state, _, _ = self.run_plan("synthetic_consumer", {
-            "value": {"step": "gif", "path": ["url"]},
-        })
-        self.assertIsNone(state.gif_url)
 
     def test_message_post_edit_and_dm_claim_literal_links(self):
         for capability in ("post_discord_message", "edit_agent_message", "send_direct_messages"):

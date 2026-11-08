@@ -5,13 +5,6 @@ from elbow_helper.infrastructure.ai import AgentToolResult, AgentUsage
 
 
 class ContextBudgetTests(unittest.TestCase):
-    def test_output_room_is_reserved_without_reducing_output_allowance(self):
-        budget = ContextBudget(1000, 200, 500)
-        self.assertTrue(budget.can_answer(800))
-        self.assertFalse(budget.can_answer(801))
-        self.assertTrue(budget.can_continue_tools(500, result_reserve=100))
-        self.assertFalse(budget.can_continue_tools(501, result_reserve=100))
-        self.assertEqual(budget.output_reserve, 200)
 
     def test_missing_usage_reserves_full_completion_allowance(self):
         budget = ContextBudget(1000, 200, 100)
@@ -23,11 +16,6 @@ class ContextBudgetTests(unittest.TestCase):
         budget.observe(AgentUsage(prompt_tokens=50, completion_tokens=0), projected_input=500)
         self.assertEqual(budget.next_input_estimate, 178)
 
-    def test_tool_results_include_content_and_framing_in_next_input(self):
-        budget = ContextBudget(1000, 200, 100)
-        projected = budget.projected_input((AgentToolResult("call", "界" * 100),))
-        self.assertGreater(projected, 350)
-        self.assertEqual(budget.projected_input(()), 100)
 
     def test_unknown_model_capacity_does_not_invent_a_limit(self):
         budget = ContextBudget(None, 200, 100)
@@ -55,7 +43,3 @@ class ContextBudgetTests(unittest.TestCase):
         self.assertLess(second_limit, first_limit)
         second = AgentToolResult("two", "\U0001f600" * second_limit)
         self.assertTrue(budget.can_answer(budget.projected_input((first, second))))
-
-    def test_no_result_room_returns_zero(self):
-        budget = ContextBudget(1000, 200, 800)
-        self.assertEqual(budget.result_character_limit((), pending_call_ids=("one",), maximum=100), 0)

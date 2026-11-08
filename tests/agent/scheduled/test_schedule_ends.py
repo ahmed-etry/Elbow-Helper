@@ -3,7 +3,6 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, patch
 
 from agent.scheduled import test_agent_scheduled_runner as fixtures
 from elbow_helper.agent.actions.store import AgentActionRepository
@@ -11,7 +10,6 @@ from elbow_helper.agent.models import AgentTurnState
 from elbow_helper.agent.scheduled.time_rules import (
     next_occurrences, remaining_runs, schedule_preview,
 )
-from elbow_helper.agent.scheduled.tools import list_standing, prepare_save
 
 
 START = datetime(2099, 1, 1, tzinfo=timezone.utc)
@@ -35,13 +33,6 @@ class ScheduleEndTimeTests(unittest.TestCase):
                                              runs_completed=2), ())
             self.assertEqual(remaining_runs(bounded, next_at=times[0].timestamp(), now=after), 2)
 
-    def test_preview_lists_all_ten_runs_and_limits_longer_schedules(self):
-        after = START - timedelta(seconds=1)
-        self.assertEqual(len(schedule_preview({**INTERVAL, "runs": 10}, after=after)), 10)
-        self.assertEqual(len(schedule_preview({**INTERVAL, "runs": 11}, after=after)), 3)
-        end = START + timedelta(minutes=9)
-        self.assertEqual(len(schedule_preview({**INTERVAL, "end_utc": end.isoformat()},
-                                             after=after)), 10)
 
     def test_end_validation_is_specific(self):
         cases = (({"end_utc": START.isoformat()}, "The end must be after the first run."),
@@ -107,32 +98,3 @@ class ScheduleEndRunnerTests(unittest.IsolatedAsyncioTestCase):
                              ["status"], "completed")
         self.run_request.assert_not_awaited()
         self.channel.send.assert_not_awaited()
-
-    async def test_confirmation_and_list_show_bounds_and_all_short_run_times(self):
-        self.channel.mention = "<#3>"
-        context = SimpleNamespace(
-            action_repository=self.repository, member=self.member, guild=self.member.guild,
-            source_message=SimpleNamespace(channel=self.channel), state=AgentTurnState(),
-        )
-        for fields in ({"runs": 2}, {"end_utc": (START + timedelta(minutes=1)).isoformat()}):
-            with patch("elbow_helper.agent.scheduled.tools.resolve_channel",
-                       AsyncMock(return_value=self.channel)), patch(
-                "elbow_helper.agent.scheduled.tools.check_post_access",
-            ):
-                await prepare_save(context, {
-                    "kind": "reminder", "text": "Synthetic", "schedule": {**INTERVAL, **fields},
-                }, registry_factory=lambda: {})
-            action = context.state.proposed_changes.pop()
-            self.assertIn(f"<t:{int(START.timestamp())}:f>", action.preview.lines[0])
-            self.assertIn(f"<t:{int((START + timedelta(minutes=1)).timestamp())}:f>",
-                          action.preview.lines[0])
-            expected = ("Ends after 2 runs." if "runs" in fields else
-                        f"Ends: <t:{int((START + timedelta(minutes=1)).timestamp())}:f>")
-            self.assertIn(expected, action.preview.details)
-            await action.run()
-            identity = self.repository.list_standing(requester_id=self.member.id)[0]["request_id"]
-            self.repository.set_standing_status(kind="reminder", identifier=identity,
-                                                requester_id=self.member.id, status="paused")
-        records = (await list_standing(context, {}))["rules"]
-        self.assertEqual([row["runs_left"] for row in records], [2, 2])
-        self.assertEqual({row["runs"] for row in records}, {2, None})

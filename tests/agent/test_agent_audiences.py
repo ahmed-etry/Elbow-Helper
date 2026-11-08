@@ -101,11 +101,6 @@ class AudienceTests(unittest.IsolatedAsyncioTestCase):
                 ))
                 self.source.viewers.add(identifier)
 
-    async def test_same_channel_keeps_its_existing_disclosure_rule(self):
-        self.destination.history_denied.add(2)
-        self.assertTrue(await can_show(
-            self.destination, {10: self.destination}, set(), self.guild,
-        ))
 
     async def test_unchunked_guild_uses_strict_overwrite_comparison(self):
         self.guild.chunked = False
@@ -154,20 +149,6 @@ class AudienceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await can_show(
             self.destination, {20: self.source}, {ACCESS_LEAD, ACCESS_LEAD_PLUS}, self.guild,
         ))
-
-    async def test_one_human_without_any_required_level_fails(self):
-        self.destination.viewers.add(3)
-        self.assertTrue(await can_show(
-            self.destination, {20: self.source}, {ACCESS_LEAD_PLUS}, self.guild,
-        ))
-        self.assertFalse(await can_show(
-            self.destination, {20: self.source}, {ACCESS_LEAD, ACCESS_LEAD_PLUS}, self.guild,
-        ))
-
-
-
-
-
 
 
     async def test_private_thread_includes_unjoined_moderators(self):

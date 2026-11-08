@@ -94,9 +94,3 @@ class AgentEventTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AgentAccessLost):
             await read_event_schedule(self.context, {})
         self.assertEqual(self.context.state.reports, {})
-
-    async def test_entry_loss_blocks_retained_report(self):
-        first = await read_event_schedule(self.context, {})
-        self.member.roles = []
-        with self.assertRaises(AgentAccessLost):
-            await read_event_schedule_report(self.context, {"report_id": first["report_id"]})

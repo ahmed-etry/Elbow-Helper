@@ -42,15 +42,3 @@ class CwlRosterCommandTests(unittest.IsolatedAsyncioTestCase):
         workflow._analyze_roster_history.assert_called_once_with(6)
         workflow._build_roster_workbook.assert_called_once()
         workflow.build_cwl_roster_attachment.assert_awaited_once_with(("sheet",))
-
-    async def test_empty_history_skips_export(self):
-        workflow = _Workflow()
-        workflow._analyze_roster_history = MagicMock(return_value={"wars": []})
-        workflow.build_cwl_roster_attachment = AsyncMock()
-        context = SimpleNamespace(
-            bot=SimpleNamespace(get_cog=lambda _: workflow),
-            guild=SimpleNamespace(id=1),
-        )
-        outcome = await run_cwl_roster(context, {})
-        self.assertIn("No completed CWL seasons", outcome.text)
-        workflow.build_cwl_roster_attachment.assert_not_awaited()

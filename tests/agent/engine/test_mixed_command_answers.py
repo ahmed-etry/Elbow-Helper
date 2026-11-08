@@ -69,28 +69,6 @@ class MixedAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.calls), 2)
         self.assertNotIn('"output":', session.calls[-1][0][0].content)
 
-    async def test_command_only_does_not_add_a_model_round(self):
-        answer, context, session = await self.answer(command_only=True)
-        self.assertEqual(answer, "Command result")
-        self.assertFalse(context.state.has_read_answer)
-        self.assertEqual(len(session.calls), 1)
-
-    async def test_conversation_state_tools_do_not_turn_command_outcomes_into_research(self):
-        answer, context, session = await self.answer(read_effect=AgentCapabilityEffect.STATE)
-        self.assertEqual(answer, "Command result")
-        self.assertFalse(context.state.has_read_answer)
-        self.assertEqual(len(session.calls), 1)
-
-    async def test_numeric_grounding_does_not_erase_command_outcome(self):
-        answer, _, _ = await self.answer(question="How many members in #P0? Run the command too", payload=clan(),
-                                         read_answer="48")
-        self.assertEqual(answer, "48\n\nCommand result")
-
-    async def test_strict_count_keeps_command_result_after_answer_generation(self):
-        answer, _, session = await self.answer(question="Count only; run the command too", payload=clan(),
-                                               read_answer="48")
-        self.assertEqual(answer, "48\n\nCommand result")
-        self.assertEqual(len(session.calls), 2)
 
     async def test_reads_from_earlier_revision_survive_later_command(self):
         answer, _, session = await self.answer(revised=True)

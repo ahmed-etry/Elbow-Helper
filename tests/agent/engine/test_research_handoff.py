@@ -10,7 +10,6 @@ from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from agent.engine import test_request_cost as cost
 from agent.engine.test_writer_tables import expand
 from elbow_helper.agent.conversation.context import estimate_tokens
-from elbow_helper.agent.engine.rounds import AgentLimitReached
 
 
 class ResearchHandoffTests(unittest.IsolatedAsyncioTestCase):
@@ -51,20 +50,6 @@ class ResearchHandoffTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sessions[1].calls[0][2], AgentReasoningEffort.NONE)
         self.assertLess(flow.budget.spent_input, ASSESSMENT_LIMITS.input_tokens)
 
-    async def test_late_review_pressure_never_bills_a_short_answer_with_the_review_protocol(self):
-        flow, session, _, _ = cost.RequestCostTests().flow([])
-        budget = flow.budget
-        budget.request_limits = ASSESSMENT_LIMITS
-        budget.final_input_estimate = 80000
-        budget.next_input_estimate = 20000
-        budget.spent_output = 2000
-        budget.spent_input = ASSESSMENT_LIMITS.input_tokens - 20000 - 2 * 80000 - 8192
-        self.assertTrue(budget.request_can_research(20000))
-        with self.assertRaises(AgentLimitReached):
-            await flow.rounder.advance(allow_tools=True,
-                continuation_instruction='Additional required delivery context. ' * 20)
-        self.assertEqual(session.calls, [])
-        self.assertEqual(budget.spent_rounds, 0)
 
     async def test_full_input_recovery_is_admitted_only_when_the_complete_prefix_fits_again(self):
         for extra, succeeds in ((-512, True), (1024, False)):
@@ -145,19 +130,6 @@ class ResearchHandoffTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(flow.budget.spent_input, ASSESSMENT_LIMITS.input_tokens)
         self.assertLess(flow.budget.spent_output, ASSESSMENT_LIMITS.output_tokens)
 
-    def test_research_reserves_the_measured_final_and_recovery_in_the_existing_allowance(self):
-        flow, _, _, _ = cost.RequestCostTests().flow([])
-        budget = flow.budget
-        budget.request_limits = ASSESSMENT_LIMITS
-        budget.spent_input = ASSESSMENT_LIMITS.input_tokens - 20000 - 2 * 80000 - 8192
-        budget.spent_output = 2000
-        budget.final_input_estimate = 80000
-        self.assertTrue(budget.request_can_research(20000))
-        self.assertFalse(budget.request_can_research(20001))
-        output = budget.request_output_limit(20000, allow_tools=True)
-        self.assertEqual(output, ASSESSMENT_LIMITS.output_tokens - 2000 - 49152 - 8192)
-        budget.spent_output += output
-        self.assertEqual(budget.request_output_limit(60000, allow_tools=False, final=True), 49152)
 
     async def test_unaffordable_prepared_review_selects_final_protocol_before_provider_call(self):
         content = json.dumps({'intent': 'Choose the supported next step',

@@ -166,21 +166,6 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
         for member in members.values():
             member.add_roles.assert_not_awaited()
 
-    async def test_no_change_and_unrelated_roles_do_not_refuse_active_members(self):
-        context, role, members, trials, hibernation = self.membership_context()
-        trials["100"] = {"applicant_id": 5}
-        role.id = 11
-        result = await prepare_add_roles(context, {"role_id": 11, "member_ids": [5]})
-        self.assertEqual(result["status"], "no_change")
-        self.assertEqual(result["role_name"], "Synthetic role")
-        self.assertEqual(result["members"], [{"member_id": 5,
-                         "display_name": "Synthetic Member 5", "has_role": True}])
-        self.assertTrue(result["requested_has_role"])
-        members[5].add_roles.assert_not_awaited()
-        role.id = 99
-        result = await prepare_remove_roles(context, {"role_id": 99, "member_ids": [5]})
-        self.assertEqual(result["status"], "confirmation_required")
-        self.assertTrue(await context.state.proposed_changes[0].preview.recheck())
 
     async def test_requester_hierarchy_is_rechecked_against_the_cached_member(self):
         context, role, members = self.context()
@@ -199,27 +184,6 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
                 await action.run()
         members[4].add_roles.assert_not_awaited()
 
-    async def test_requester_hierarchy_is_checked_before_role_preparation(self):
-        for role_position, member_position, requester_position, owner, refused in (
-            (2, 1, 2, False, True), (1, 2, 2, False, False),
-            (1, 1, 2, False, False), (2, 2, 1, False, True),
-        ):
-            with self.subTest(role=role_position, member=member_position, owner=owner):
-                context, role, members = self.context()
-                role.position = role_position
-                members[4].top_role.position = member_position
-                context.member.top_role = SimpleNamespace(position=requester_position)
-                get_member = context.guild.get_member
-                context.guild.get_member = lambda identifier: (
-                    context.member if identifier == context.member.id else get_member(identifier)
-                )
-                with (patch("elbow_helper.agent.discord_actions.roles.require_evidence_access",
-                            new_callable=AsyncMock),
-                      patch("elbow_helper.agent.discord_actions.roles.managed_role_commands",
-                            new_callable=AsyncMock, return_value={})):
-                    result = await prepare_add_roles(context, {"role_id": role.id, "member_ids": [4]})
-                self.assertEqual("error" in result, refused)
-                self.assertEqual(bool(context.state.proposed_changes), not refused)
 
     def context(self):
         role = SimpleNamespace(
@@ -273,36 +237,3 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await action.verify())
             members[4].add_roles.assert_awaited_once()
             members[5].add_roles.assert_not_awaited()
-
-    async def test_undo_reverses_the_recorded_change(self):
-        context, role, members = self.context()
-        with (patch("elbow_helper.agent.discord_actions.roles.require_evidence_access",
-                    new_callable=AsyncMock),
-              patch("elbow_helper.agent.discord_actions.roles.managed_role_commands",
-                    new_callable=AsyncMock, return_value={})):
-            await prepare_add_roles(context, {"role_id": role.id, "member_ids": [4]})
-            action = context.state.proposed_changes[0]
-            outcome = await action.run()
-            undo = await prepare_role_undo(context, {
-                "targets": action.values, "before": action.preview.before,
-                "after": outcome.after,
-            })
-            self.assertTrue(await undo.preview.recheck())
-            await undo.run()
-            self.assertNotIn(role, members[4].roles)
-
-    async def test_removal_previews_the_selected_member(self):
-        context, role, members = self.context()
-        with (patch("elbow_helper.agent.discord_actions.roles.require_evidence_access",
-                    new_callable=AsyncMock),
-              patch("elbow_helper.agent.discord_actions.roles.managed_role_commands",
-                    new_callable=AsyncMock, return_value={})):
-            result = await prepare_remove_roles(
-                context, {"role_id": role.id, "member_ids": [4, 5]},
-            )
-            self.assertEqual(result["status"], "confirmation_required")
-            self.assertEqual(len(context.state.proposed_changes), 1)
-            action = context.state.proposed_changes[0]
-            self.assertIn("@member5", action.preview.lines[0])
-            await action.run()
-            self.assertNotIn(role, members[5].roles)

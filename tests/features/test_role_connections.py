@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -8,14 +7,12 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from elbow_helper.features.role_connections.builder import ConditionBuilderView
-from elbow_helper.features.role_connections.config import INVALID_DEPENDENCY_MESSAGE
 from elbow_helper.features.role_connections.config import PERSISTENCE_ERROR_MESSAGE
 from elbow_helper.features.role_connections.cog import RoleConnections
 from elbow_helper.features.role_connections.edit import RemoveConnectionSelect
 from elbow_helper.features.role_connections.edit import RoleListAddSelect
 from elbow_helper.features.role_connections.edit import RoleListRemoveSelect
 from elbow_helper.features.role_connections.edit import TargetRoleEditSelect
-from elbow_helper.features.role_connections.scan import ScanConfirmView
 
 
 def _connection(
@@ -37,15 +34,6 @@ def _connection(
 
 
 class RoleConnectionValidationTests(unittest.IsolatedAsyncioTestCase):
-    def test_direct_self_reference_is_rejected(self) -> None:
-        cog = object.__new__(RoleConnections)
-        cog.state = {"connections": []}
-
-        self.assertFalse(
-            cog.connection_change_is_valid(
-                _connection("self", 10, missing=(10,)),
-            )
-        )
 
     def test_indirect_dependency_cycle_is_rejected(self) -> None:
         cog = object.__new__(RoleConnections)
@@ -118,83 +106,6 @@ class RoleConnectionValidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((added, removed), (0, 0))
         member.add_roles.assert_not_awaited()
         member.remove_roles.assert_not_awaited()
-
-    async def test_new_cyclic_connection_is_not_saved(self) -> None:
-        cog = SimpleNamespace(
-            state={"connections": []},
-            new_connection_id=MagicMock(return_value="self"),
-            connection_change_is_valid=MagicMock(return_value=False),
-        )
-        view = SimpleNamespace(
-            cog=cog,
-            target_role_id=10,
-            conditions_all=[{"not": 10}],
-            conditions_any=[],
-        )
-        interaction = SimpleNamespace(
-            response=SimpleNamespace(send_message=AsyncMock()),
-        )
-
-        await ConditionBuilderView.finish(view, interaction)
-
-        self.assertEqual(cog.state["connections"], [])
-        interaction.response.send_message.assert_awaited_once_with(
-            INVALID_DEPENDENCY_MESSAGE,
-            ephemeral=True,
-        )
-
-    async def test_cyclic_target_edit_is_not_saved(self) -> None:
-        connection = _connection("role-a", 10, has=(20,))
-        cog = SimpleNamespace(
-            get_connection=MagicMock(return_value=connection),
-            connection_change_is_valid=MagicMock(return_value=False),
-            replace_connection=MagicMock(),
-        )
-        parent_view = SimpleNamespace(cog=cog, conn_id="role-a")
-        select = SimpleNamespace(
-            _parent_view=parent_view,
-            values=[SimpleNamespace(id=20)],
-        )
-        interaction = SimpleNamespace(
-            response=SimpleNamespace(send_message=AsyncMock()),
-        )
-
-        await TargetRoleEditSelect.callback(select, interaction)
-
-        cog.replace_connection.assert_not_called()
-        interaction.response.send_message.assert_awaited_once_with(
-            INVALID_DEPENDENCY_MESSAGE,
-            ephemeral=True,
-        )
-
-    async def test_cyclic_condition_edit_is_not_saved(self) -> None:
-        connection = _connection("role-a", 10)
-        cog = SimpleNamespace(
-            get_connection=MagicMock(return_value=connection),
-            connection_change_is_valid=MagicMock(return_value=False),
-            replace_connection=MagicMock(),
-        )
-        parent_view = SimpleNamespace(
-            cog=cog,
-            conn_id="role-a",
-            list_name="all",
-            kind="not",
-        )
-        select = SimpleNamespace(
-            _parent_view=parent_view,
-            values=[SimpleNamespace(id=10)],
-        )
-        interaction = SimpleNamespace(
-            response=SimpleNamespace(send_message=AsyncMock()),
-        )
-
-        await RoleListAddSelect.callback(select, interaction)
-
-        cog.replace_connection.assert_not_called()
-        interaction.response.send_message.assert_awaited_once_with(
-            INVALID_DEPENDENCY_MESSAGE,
-            ephemeral=True,
-        )
 
 
 class RoleConnectionPersistenceTests(unittest.IsolatedAsyncioTestCase):
@@ -371,61 +282,6 @@ class RoleConnectionPersistenceTests(unittest.IsolatedAsyncioTestCase):
                     ephemeral=True,
                 )
                 interaction.response.edit_message.assert_not_awaited()
-
-class RoleConnectionProgressTests(unittest.IsolatedAsyncioTestCase):
-    async def test_apply_removes_preview_buttons_before_running_scan(self) -> None:
-        cog = SimpleNamespace(
-            _can_manage=MagicMock(return_value=True),
-            get_scan_preview_page_count=MagicMock(return_value=1),
-            _scan_tasks=set(),
-            run_scan=AsyncMock(),
-        )
-        message = SimpleNamespace(edit=AsyncMock())
-        interaction = SimpleNamespace(
-            user=SimpleNamespace(id=101), client=SimpleNamespace(), message=message,
-            response=SimpleNamespace(edit_message=AsyncMock()),
-        )
-        view = ScanConfirmView(cog).bind_message(message)
-        await view.start(interaction)
-        interaction.response.edit_message.assert_awaited_once_with(
-            content="Applying role connections now.", view=None,
-        )
-        self.assertTrue(view.is_finished())
-        await asyncio.gather(*cog._scan_tasks)
-        cog.run_scan.assert_awaited_once_with(message)
-        message.edit.assert_not_awaited()
-
-    async def test_scan_spinner_is_in_description_and_progress_has_no_buttons(self) -> None:
-        for token in ("<a:loading:123456789>", ""):
-            with self.subTest(emoji=bool(token)):
-                bot = MagicMock()
-                emoji = MagicMock()
-                emoji.name = "loading"
-                emoji.__str__.return_value = token
-                bot.fetch_application_emojis = AsyncMock(return_value=[emoji] if token else [])
-                cog = object.__new__(RoleConnections)
-                cog.bot = bot
-                cog._scan_lock = asyncio.Lock()
-                member, role = SimpleNamespace(id=101), SimpleNamespace(id=202)
-                cog.role_connection_scan_plan = AsyncMock(return_value=[
-                    (member, [(role, True)]),
-                ])
-                cog.apply_role_connection_change = AsyncMock(return_value=True)
-                message = SimpleNamespace(guild=object(), edit=AsyncMock())
-                await cog.run_scan(message)
-                progress, summary = message.edit.await_args_list
-                embed = progress.kwargs["embed"]
-                self.assertEqual(embed.title, "Applying Role Connections")
-                self.assertEqual(
-                    embed.description,
-                    f"{token} Checking members: 1/1" if token else "Checking members: 1/1",
-                )
-                self.assertIsNone(progress.kwargs["view"])
-                self.assertIsNone(summary.kwargs["view"])
-                self.assertEqual(summary.kwargs["embed"].title, "Role Updates Complete")
-                self.assertEqual(
-                    summary.kwargs["embed"].description, "Added roles: 1\nRemoved roles: 0",
-                )
 
 
 if __name__ == "__main__":

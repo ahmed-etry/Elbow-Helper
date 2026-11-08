@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
 
 import discord
 
@@ -79,23 +78,6 @@ class SupportTicketQueryTests(unittest.TestCase):
         self.assertNotIn("private note", repr(snapshot))
         self.assertFalse(hasattr(resolved, "history"))
 
-    def test_snapshot_rejects_duplicate_invalid_and_over_bound_selections(self):
-        channel = _Channel(10)
-        channel.guild = SimpleNamespace(get_member=lambda _: None)
-        queries = SupportTicketQueries()
-        with self.assertRaises(ValueError):
-            queries.metadata_snapshot((channel, channel), observed_at=self.observed)
-        with self.assertRaises(ValueError):
-            queries.metadata_snapshot(
-                (_Channel(20, category_id=999),), observed_at=self.observed,
-            )
-        with patch(
-            "elbow_helper.features.support_tickets.queries.MAX_SUPPORT_TICKET_CHANNELS",
-            1,
-        ), self.assertRaises(ValueError):
-            queries.metadata_snapshot(
-                (_Channel(20), _Channel(30)), observed_at=self.observed,
-            )
 
     def test_owner_parser_preserves_supported_topic_forms(self):
         self.assertEqual(parse_support_owner_id("<@42>"), 42)

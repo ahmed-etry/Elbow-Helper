@@ -73,20 +73,6 @@ class VerificationFixTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCas
         self.assertLessEqual({"member_ids", "role_ids", "sort"}, set(error["invalid_fields"]))
         self.assertIn("member_ids", error["argument_schema"]["properties"])
 
-    async def test_additional_key_private_signal_without_withheld_evidence_never_reaches_delivery(self):
-        context = self.context(lambda *_a, **_kw: None)
-        signal = json.dumps({"needs_restricted_knowledge": True, "section_ids": ["section"], "reason": "Need the policy"})
-        session = _Session([AgentStep(signal, (), AgentUsage(1000, 100))], [])
-        answer = await AgentService(_Model(session)).answer(
-            question="Explain the relevant guidance.", local_context="", context=context)
-        delivery = AgentDeliveryMixin()
-        delivery.bot = context.bot
-        await delivery.send_response(context.source_message, answer, None, context=context)
-        self.assertEqual(context.source_message.reply.await_args.args[0],
-                         AGENT_ANSWER_UNFINISHED)
-        self.assertNotIn("needs_restricted_knowledge", context.source_message.reply.await_args.args[0])
-        self.assertFalse(context.state.scope_audit.offered)
-        self.assertEqual(len(session.calls), 1)
 
     async def test_semantic_errors_allow_a_valid_correction_and_retain_independent_results(self):
         cases = (

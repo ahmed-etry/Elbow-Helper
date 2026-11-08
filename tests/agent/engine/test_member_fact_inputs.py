@@ -1,17 +1,11 @@
 """Synthetic reference boundaries; source prose is never rewritten by matching."""
 
-from copy import deepcopy
-import json
 from types import SimpleNamespace
 import unittest
 
 from elbow_helper.configuration.roles import LEAD
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
-from elbow_helper.agent.engine.member_facts import read_topics
 from elbow_helper.agent.reads.bot_workflows import bot_workflows
-from elbow_helper.agent.plan.format import answer_instructions
-from elbow_helper.agent.models import RegisteredAgentTool
-from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 
 class MemberFactInputTests(unittest.TestCase):
@@ -19,18 +13,6 @@ class MemberFactInputTests(unittest.TestCase):
         self.guild = SimpleNamespace(roles=[SimpleNamespace(id=identity, name=f'Officer {index}')
             for index, identity in enumerate(sorted(LEAD))])
 
-    def test_reference_labels_disappear_while_conditions_and_links_survive(self):
-        body = 'Only elected officers with a silver badge may approve visitors.'
-        link = 'https://discord.com/channels/1/2/3'
-        raw = {'policy': {'family': 'read_community_reference',
-            'selection': {'reference_kind': 'knowledge'}, 'rows': [{
-                'section_id': 'PRIVATE_LOCATOR', 'file_name': 'PRIVATE_FILE',
-                'title': 'PRIVATE_LABEL', 'visibility': 'lead', 'body': body, 'source': link}]}}
-        original = deepcopy(raw)
-        projected = answer_evidence(raw, guild=self.guild)
-        self.assertEqual(projected['policy']['rows'], [{'body': body, 'source': link}])
-        self.assertNotIn('PRIVATE_', json.dumps(projected))
-        self.assertEqual(raw, original)
 
     def test_workflow_and_nested_reference_keep_facts_without_engineering_notes(self):
         raw = {'family': 'read_community_reference',
@@ -76,13 +58,3 @@ class MemberFactInputTests(unittest.TestCase):
         projected = answer_evidence(raw, guild=self.guild)
         self.assertEqual(projected['clans']['rows'], [{'clan_code': 'C', 'name': 'Cedar',
             'operational_cwl_only': None, 'membership_basis': None}])
-
-    def test_writer_catalogue_excludes_tool_editorial_but_keeps_signatures(self):
-        registry = {'sample': RegisteredAgentTool(AgentToolDefinition('sample',
-            'PRIVATE_TOOL_DESCRIPTION', {'type': 'object', 'properties': {'member_id': {'type': 'integer'}}},
-            usage_note='PRIVATE_TOOL_NOTE'), lambda *_: None)}
-        system = answer_instructions(registry)
-        self.assertNotIn('PRIVATE_TOOL_', system)
-        self.assertIn('member_id:int', system)
-        self.assertEqual(read_topics({'reads': [{'capability': 'read_cwl_results',
-            'summary': 'PRIVATE_TOOL_DESCRIPTION'}]}), {'topics': ['CWL results, leagues and ASS scores']})

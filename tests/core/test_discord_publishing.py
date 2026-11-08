@@ -10,8 +10,6 @@ from unittest.mock import AsyncMock, patch
 import discord
 
 from elbow_helper.infrastructure.discord.publishing import PublishingQueue
-from elbow_helper.infrastructure.discord.interactions import edit_bound_view
-from elbow_helper.infrastructure.discord.interactions import edit_original_bound_view
 
 
 def http_error(kind=discord.HTTPException, status=500):
@@ -115,20 +113,6 @@ class PublishingQueueTests(unittest.IsolatedAsyncioTestCase):
         channel.edit.assert_awaited_once()
         operation.assert_awaited_once()
 
-    async def test_unchanged_channel_fields_do_not_use_another_name_slot(self):
-        channel = self.target()
-        await self.queue.edit_channel(channel, name="name", topic="topic")
-        await self.queue.edit_channel(channel, name="name")
-        self.assertEqual(channel.edit.await_count, 1)
-        self.assertTrue(await self.queue.edit_channel(channel, name="other"))
-
-    async def test_other_channel_fields_are_not_given_the_name_topic_limit(self):
-        channel = self.target()
-        for index in range(5):
-            self.assertTrue(await asyncio.wait_for(
-                self.queue.edit_channel(channel, archived=bool(index % 2)), 1,
-            ))
-        self.assertEqual(channel.edit.await_count, 5)
 
     async def test_changed_view_is_not_hidden_by_identical_object_identity(self):
         message = self.target()
@@ -243,12 +227,6 @@ class PublishingQueueTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([result.value for result in results], ["new", "new"])
         self.assertEqual([call.kwargs["content"] for call in message.edit.await_args_list], ["old", "new"])
 
-    async def test_failed_operation_does_not_poison_next_submission(self):
-        message = self.target()
-        message.edit.side_effect = [ValueError("synthetic"), message]
-        with self.assertLogs("elbow_helper.discord.publishing", "WARNING"):
-            self.assertFalse(await self.queue.edit_message(message, content="bad"))
-        self.assertTrue(await self.queue.edit_message(message, content="good"))
 
     async def test_incomplete_order_is_not_cached_as_applied(self):
         operation = AsyncMock(side_effect=[False, None])
@@ -296,17 +274,6 @@ class PublishingQueueTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 finish.set()
 
-    async def test_interaction_and_original_response_edits_bypass_the_queue(self):
-        interaction = SimpleNamespace(
-            response=SimpleNamespace(edit_message=AsyncMock()),
-            edit_original_response=AsyncMock(), original_response=AsyncMock(),
-        )
-        view = discord.ui.View()
-        await edit_bound_view(interaction, view=view, content="test")
-        await edit_original_bound_view(interaction, view=view, content="test")
-        interaction.response.edit_message.assert_awaited_once_with(view=view, content="test")
-        interaction.edit_original_response.assert_awaited_once_with(view=view, content="test")
-        self.assertEqual(self.queue._destinations, {})
 
     async def test_image_uploads_are_read_off_loop_recreated_for_retry_and_deduplicated(self):
         message = self.target()

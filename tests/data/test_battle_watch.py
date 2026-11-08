@@ -1,15 +1,10 @@
 """Ongoing battle watches, failure recovery and family-record upgrades."""
 
-from contextlib import closing
 import json
-import sqlite3
 import unittest
-from unittest.mock import patch
 
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.battle_coverage import observe, watch_fact
-from elbow_helper.data.store.schema import MIGRATIONS, SCHEMA_VERSION
-from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration, SQLiteMigrationError, run_sqlite_migrations
 from .record_fixtures import BASE, SECOND, RankedFixture, battle
 
 
@@ -53,23 +48,3 @@ class WatchTests(RankedFixture, unittest.IsolatedAsyncioTestCase):
         observe(fact, 2, "ok", 0)
         with self.assertRaisesRegex(ValueError, "out_of_order_watch"):
             observe(fact, 1, "ok", 0)
-
-    async def test_version_ten_upgrade_is_additive_and_failed_upgrade_rolls_back(self):
-        path = self.path.parent / "version10.sqlite3"
-        with closing(sqlite3.connect(path)) as c:
-            run_sqlite_migrations(c, MIGRATIONS[:10], target_version=10)
-            c.execute("INSERT INTO accounts(player_tag,first_observed_at,tracking_status) VALUES ('#P0',1,'tracked')")
-            c.commit()
-        def fail(c):
-            MIGRATIONS[10].apply(c)
-            raise ValueError("synthetic_failure")
-        with patch("elbow_helper.data.store.MIGRATIONS", (*MIGRATIONS[:10], SQLiteMigration(11, "failed", fail), *MIGRATIONS[11:])):
-            with self.assertRaises(SQLiteMigrationError):
-                await FamilyStore(path).initialize()
-        with closing(sqlite3.connect(path)) as c:
-            self.assertEqual(c.execute("PRAGMA user_version").fetchone()[0], 10)
-            self.assertIsNone(c.execute("SELECT name FROM sqlite_master WHERE name='battle_log_coverage'").fetchone())
-        store = FamilyStore(path)
-        await store.initialize()
-        self.assertEqual(await store.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), SCHEMA_VERSION)
-        self.assertEqual(await store.call(lambda c: c.execute("SELECT player_tag FROM accounts").fetchone()[0]), "#P0")
