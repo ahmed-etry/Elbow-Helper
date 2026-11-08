@@ -1,7 +1,5 @@
-"""Extension entrypoint for the role connections package."""
+"""Role connections extension entrypoint."""
 
-from .cog import RoleConnections
-from .cog import setup
+from .cog import RoleConnections, setup
 
-__all__ = ("RoleConnections", "setup")
-
+__all__ = ["RoleConnections", "setup"]

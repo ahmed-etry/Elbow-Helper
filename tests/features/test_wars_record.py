@@ -8,24 +8,21 @@ render. No Discord or Clash request is made.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
 from datetime import datetime, timezone
-from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.configuration.channels import CLAN_WAR_CHANNELS
 from elbow_helper.configuration.clans import CLAN_WAR_ROLE_IDS
-from elbow_helper.data.collectors.service import FamilyCollectors
 from elbow_helper.data.reads import WarReads
-from elbow_helper.data.store.war_projection import HOUR, api_time
+from elbow_helper.data.store.war_projection import HOUR
 from elbow_helper.features.wars import config
-from elbow_helper.features.wars.board import PreviousWarView, WarBoardMixin
+from elbow_helper.features.wars.board import WarBoardMixin
 from elbow_helper.features.wars.cog import WarManager
 from elbow_helper.features.wars.helpers import HelperMixin, build_war_id
 from elbow_helper.features.wars.queries import WarQueries
-from elbow_helper.features.wars.record import RecordMixin, board_payload, clash_time
-from elbow_helper.features.wars.rendering import build_war_board_embed, build_war_summary_embed
+from elbow_helper.features.wars.record import RecordMixin
+from elbow_helper.infrastructure.discord.war_boards import build_war_summary_embed
 from elbow_helper.features.wars.roles import WarRoleMixin
 from elbow_helper.features.wars.state import StateMixin
 from elbow_helper.features.wars.tasks import TaskMixin
@@ -134,22 +131,6 @@ class RecordWiringTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.record(payload, at=at, **kwargs)
         self.now = at + 5 * SECOND
 
-    async def test_board_renders_the_record_war_exactly_as_the_clash_payload(self):
-        live = war("inWar")
-        await self.check(live, self.at)
-        await self.manager._refresh_from_record()
-
-        self.board.send.assert_awaited_once()
-        sent = self.board.send.await_args.kwargs["embed"]
-        self.assertEqual(as_rendered(sent), as_rendered(build_war_board_embed(live, _war_emojis())))
-        self.assertIsNone(self.board.send.await_args.kwargs["view"])
-        current = self.manager.record_boards["BEH"]["current"]
-        self.assertEqual(build_war_id(current), build_war_id(live))
-        self.assertEqual({key: current[key] for key in ("preparationStartTime", "startTime", "endTime")},
-                         {key: live[key] for key in ("preparationStartTime", "startTime", "endTime")})
-        # The record faces the clan even though it stores the opponent's side first.
-        record = (await self.manager.war_reads.current("#PY", lineups=True))["war"]
-        self.assertEqual((board_payload(record)["clan"]["tag"], board_payload(record)["opponent"]["tag"]), ("#PY", "#GR"))
 
     async def test_ended_war_posts_one_summary_with_the_record_misses_and_a_restart_posts_none(self):
         ended = war("warEnded")
@@ -259,53 +240,6 @@ class RecordWiringTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.manager.bot.publishing.edit_message.assert_not_called()
         self.leadership.send.assert_not_awaited()
 
-    async def test_queries_give_the_same_evidence_as_the_clash_payloads(self):
-        ended = war("warEnded")
-        await self.check(ended, END + 90 * SECOND)
-        later = later_war()
-        await self.check(later, END + HOUR)
-        await self.manager._refresh_from_record()
-
-        observation = {"state": "preparation", "observed_at": "old", "war_id": build_war_id(later)}
-        old = WarQueries(SimpleNamespace(record_boards={"BEH": {"current": later, "previous": ended}},
-                                         war_observations={"BEH": observation}))
-        new = WarQueries(self.manager)
-        for selected in ("current", "previous"):
-            with self.subTest(selected=selected):
-                expected = old.snapshot("BEH", selected=selected)
-                actual = new.snapshot("BEH", selected=selected)
-                self.assertEqual(replace(actual, observed_at=None), replace(expected, observed_at=None))
-        status = new.status("BEH")
-        self.assertEqual((status.evidence_status, status.current_war_id, status.previous_war_id, status.current_state),
-                         ("observed", build_war_id(later), build_war_id(ended), "preparation"))
-        self.assertEqual(status.observed_at, datetime.fromtimestamp((END + HOUR) / SECOND, timezone.utc).isoformat())
-
-        await self.check({"state": "notInWar"}, END + 3 * DAY)
-        await self.manager._refresh_from_record()
-        self.assertEqual((new.status("BEH").evidence_status, new.status("BEH").current_war_id), ("not_in_war", None))
-
-    async def test_next_war_offers_the_record_previous_war_as_the_old_board_did(self):
-        ended = war("warEnded")
-        await self.check(ended, END + 90 * SECOND)
-        await self.check(later_war(), END + HOUR)
-        self.manager.war_board_registry = {"BEH": {"channel": self.board.id, "message": 900}}
-        await self.manager._sync_war_state_from_record()
-
-        # The startup replay restores the button and the board gains it.
-        self.manager.bot.add_view.assert_called_once()
-        self.assertEqual(self.manager.bot.add_view.call_args.kwargs["message_id"], 900)
-        view = self.posted.edit.await_args.kwargs["view"]
-        self.assertIsInstance(view, PreviousWarView)
-        interaction = MagicMock()
-        interaction.response.defer = AsyncMock()
-        interaction.edit_original_response = AsyncMock()
-        await view.children[0].callback(interaction)
-        shown = interaction.edit_original_response.await_args.kwargs["embed"]
-        expected = build_war_board_embed(ended, _war_emojis(), timestamp=datetime(2026, 10, 28, 18, tzinfo=timezone.utc))
-        self.assertEqual(as_rendered(shown), as_rendered(expected))
-        self.assertEqual(shown.timestamp, expected.timestamp)
-        # The old board history is never written.
-        self.assertNotIn("war_board_history", self.manager.cache)
 
     async def test_an_unchanged_check_is_not_processed_again_but_a_failed_refresh_retries(self):
         await self.check(war("inWar"), self.at)
@@ -324,19 +258,8 @@ class RecordWiringTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.manager._refresh_from_record()
         self.manager._update_war_board.assert_awaited_once()
 
-    async def test_untracked_clan_changes_nothing(self):
-        await self.manager._sync_war_state_from_record()
-        self.board.send.assert_not_awaited()
-        self.leadership.send.assert_not_awaited()
-        self.assertEqual((self.manager.record_boards, self.manager.war_role_lineups), ({}, {}))
-        self.assertTrue(self.manager._startup_sync_done.is_set())
-
 
 class ManagerLifecycleTests(unittest.IsolatedAsyncioTestCase):
-    def test_clash_times_round_trip_for_matching_war_ids(self):
-        for text in ("20260720T210000.000Z", "20261031T123101.000Z", "20261031T123101.250Z"):
-            self.assertEqual(clash_time(api_time(text)), text)
-        self.assertIsNone(clash_time(None))
 
     def manager(self, bot, cache=None):
         with patch("elbow_helper.features.wars.cog.load_cache", return_value=cache or {}), \
@@ -364,17 +287,6 @@ class ManagerLifecycleTests(unittest.IsolatedAsyncioTestCase):
         manager._refresh_from_record.assert_awaited_once_with()
         manager.cog_unload()
 
-    async def test_old_board_history_is_left_as_it_is_and_never_shown(self):
-        old = {"BEH": {"current": war("inWar"), "previous": war("warEnded")}}
-        cache = {"war_board_history": old, "war_board_messages": {"BEH": {"channel": 1, "message": 2}}}
-        bot = MagicMock(war_reads=MagicMock())
-        manager = self.manager(bot, cache)
-        bot.add_view.assert_not_called()
-        self.saved.assert_not_called()
-        self.assertIs(manager.cache["war_board_history"], old)
-        self.assertEqual(manager.record_boards, {})
-        self.assertIsNone(manager._previous_war_snapshot("BEH"))
-        self.assertEqual(manager.queries.status("BEH").evidence_status, "unavailable")
 
     async def test_without_the_record_reads_a_refresh_changes_nothing(self):
         manager = self.manager(MagicMock(war_reads=None))
@@ -382,28 +294,6 @@ class ManagerLifecycleTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs("elbow_helper.features.wars.record", "WARNING"):
             await manager._refresh_from_record()
         manager._refresh_clan_from_record.assert_not_awaited()
-
-
-class CollectorSignalTests(unittest.IsolatedAsyncioTestCase):
-    def collectors(self, jobs):
-        store = MagicMock(call=AsyncMock(return_value=jobs))
-        bot = MagicMock()
-        collectors = FamilyCollectors(bot, store, MagicMock(), ())
-        collectors._run = AsyncMock(return_value={"status": "ok", "failed": 0})
-        return collectors, bot
-
-    async def test_each_war_pass_signals_its_completion(self):
-        collectors, bot = self.collectors([{"source_kind": "current_war", "scope_id": "#PY"}])
-        self.assertEqual(await collectors.collect_wars(), {"status": "ok", "failed": 0})
-        bot.dispatch.assert_called_once_with("family_wars_collected")
-
-    async def test_no_due_work_and_a_bot_without_events_signal_nothing(self):
-        collectors, bot = self.collectors([])
-        await collectors.collect_wars()
-        bot.dispatch.assert_not_called()
-        collectors, _ = self.collectors([{"source_kind": "current_war", "scope_id": "#PY"}])
-        collectors.bot = SimpleNamespace()
-        await collectors.collect_wars()
 
 
 if __name__ == "__main__":

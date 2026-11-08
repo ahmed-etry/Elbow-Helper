@@ -186,7 +186,7 @@ class CwlTransferHubMixin:
             placements_released = release_status is True
             if release_status is False and self.transfer_state.get("released_roster_cycles"):
                 self.transfer_state["released_roster_cycles"] = {}
-                self._save_transfer_state()
+                await asyncio.to_thread(self._save_transfer_state)
             embed = self._build_transfer_hub_embed(
                 channel.guild,
                 placements_released=placements_released,
@@ -201,12 +201,12 @@ class CwlTransferHubMixin:
                     result = await self.bot.publishing.edit_message(message, content=None, embed=embed, view=view)
                     if isinstance(result.error, discord.NotFound):
                         self.transfer_state["hub_message_id"] = None
-                        self._save_transfer_state()
+                        await asyncio.to_thread(self._save_transfer_state)
                     else:
                         return bool(result)
                 except discord.NotFound:
                     self.transfer_state["hub_message_id"] = None
-                    self._save_transfer_state()
+                    await asyncio.to_thread(self._save_transfer_state)
                 except (discord.Forbidden, discord.HTTPException) as error:
                     LOGGER.warning(
                         "Could not update CWL transfer hub message %s: %s",
@@ -223,7 +223,7 @@ class CwlTransferHubMixin:
                     if not result:
                         return False
                     self.transfer_state["hub_message_id"] = message.id
-                    self._save_transfer_state()
+                    await asyncio.to_thread(self._save_transfer_state)
                     return True
             except (discord.Forbidden, discord.HTTPException) as error:
                 LOGGER.warning("Could not look for an existing CWL transfer hub: %s", error)
@@ -235,7 +235,7 @@ class CwlTransferHubMixin:
                 LOGGER.warning("Could not post the CWL transfer hub: %s", error)
                 return False
             self.transfer_state["hub_message_id"] = message.id
-            self._save_transfer_state()
+            await asyncio.to_thread(self._save_transfer_state)
             return True
 
     @commands.Cog.listener()

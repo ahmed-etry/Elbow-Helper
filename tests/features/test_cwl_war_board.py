@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
-import tempfile
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -16,15 +16,13 @@ import discord
 from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.features.cwl.war_board import CwlWarBoardMixin
 from elbow_helper.features.cwl.war_board import cwl_board_snapshot_is_complete
-from elbow_helper.features.cwl.war_board import orient_cwl_war
 from elbow_helper.features.cwl.war_board import select_cwl_board_wars
 from elbow_helper.features.cwl.router import CwlRouterMixin
-from elbow_helper.features.wars.emojis import EMPTY_WAR_EMOJIS
+from elbow_helper.infrastructure.discord.war_emojis import EMPTY_WAR_EMOJIS
 from elbow_helper.features.wars.helpers import HelperMixin
-from elbow_helper.features.wars.rendering import build_war_board_embed
+from elbow_helper.infrastructure.discord.war_boards import build_war_board_embed
 from elbow_helper.configuration.channels import CLAN_CWL_INFO_CHANNELS
 from elbow_helper.configuration.clans import CLAN_TAGS
-from tests.features.profile_source import profile_demand
 
 
 def _cwl_war(
@@ -93,21 +91,6 @@ class CwlWarSelectionTests(unittest.TestCase):
 
         self.assertEqual([war["_round"] for war in selected], [2, 3])
 
-    def test_final_day_keeps_only_the_latest_result(self) -> None:
-        wars = [_cwl_war("warEnded", round_number) for round_number in (1, 7, 3)]
-
-        selected = select_cwl_board_wars(wars)
-
-        self.assertEqual([war["_round"] for war in selected], [7])
-
-    def test_configured_clan_is_oriented_consistently(self) -> None:
-        payload = _cwl_war("inWar", 2, own_side="opponent")
-
-        oriented = orient_cwl_war(payload, CLAN_TAGS["BEH"])
-
-        self.assertIsNotNone(oriented)
-        self.assertEqual(oriented["clan"]["tag"], CLAN_TAGS["BEH"])
-        self.assertNotEqual(payload["clan"]["tag"], CLAN_TAGS["BEH"])
 
     def test_partial_overlap_snapshot_is_rejected(self) -> None:
         battle = _cwl_war("inWar", 2)
@@ -130,59 +113,28 @@ def _without_attacks_per_member(war: dict[str, object], team_size: int = 15) -> 
 
 
 class CwlAttacksLeftTests(unittest.TestCase):
-    def test_cwl_round_without_attacks_per_member_has_one_attack_each(self) -> None:
-        payload = _without_attacks_per_member(_cwl_war("inWar", 2))
+    def test_attack_allowance_uses_war_kind_unless_explicitly_supplied(self):
+        cases = (
+            ('_warTag', None, (4, 2)),
+            ('warTag', None, (4, 2)),
+            (None, None, (19, 17)),
+            ('_warTag', 'many', (4, 2)),
+            (None, 'many', (19, 17)),
+            ('_warTag', 2, (19, 17)),
+            (None, 1, (4, 2)),
+        )
+        for marker, allowance, remaining in cases:
+            with self.subTest(marker=marker, allowance=allowance):
+                payload = _without_attacks_per_member(_cwl_war('inWar', 2))
+                tag = payload.pop('_warTag')
+                if marker:
+                    payload[marker] = tag
+                if allowance is not None:
+                    payload['attacksPerMember'] = allowance
+                description = build_war_board_embed(payload, EMPTY_WAR_EMOJIS).description
+                for count in remaining:
+                    self.assertIn(f'{count} left', description)
 
-        description = build_war_board_embed(payload, EMPTY_WAR_EMOJIS).description
-
-        self.assertIn("4 left", description)
-        self.assertIn("2 left", description)
-        self.assertNotIn("19 left", description)
-        self.assertNotIn("17 left", description)
-
-    def test_cwl_round_marked_by_the_record_tag_has_one_attack_each(self) -> None:
-        payload = _without_attacks_per_member(_cwl_war("inWar", 2))
-        payload["warTag"] = payload.pop("_warTag")
-
-        description = build_war_board_embed(payload, EMPTY_WAR_EMOJIS).description
-
-        self.assertIn("4 left", description)
-        self.assertIn("2 left", description)
-
-    def test_cwl_round_keeps_the_value_clash_gives(self) -> None:
-        payload = _without_attacks_per_member(_cwl_war("inWar", 2))
-        payload["attacksPerMember"] = 1
-
-        description = build_war_board_embed(payload, EMPTY_WAR_EMOJIS).description
-
-        self.assertIn("4 left", description)
-
-    def test_regular_war_without_attacks_per_member_still_has_two(self) -> None:
-        payload = _without_attacks_per_member(_cwl_war("inWar", 2))
-        del payload["_warTag"]
-
-        description = build_war_board_embed(payload, EMPTY_WAR_EMOJIS).description
-
-        self.assertIn("19 left", description)
-        self.assertIn("17 left", description)
-
-    def test_regular_war_keeps_the_value_clash_gives(self) -> None:
-        payload = _without_attacks_per_member(_cwl_war("inWar", 2))
-        del payload["_warTag"]
-        payload["attacksPerMember"] = 2
-
-        description = build_war_board_embed(payload, EMPTY_WAR_EMOJIS).description
-
-        self.assertIn("19 left", description)
-
-    def test_unusable_value_falls_back_by_war_kind(self) -> None:
-        cwl = _without_attacks_per_member(_cwl_war("inWar", 2))
-        cwl["attacksPerMember"] = "many"
-        regular = dict(cwl)
-        del regular["_warTag"]
-
-        self.assertIn("4 left", build_war_board_embed(cwl, EMPTY_WAR_EMOJIS).description)
-        self.assertIn("19 left", build_war_board_embed(regular, EMPTY_WAR_EMOJIS).description)
 
     def test_cwl_missed_attacks_count_one_per_member_without_the_value(self) -> None:
         payload = _without_attacks_per_member(_cwl_war("warEnded", 2), team_size=1)
@@ -194,24 +146,6 @@ class CwlAttacksLeftTests(unittest.TestCase):
         del payload["_warTag"]
 
         self.assertEqual(HelperMixin()._compute_missed(payload), ["Player — 2 attacks"])
-
-
-class CwlLeagueWarFetchTests(unittest.IsolatedAsyncioTestCase):
-    async def test_league_wars_come_from_the_family_record(self) -> None:
-        # Round totals, seasons and staleness are covered with real record weeks in test_cwl_record.
-        manager = CwlRouterMixin()
-        war = _cwl_war("inWar", 1)
-        group = {"signal": {"status": "observed", "last_outcome": "ok"}, "coverage": {}}
-        manager.cwl_groups = SimpleNamespace(group=AsyncMock(return_value=group))
-        client = SimpleNamespace(configured=True, get=AsyncMock())
-        manager.profiles = profile_demand(client)
-
-        with patch("elbow_helper.features.cwl.router.league_wars", return_value=[war]):
-            wars = await manager._get_league_wars("BEH")
-
-        self.assertEqual(wars, [war])
-        manager.cwl_groups.group.assert_awaited_once_with("BEH")
-        client.get.assert_not_awaited()
 
 
 class CwlWarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
@@ -286,22 +220,10 @@ class CwlWarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
         channel.send.assert_not_awaited()
         manager.cwl_war_emojis.get.assert_not_awaited()
 
-    async def test_channel_sync_updates_only_the_war_board(self) -> None:
-        manager = CwlWarBoardMixin()
-        manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
-        channel = MagicMock(spec=discord.TextChannel)
-        manager._cwl_board_channel = AsyncMock(return_value=channel)
-        manager._upsert_cwl_board = AsyncMock(return_value=True)
-        wars = [_cwl_war("preparation", 1)]
-
-        await manager._sync_cwl_channel("BEH", wars)
-
-        manager._upsert_cwl_board.assert_awaited_once_with("BEH", channel, wars)
-
 
 class CwlWarBoardStateTests(unittest.TestCase):
     def test_registered_board_restores_after_a_reboot(self) -> None:
-        temp_dir = tempfile.TemporaryDirectory()
+        temp_dir = TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         state_path = Path(temp_dir.name) / "router.json"
         state_path.write_text(

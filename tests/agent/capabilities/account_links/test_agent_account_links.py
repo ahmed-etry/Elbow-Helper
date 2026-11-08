@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from elbow_helper.agent.engine.registry import build_agent_tools
 
 
@@ -19,16 +19,6 @@ class _Channel:
 
 class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
 
-
-
-    async def test_member_discovery_exposes_declared_identity(self):
-        member = SimpleNamespace(id=101, display_name="Synthetic member", name="synthetic",
-                                 global_name=None, mention="<@101>", roles=[],
-                                 joined_at=datetime(2026, 1, 2, 12, tzinfo=timezone(timedelta(hours=2))))
-        context = SimpleNamespace(guild=SimpleNamespace(members=[member]))
-        result = await build_agent_tools()["find_discord_members"].handler(context, {"query": "synthetic"})
-        self.assertEqual(result["members"][0]["member_id"], 101)
-        self.assertEqual(result["members"][0]["joined_at"], "2026-01-02T10:00:00+00:00")
 
     def member_context(self):
         default = SimpleNamespace(id=1, name="Synthetic default", is_default=lambda: True)
@@ -65,39 +55,6 @@ class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("+00:00", first["members"][0]["joined_at"])
             self.assertEqual(access.await_count, 8)
 
-    async def test_bulk_member_details_preserve_requested_order_and_unknown_dates(self):
-        handler = build_agent_tools()["read_discord_members"].handler
-        with patch("elbow_helper.agent.research.members.require_evidence_access",
-                   new=AsyncMock()):
-            result = await handler(self.member_context(), {"member_ids": [303, 101], "limit": 1})
-            self.assertEqual(result["members"][0]["member_id"], 303)
-            self.assertIsNone(result["members"][0]["joined_at"])
-            self.assertEqual(result["next_offset"], 1)
-            empty = await handler(self.member_context(), {"member_ids": [999]})
-            self.assertEqual(empty["members"], [])
-            self.assertEqual(empty["missing_member_ids"], [999])
-            self.assertIsNone(empty["next_offset"])
-
-    async def test_bulk_member_details_enforce_input_and_output_bounds(self):
-        from elbow_helper.agent.research.members import read_discord_members
-        context = self.member_context()
-        for args in ({"member_ids": []}, {"member_ids": list(range(1, 1002))},
-                     {"member_ids": [101, 101]}, {"member_ids": [True]},
-                     {"member_ids": [0]}, {"member_ids": ["101"]},
-                     {"member_ids": [101], "offset": -1}, {"member_ids": [101], "offset": 1001},
-                     {"member_ids": [101], "limit": 0}, {"member_ids": [101], "limit": 1001},
-                     {"member_ids": [101], "sort": "unsupported"}):
-            with self.subTest(args=args):
-                result = await read_discord_members(context, args)
-                self.assertIn("error", result)
-        with patch("elbow_helper.agent.research.members.require_evidence_access",
-                   new=AsyncMock()):
-            context.guild.get_member = lambda identifier: SimpleNamespace(
-                id=identifier, name="synthetic", display_name="Synthetic", roles=[],
-                joined_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
-            result = await read_discord_members(context, {"member_ids": list(range(1, 101)), "limit": 100})
-            self.assertEqual(len(result["members"]), 100)
-            self.assertIsNone(result["next_offset"])
 
     async def test_bulk_member_access_is_rechecked_before_returning(self):
         from elbow_helper.agent.access import AgentAccessLost

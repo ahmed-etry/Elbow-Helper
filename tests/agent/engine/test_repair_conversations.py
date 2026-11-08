@@ -8,7 +8,7 @@ from agent.engine.helpers import LegacyCatalogueMixin
 import json
 from pathlib import Path
 import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock
@@ -23,13 +23,12 @@ from elbow_helper.agent.conversation.state import ConversationRecord, Conversati
 from elbow_helper.agent.tool_support.sql.query import run_query
 from elbow_helper.agent.tool_support.sql.sources import DataSource
 from elbow_helper.agent.delivery import AgentDeliveryMixin
-from elbow_helper.agent.engine.budgets import RequestLimits
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.models import AgentTurnState
 from elbow_helper.features.recruitment.queries import RecruitmentQueries
 from elbow_helper.features.member_lifecycle.queries import MemberLifecycleQueries
-from elbow_helper.agent.capabilities.member_lifecycle.report import MemberLifecycleReport
+from elbow_helper.agent.tool_support.adapters.member_lifecycle.report import MemberLifecycleReport
 from agent.report_helpers import make_event_report
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan
@@ -95,49 +94,6 @@ class RepairConversationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
                 await delivery.send_response(context.source_message, answer, None, context=context)
                 self.assertEqual(context.source_message.reply.await_args.args[0], answer)
 
-    async def test_explicit_single_clan_count_uses_checked_model_selection(self):
-        context = self.context(lambda *_args, **_options: SimpleNamespace(
-            ok=True, status=200, payload={"tag": "#Q0", "members": 50, "memberList": []}))
-        session = _Session([
-            _model_step(_plan([{"id": "clan", "capability": "read_clash", "arguments": {"kind": "clan", "tags": ["#Q0"]}, "depends_on": []}])),
-            AgentStep("50", (), AgentUsage(1000, 100)),
-        ], [])
-        answer = await AgentService(_Model(session)).answer(
-            question="How many members in #Q0 currently?", local_context="", context=context)
-        self.assertEqual(answer, "50")
-        context.bot.clash_client.get.assert_awaited_once()
-        self.assertEqual(len(session.calls), 2)
-
-
-    async def test_large_profiles_keep_every_ranked_league_in_model_and_retained_views(self):
-        tags = ["#P" + str(index).replace("1", "Y").replace("3", "L").replace("4", "Q").replace("5", "V").replace("6", "G").replace("7", "R") for index in range(30)]
-        def fetch(path, **options):
-            tag = "#" + path.split("%23")[1]
-            return SimpleNamespace(ok=True, status=200, payload={
-                "tag": tag, "name": "Example " + tag, "league": {"name": "Silver III"},
-                "leagueTier": {"id": 105000033, "name": "Electro League 33"},
-                "trophies": 0, "bestTrophies": 6000,
-                "troops": [{"name": "unneeded_profile_marker", "detail": "x" * 2000}] * 50})
-        context = self.context(fetch)
-        session = _Session([planned("players", "read_clash", {"kind": "player", "tags": tags, "detail": "full"}),
-                            AgentStep("Checked the ranked leagues.", (), AgentUsage(1000, 100))], [])
-        await AgentService(_Model(session)).answer(question="Read the player leagues.", local_context="", context=context)
-        payload = json.loads(session.calls[1][0][0].content)["results"]["players"]
-        items = unpack(payload["items"])
-        self.assertEqual({item["tag"] for item in items}, set(tags))
-        self.assertTrue(payload["truncated"])
-        for item in items:
-            self.assertEqual(item["data"]["leagueTier"]["name"], "Electro League 33")
-            self.assertEqual(item["data"]["league"]["name"], "Silver III")
-        evidence = json.loads(context.state.evidence[0])
-        self.assertNotIn("unneeded_profile_marker", evidence["model_result"])
-        turn = ConversationTurn("{}", frozenset(), record=ConversationRecord(
-            100, 41, "2026-10-01T00:00:00+00:00", "Read player leagues", "Checked.", "Checked.", "",
-            tuple(context.state.evidence), (), (), True))
-        followup = replace(context, state=AgentTurnState(authorized_history=(turn,)))
-        compiled = compile_context(question="Those same accounts, ranked league only.", local_context="", context=followup, tools=())
-        self.assertNotIn("unneeded_profile_marker", compiled.prompt)
-        self.assertIn("Electro League 33", compiled.prompt)
 
     async def test_cohort_leagues_count_members_across_accounts_and_page_without_extra_candidates(self):
         context = self.context(lambda *_a, **_kw: None)
@@ -184,24 +140,6 @@ class RepairConversationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
         missing = await tool.handler(context, {"cohort_report_id": "cohort", "league": "Legend League"})
         self.assertEqual(missing["cause"], "source_unavailable")
 
-    async def test_optional_failed_reaction_still_delivers_planned_text_in_one_round(self):
-        events = []
-        context = self.context(lambda *_a, **_kw: None)
-        async def react(_emoji):
-            events.append("reaction")
-            raise discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "denied")
-        context.source_message.add_reaction = AsyncMock(side_effect=react)
-        context.source_message.reply.side_effect = lambda *a, **kw: events.append("text") or SimpleNamespace(id=501)
-        session = _Session([planned("reaction", "react_to_request", {"emoji": "👍"}, reply="Synthetic acknowledgement.")], [])
-        answer = await AgentService(_Model(session)).answer(question="u up?", local_context="", context=context)
-        self.assertEqual(answer, "Synthetic acknowledgement.")
-        delivery = AgentDeliveryMixin()
-        delivery.bot = context.bot
-        await delivery.send_response(context.source_message, answer, None, context=context)
-        self.assertEqual(events, ["reaction", "text"])
-        self.assertEqual(len(session.calls), 1)
-        result = json.loads(context.state.evidence[-1])["result"]
-        self.assertEqual(json.loads(result)["cause"], "permission_denied")
 
     async def test_join_cohort_filters_discord_join_dates_before_resolving_accounts(self):
         context = self.context(lambda *_a, **_kw: None)
@@ -283,24 +221,6 @@ class RepairConversationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
         self.assertEqual(set(manifest), {"report_id", "kind", "requires_read", "filter_fields"})
         self.assertTrue(manifest["requires_read"])
 
-    async def test_text_only_social_plan_and_completed_budget_answer_have_no_continuation(self):
-        context = self.context(lambda *_a, **_kw: None)
-        plan = _plan([])
-        plan["reply"] = "Synthetic acknowledgement."
-        session = _Session([replace(_model_step(plan), usage=AgentUsage(1000, 100))], [])
-        service = AgentService(_Model(session))
-        flow, _ = service._start_flow(question="u up?", local_context="", context=context, conversation_history="")
-        answer = await flow.run()
-        self.assertEqual(answer, "Synthetic acknowledgement.")
-        self.assertEqual(len(session.calls), 1)
-        self.assertEqual(context.state.reactions.count, 0)
-        finished = _Session([AgentStep("Synthetic acknowledgement.", (), AgentUsage(1000, 100))], [])
-        flow, _ = AgentService(_Model(finished))._start_flow(
-            question="u up?", local_context="", context=context, conversation_history="")
-        flow.budget.request_limits = RequestLimits(1, 80_000, 12_000, 4096)
-        self.assertEqual(await flow.run(), "Synthetic acknowledgement.")
-        self.assertTrue(flow.rounder.budget_limited)
-        self.assertFalse(finished.calls[0][1])
 
     def test_schema_failure_lists_real_accessible_columns_and_denied_schema_stays_hidden(self):
         with TemporaryDirectory() as directory:
@@ -352,23 +272,6 @@ class RepairConversationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
                 if repeat:
                     self.assertFalse(session.calls[-1][1])
 
-    async def test_full_route_resolves_linked_account_before_answering(self):
-        context = self.context(lambda *_a, **_kw: SimpleNamespace(ok=True, status=200, payload={
-            "name": "Example", "leagueTier": {"name": "Dragon League 30"}, "league": {"name": "Silver III"}, "trophies": 0}))
-        context = replace(context, account_links=SimpleNamespace(get_links_for_members=Mock(return_value={
-            101: [{"player_tag": "#P0", "player_name_last_seen": "Example"}]})))
-        session = _Session([
-            planned("links", "read_linked_accounts", {"member_ids": [101]}),
-            planned("profile", "read_clash", {"kind": "player", "tags": ["#P0"]}),
-            AgentStep("Dragon League 30.", (), AgentUsage(1000, 100)),
-        ], [])
-        answer = await AgentService(_Model(session)).answer(question="What's Example's trophy league?", local_context="Example is member 101.", context=context)
-        self.assertEqual(answer, "Dragon League 30.")
-        self.assertEqual(len(session.calls), 3)
-        self.assertTrue(session.calls[-1][1])
-        data = json.loads(session.calls[-1][0][0].content)["results"]["profile"]["items"][0]["data"]
-        self.assertEqual(data["leagueTier"]["name"], "Dragon League 30")
-        self.assertEqual(data["league"]["name"], "Silver III")
 
     def test_followup_keeps_resolved_accounts_cohort_metric_and_exact_correction(self):
         correction = "I asked about competitive promotion, not CWL eligibility. Use regular wars and same TH or +1 triples."

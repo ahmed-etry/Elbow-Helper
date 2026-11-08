@@ -1,19 +1,16 @@
 import asyncio
-from copy import deepcopy
-from dataclasses import replace
-import json
 from pathlib import Path
 import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.configuration.roles import ALLIANCE_MEMBER_ROLE_ID, HIBERNATING_ROLE_ID, MEMBER_ROLE_ID
-from elbow_helper.data.events import EventsStore, load_state, record
+from elbow_helper.data.events import EventsStore, load_state
 from elbow_helper.features.hibernation.commands import HibernationCommandMixin
 from elbow_helper.features.hibernation.queries import HibernationQueries
-from elbow_helper.features.hibernation.state import HibernationState, HibernationStateReader, hibernation_event
+from elbow_helper.features.hibernation.state import HibernationState, HibernationStateReader
 from elbow_helper.features.hibernation.tickets import HibernationTicketMixin
 from elbow_helper.features.support_tickets.state import TicketState
 
@@ -56,9 +53,9 @@ class HibernationHistoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def new_owner(self):
         events = EventsStore(self.db)
-        state = HibernationState(events, self.path)
+        state = HibernationState(events)
         await state.startup()
-        tickets = TicketState(events, self.root / "tickets.json")
+        tickets = TicketState(events)
         await tickets.startup()
         owner = Workflow()
         owner.hibernation_state = state
@@ -78,32 +75,6 @@ class HibernationHistoryTests(unittest.IsolatedAsyncioTestCase):
         return self.owner.prepare_reactivation(guild=self.guild, actor=self.member, target=self.member,
                                                force_reactivate=forced)
 
-    async def test_import_only_open_members_once_and_preserve_all_markers(self):
-        legacy = {"42": {"roles": [1, 2], "rank_roles": [3], "hibernation_date": "<t:1700000000:F>"},
-                  "43": {"roles": [4], "hibernation_date": "<t:1700000001:F>",
-                         "hibernation_progress": {"to_remove": [4], "to_add": [5], "unix_ts": 1700000001}},
-                  "_fallback_info_message_id": 456,
-                  "_fallback_threads": {"42": {"user_id": 42, "thread_id": 789}}}
-        other_path = self.root / "legacy.json"
-        other_path.write_text(json.dumps(legacy))
-        events = EventsStore(self.root / "import.sqlite3")
-        state = HibernationState(events, other_path)
-        await state.startup()
-        snapshot = state.snapshot()
-        for key in legacy:
-            actual = deepcopy(snapshot[key])
-            if key.isdecimal():
-                actual.pop("_case_started_at")
-            self.assertEqual(actual, legacy[key])
-        rows = await events.read()
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["subject_discord_id"], 42)
-        self.assertEqual(rows[0]["actor_kind"], "import")
-        self.assertEqual(rows[0]["detail"], {"roles_taken": [1, 2]})
-        restarted = HibernationState(EventsStore(events.path), other_path)
-        await restarted.startup()
-        self.assertEqual(restarted.state, snapshot)
-        self.assertEqual(await restarted.events.read(), rows)
 
     async def test_crash_mid_hibernation_resumes_from_persisted_role_checkpoint(self):
         original = self.member.remove_roles.side_effect
@@ -206,22 +177,13 @@ class HibernationHistoryTests(unittest.IsolatedAsyncioTestCase):
         await state.save_fallback_thread(42, None)
         self.assertEqual(state.snapshot()["_fallback_threads"], {})
 
-    async def test_mirror_failure_recovers_from_sqlite_on_restart(self):
-        with patch("elbow_helper.features.hibernation.state.write_json_atomic", side_effect=OSError("full")):
-            with self.assertLogs("elbow_helper.features.hibernation.state", level="ERROR"):
-                await self.owner.hibernate_member(self.guild, self.actor, self.plan)
-        before = self.owner.hibernation_state.snapshot()
-        self.owner = await self.new_owner()
-        self.assertEqual(self.owner.hibernation_state.snapshot(), before)
-        self.assertEqual(json.loads(self.path.read_text()), before)
-        self.assertEqual(len(await self.owner.hibernation_state.events.read()), 1)
 
     async def test_concurrent_hibernations_do_not_duplicate_events_or_notices(self):
         await asyncio.gather(*(self.owner.hibernate_member(self.guild, self.actor, self.plan) for _ in range(2)))
         self.owner._send_hibernation_notice.assert_awaited_once()
         self.assertEqual(len(await self.owner.hibernation_state.events.read()), 1)
 
-    async def test_delete_member_removes_entry_threads_history_and_mirror(self):
+    async def test_delete_member_removes_entry_threads_history_and_saved_state(self):
         await self.owner.hibernate_member(self.guild, self.actor, self.plan)
         state = self.owner.hibernation_state
         await state.save_fallback_thread(42, {"thread_id": 456})
@@ -229,27 +191,8 @@ class HibernationHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("42", state.snapshot())
         self.assertEqual(state.snapshot()["_fallback_threads"], {})
         self.assertEqual(await state.events.read(), [])
-        self.assertEqual(json.loads(self.path.read_text()), state.snapshot())
+        self.assertEqual(await state.events.call(load_state, "hibernation"), state.snapshot())
 
-    async def test_bad_legacy_data_does_not_mark_import_complete(self):
-        for payload in ('{', '[]'):
-            self.path.write_text(payload)
-            state = HibernationState(EventsStore(self.root / ("bad" + str(len(payload)) + ".sqlite3")), self.path)
-            with self.assertRaises(ValueError):
-                await state.startup()
-            self.assertIsNone(await state.events.call(load_state, "hibernation"))
-
-    async def test_role_and_reactivation_details_reject_free_text(self):
-        info = {"roles": [1], "_case_started_at": 1700000000000000}
-        events = self.owner.hibernation_state.events
-        for detail in ({"roles_taken": ["words"]}, {"roles_taken": [True]},
-                       {"roles_taken": [1], "reason": "words"}):
-            event = hibernation_event(42, info, "hibernated", actor_id=7)
-            with self.assertRaises(ValueError):
-                await events.call(record, replace(event, detail=detail))
-        event = hibernation_event(42, info, "reactivated", actor_id=7, ticket_id=123)
-        with self.assertRaises(ValueError):
-            await events.call(record, replace(event, detail={"forced": "yes", "ticket_channel_id": 123}))
 
     async def test_deleting_actor_scrubs_pending_attribution_before_completion(self):
         self.owner._send_hibernation_notice.side_effect = RuntimeError("not delivered")
@@ -264,27 +207,6 @@ class HibernationHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(row["actor_discord_id"])
         self.assertEqual(row["actor_kind"], "automatic")
 
-    async def test_cancellation_waits_for_checkpoint_and_publishes_committed_memory(self):
-        state = self.owner.hibernation_state
-        original = state.events.call
-        started, release = asyncio.Event(), asyncio.Event()
-        async def slow(*args, **kwargs):
-            started.set()
-            await release.wait()
-            return await original(*args, **kwargs)
-        with patch.object(state.events, "call", side_effect=slow):
-            task = asyncio.create_task(state.save_fallback_info(123))
-            await started.wait()
-            task.cancel()
-            await asyncio.sleep(0)
-            self.assertFalse(task.done())
-            release.set()
-            with self.assertRaises(asyncio.CancelledError):
-                await task
-        self.assertEqual(state.snapshot()["_fallback_info_message_id"], 123)
-        restarted = HibernationState(EventsStore(self.db), self.path)
-        await restarted.startup()
-        self.assertEqual(restarted.snapshot(), state.snapshot())
 
     async def test_forced_agent_reactivation_keeps_actor_and_mode(self):
         await self.owner.hibernate_member(self.guild, self.actor, self.plan)

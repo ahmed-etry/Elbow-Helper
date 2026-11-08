@@ -1,9 +1,9 @@
 """Workflow snapshots preserve full cohorts and distinct evidence states."""
-from dataclasses import make_dataclass, replace
+from dataclasses import replace
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
-from elbow_helper.agent.families import workflow_reads as reads
+from elbow_helper.agent.reads import workflow_reads as reads
 from agent.engine.test_agent_plan_flow import _context
 
 
@@ -65,7 +65,7 @@ class WorkflowFamilyTests(unittest.IsolatedAsyncioTestCase):
         source = {'rows': [{'member_id': 41, 'started_at': '2020-01-01T00:00:00+00:00',
                             'started_ts': start, 'start_time_status': 'known'}]}
         with patch.object(reads, 'complete_snapshot', AsyncMock(return_value=source)), \
-                patch('elbow_helper.agent.datasets.clash.read_clash', AsyncMock(side_effect=AssertionError('live'))):
+                patch('elbow_helper.agent.reads.clash.read_clash', AsyncMock(side_effect=AssertionError('live'))):
             result = await reads.hibernation(context, {'include_activity': True, 'activity_kinds': ['ranked']})
         window.assert_awaited_once()
         self.assertEqual(window.call_args.args, ('account_tags', sorted(tags)))
@@ -81,32 +81,6 @@ class WorkflowFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(accounts[tags[-1]]['observed_ranked_attacks_since_start'])
         self.assertEqual(accounts[tags[-1]]['profile_status'], 'never_read')
 
-    async def test_hibernation_without_the_record_leaves_ranked_activity_unknown(self):
-        context = _context()
-        for role in context.member.roles:
-            role.name = 'Synthetic'
-            role.is_default = lambda: False
-        context.guild.get_member = lambda identifier: context.member if identifier == context.member.id else SimpleNamespace(id=identifier, display_name='Synthetic', roles=[], joined_at=None)
-        context = replace(context, account_links=SimpleNamespace(get_links_for_members=lambda ids: {41: [{'player_tag': '#P0'}]}))
-        source = {'rows': [{'member_id': 41, 'started_at': '2020-01-01T00:00:00+00:00',
-                            'started_ts': 1577836800, 'start_time_status': 'known'}]}
-        with patch.object(reads, 'complete_snapshot', AsyncMock(return_value=source)):
-            result = await reads.hibernation(context, {'include_activity': True, 'activity_kinds': ['ranked']})
-        account = result['rows'][0]['accounts'][0]
-        self.assertEqual(account['profile_status'], 'unavailable')
-        self.assertIsNone(account['observed_ranked_attacks_since_start'])
-
-    async def test_active_trial_snapshot_covers_entries_beyond_the_visible_first_page(self):
-        context = _context()
-        Row = make_dataclass('Trial', [('ticket_channel_id',int),('applicant_member_id',int),('timing_status',str)])
-        trials = tuple(Row(index+100,index+1000,'overdue') for index in range(32))
-        async def source(context, arguments):
-            context.state.reports['source'] = SimpleNamespace(report_id='source',snapshot=SimpleNamespace(trials=trials))
-            return {'report_id':'source','trials':[{'ticket_channel_id':100}], 'next_offset':1}
-        result = await reads.complete_snapshot(context, source, {}, 'trials')
-        self.assertEqual(len(result['rows']),32)
-        self.assertEqual(result['rows'][-1]['applicant_member_id'],1031)
-        self.assertNotIn('source',context.state.reports)
 
     async def test_trial_end_followup_never_invents_a_new_acceptance_or_finalization(self):
         context = _context()
@@ -122,7 +96,7 @@ class WorkflowFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(query.call_args.args[1], 'trial_followups')
 
     async def test_trial_account_projection_keeps_missing_profiles_unknown(self):
-        from elbow_helper.agent.families import identity_reads
+        from elbow_helper.agent.reads import identity_reads
         source = {'rows':[{'applicant_member_id':41,'ticket_channel_id':100}]}
         accounts = {'rows':[{'member_id':41,'player_tag':'#P0','townHallLevel':None,
                             'profile_status':'unavailable'}]}

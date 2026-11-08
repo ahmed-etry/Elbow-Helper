@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import copy
 import math
 from typing import TYPE_CHECKING
@@ -63,7 +65,7 @@ class RemoveConnectionSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction) -> None:
         conn_id = self.values[0]
         try:
-            removed = self._parent_view.cog.remove_connection(conn_id)
+            removed = await asyncio.to_thread(self._parent_view.cog.remove_connection, conn_id)
         except (OSError, TypeError):
             await interaction.response.send_message(
                 PERSISTENCE_ERROR_MESSAGE,
@@ -330,9 +332,7 @@ class TargetRoleEditSelect(discord.ui.RoleSelect):
             )
             return
         try:
-            updated = self._parent_view.cog.replace_connection(
-                self._parent_view.conn_id, candidate,
-            )
+            updated = await asyncio.to_thread(self._parent_view.cog.replace_connection, self._parent_view.conn_id, candidate)
         except (OSError, TypeError):
             await interaction.response.send_message(
                 PERSISTENCE_ERROR_MESSAGE,
@@ -402,9 +402,7 @@ class RoleListAddSelect(discord.ui.RoleSelect):
             )
             return
         try:
-            updated = self._parent_view.cog.replace_connection(
-                self._parent_view.conn_id, candidate,
-            )
+            updated = await asyncio.to_thread(self._parent_view.cog.replace_connection, self._parent_view.conn_id, candidate)
         except (OSError, TypeError):
             await interaction.response.send_message(
                 PERSISTENCE_ERROR_MESSAGE,
@@ -445,9 +443,7 @@ class RoleListRemoveSelect(discord.ui.Select):
             condition for condition in target if condition.get(key) not in role_ids
         ]
         try:
-            updated = self._parent_view.cog.replace_connection(
-                self._parent_view.conn_id, connection,
-            )
+            updated = await asyncio.to_thread(self._parent_view.cog.replace_connection, self._parent_view.conn_id, connection)
         except (OSError, TypeError):
             await interaction.response.send_message(
                 PERSISTENCE_ERROR_MESSAGE,

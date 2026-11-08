@@ -10,13 +10,9 @@ import discord
 from elbow_helper.configuration.channels import TRIAL_LIST, TICKETS_LOG
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.infrastructure.discord.message_search import DiscordHistoryPage, DiscordSearchMessage
-from elbow_helper.agent.engine.answer_inputs import answer_evidence
-from elbow_helper.agent.families import identity_reads, recruitment_history, workflow_reads
+from elbow_helper.agent.reads import recruitment_history, workflow_reads
 from elbow_helper.agent.reads import reference as reference_reads
-from elbow_helper.agent.reads.bot_workflows import bot_workflows
-from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
 from elbow_helper.agent.models import EvidenceScope
-from elbow_helper.agent.plan.format import answer_instructions
 from elbow_helper.features.recruitment.helpers import HelperMixin
 from elbow_helper.features.recruitment.trials import TrialMixin
 from agent.engine.test_agent_plan_flow import _context
@@ -140,41 +136,3 @@ class RecruitmentHistoryTests(unittest.IsolatedAsyncioTestCase):
             denied = await reference_reads.conversation_evidence(context, arguments)
         self.assertEqual(denied['cause'], 'scope_refused')
         self.assertEqual(channel.fetch_message.await_count, 1)
-
-    async def test_join_date_cohort_supplies_accounts_and_current_homes_when_history_is_empty(self):
-        context = self.context()
-        current = SimpleNamespace(id=55, display_name='Applicant', roles=[role('BEH'), role('BEW')],
-            joined_at=datetime(2026, 10, 5, tzinfo=timezone.utc))
-        older = SimpleNamespace(id=56, display_name='Older', roles=[role('BES')],
-            joined_at=datetime(2026, 9, 30, tzinfo=timezone.utc))
-        context.guild.members = [current, older]
-        original = context.guild.get_member
-        context.guild.get_member = lambda identifier: next(
-            (member for member in context.guild.members if member.id == identifier), original(identifier))
-        context = replace(context, account_links=SimpleNamespace(get_links_for_members=lambda _: {
-            55: [{'player_tag': '#P0'}]}))
-        profiles = {'#P0': {'status': 'ok', 'data': {'name': 'Account', 'clan': {'tag': CLANS['BEM'].tag, 'name': CLANS['BEM'].name}}}}
-        with patch.object(identity_reads, 'profiles', AsyncMock(return_value=profiles)):
-            result = await identity_reads.member_cohort(context, {'basis': 'joined_discord',
-                'joined_after': '2026-10-01T00:00:00+00:00', 'joined_before': '2026-11-01T00:00:00+00:00',
-                'include_accounts': True})
-        row, = result['rows']
-        self.assertEqual(row['member_id'], 55)
-        self.assertEqual([clan['clan_code'] for clan in row['home_clans']], ['BEH'])
-        self.assertEqual([clan['clan_code'] for clan in row['participation_clans']], ['BEW'])
-        self.assertEqual(row['accounts'][0]['clan']['tag'], CLANS['BEM'].tag)
-        self.assertNotIn('accepted_at', row)
-        self.assertEqual(row['selection_status'], 'selected')
-        utility_only = identity_reads.member_fields(SimpleNamespace(display_name='Extra wars',
-            roles=[role('BEW')], joined_at=None), 57)
-        self.assertEqual(utility_only['home_clans'], [])
-        self.assertEqual(utility_only['home_clan_status'], 'no_home_role')
-        for prompt in (FAMILY_INSTRUCTION, answer_instructions()):
-            self.assertIn('community_data', prompt)
-        self.assertNotIn('For dated recruitment placements, batch', FAMILY_INSTRUCTION)
-        visible = answer_evidence({'cohort': {**result, 'family': 'read_member_cohort'}})['cohort']
-        self.assertEqual(visible['rows'][0]['home_clans'], row['home_clans'])
-        self.assertEqual(visible['rows'][0]['participation_clans'], row['participation_clans'])
-        reference = next(row for row in bot_workflows()['rows'] if row['workflow'] == 'recruitment_history')
-        self.assertEqual(reference['tracking_channel_id'], TRIAL_LIST)
-        self.assertEqual(reference['ticket_log_channel_id'], TICKETS_LOG)

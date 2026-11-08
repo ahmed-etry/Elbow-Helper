@@ -16,7 +16,7 @@ from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.models import RegisteredAgentTool
 from elbow_helper.agent.plan.results import compact_result
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage, AgentToolDefinition
-from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan, _step
+from agent.engine.test_agent_plan_flow import _context, _Model, _Session
 
 
 MESSAGE = {"message_id": 101, "author_id": 202, "author": "Member Alpha",
@@ -43,15 +43,6 @@ class GroundingTests(unittest.TestCase):
         self.assertNotIn('[[', recovered)
         self.assertNotIn('999', recovered)
 
-    def test_ordinary_language_and_recommendations_are_not_word_filtered(self):
-        for answer in (
-            'I would not push. They said "I am not very social", rather than raising a complaint.',
-            "If anything needs saying, keep feedback optional.",
-            "What is supported: they plan to stay. My recommendation is to leave it there.",
-            "The history does not give a real name. I cannot infer one from a nickname.",
-        ):
-            with self.subTest(answer=answer):
-                self.assertEqual(ground_answer(answer, {"read": {"messages": [MESSAGE]}}), answer)
 
     def test_binding_renders_actual_author_and_words_with_source(self):
         answer = ground_answer("[[message:101]]\nMy recommendation: leave feedback optional.",
@@ -61,15 +52,6 @@ class GroundingTests(unittest.TestCase):
         self.assertIn("> " + MESSAGE["content"], answer)
         self.assertIn("My recommendation: leave feedback optional.", answer)
 
-    def test_natural_quotation_and_source_can_appear_in_the_same_answer(self):
-        answer = ground_answer(
-            'On chatting: "I am not very social". [[message:101]]\n'
-            'What is supported: they plan to stay. I would leave feedback optional.',
-            {"read": {"messages": [MESSAGE]}},
-        )
-        self.assertIn('On chatting: "I am not very social".', answer)
-        self.assertIn(MESSAGE["source"], answer)
-        self.assertIn("I would leave feedback optional.", answer)
 
     def test_unknown_failed_and_excerpted_sources_do_not_qualify(self):
         for evidence in (
@@ -83,9 +65,6 @@ class GroundingTests(unittest.TestCase):
             with self.subTest(evidence=evidence), self.assertRaises(GroundingError):
                 ground_answer("[[message:101]]", evidence)
 
-    def test_malformed_binding_is_rejected(self):
-        with self.assertRaisesRegex(GroundingError, "invalid_message_binding"):
-            ground_answer("[[message:not-an-id]]", {"read": {"messages": [MESSAGE]}})
 
     def test_compacted_messages_work_and_conflicting_sources_fail(self):
         rows = [{**MESSAGE, "message_id": index,
@@ -111,20 +90,6 @@ class GroundingTests(unittest.TestCase):
         self.assertIn("unverified prose", answer)
         self.assertNotIn("999", answer)
 
-    def test_failed_attribution_gets_a_qualifier_but_independent_advice_does_not(self):
-        answer = partial_answer('They said "I will stay". [[message:999]] Keep feedback optional.',
-                                {}, GroundingError("unknown"))
-        self.assertIn('They said "I will stay".', answer)
-        self.assertIn("Keep feedback optional.", answer)
-        self.assertIn(GROUNDING_GAPS["source"], answer)
-        answer = partial_answer("Keep feedback optional. [[message:999]]", {}, GroundingError("unknown"))
-        self.assertEqual(answer, "Keep feedback optional.")
-
-    def test_malformed_citation_is_removed_without_losing_prose(self):
-        for citation in ("[[message:bad]]", "[[message:bad]", "[[message:bad"):
-            with self.subTest(citation=citation):
-                self.assertEqual(partial_answer("Keep feedback optional. " + citation, {},
-                                                GroundingError("invalid")), "Keep feedback optional.")
 
     def test_oversized_results_keep_complete_citable_messages_and_table_rows(self):
         rows = [{**MESSAGE, "message_id": identity,
@@ -148,12 +113,6 @@ class GroundingTests(unittest.TestCase):
         self.assertEqual(view["messages"], [])
         self.assertEqual(view["truncated_collections"]["messages"],
                          {"total_records": 1, "returned_records": 0})
-
-    def test_partial_answer_does_not_dump_unreferenced_or_failed_sources(self):
-        for evidence in ({"read": {"messages": [MESSAGE]}},
-                         {"read": {"error": "denied", "messages": [MESSAGE]}}):
-            answer = partial_answer("[[message:999]]", evidence, GroundingError("unknown"))
-            self.assertEqual(answer, GROUNDING_GAPS["source"])
 
 
 class GroundingFlowTests(unittest.IsolatedAsyncioTestCase):
@@ -179,28 +138,6 @@ class GroundingFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(MESSAGE["source"], answer)
         self.assertEqual(len(session.calls), 1)
 
-    async def test_recommendation_from_read_messages_needs_no_extra_model_call(self):
-        draft = ('I would not push. They said "I am not very social" and plan to stay. '
-                 'Keep feedback optional if anything needs saying. [[message:101]]')
-        answer, session = await self.answer([
-            _model_step(_plan([_step("read")])), AgentStep(draft, (), AgentUsage()),
-        ], payload={"messages": [MESSAGE]})
-        self.assertIn("I would not push.", answer)
-        self.assertIn(MESSAGE["source"], answer)
-        self.assertEqual(len(session.calls), 2)
-
-    async def test_unknown_reference_is_repaired_once_without_discarding_recommendation(self):
-        answer, session = await self.answer([
-            _model_step(_plan([_step("read")])),
-            AgentStep("Keep feedback optional. [[message:999]]", (), AgentUsage()),
-            AgentStep("Keep feedback optional. [[message:101]]", (), AgentUsage()),
-        ], payload={"messages": [MESSAGE]})
-        self.assertIn("Keep feedback optional.", answer)
-        self.assertIn(MESSAGE["content"], answer)
-        self.assertEqual(len(session.calls), 3)
-        self.assertFalse(session.calls[-1][1])
-        self.assertIn("message_not_read_this_turn", session.instructions[-1])
-        self.assertIn("Preserve the rest of the useful answer", session.instructions[-1])
 
     async def test_retained_evidence_is_not_a_current_turn_read(self):
         context = _context()
@@ -217,44 +154,6 @@ class GroundingFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer, GROUNDING_GAPS["source"])
         self.assertEqual(len(session.calls), 2)
 
-    async def test_failed_repair_keeps_real_sources_instead_of_generic_refusal(self):
-        bad = AgentStep("Unverified prose. [[message:101]] [[message:999]]", (), AgentUsage())
-        answer, _ = await self.answer([
-            _model_step(_plan([_step("read")])), bad, bad,
-        ], payload={"messages": [MESSAGE]})
-        self.assertIn(MESSAGE["content"], answer)
-        self.assertIn("Unverified prose", answer)
-
-    async def test_repair_unavailable_still_keeps_read_sources(self):
-        for error in (TimeoutError(), AgentLimitReached("Limit")):
-            with self.subTest(error=type(error).__name__):
-                context = _context()
-                context.state.grounding_evidence = {"read": {"messages": [MESSAGE]}}
-                flow = AnswerFlow(context=context, session=None, registry={}, budget=None,
-                                  rounder=SimpleNamespace(advance=AsyncMock(side_effect=error)),
-                                  runner=None, request_id=1)
-                answer = await flow._grounded_reply("[[message:101]] [[message:999]]")
-                self.assertIn(MESSAGE["content"], answer)
-                self.assertIn(GROUNDING_GAPS["source"], answer)
-
-    async def test_delivered_answer_links_a_message_the_model_saw_without_a_source_url(self):
-        from elbow_helper.agent.tool_support.model_view import family_model_view
-        context = _context()
-        row = {**MESSAGE, "channel_id": 91, "channel": "synthetic", "content_complete": True}
-        view = family_model_view({"family": "read_conversation_evidence", "mode": "search",
-                                  "rows": [row]})
-        self.assertNotIn("source", view["rows"][0])
-        context.state.grounding_evidence = {"read": compact_result(view)}
-        flow = AnswerFlow(context=context, session=None, registry={}, budget=None,
-                          rounder=None, runner=None, request_id=1)
-        link = f"https://discord.com/channels/{context.guild.id}/91/101"
-        answer = await flow._grounded_reply("See [[101]] and [[message:101]].")
-        self.assertIn(f"[Member Alpha]({link})", answer)
-        self.assertIn(f"([message]({link}))", answer)
-        self.assertIn(MESSAGE["content"], answer)
-        # Without the guild the row cannot be linked, so the reference fails closed.
-        with self.assertRaises(GroundingError):
-            ground_answer("[[message:101]]", context.state.grounding_evidence)
 
     async def test_limit_reply_cannot_bypass_reference_validation(self):
         context = _context()

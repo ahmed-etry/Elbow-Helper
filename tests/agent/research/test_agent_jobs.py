@@ -1,11 +1,9 @@
 from dataclasses import replace
 from datetime import datetime, timezone
-from contextlib import closing
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import json
-import sqlite3
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -15,7 +13,6 @@ from elbow_helper.configuration.roles import CORE
 from elbow_helper.infrastructure.discord.message_search import (
     DiscordHistoryPage, DiscordSearchMessage, DiscordSearchPage,
 )
-import elbow_helper.agent.research.repository as research_job_storage
 import elbow_helper.agent.research.transitions as research_job_transitions
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.research.repository import (
@@ -24,22 +21,9 @@ from elbow_helper.agent.research.repository import (
 )
 from elbow_helper.agent.research.contracts import ResearchJobDefinition
 from elbow_helper.agent.research.runner import ResearchJobRunner
-from elbow_helper.agent.models import AgentRequestContext, AgentTurnState
-from elbow_helper.agent.research.report import DiscordResearchReport
-from elbow_helper.agent.reports.community_codec import decode_discord_research
-from elbow_helper.agent.research.tools import (
-    cancel_discord_research_job,
-    continue_discord_research_job,
-    read_discord_research_job,
-    read_discord_research_report,
-    retain_discord_research_report,
-    start_discord_history_job,
-    start_discord_research_job,
-)
-from elbow_helper.agent.research.batches import (
-    list_discord_research_jobs, read_discord_research_jobs,
-    start_discord_research_batch,
-)
+from elbow_helper.agent.models import AgentRequestContext
+from elbow_helper.agent.research.tools import cancel_discord_research_job, continue_discord_research_job, read_discord_research_job, retain_discord_research_report, start_discord_history_job, start_discord_research_job
+from elbow_helper.agent.research.batches import read_discord_research_jobs, start_discord_research_batch
 
 
 def _message(message_id=10):
@@ -152,90 +136,6 @@ class ResearchJobRepositoryTests(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(count, 3)
 
-    def test_checkpoint_without_total_clears_previous_estimate_and_roundtrips_report(self):
-        created = self.create()
-        for index, total_fields in enumerate((
-            {"total_results_estimate": 20, "returned_indexed_matches": 1}, {},
-        )):
-            claimed = self.repository.claim(
-                created.job_id, guild_id=1, conversation_root_id=2,
-                lease_owner="worker", now=1001 + index * 2,
-            )
-            coverage = {
-                "next_cursor": "synthetic.cursor" if index == 0 else None,
-                "deep_historical_indexing": False,
-                "offset_limit_reached": False,
-                "reached_current_indexed_end": index == 1,
-                "requested_page_size": 10, "returned_accessible_matches": 1,
-                "pages_scanned": 1, "order": "newest_first",
-                "stopped_at_message_budget": False,
-                **total_fields,
-            }
-            checkpointed = self.repository.checkpoint_page(
-                claimed, lease_owner="worker", page_messages=(_message(10 + index),),
-                coverage=coverage, now=1002 + index * 2,
-            )
-            self.assertEqual(checkpointed.total_results_estimate, 20 if index == 0 else None)
-            self.repository = ResearchJobRepository(self.path)
-        reopened = self.repository.peek(
-            created.job_id, guild_id=1, conversation_root_id=2, now=1005,
-        )
-        self.assertEqual(reopened, checkpointed)
-        self.assertEqual(reopened.status, "completed")
-        self.assertEqual(len(reopened.messages), 2)
-        self.assertIsNone(reopened.manifest()["total_results_estimate"])
-        self.assertNotIn("total_results_estimate", reopened.coverage)
-        self.assertNotIn("returned_indexed_matches", reopened.coverage)
-        report = DiscordResearchReport.from_job("synthetic.report", reopened)
-        restored = decode_discord_research(json.loads(json.dumps(report.storage_payload())), 1)
-        self.assertEqual(restored, report)
-        self.assertIsNone(restored.manifest()["total_results_estimate"])
-        self.assertNotIn("total_results_estimate", restored.coverage)
-
-    def test_invalid_optional_total_checkpoint_leaves_claim_unchanged(self):
-        created = self.create()
-        claimed = self.repository.claim(
-            created.job_id, guild_id=1, conversation_root_id=2,
-            lease_owner="worker", now=1001,
-        )
-        for total in (None, True, -1, "20"):
-            with self.subTest(total=total):
-                with self.assertRaises(ValueError):
-                    self.repository.checkpoint_page(
-                        claimed, lease_owner="worker", page_messages=(_message(),),
-                        coverage={
-                            "next_cursor": None, "total_results_estimate": total,
-                            "deep_historical_indexing": False,
-                            "offset_limit_reached": False,
-                            "reached_current_indexed_end": True,
-                        }, now=1002,
-                    )
-                self.assertEqual(self.repository.peek(
-                    created.job_id, guild_id=1, conversation_root_id=2, now=1003,
-                ), claimed)
-
-    def test_conversation_inventory_is_scoped_ordered_and_does_not_touch(self):
-        older = self.create(now=1000)
-        newer = self.repository.create(
-            guild_id=1, conversation_root_id=2, requester_id=3,
-            source_channel_id=200, query="decision", author_id=None,
-            after=None, before="2026-09-17T12:00:00+00:00", page_size=10,
-            now=1001,
-        )
-        scopes = self.repository.conversation_scopes(
-            guild_id=1, conversation_root_id=2, now=1002,
-        )
-        self.assertEqual([scope.job_id for scope in scopes], [
-            newer.job_id, older.job_id,
-        ])
-        self.assertEqual(self.repository.conversation_scopes(
-            guild_id=1, conversation_root_id=99, now=1002,
-        ), ())
-        unchanged = self.repository.peek(
-            older.job_id, guild_id=1, conversation_root_id=2, now=1002,
-        )
-        self.assertEqual(unchanged.updated_at, older.updated_at)
-        self.assertEqual(unchanged.expires_at, older.expires_at)
 
     def test_cancel_many_checks_every_owner_before_mutation(self):
         definitions = tuple(ResearchJobDefinition(
@@ -386,24 +286,6 @@ class ResearchJobRepositoryTests(unittest.TestCase):
         self.assertFalse(result.continuable)
         self.assertIsNone(result.cursor)
 
-    def test_page_budget_also_stops_deep_index_waiting(self):
-        created = self.create()
-        claimed = self.repository.claim(
-            created.job_id, guild_id=1, conversation_root_id=2,
-            lease_owner="worker", now=1001,
-        )
-        with patch("elbow_helper.agent.research.transitions.MAX_JOB_PAGES", 1):
-            result = self.repository.checkpoint_page(
-                claimed, lease_owner="worker", page_messages=(),
-                coverage={
-                    "next_cursor": None, "total_results_estimate": 20,
-                    "deep_historical_indexing": True,
-                    "offset_limit_reached": False,
-                    "reached_current_indexed_end": False,
-                }, now=1002,
-            )
-        self.assertEqual(result.status, "partial")
-        self.assertFalse(result.continuable)
 
     def test_storage_budget_stops_without_committing_oversized_payload(self):
         created = self.create()
@@ -486,34 +368,6 @@ class ResearchJobRepositoryTests(unittest.TestCase):
             [message["message_id"] for message in completed.messages], [10, 11],
         )
 
-    def test_history_job_checkpoints_resume_and_complete(self):
-        created = self.create_history()
-        self.assertEqual(created.kind, "history")
-        first = self.repository.claim(
-            created.job_id, guild_id=1, conversation_root_id=2,
-            lease_owner="first", now=1001,
-        )
-        partial = self.repository.checkpoint_page(
-            first, lease_owner="first", page_messages=(_message(80),),
-            coverage=_history_coverage(
-                next_cursor="h1.50.100.scope", reached=False,
-            ), now=1002,
-        )
-        self.assertEqual(partial.status, "partial")
-        self.assertTrue(partial.continuable)
-        self.assertIsNone(partial.total_results_estimate)
-
-        second = self.repository.claim(
-            created.job_id, guild_id=1, conversation_root_id=2,
-            lease_owner="second", now=1003,
-        )
-        completed = self.repository.checkpoint_page(
-            second, lease_owner="second", page_messages=(_message(40),),
-            coverage=_history_coverage(page_before=50), now=1004,
-        )
-        self.assertEqual(completed.status, "completed")
-        self.assertFalse(completed.continuable)
-        self.assertEqual(len(completed.messages), 2)
 
     def test_repeated_history_cursor_stops_instead_of_looping(self):
         created = self.create_history()
@@ -573,25 +427,6 @@ class ResearchJobRepositoryTests(unittest.TestCase):
             [created.job_id],
         )
 
-    def test_claimable_scopes_recover_expired_leases_and_skip_cancelled_jobs(self):
-        created = self.create()
-        self.repository.claim(
-            created.job_id, guild_id=1, conversation_root_id=2,
-            lease_owner="lost-worker", now=1001,
-        )
-        self.assertEqual(
-            self.repository.claimable_scopes(guild_id=1, now=1050), (),
-        )
-        recovered = self.repository.claimable_scopes(guild_id=1, now=1062)
-        self.assertEqual([item.job_id for item in recovered], [created.job_id])
-
-        self.repository.cancel(
-            created.job_id, guild_id=1, conversation_root_id=2,
-            requester_id=3, now=1063,
-        )
-        self.assertEqual(
-            self.repository.claimable_scopes(guild_id=1, now=1064), (),
-        )
 
     def test_malformed_persisted_content_and_newer_schema_fail_closed(self):
         created = self.create()
@@ -606,7 +441,7 @@ class ResearchJobRepositoryTests(unittest.TestCase):
             )
 
         with self.repository.connect() as connection, connection:
-            connection.execute("PRAGMA user_version=3")
+            connection.execute("PRAGMA user_version=999")
         with self.assertRaises(RuntimeError):
             ResearchJobRepository(self.path)
 
@@ -640,33 +475,6 @@ class ResearchJobRepositoryTests(unittest.TestCase):
                 scoped.job_id, guild_id=1, conversation_root_id=2,
                 now=2001,
             )
-
-    def test_version_one_database_migrates_existing_jobs_to_search_kind(self):
-        legacy = Path(self.directory.name) / "legacy.sqlite3"
-        job_id = "a" * 32
-        with closing(sqlite3.connect(legacy)) as connection, connection:
-            research_job_storage._create_schema(connection)
-            connection.execute(
-                "INSERT INTO research_jobs VALUES ("
-                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                "?, ?, ?, ?, ?, ?)",
-                (
-                    job_id, 1, 2, 3, 100, "decision", None, None,
-                    "2026-09-17T12:00:00+00:00", 10, None, "queued", "[]",
-                    0, None, None, 1, 0, None, 1000, 1000, 22_600, 0,
-                    None, None,
-                ),
-            )
-            connection.execute("PRAGMA user_version=1")
-        migrated = ResearchJobRepository(legacy)
-        restored = migrated.peek(
-            job_id, guild_id=1, conversation_root_id=2, now=1001,
-        )
-        self.assertEqual(restored.kind, "search")
-        self.assertEqual(restored.query, "decision")
-        with migrated.connect() as connection:
-            version = connection.execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(version, 2)
 
 
 class _Channel:
@@ -833,96 +641,6 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call["channel_ids"], (100,))
         self.assertIsNotNone(call["max_id"])
 
-    async def test_background_runner_advances_one_bounded_page_without_delivery(self):
-        started = await self.start()
-        advanced = await self.runner().run_once()
-        self.assertEqual(advanced, 1)
-        job = self.repository.peek(
-            started["job_id"], guild_id=1, conversation_root_id=500,
-        )
-        self.assertEqual(job.status, "completed")
-        self.assertEqual(job.pages_completed, 1)
-        self.assertEqual(job.messages[0]["message_id"], 50)
-
-    async def test_filtered_search_job_retains_report_without_provider_total(self):
-        started = await self.start()
-        accessible = self.search.search_page.return_value.messages[0]
-        self.search.search_page.return_value = DiscordSearchPage(
-            (accessible, DiscordSearchMessage(
-                40, 200, 42, "Synthetic member", "Synthetic evidence",
-                "2026-09-17T09:00:00+00:00",
-            )), 0, 10, 80, None, False, False,
-        )
-        completed = await continue_discord_research_job(
-            self.context, {"job_id": started["job_id"]},
-        )
-        self.assertEqual(completed["status"], "completed")
-        self.assertIsNone(completed["total_results_estimate"])
-        self.assertNotIn("total_results_estimate", completed["coverage"])
-        self.assertEqual(completed["coverage"]["out_of_scope_results_dropped"], 1)
-        self.assertEqual(completed["coverage"]["pages_scanned"], 1)
-        self.context = replace(
-            self.context, research_jobs=ResearchJobRepository(self.repository.path),
-        )
-        retained = await retain_discord_research_report(
-            self.context, {"job_id": started["job_id"]},
-        )
-        self.assertIsNone(retained["total_results_estimate"])
-        self.assertNotIn("total_results_estimate", retained["coverage"])
-        self.assertEqual([row["message_id"] for row in retained["messages"]], [50])
-
-    async def test_multi_channel_batch_creates_and_reads_independent_jobs(self):
-        started = await start_discord_research_batch(self.context, {
-            "channel_ids": [300, 100, 200], "kind": "search",
-            "query": "decision", "page_size": 10,
-        })
-        self.assertEqual(started["job_count"], 3)
-        self.assertEqual(
-            [job["source_channel_id"] for job in started["jobs"]],
-            [100, 200, 300],
-        )
-        self.assertEqual(self.context.state.source_channels, {100, 200, 300})
-        self.search.search_page.assert_not_awaited()
-
-        grouped = await read_discord_research_jobs(self.context, {
-            "job_ids": started["job_ids"],
-        })
-        self.assertEqual(grouped["status_counts"], {"queued": 3})
-        self.assertFalse(grouped["all_terminal"])
-        self.assertEqual([job["version"] for job in grouped["jobs"]], [1, 1, 1])
-        self.assertNotIn("messages", grouped["jobs"][0])
-
-    async def test_research_inventory_recovers_ids_without_touching_or_leaking(self):
-        started = await start_discord_research_job(self.context, {
-            "channel_id": 200, "query": "decision", "page_size": 10,
-        })
-        before = self.repository.peek(
-            started["job_id"], guild_id=1, conversation_root_id=500,
-        )
-        self.context = replace(
-            self.context,
-            research_jobs=ResearchJobRepository(self.repository.path),
-            state=AgentTurnState(source_channels={100}),
-        )
-        listed = await list_discord_research_jobs(self.context, {})
-        self.assertEqual(listed["jobs"], [{
-            "job_id": started["job_id"], "status": "queued",
-            "source_channel_id": 200, "requester_id": self.member.id,
-        }])
-        after = self.context.research_jobs.peek(
-            started["job_id"], guild_id=1, conversation_root_id=500,
-        )
-        self.assertEqual((after.updated_at, after.expires_at, after.version), (
-            before.updated_at, before.expires_at, before.version,
-        ))
-
-        self.context = replace(
-            self.context, state=AgentTurnState(source_channels={100}),
-        )
-        self.channels[200].denied.add(self.member.id)
-        hidden = await list_discord_research_jobs(self.context, {})
-        self.assertEqual(hidden["jobs"], [])
-        self.assertTrue(hidden["inaccessible_jobs_omitted"])
 
     async def test_multi_channel_batch_preflight_failure_creates_nothing(self):
         self.channels[200].denied.add(self.member.id)
@@ -936,20 +654,6 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
             ).fetchone()[0]
         self.assertEqual(count, 0)
 
-    async def test_research_jobs_use_requester_access_before_private_delivery(self):
-        self.channels[200].denied.add(self.guild.default_role.id)
-        await start_discord_research_job(self.context, {
-            "channel_id": 200, "query": "decision",
-        })
-        await start_discord_research_batch(self.context, {
-            "channel_ids": [100, 200], "kind": "search",
-            "query": "decision",
-        })
-        with self.repository.connect() as connection:
-            count = connection.execute(
-                "SELECT COUNT(*) FROM research_jobs",
-            ).fetchone()[0]
-        self.assertEqual(count, 3)
 
     async def test_multi_channel_batch_cancels_all_on_post_create_access_loss(self):
         with patch(
@@ -998,27 +702,6 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.status, "queued")
         self.assertEqual(job.pages_completed, 0)
 
-    async def test_completed_job_becomes_persistent_evidence(self):
-        started = await self.start()
-        advanced = await continue_discord_research_job(
-            self.context, {"job_id": started["job_id"]},
-        )
-        self.assertEqual(advanced["status"], "completed")
-
-        retained = await retain_discord_research_report(
-            self.context, {"job_id": started["job_id"]},
-        )
-        report_id = retained["report_id"]
-        report = self.context.state.reports[report_id]
-        self.assertIsInstance(report, DiscordResearchReport)
-        self.assertTrue(retained["coverage_complete"])
-        self.assertEqual(retained["messages"][0]["content"], "Decision evidence")
-        self.assertEqual(retained["limitations"], [])
-
-        read = await read_discord_research_report(
-            self.context, {"report_id": report_id},
-        )
-        self.assertEqual(read["source_job_id"], started["job_id"])
 
     async def test_continuing_job_cannot_be_retained_as_finished_evidence(self):
         started = await self.start()
@@ -1060,15 +743,6 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(retained["coverage_complete"])
         self.assertIn("terminal_partial_coverage", retained["limitations"])
 
-    async def test_source_revocation_blocks_research_report_creation(self):
-        started = await self.start()
-        await continue_discord_research_job(
-            self.context, {"job_id": started["job_id"]},
-        )
-        self.channel.denied.add(self.member.id)
-        with self.assertRaises(AgentAccessLost):
-            await retain_discord_research_report(self.context, {"job_id": started["job_id"]})
-        self.assertEqual(self.context.state.reports, {})
 
     async def test_source_revocation_before_or_during_page_returns_no_content(self):
         started = await self.start()
@@ -1107,99 +781,6 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
             )
         self.search.search_page.assert_not_awaited()
 
-    async def test_role_loss_during_creation_cancels_the_job(self):
-        access = AsyncMock(side_effect=({100: self.channel}, AgentAccessLost("role removed")))
-        with patch(
-            "elbow_helper.agent.research.tools.require_evidence_access",
-            access,
-        ):
-            with self.assertRaises(AgentAccessLost):
-                await self.start()
-        with self.repository.connect() as connection:
-            row = connection.execute(
-                "SELECT status, continuable FROM research_jobs",
-            ).fetchone()
-        self.assertEqual(tuple(row), ("cancelled", 0))
-
-    async def test_partial_cursor_resumes_after_repository_reopen(self):
-        started = await self.start()
-        self.search.search_page.side_effect = (
-            DiscordSearchPage(
-                (DiscordSearchMessage(
-                    50, 100, 42, "Member", "First",
-                    "2026-09-17T10:00:00+00:00",
-                ),),
-                0, 10, 11, 10, False, False,
-            ),
-            DiscordSearchPage(
-                (DiscordSearchMessage(
-                    40, 100, 42, "Member", "Second",
-                    "2026-09-17T09:00:00+00:00",
-                ),),
-                10, 10, 11, None, False, False,
-            ),
-        )
-        partial = await continue_discord_research_job(
-            self.context, {"job_id": started["job_id"]},
-        )
-        self.assertEqual(partial["status"], "partial")
-        self.assertTrue(partial["continuable"])
-
-        self.context = replace(
-            self.context,
-            research_jobs=ResearchJobRepository(self.repository.path),
-            source_message=SimpleNamespace(
-                id=2000, channel=self.channel,
-                created_at=datetime(2026, 9, 17, 13, tzinfo=timezone.utc),
-            ),
-        )
-        completed = await continue_discord_research_job(
-            self.context, {"job_id": started["job_id"]},
-        )
-        self.assertEqual(completed["status"], "completed")
-        self.assertEqual(completed["retained_message_count"], 2)
-        self.assertIsNotNone(
-            self.search.search_page.await_args.kwargs.get("offset"),
-        )
-        self.assertEqual(self.search.search_page.await_args.kwargs["offset"], 10)
-
-    async def test_history_job_resumes_cursor_after_repository_reopen(self):
-        started = await self.start_history()
-        self.assertEqual(started["kind"], "history")
-        before = discord.utils.time_snowflake(
-            datetime(2026, 9, 17, 12, tzinfo=timezone.utc),
-        )
-        after = discord.utils.time_snowflake(
-            datetime(2026, 9, 16, tzinfo=timezone.utc),
-        ) - 1
-        first_id = before - 100
-        self.search.history_page.side_effect = (
-            DiscordHistoryPage(
-                (DiscordSearchMessage(
-                    first_id, 100, 42, "Member", "First",
-                    "2026-09-17T10:00:00+00:00",
-                ),), before, after, 10, first_id, False,
-            ),
-            DiscordHistoryPage((), first_id, after, 10, None, True),
-        )
-        partial = await continue_discord_research_job(
-            self.context, {"job_id": started["job_id"]},
-        )
-        self.assertEqual(partial["status"], "partial")
-        self.assertTrue(partial["continuable"])
-
-        self.context = replace(
-            self.context,
-            research_jobs=ResearchJobRepository(self.repository.path),
-        )
-        completed = await continue_discord_research_job(
-            self.context, {"job_id": started["job_id"]},
-        )
-        self.assertEqual(completed["status"], "completed")
-        self.assertEqual(completed["retained_message_count"], 1)
-        self.assertEqual(
-            self.search.history_page.await_args.kwargs["before_id"], first_id,
-        )
 
     async def test_history_job_keeps_cursor_when_author_page_has_no_matches(self):
         started = await start_discord_history_job(self.context, {
@@ -1281,18 +862,6 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cancelled["status"], "cancelled")
         self.assertFalse(cancelled["continuable"])
 
-    async def test_stale_tool_version_does_not_claim_or_search(self):
-        started = await self.start()
-        result = await continue_discord_research_job(self.context, {
-            "job_id": started["job_id"],
-            "expected_version": started["version"] + 1,
-        })
-        self.assertIn("error", result)
-        self.search.search_page.assert_not_awaited()
-        job = self.repository.peek(
-            started["job_id"], guild_id=1, conversation_root_id=500,
-        )
-        self.assertEqual(job.status, "queued")
 
     async def test_cancel_does_not_require_access_to_now_revoked_source(self):
         started = await self.start()

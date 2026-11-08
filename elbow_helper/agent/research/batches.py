@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -16,6 +15,7 @@ from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgent
 from .contracts import (
     DiscordResearchJob, MAX_RESEARCH_BATCH_JOBS, ResearchJobDefinition,
 )
+from .dates import message_time, search_date
 from .history import HISTORY_PAGE_LIMIT, SEARCH_RESULT_LIMIT
 from ..plan.input_rules import RULES
 
@@ -140,8 +140,8 @@ async def start_discord_research_batch(
         return {"error": "A valid author ID is required."}
     query = str(arguments.get("query") or "").strip()
     try:
-        after = _search_date(arguments.get("after"))
-        before = _search_date(arguments.get("before")) or _message_time(context)
+        after = search_date(arguments.get("after"))
+        before = search_date(arguments.get("before")) or message_time(context)
         if after is not None and after >= before:
             raise ValueError("Invalid research period")
     except ValueError:
@@ -327,26 +327,6 @@ async def _load_scoped_jobs(
         jobs.append(job)
     await require_evidence_access(context)
     return tuple(jobs), None
-
-
-def _search_date(value: Any) -> datetime | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError("Invalid search date")
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
-
-
-def _message_time(context: AgentRequestContext) -> datetime:
-    value = context.source_message.created_at
-    if not isinstance(value, datetime):
-        raise ValueError("Invalid request time")
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
 
 
 __all__ = [

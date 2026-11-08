@@ -1,6 +1,5 @@
-"""Event stats package entrypoint."""
+"""Event stats extension entrypoint."""
 
-from .cog import EventStatsCog
-from .cog import setup
+from .cog import EventStatsCog, setup
 
 __all__ = ["EventStatsCog", "setup"]

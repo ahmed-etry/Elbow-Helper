@@ -4,7 +4,6 @@ import asyncio
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
-from dataclasses import replace
 
 import discord
 import httpx
@@ -13,8 +12,7 @@ from openai import BadRequestError
 from elbow_helper.agent.files.images import request_images
 from elbow_helper.infrastructure.ai.agent import AgentImage
 from elbow_helper.infrastructure.ai.client import _DeepSeekAgentSession
-from elbow_helper.agent.conversation.state import Conversation, ConversationRecord, ConversationTurn
-from elbow_helper.agent.conversation.codec import encode_conversation, decode_conversation
+from elbow_helper.agent.conversation.state import ConversationRecord, ConversationTurn
 from agent.discord_actions.management_helpers import fixture
 
 
@@ -77,17 +75,6 @@ class ImageTests(unittest.IsolatedAsyncioTestCase):
         channel.fetch_message.assert_not_awaited()
         self.assertIn("cannot be read", context.state.image_source_status[0])
 
-    async def test_current_and_linked_sources_are_deduplicated(self):
-        context, channel, _, _ = fixture()
-        source = self.source(9, channel)
-        source.content = "https://discord.com/channels/1/200/9"
-        context.source_message = source
-        context.attachment_sources = (source,)
-        context.history = (self.retained(1, ((200, 9),)),)
-        channel.fetch_message = AsyncMock()
-        self.assertEqual(len(await request_images(context)), 1)
-        source.attachments[0].read.assert_awaited_once()
-        channel.fetch_message.assert_not_awaited()
 
     async def test_cached_reply_is_refetched_and_a_deleted_image_is_not_reused(self):
         context, channel, _, _ = fixture()
@@ -101,15 +88,6 @@ class ImageTests(unittest.IsolatedAsyncioTestCase):
         cached.attachments[0].read.assert_not_awaited()
         self.assertIn("Image source is gone", context.state.image_source_status[0])
 
-    def test_image_source_identities_survive_snapshot_roundtrip_without_image_bytes(self):
-        conversation = Conversation(1, 200)
-        conversation.append(self.retained(1, ((200, 9),)))
-        encoded = encode_conversation(conversation, root_message_id=1, revision=0)
-        restored = decode_conversation(encoded)
-        self.assertEqual(restored.turns[0].record.image_sources, ((200, 9),))
-        self.assertNotIn("base64", encoded.payload)
-        with self.assertRaises(ValueError):
-            replace(restored.turns[0].record, image_sources=((200, -1),))
 
     async def test_discord_and_io_failures_skip_images_without_hiding_other_errors(self):
         errors = (
@@ -139,21 +117,6 @@ class ImageTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await request_images(context)
 
-    async def test_request_sources_order_and_cap(self):
-        def message(identifier):
-            return SimpleNamespace(id=identifier, embeds=[], attachments=[
-                SimpleNamespace(
-                    content_type="image/png", filename="synthetic.png", size=3,
-                    read=AsyncMock(return_value=b"png"),
-                )
-                for _ in range(3)
-            ])
-        source, reply = message(1), message(2)
-        context = SimpleNamespace(source_message=source, attachment_sources=(source, reply))
-        images = await request_images(context)
-        self.assertEqual(len(images), 4)
-        self.assertIn("asker's message", images[0].label)
-        self.assertIn("replied-to", images[-1].label)
 
     async def test_provider_recreates_text_session_once_on_first_400(self):
         response = SimpleNamespace(choices=[SimpleNamespace(

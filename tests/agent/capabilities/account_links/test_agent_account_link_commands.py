@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from pathlib import Path
-import tempfile
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -94,7 +94,7 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
 
 class AccountLinkRestoreTests(unittest.TestCase):
     def test_restore_replaces_new_and_reassigned_links_together(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with TemporaryDirectory() as directory:
             with patch("elbow_helper.features.account_links.database.DB_PATH",
                        Path(directory) / "links.db"), patch(
                            "elbow_helper.data.store.time.time_ns", return_value=1_800_000_000_000_000_000):

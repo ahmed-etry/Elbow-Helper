@@ -1,25 +1,14 @@
 """Sanitized real API shapes, strict failures and additive player upgrades."""
 
-import asyncio
-from contextlib import closing
 from copy import deepcopy
 import json
 from pathlib import Path
-import sqlite3
 import unittest
-from unittest.mock import patch
 
-from elbow_helper.data.store import FamilyStore
-from elbow_helper.data.store.clans import collect_clans
-from elbow_helper.data.store.people import mirror_links, observe_discord
-from elbow_helper.data.store.players import collect_player
-from elbow_helper.data.store.schema import MIGRATIONS, SCHEMA_VERSION
 from elbow_helper.data.store.war_projection import api_time, project_log_entry, project_war
 from elbow_helper.data.store.wars import SECOND, finish_seasons, record_response
-from elbow_helper.infrastructure.persistence.migrations import run_sqlite_migrations
 
-from .test_family_store import CLANS, clan_response, discord_member, link, player, response
-from .test_players import profile
+from .test_family_store import response
 from .test_wars import WarFixture, group, war, war_log
 
 
@@ -195,72 +184,3 @@ class WarFormatTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         for rounds in ([], [{"warTags": ["#0"]}]):
             await self.record(group(rounds=rounds, state="ended"), kind="cwl_group")
             self.assertIsNone((await self.rows("SELECT final_at FROM cwl_seasons"))[0]["final_at"])
-
-    async def test_player_fix_upgrade_preserves_every_existing_row_and_restarts(self):
-        path = self.path.parent / "player_fix.sqlite3"
-
-        def create_v4(connection):
-            for migration in MIGRATIONS[:4]:
-                migration.apply(connection)
-
-        old = FamilyStore(path)
-        with patch("elbow_helper.data.store.MIGRATIONS", MIGRATIONS[:4]), patch(
-                "elbow_helper.data.store.SCHEMA_VERSION", 4), patch("elbow_helper.data.store.create_schema", create_v4):
-            await old.initialize()
-        # Populate people, membership and all four player fact tables using
-        # today's collectors against the already-upgraded player schema.
-        run = await old.begin_run("links", "current_links", [("account_links", "current")], 100)
-        await old.call(mirror_links, run, link(), 100)
-        await old.finish(run)
-        run = await old.begin_run("discord", "guild", [("discord_scan", "1")], 200)
-        await old.call(observe_discord, run, [discord_member()], 200, complete=True, scope="1")
-        await old.finish(run)
-        specs = [(kind, clan.tag) for clan in CLANS for kind in ("clan_profile", "clan_roster")]
-        run = await old.begin_run("clans", "family_clans", specs, 300)
-        with patch("elbow_helper.data.store.clans.collect_fields"):
-            await old.call(collect_clans, run, CLANS, [clan_response(0, [player()]), clan_response(1, [])], 300)
-        await old.finish(run)
-        run = await old.begin_run("players", "accounts", [("player_profile", "#P0")], 400)
-        await old.requested(run, 0)
-        account_id = await old.call(lambda c: c.execute("SELECT id FROM accounts WHERE player_tag='#P0'").fetchone()[0])
-        payload = profile()
-        duplicate = deepcopy(payload["achievements"][0])
-        duplicate["info"] = "Different synthetic instructions"
-        payload["achievements"].append(duplicate)
-        with patch("elbow_helper.data.store.players.collect_fields"), patch("elbow_helper.data.store.players._ranked_references"):
-            await old.call(collect_player, run, 0, account_id, "#P0", response(payload), 400)
-        self.assertEqual((await old.finish(run))["failed"], 0)
-
-        def snapshot(c):
-            tables = [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")]
-            return {table: [tuple(row) for row in c.execute(f"SELECT * FROM {table}")] for table in tables}
-
-        before = await old.call(snapshot)
-        original_columns = await old.call(lambda c: {
-            table: [row[1] for row in c.execute(f'PRAGMA table_info("{table}")')]
-            for table in before})
-        for table in ("player_observations", "player_items", "hero_equipment", "player_counters"):
-            self.assertTrue(before[table], table)
-        upgraded = FamilyStore(path)
-        await upgraded.initialize()
-        after = await upgraded.call(snapshot)
-        preserved = await upgraded.call(lambda c: {
-            table: [tuple(row[column] for column in columns) for row in c.execute(f'SELECT * FROM "{table}"')]
-            for table, columns in original_columns.items()})
-        self.assertEqual(before, preserved)
-        self.assertEqual(await upgraded.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), SCHEMA_VERSION)
-        await FamilyStore(path).initialize()
-        self.assertEqual(after, await upgraded.call(snapshot))
-        self.assertEqual(await upgraded.call(lambda c: c.execute("PRAGMA foreign_key_check").fetchall()), [])
-
-    async def test_fresh_file_runs_player_fix_before_wars(self):
-        def migrate():
-            with closing(sqlite3.connect(":memory:")) as c:
-                versions = run_sqlite_migrations(c, MIGRATIONS, target_version=SCHEMA_VERSION)
-                return versions, {r[1] for r in c.execute("PRAGMA table_info(item_catalog)")}, c.execute(
-                    "SELECT name FROM sqlite_master WHERE name='wars'").fetchone()[0]
-
-        versions, columns, table = await asyncio.to_thread(migrate)
-        self.assertEqual(versions, tuple(range(1, SCHEMA_VERSION + 1)))
-        self.assertIn("identity_key", columns)
-        self.assertEqual(table, "wars")

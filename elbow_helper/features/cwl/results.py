@@ -7,7 +7,7 @@ import sqlite3
 
 from elbow_helper.configuration.clans import CLANS, CLAN_ORDER
 from elbow_helper.domain.cwl import SEASON_KEY
-from elbow_helper.features.clan_health.attendance import aggregate_attendance
+from elbow_helper.domain.war_attendance import aggregate_attendance
 from .config import CWL_CLAN_CODES
 from .results_summary import cwl_analysis
 

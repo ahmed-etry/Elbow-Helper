@@ -9,17 +9,12 @@ import logging
 import sqlite3
 from typing import Any
 
-import discord
-
 from elbow_helper.configuration.channels import EXAMINATION_ROOM
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.data.events import (
-    Event, finish_on_cancel, load_cases, load_state, now_us, record, save_case, save_state, scrub_member,
+    Event, finish_on_cancel, load_cases, initialize_state, load_state, now_us, record, save_case, save_state, scrub_member,
 )
 from elbow_helper.data.events.records import validate
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic
-from .config import STATE_FILE
 
 
 LOGGER = logging.getLogger(__name__)
@@ -128,16 +123,6 @@ def stage_events(channel_id: int, before: dict | None, after: dict | None) -> li
     return valid
 
 
-def _legacy(path) -> dict[str, Any]:
-    try:
-        data = read_json(path)
-    except FileNotFoundError:
-        return {}
-    if not isinstance(data, dict):
-        raise ValueError("Invalid examination state")
-    return data
-
-
 def _with_defaults(meta: dict[str, Any]) -> dict[str, Any]:
     for key, default in META_DEFAULTS.items():
         meta.setdefault(key, default())
@@ -155,14 +140,13 @@ def _history(connection, cases) -> dict[int, list[tuple[str, int]]]:
 
 
 class ExaminationStateStore:
-    """SQLite owns examination state, one row per case; the JSON file is a one-update revert mirror.
+    """SQLite owns examination state, one row per case.
 
     The cog changes ``state`` in place and calls ``save()``; a background flush then writes only the
     cases that changed, with the stages they reached, in one transaction off the event loop."""
 
-    def __init__(self, events, path=None) -> None:
+    def __init__(self, events) -> None:
         self.events = events
-        self.path = STATE_FILE if path is None else path
         self.state: dict[str, Any] = _with_defaults({"cases": {}})
         self._saved_cases: dict[str, dict[str, Any]] = {}
         self._saved_meta: dict[str, Any] = _with_defaults({})
@@ -199,9 +183,8 @@ class ExaminationStateStore:
     async def startup(self) -> None:
         async with self._lock:
             async def complete():
-                meta, cases, history = await self.events.call(self._import)
+                meta, cases, history = await self.events.call(self._load)
                 self._publish(meta, cases, history)
-                await self._mirror()
             await finish_on_cancel(complete())
         self.events.register_member_deletion(WORKFLOW, self.refresh_after_deletion)
 
@@ -209,32 +192,8 @@ class ExaminationStateStore:
         self._closed = True
         self.events.unregister_member_deletion(WORKFLOW)
 
-    def _import(self, connection):
-        meta = load_state(connection, WORKFLOW)
-        if meta is None:
-            legacy = _legacy(self.path)
-            cases = legacy.pop("cases", {})
-            if not isinstance(cases, dict):
-                raise ValueError("Invalid examination cases")
-            meta = _with_defaults(legacy)
-            imported = started = skipped = 0
-            for key, case in cases.items():
-                channel_id = _channel(key)
-                if channel_id is None or not isinstance(case, dict):
-                    skipped += 1
-                    continue
-                save_case(connection, channel_id, case)
-                imported += 1
-                event = examination_event(
-                    "started", channel_id, case, via="import", detail={"case_type": case.get("type")},
-                    at=int(discord.utils.snowflake_time(channel_id).timestamp() * 1_000_000))
-                try:
-                    started += record(connection, event)
-                except ValueError:
-                    LOGGER.warning("Imported examination case %s without a start event", channel_id)
-            save_state(connection, WORKFLOW, meta)
-            LOGGER.info("Imported %s open examination cases (%s start events); skipped %s unreadable",
-                        imported, started, skipped)
+    def _load(self, connection):
+        meta = initialize_state(connection, WORKFLOW, lambda: _with_defaults({}))
         cases = load_cases(connection)
         return _with_defaults(meta), cases, _history(connection, cases)
 
@@ -315,7 +274,6 @@ class ExaminationStateStore:
             if str(channel_id) in self._saved_cases:
                 self._history.setdefault(channel_id, []).append((event.kind, event.occurred_at))
                 self._history[channel_id].sort(key=lambda row: row[1])
-        await self._mirror()
         return True
 
     async def refresh_after_deletion(self, discord_id: int) -> None:
@@ -329,13 +287,4 @@ class ExaminationStateStore:
                 live = self.state.setdefault("cases", {})
                 scrub_member(live, self.state, discord_id)
                 self._saved_meta, self._saved_cases, self._history = _with_defaults(meta or {}), cases, history
-                await self._mirror()
             await finish_on_cancel(complete())
-
-    async def _mirror(self) -> None:
-        payload = {**self._saved_meta, "cases": self._saved_cases}
-        try:
-            await asyncio.to_thread(write_json_atomic, self.path, payload, indent=2)
-        except (OSError, TypeError) as exc:
-            # SQLite stays authoritative; the next save or startup writes the mirror again.
-            LOGGER.error("Failed saving %s: %s", self.path, exc)

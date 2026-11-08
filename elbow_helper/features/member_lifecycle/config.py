@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 
 from elbow_helper.configuration.clans import CLAN_CWL_ROLE_IDS, CLAN_MEMBER_ROLE_IDS, CLAN_NAMES, CLAN_WAR_ROLE_IDS
-STATE_FILE = Path("data/snapshot_intel/snapshot_intel.json")
 
 
 MAX_TICKET_LINKS_IN_LEAVE_EMBED = 3

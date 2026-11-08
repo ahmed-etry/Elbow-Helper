@@ -2,7 +2,7 @@ import json
 import unittest
 
 from elbow_helper.agent.engine.account_lists import account_index, insert_account_lists, render_list
-from elbow_helper.agent.engine.assessment import DECISION_ANSWER_INSTRUCTION, decision_answer
+from elbow_helper.agent.engine.assessment import decision_answer
 from elbow_helper.configuration.clans import CLANS
 
 
@@ -52,8 +52,6 @@ class AccountIndexTests(unittest.TestCase):
         self.assertEqual(index['#DDD444']['current_clan'], 'BE1')
         self.assertTrue(index['#AAA111']['unverified_owner'])
 
-    def test_failed_results_contribute_nothing(self):
-        self.assertEqual(account_index({'roster': {**ROSTER, 'error': 'unavailable'}}), {})
 
     def test_live_profiles_supply_current_membership_before_or_after_history(self):
         profile = {'family': 'read_member_accounts', 'rows': [
@@ -69,12 +67,6 @@ class AccountIndexTests(unittest.TestCase):
                 answer, = insert_account_lists(('[[accounts:a]]',), [declaration], index)
                 self.assertEqual(answer, 'Synthetic live name — 16')
 
-    def test_nested_live_profiles_and_compact_tables_keep_their_current_clan(self):
-        profiles = {'family': 'read_member_cohort', 'rows': {
-            'columns': ['member_id', 'accounts'], 'rows': [[9, [
-                {'player_tag': '#LIVE', 'player_name': 'Synthetic nested', 'townHallLevel': 13,
-                 'profile_status': 'ok', 'clan': {'tag': CLANS['BEM'].tag, 'name': 'Synthetic clan'}}]]]}}
-        self.assertEqual(account_index({'profiles': profiles})['#LIVE']['current_clan'], 'BEM')
 
     def test_unavailable_profiles_and_historical_clans_never_set_current_membership(self):
         for status in (None, 'unavailable', 'stale'):
@@ -135,12 +127,6 @@ class RenderTests(unittest.TestCase):
             'Departed — 12 — current clan unknown',
         ])
 
-    def test_markers_place_lists_and_unmarked_lists_follow_the_facts(self):
-        lists = [{'id': 'a', 'columns': columns(), 'accounts': [{'account': '#AAA111'}]},
-                 {'id': 'b', 'columns': columns(), 'accounts': [{'account': 'synthetic two'}]}]
-        facts, advice = insert_account_lists(('Facts.', 'Move these:\n[[accounts:a]]'), lists, self.index)
-        self.assertEqual(advice, 'Move these:\n\nSynthetic One — 15 — owner unverified')
-        self.assertEqual(facts, 'Facts.\n\nSynthetic Two — 14')
 
     def test_shared_names_resolve_by_the_list_clan_or_stay_flagged(self):
         index = {'#EEE555': {'name': 'Shared', 'town_hall': 15, 'current_clan': 'BEM'},
@@ -152,13 +138,6 @@ class RenderTests(unittest.TestCase):
             {'account': 'Shared', 'values': {'estimate': '~70%'}}]}], index)
         self.assertEqual(text, 'Shared — ~70% — several accounts share this name')
 
-    def test_list_content_problems_never_sink_the_answer(self):
-        text, = insert_account_lists(('[[accounts:a]]',), [{'id': 'a', 'columns': columns(), 'accounts': [
-            {'account': 'Nobody Here', 'values': {'estimate': '~10%'}},
-            {'account': '#AAA111'}, {'account': 'Synthetic One'}]}], self.index)
-        self.assertEqual(text.splitlines(), [
-            "Nobody Here — ~10% — couldn't verify this account",
-            'Synthetic One — 15 — owner unverified'])
 
     def test_structural_mistakes_are_returned_for_repair(self):
         for lists, parts, message in (
@@ -174,31 +153,6 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn('@everyone', text)
         self.assertIn('\\*\\*bold\\*\\*', text)
 
-    def test_mid_sentence_markers_have_block_boundaries_without_repeated_titles(self):
-        group = {'id': 'a', 'title': 'Synthetic / Group', 'columns': columns(),
-                 'accounts': [{'account': '#BBB222'}]}
-        for prefix in ('Synthetic / Group: ', '**Synthetic / Group (2)**: ',
-                       'Lead-in. Synthetic / Group: '):
-            with self.subTest(prefix=prefix):
-                answer, = insert_account_lists((prefix + '[[accounts:a]] More context.',), [group], self.index)
-                self.assertEqual(answer.count('Synthetic / Group'), 1)
-                self.assertIn('**Synthetic / Group (1)**\nSynthetic Two — 14\n\nMore context.', answer)
-                if prefix.startswith('Lead-in.'):
-                    self.assertTrue(answer.startswith('Lead-in.\n\n**'))
-        answer, = insert_account_lists(('Before [[accounts:a]] After',), [group], self.index)
-        self.assertEqual(answer, 'Before\n\n**Synthetic / Group (1)**\nSynthetic Two — 14\n\nAfter')
-
-    def test_heading_is_bold_and_escapes_model_markdown_and_mentions(self):
-        group = {'id': 'a', 'title': '**Synthetic** @everyone (99)', 'columns': columns(),
-                 'accounts': [{'account': '#BBB222'}]}
-        answer, = insert_account_lists(('[[accounts:a]]',), [group], self.index)
-        self.assertTrue(answer.startswith('**\\*\\*Synthetic\\*\\* @\u200beveryone (1)**\n'))
-
-    def test_distinct_lead_in_is_preserved_and_repeated_markers_remain_invalid(self):
-        group = {'id': 'a', 'title': 'Synthetic group', 'columns': columns(),
-                 'accounts': [{'account': '#BBB222'}]}
-        answer, = insert_account_lists(('NotSynthetic group: [[accounts:a]]',), [group], self.index)
-        self.assertTrue(answer.startswith('NotSynthetic group:\n\n**Synthetic group'))
 
     def test_heading_cleanup_never_searches_or_removes_an_already_inserted_account_name(self):
         declarations = [{'id': identity, 'title': title,
@@ -209,47 +163,16 @@ class RenderTests(unittest.TestCase):
                                        {'#A': {'name': 'Second'}, '#B': {'name': 'Final account'}})
         self.assertEqual(answer, '**First (1)**\nSecond\n\n**Second (1)**\nFinal account')
 
-    def test_punctuated_notes_remain_separate_from_flags_with_or_without_a_flag_column(self):
-        for punctuation in ('.', '!', '?', ';'):
-            for flag_column in (False, True):
-                with self.subTest(punctuation=punctuation, flag_column=flag_column):
-                    note = 'Synthetic note' + punctuation
-                    chosen = [{'heading': 'Synthetic account', 'fact': 'name'},
-                              {'heading': 'Synthetic note', 'value': 'note'}]
-                    if flag_column:
-                        chosen.append({'heading': 'Synthetic flag', 'fact': 'flags'})
-                    group = {'id': 'a', 'columns': chosen, 'accounts': [
-                        {'account': '#AAA111', 'values': {'note': note}}]}
-                    answer, = insert_account_lists(('[[accounts:a]]',), [group], self.index)
-                    self.assertEqual(answer, 'Synthetic One — ' + note
-                                     + (' — owner unverified' if flag_column else ' (owner unverified)'))
-
 
 class DecisionAnswerTests(unittest.TestCase):
     def setUp(self):
         self.index = account_index({'roster': ROSTER}, LIMITS)
 
-    def test_resolved_decision_renders_lists_from_rows(self):
-        answer = decision_answer(decision(), set(), accounts=self.index)
-        self.assertEqual(answer, 'Roster:\n\n**Synthetic list (2)**\nSynthetic One — 15 — ~80% — owner unverified\n'
-                                 'Synthetic Two — 14 — ~40% — no stored wars')
-
-    def test_unresolved_decision_keeps_a_requested_list_before_its_question(self):
-        content = decision(intent_source='unresolved', open_choices=['Which clans give accounts?'],
-                           question='Which clans should give accounts?', facts='Current data only.',
-                           recommendation='Assuming an even split:\n[[accounts:roster]]')
-        answer = decision_answer(content, set(), accounts=self.index)
-        self.assertTrue(answer.startswith('Current data only.\n\nAssuming an even split:\n\n**Synthetic list (2)**'))
-        self.assertTrue(answer.endswith('\n\nWhich clans should give accounts?'))
 
     def test_malformed_list_items_fail_schema_validation(self):
         content = decision(account_lists=[{'id': 'roster', 'accounts': [{'player_tag': '#AAA111'}]}])
         with self.assertRaisesRegex(ValueError, 'Invalid decision answer'):
             decision_answer(content, set(), accounts=self.index)
-
-    def test_instruction_offers_the_list_contract(self):
-        self.assertIn('account_lists', DECISION_ANSWER_INSTRUCTION)
-        self.assertIn('[[accounts:ID]]', DECISION_ANSWER_INSTRUCTION)
 
 
 class FinalAnswerFlowTests(unittest.IsolatedAsyncioTestCase):

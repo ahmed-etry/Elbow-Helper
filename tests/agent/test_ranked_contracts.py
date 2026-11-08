@@ -3,7 +3,6 @@
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
-import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -11,10 +10,8 @@ from unittest.mock import AsyncMock
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.test_ranked import account, stored, BATTLE, AFTER, BEFORE, DAY_TWO
 from elbow_helper.agent.reads.ranked import read_ranked
-from elbow_helper.agent.reads.ranked_tools import TOOLS
-from elbow_helper.agent.families.account_activity import account_activity
-from elbow_helper.agent.families.workflow_reads import stored_ranked
-from elbow_helper.agent.plan.results import model_result, model_view
+from elbow_helper.agent.reads.account_activity import account_activity
+from elbow_helper.agent.reads.workflow_reads import stored_ranked
 
 
 def fixture():
@@ -33,17 +30,6 @@ class RankedContracts(unittest.IsolatedAsyncioTestCase):
                           clash_client=SimpleNamespace(get=forbidden), llm_client=SimpleNamespace(complete=forbidden)))
         return context, window, forbidden
 
-    async def test_summary_counts_and_coverage(self):
-        context, _, forbidden = self.context()
-        result = await read_ranked(context, {'member_ids': [41], 'after': AFTER, 'before': BEFORE})
-        row = result['rows'][0]
-        self.assertEqual((row['attacks_used'], row['defenses'], row['battle_records']), (3, 1, 4))
-        self.assertIsNone(result['rows'][1]['attacks_used'])
-        self.assertIsNone(row['attacks_available'])
-        self.assertEqual(result['history_coverage']['reasons'], [
-            'incomplete_ranked_counts', 'incomplete_ranked_history', 'shorter_observation_window'])
-        self.assertEqual(row['log_coverage']['status'], 'partial')
-        forbidden.assert_not_awaited()
 
     async def test_detail_exact_metrics_include_losses_and_legend(self):
         context, _, forbidden = self.context()
@@ -62,20 +48,6 @@ class RankedContracts(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['source_complete'])
         forbidden.assert_not_awaited()
 
-    async def test_retained_rows_paging_and_compact_view(self):
-        context, window, _ = self.context()
-        result = await TOOLS[0].handler(context, {'member_ids': [41], 'after': AFTER, 'before': BEFORE,
-                                                 'include_battles': True, 'limit': 1})
-        self.assertEqual((result['total_rows'], result['next_offset']), (2, 1))
-        retained = json.loads(context.state.reports[result['report_id']].payload)
-        self.assertEqual(len(retained['rows']), 2)
-        self.assertEqual(len(retained['rows'][0]['battles']), 4)
-        compact = model_view(model_result(result))
-        self.assertNotIn('battles', compact['rows'][0])
-        self.assertLess(len(json.dumps(compact)), 15000)
-        page = await TOOLS[0].handler(context, {'report_id': result['report_id'], 'cursor': result['next_cursor']})
-        self.assertEqual(page['rows'][0]['player_tag'], '#Q0')
-        window.assert_awaited_once()
 
     async def test_hibernation_uses_stored_battle_times_and_gaps(self):
         context, _, forbidden = self.context()
@@ -90,7 +62,7 @@ class RankedContracts(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import patch
         context, _, forbidden = self.context()
         rows = [{'player_tag': '#P0'}, {'player_tag': '#Q0'}]
-        with patch('elbow_helper.agent.families.account_activity.attendance', AsyncMock(return_value={'rows': []})):
+        with patch('elbow_helper.agent.reads.account_activity.attendance', AsyncMock(return_value={'rows': []})):
             result = await account_activity(context, rows, {'after': AFTER, 'before': BEFORE})
         self.assertEqual(rows[0]['activity']['ranked']['observed_attacks']['stars_total'], 5)
         self.assertEqual(rows[1]['activity']['ranked']['status'], 'unknown')

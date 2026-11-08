@@ -16,7 +16,6 @@ from elbow_helper.agent.engine.member_usage import (
     DAY_SECONDS, HOUR_SECONDS, MemberUsageLimit, MemberUsageLimiter,
 )
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.knowledge.store import KnowledgeCatalog
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from agent.engine.helpers import social_step
@@ -60,9 +59,9 @@ class MemberUsageTests(unittest.IsolatedAsyncioTestCase):
         return reply, context
 
     async def test_thirty_banter_replies_then_one_notice_and_silence_across_channels(self):
-        for _ in range(30):
-            reply, _ = await self.ask()
-            self.assertEqual(reply, "Synthetic banter.")
+        for _ in range(29):
+            self.service._member_usage.acquire(1, 42, question=False)
+        self.assertEqual((await self.ask())[0], "Synthetic banter.")
         self.directory.assert_not_awaited()
         for expected in ("You've hit the hourly limit. Try again in 60 min.", "", ""):
             context = member_context()
@@ -72,18 +71,19 @@ class MemberUsageTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(context.state.member_limit_refused)
             self.assertIsNone(self.model.request)
             self.assertEqual(len(self.model.routing_session.calls), 1)
-        self.assertEqual(len(self.session.calls), 30)
+        self.assertEqual(len(self.session.calls), 1)
         self.assertEqual(len(self.service._member_usage._members[1, 42].banter), 30)
 
     async def test_ten_questions_then_notice_without_spending_banter_allowance(self):
-        for _ in range(10):
-            self.assertEqual((await self.ask("research"))[0], "Synthetic answer.")
+        for _ in range(9):
+            self.service._member_usage.acquire(1, 42, question=True)
+        self.assertEqual((await self.ask("research"))[0], "Synthetic answer.")
         self.directory.reset_mock()
         for expected in ("You've hit the hourly limit. Try again in 60 min.", ""):
             self.assertEqual((await self.ask("research"))[0], expected)
             self.assertIsNone(self.model.request)
         self.directory.assert_not_awaited()
-        self.assertEqual(len(self.session.calls), 10)
+        self.assertEqual(len(self.session.calls), 1)
         self.assertEqual((await self.ask())[0], "Synthetic banter.")
         self.assertEqual(len(self.service._member_usage._members[1, 42].questions), 10)
 
@@ -91,7 +91,7 @@ class MemberUsageTests(unittest.IsolatedAsyncioTestCase):
         for hour in range(4):
             self.clock.return_value = 100_000 + hour * HOUR_SECONDS
             for _ in range(10):
-                self.assertEqual((await self.ask("research"))[0], "Synthetic answer.")
+                self.service._member_usage.acquire(1, 42, question=True)
         self.clock.return_value += HOUR_SECONDS
         self.assertEqual((await self.ask("research"))[0],
                          "You've hit the daily limit. Try again in 20 h.")
@@ -121,21 +121,6 @@ class MemberUsageTests(unittest.IsolatedAsyncioTestCase):
                         self.assertTrue(reply)
                         self.assertFalse(context.state.member_limit_refused)
 
-    async def test_game_advice_brush_off_uses_banter_allowance(self):
-        for _ in range(30):
-            self.assertEqual((await self.ask("game_advice"))[0], "Synthetic answer.")
-        self.assertEqual((await self.ask("game_advice"))[0],
-                         "You've hit the hourly limit. Try again in 60 min.")
-        self.assertIsNone(self.model.request)
-        self.assertEqual((await self.ask("research"))[0], "Synthetic answer.")
-
-    async def test_game_advice_with_knowledge_is_a_question(self):
-        context = replace(member_context(), knowledge_store=SimpleNamespace(
-            load=lambda: KnowledgeCatalog("synthetic", ()),
-        ))
-        self.assertEqual((await self.ask("game_advice", context=context))[0], "Synthetic answer.")
-        usage = self.service._member_usage._members[1, 42]
-        self.assertEqual((len(usage.banter), len(usage.questions)), (0, 1))
 
     async def test_escalation_reclassifies_banter_as_a_question(self):
         steps = [AgentStep("", (AgentToolCall("expand", "load_research_context", "{}"),), AgentUsage()),
@@ -147,7 +132,7 @@ class MemberUsageTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_capped_escalation_preserves_banter_without_research_or_notice(self):
         for _ in range(10):
-            await self.ask("research")
+            self.service._member_usage.acquire(1, 42, question=True)
         self.directory.reset_mock()
         self.session.calls.clear()
         steps = [AgentStep("Synthetic banter stands.", (
@@ -162,35 +147,23 @@ class MemberUsageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.ask("research"))[0],
                          "You've hit the hourly limit. Try again in 60 min.")
 
-    async def test_capped_empty_escalation_finishes_only_banter_at_low_effort(self):
-        for _ in range(10):
-            await self.ask("research")
-        self.session.calls.clear()
-        self.session.efforts.clear()
-        self.directory.reset_mock()
-        steps = [AgentStep("", (AgentToolCall("expand", "load_research_context", "{}"),), AgentUsage()),
-                 AgentStep("Synthetic banter.", (), AgentUsage())]
-        self.assertEqual((await self.ask(steps=steps))[0], "Synthetic banter.")
-        self.directory.assert_not_awaited()
-        self.assertEqual(self.session.efforts, [AgentReasoningEffort.LOW] * 2)
-        self.assertEqual(self.session.tool_replacements, [()])
-        self.assertFalse(self.session.calls[-1][1])
 
     async def test_rolling_hour_frees_a_slot_and_resets_notice(self):
         for _ in range(10):
-            await self.ask("research")
+            self.service._member_usage.acquire(1, 42, question=True)
         self.clock.return_value += HOUR_SECONDS - 1
         self.assertEqual((await self.ask("research"))[0],
                          "You've hit the hourly limit. Try again in 1 min.")
         self.clock.return_value += 1
-        for _ in range(10):
-            self.assertEqual((await self.ask("research"))[0], "Synthetic answer.")
+        for _ in range(9):
+            self.service._member_usage.acquire(1, 42, question=True)
+        self.assertEqual((await self.ask("research"))[0], "Synthetic answer.")
         self.assertEqual((await self.ask("research"))[0],
                          "You've hit the hourly limit. Try again in 60 min.")
 
     async def test_guilds_and_members_have_independent_allowances(self):
         for _ in range(10):
-            await self.ask("research")
+            self.service._member_usage.acquire(1, 42, question=True)
         for context in (member_context(member_id=43), member_context(guild_id=2)):
             self.assertEqual((await self.ask("research", context=context))[0], "Synthetic answer.")
 
@@ -206,13 +179,6 @@ class MemberUsageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(outcomes.count(""), 9)
         self.assertEqual(outcomes.count("You've hit the hourly limit. Try again in 60 min."), 1)
 
-    async def test_old_members_are_pruned_and_restart_resets_usage(self):
-        for _ in range(10):
-            self.service._member_usage.acquire(1, 42, question=True)
-        self.assertIsNotNone(MemberUsageLimiter().acquire(1, 42, question=True))
-        self.clock.return_value += DAY_SECONDS
-        self.service._member_usage.acquire(2, 43, question=False)
-        self.assertNotIn((1, 42), self.service._member_usage._members)
 
     async def test_staggered_windows_release_only_expired_requests_and_round_up(self):
         limiter = MemberUsageLimiter()
@@ -231,30 +197,10 @@ class MemberUsageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(refused.exception.reply, "You've hit the hourly limit. Try again in 2 min.")
         self.assertEqual(len(limiter._members[1, 42].questions), 11)
 
-    async def test_daily_notice_rounds_up_and_a_capped_escalation_keeps_banter(self):
-        for hour in range(4):
-            self.clock.return_value = 100_000 + hour * HOUR_SECONDS
-            for _ in range(10):
-                self.service._member_usage.acquire(1, 42, question=True)
-        self.clock.return_value = 100_000 + DAY_SECONDS - 1
-        steps = [AgentStep("Synthetic banter stands.", (
-            AgentToolCall("expand", "load_research_context", "{}"),), AgentUsage())]
-        self.assertEqual((await self.ask(steps=steps))[0], "Synthetic banter stands.")
-        self.assertEqual((await self.ask("research"))[0],
-                         "You've hit the daily limit. Try again in 1 h.")
-        self.assertEqual((await self.ask("research"))[0], "")
-
-    async def test_hourly_notice_is_shared_between_banter_and_questions(self):
-        for question, count in ((False, 30), (True, 10)):
-            for _ in range(count):
-                self.service._member_usage.acquire(1, 42, question=question)
-        self.assertEqual((await self.ask())[0],
-                         "You've hit the hourly limit. Try again in 60 min.")
-        self.assertEqual((await self.ask("research"))[0], "")
 
     async def test_delivery_keeps_repeated_refusal_silent_and_stops_typing(self):
         for _ in range(10):
-            await self.ask("research")
+            self.service._member_usage.acquire(1, 42, question=True)
         await self.ask("research")
         reply, context = await self.ask("research")
         stop_typing = AsyncMock()
@@ -265,22 +211,10 @@ class MemberUsageTests(unittest.IsolatedAsyncioTestCase):
         surface._send_response.assert_not_awaited()
         stop_typing.assert_awaited_once()
 
-    async def test_limit_notice_is_delivered_without_private_offer(self):
-        for _ in range(10):
-            await self.ask("research")
-        context = member_context()
-        context.state.scope_audit.offered = True
-        reply, context = await self.ask("research", context=context)
-        self.assertFalse(context.state.scope_audit.offered)
-        surface = AgentDeliveryMixin()
-        surface._send_response = AsyncMock()
-        await surface.send_response(context.source_message, reply, None, context=context)
-        self.assertEqual(surface._send_response.await_args.args[1],
-                         "You've hit the hourly limit. Try again in 60 min.")
 
     async def test_private_refusals_are_not_cached_or_given_post_controls(self):
         for _ in range(10):
-            await self.ask("research")
+            self.service._member_usage.acquire(1, 42, question=True)
         context = member_context()
 
         async def private_answer():

@@ -81,14 +81,15 @@ class AchievementTrackingMixin:
     @tasks.loop(hours=24)
     async def cleanup_database(self):
         """Clean up stats/achievement rows for users who left the server."""
+        guild = self.bot.get_guild(self.GUILD_ID)
+        if not guild:
+            return
+        current_member_ids = {member.id for member in guild.members}
+        await asyncio.to_thread(self._cleanup_departed_members, current_member_ids)
+
+    def _cleanup_departed_members(self, current_member_ids):
         conn = None
         try:
-            guild = self.bot.get_guild(self.GUILD_ID)
-            if not guild:
-                return
-
-            current_member_ids = {member.id for member in guild.members}
-            
             conn = DATABASE.connect(self.db_path, timeout=20.0)
             cursor = conn.cursor()
 
@@ -124,7 +125,6 @@ class AchievementTrackingMixin:
     async def on_member_join(self, member):
         """Track member joins"""
         await self.check_join_achievements(member)
-
 
 
     @commands.Cog.listener()

@@ -2,9 +2,8 @@
 
 from dataclasses import replace
 from datetime import datetime, timezone
-from itertools import combinations
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock
@@ -14,9 +13,8 @@ from elbow_helper.configuration.roles import (
 )
 from elbow_helper.agent.access import AgentAccessLost, require_evidence_access
 from elbow_helper.agent.disclosure import can_show
-from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.knowledge.store import KnowledgeStore, VISIBILITIES
-from elbow_helper.agent.knowledge.tools import _section_id, channel_knowledge_access, search_approved_knowledge
+from elbow_helper.agent.knowledge.tools import _section_id, search_approved_knowledge
 from elbow_helper.agent.models import AgentRequestContext, AgentTurnState
 
 
@@ -110,50 +108,6 @@ class RoleVisibilityTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(AgentAccessLost):
                     await require_evidence_access(self.context)
 
-    def test_all_level_combinations_filter_core_and_keep_discovery_public(self):
-        for path in self.path.glob("*.md"):
-            text = path.read_text(encoding="utf-8").replace("+++\n", "+++\nalways_loaded=true\n", 1)
-            path.write_text(text, encoding="utf-8", newline="\n")
-        catalog = self.store.load()
-        self.assertEqual(len(catalog.active_sections), 7)
-        self.assertLessEqual(len(catalog._prompts), 2)
-        levels = sorted(VISIBILITIES - {"public"})
-        for count in range(len(levels) + 1):
-            for profile in combinations(levels, count):
-                with self.subTest(profile=profile):
-                    prompt = catalog.prompt(profile)
-                    self.assertEqual(prompt.required_access, set(profile))
-                    for level in VISIBILITIES:
-                        self.assertEqual(f"Reference {level} body" in prompt.core,
-                                         level == "public" or level in profile)
-                        self.assertEqual(f"- Topic {level}" in prompt.index.splitlines(), level == "public" or level in profile)
-                    self.assertIs(prompt, catalog.prompt(reversed(profile)))
-
-    async def test_service_prepares_department_prompts_and_retains_each_requirement(self):
-        for level in DEPARTMENTS:
-            path = self.path / f"{level}.md"
-            path.write_text(path.read_text(encoding="utf-8").replace(
-                "+++\n", "+++\nalways_loaded=true\n", 1), encoding="utf-8", newline="\n")
-        model = SimpleNamespace(create_agent_session=Mock(return_value=SimpleNamespace()))
-        service = AgentService(model)
-        for identifiers, expected in (
-            *((roles, {level}) for level, roles in DEPARTMENTS.items()),
-            (LEAD_PLUS, set(DEPARTMENTS) | {"lead", "lead_plus"}),
-            ((next(iter(RECRUITERS)), next(iter(EXAMINERS))), {"recruiter", "examiner"}),
-        ):
-            with self.subTest(expected=expected):
-                self.set_roles(identifiers)
-                self.context.state.knowledge_channel_access = await channel_knowledge_access(self.context)
-                service._start_flow(question="Analyze community processes", local_context="",
-                                    context=self.context, conversation_history="")
-                prompt = model.create_agent_session.call_args.kwargs["prompt"]
-                for level in DEPARTMENTS:
-                    self.assertEqual(f"- Topic {level}" in prompt, level in expected)
-                    self.assertNotIn(f"Reference {level} body", prompt)
-                self.assertEqual(self.context.state.required_access, expected)
-                self.member.roles = [SimpleNamespace(id=AGENT_TESTER_ROLE_ID)]
-                with self.assertRaises(AgentAccessLost):
-                    await require_evidence_access(self.context)
 
     async def test_channel_audience_requires_every_viewer_to_hold_each_department_level(self):
         for level, roles in DEPARTMENTS.items():

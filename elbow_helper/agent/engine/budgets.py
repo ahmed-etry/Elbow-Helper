@@ -1,7 +1,5 @@
 """Context headroom and cumulative request spending, including recovery rounds."""
 
-from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -183,10 +181,4 @@ DELIVERY_TIME_RESERVE_SECONDS = 15.0
 AGENT_MAX_OUTPUT_TOKENS = 64_000
 INITIAL_MAX_OUTPUT_TOKENS = 32_000
 FINAL_MAX_OUTPUT_TOKENS = 16_000
-ANSWER_OUTPUT_LIMITS = {
-    AgentReasoningEffort.NONE: FINAL_MAX_OUTPUT_TOKENS,
-    AgentReasoningEffort.LOW: FINAL_MAX_OUTPUT_TOKENS,
-    AgentReasoningEffort.HIGH: 32_000,
-    AgentReasoningEffort.MAX: 64_000,
-}
 MIN_FINAL_OUTPUT_TOKENS = 1_024

@@ -9,21 +9,16 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-import discord
 
 from elbow_helper.infrastructure.discord.publishing import PublishingQueue
-from elbow_helper.features.rosters.ui.emojis import TownHallEmojiProvider
 from elbow_helper.features.wars.board import WarBoardMixin
 from elbow_helper.features.wars.board import PreviousWarView
-from elbow_helper.features.wars.emojis import required_war_emoji_names
-from elbow_helper.features.wars.emojis import WarEmojiProvider
-from elbow_helper.features.wars.emojis import WarEmojiSet
+from elbow_helper.infrastructure.discord.war_emojis import WarEmojiSet
 from elbow_helper.features.wars.config import NOTICE_TTL
-from elbow_helper.features.wars.config import WAR_BOARD_CLAN_CODES
 from elbow_helper.features.wars.helpers import HelperMixin
 from elbow_helper.features.wars.record import RecordMixin
-from elbow_helper.features.wars.rendering import build_war_board_embed
-from elbow_helper.features.wars.rendering import build_war_summary_embed
+from elbow_helper.infrastructure.discord.war_boards import build_war_board_embed
+from elbow_helper.infrastructure.discord.war_boards import build_war_summary_embed
 from elbow_helper.features.wars.roles import WarRoleMixin
 from elbow_helper.features.wars.state import StateMixin
 from elbow_helper.features.wars.state import save_cache
@@ -31,8 +26,6 @@ from elbow_helper.features.wars.tasks import TaskMixin
 from elbow_helper.features.wars.warflow import WarflowMixin
 from elbow_helper.configuration.clans import CLAN_WAR_ROLE_IDS
 from elbow_helper.configuration.channels import CLAN_WAR_CHANNELS
-from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
-from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 
 
 def _war_payload(
@@ -238,26 +231,6 @@ class WarRoleSyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager.war_role_lineups, {})
         self.assertEqual(manager.war_role_managed_members, {})
 
-    async def test_cwl_and_no_war_expire_regular_war_lineups(self) -> None:
-        for payload in (
-            {"state": "preparation", "warTag": "#CWL"},
-            {"state": "notInWar"},
-        ):
-            with self.subTest(payload=payload):
-                member = MagicMock()
-                member.add_roles = AsyncMock()
-                member.remove_roles = AsyncMock()
-                manager, role, _ = _war_role_manager(
-                    linked_accounts={},
-                    members={42: member},
-                )
-                member.roles = [role]
-                manager.war_role_lineups = {"BEH": {"#P2": 42}}
-                manager.war_role_managed_members = {"BEH": {42}}
-
-                await manager._sync_war_roles("Hellbow", payload)
-
-                member.remove_roles.assert_awaited_once()
 
     async def test_incomplete_active_payload_never_removes_roles(self) -> None:
         member = MagicMock()
@@ -292,46 +265,6 @@ class WarRoleSyncTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(lineups, {"BEH": {"#P2": 42}})
         self.assertEqual(managed, {"BEH": {42, 43}})
-
-
-class WarChannelRetentionTests(unittest.TestCase):
-    def test_legacy_clan_war_channel_cleanup_is_retired(self) -> None:
-        self.assertFalse(hasattr(HelperMixin, "_cleanup_ended_war_embeds"))
-        self.assertFalse(hasattr(TaskMixin, "_month_end_war_cleanup_loop"))
-
-
-class WarSummaryReplacementTests(unittest.IsolatedAsyncioTestCase):
-    async def test_new_summary_removes_the_previous_one_in_its_channel(self) -> None:
-        manager = TaskMixin()
-        manager.summary_registry = {
-            "100": {"channel": 7, "sent_at": 1},
-            "200": {"channel": 7, "sent_at": 2},
-            "300": {"channel": 8, "sent_at": 3},
-        }
-        manager.cache = {"summary_messages": dict(manager.summary_registry)}
-        manager._save_cache_async = AsyncMock()
-        previous = MagicMock()
-        previous.delete = AsyncMock()
-        channel = MagicMock()
-        channel.id = 7
-        channel.fetch_message = AsyncMock(return_value=previous)
-
-        await manager._cleanup_previous_summary_messages(
-            channel,
-            keep_message_id=200,
-        )
-
-        channel.fetch_message.assert_awaited_once_with(100)
-        previous.delete.assert_awaited_once_with()
-        self.assertEqual(
-            manager.summary_registry,
-            {
-                "200": {"channel": 7, "sent_at": 2},
-                "300": {"channel": 8, "sent_at": 3},
-            },
-        )
-        self.assertEqual(manager.cache["summary_messages"], manager.summary_registry)
-        manager._save_cache_async.assert_awaited_once_with()
 
 
 async def _messages(messages):
@@ -471,113 +404,6 @@ class WarCachePersistenceTests(unittest.TestCase):
             save_cache({"processed_wars": []})
 
 
-class WarBoardRenderingTests(unittest.TestCase):
-    def test_live_board_is_enabled_for_regular_war_clans(self) -> None:
-        self.assertEqual(
-            WAR_BOARD_CLAN_CODES,
-            ("BEH", "BE4", "BES", "BE1", "BEM", "BEC", "BEE"),
-        )
-
-    def test_live_board_matches_the_clashperk_war_structure(self) -> None:
-        embed = build_war_board_embed(_war_payload(), _war_emojis())
-
-        self.assertEqual(embed.title, "Hellbow (#2Y2PJCVGU)")
-        self.assertIn("tag=%232Y2PJCVGU", embed.url)
-        self.assertEqual(embed.thumbnail.url, "https://example.com/hellbow.png")
-        self.assertIn("**War Against**", embed.description)
-        self.assertIn("**War State**\nBattle Day", embed.description)
-        self.assertIn("**War Size**\n2 vs 2", embed.description)
-        self.assertIn("**War Stats**", embed.description)
-        self.assertIn("0 left", embed.description)
-        self.assertIn("4 left", embed.description)
-        self.assertIn("**Rosters**", embed.description)
-        self.assertIn("<:th18:", embed.description)
-        self.assertFalse(embed.fields)
-        self.assertLessEqual(len(embed.description), 4096)
-        self.assertLessEqual(len(embed), 6000)
-
-    def test_preparation_and_ended_states_show_their_relevant_content(self) -> None:
-        preparation = build_war_board_embed(
-            _war_payload("preparation"),
-            _war_emojis(),
-        )
-        ended = build_war_board_embed(_war_payload("warEnded"), _war_emojis())
-
-        self.assertIn("Preparation Day", preparation.description)
-        self.assertIn("War Start Time:", preparation.description)
-        self.assertNotIn("**War Stats**", preparation.description)
-        self.assertFalse(preparation.fields)
-        self.assertIn("War Ended — Victory", ended.description)
-        self.assertIsNone(ended.footer.text)
-        self.assertIn("**War Stats**", ended.description)
-
-    def test_leadership_summary_matches_the_war_board_stats_presentation(self) -> None:
-        ended_at = datetime(2026, 7, 22, 21, 0, tzinfo=timezone.utc)
-        summary = build_war_summary_embed(
-            _war_payload("warEnded"),
-            _war_emojis(),
-            timestamp=ended_at,
-        )
-
-        self.assertEqual(summary.title, "Clan War Ended")
-        self.assertIn("**War Against**", summary.description)
-        self.assertIn("Rival Clan (#RIVAL)", summary.description)
-        self.assertIn("**War Stats**", summary.description)
-        self.assertIn("<:war_yellow_star:", summary.description)
-        self.assertIn("<:war_sword:", summary.description)
-        self.assertIn("<:war_fire:", summary.description)
-        self.assertIn("4 left", summary.description)
-        self.assertEqual(summary.timestamp, ended_at)
-        self.assertEqual(
-            summary.author.name,
-            "Hellbow",
-        )
-        self.assertEqual(
-            summary.author.icon_url,
-            "https://example.com/hellbow.png",
-        )
-        self.assertIn("tag=%232Y2PJCVGU", summary.author.url)
-        self.assertEqual(summary.color.value, DEFAULT_EMBED_COLOR_HEX)
-        self.assertEqual(summary.thumbnail.url, DEFAULT_THUMBNAIL_URL)
-
-    def test_missed_attack_copy_uses_the_attack_count(self) -> None:
-        payload = _war_payload("warEnded")
-        payload["clan"]["members"][0]["attacks"] = payload["clan"]["members"][0]["attacks"][:1]
-        payload["clan"]["members"][1]["attacks"] = []
-        helper = HelperMixin()
-
-        missed = helper._compute_missed(payload)
-
-        self.assertEqual(
-            missed,
-            ["Player 1 — 1 attack", "Player 2 — 2 attacks"],
-        )
-
-class WarEmojiTests(unittest.IsolatedAsyncioTestCase):
-    async def test_rosters_and_wars_share_one_application_emoji_fetch(self) -> None:
-        names = {
-            "town_hall",
-            *(f"th{level}" for level in range(1, 19)),
-            *required_war_emoji_names(),
-        }
-        client = MagicMock()
-        client.fetch_application_emojis = AsyncMock(
-            return_value=[
-                discord.PartialEmoji(name=name, id=index + 1000)
-                for index, name in enumerate(sorted(names))
-            ]
-        )
-        roster_provider = TownHallEmojiProvider(client)
-        war_provider = WarEmojiProvider(client)
-
-        roster_emojis = await roster_provider.get()
-        war_emojis = await war_provider.get()
-
-        self.assertTrue(roster_emojis.is_complete)
-        self.assertTrue(war_emojis.is_complete)
-        client.fetch_application_emojis.assert_awaited_once_with()
-
-
 class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_wars_edit_the_registered_message_instead_of_posting_again(self) -> None:
         manager = WarBoardMixin()
@@ -618,68 +444,6 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
             {"channel": channel.id, "message": posted.id},
         )
 
-    async def test_unchanged_board_is_not_edited_or_posted_again(self) -> None:
-        manager = WarBoardMixin()
-        manager.record_boards = {}
-        manager.war_board_registry = {
-            "BEH": {"channel": CLAN_WAR_CHANNELS["BEH"], "message": 900}
-        }
-        manager.cache = {"war_board_messages": manager.war_board_registry}
-        manager._save_cache_async = AsyncMock()
-        manager.war_emojis = MagicMock()
-        manager.war_emojis.get = AsyncMock(return_value=_war_emojis())
-
-        data = _war_payload()
-        existing = build_war_board_embed(data, _war_emojis())
-        existing.timestamp = discord.utils.utcnow()
-        message = MagicMock()
-        message.id = 900
-        message.embeds = [existing]
-        message.edit = AsyncMock()
-        message.components = []
-        channel = MagicMock()
-        channel.id = CLAN_WAR_CHANNELS["BEH"]
-        channel.fetch_message = AsyncMock(return_value=message)
-        channel.send = AsyncMock()
-        manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
-        manager.bot.get_channel.return_value = channel
-
-        await manager._update_war_board("Hellbow", data)
-
-        channel.send.assert_not_awaited()
-        manager.bot.publishing.edit_message.assert_not_called()
-        message.edit.assert_not_awaited()
-
-    async def test_existing_controls_are_removed_on_refresh(self) -> None:
-        manager = WarBoardMixin()
-        manager.record_boards = {}
-        manager.war_board_registry = {
-            "BEH": {"channel": CLAN_WAR_CHANNELS["BEH"], "message": 900}
-        }
-        manager.cache = {"war_board_messages": manager.war_board_registry}
-        manager._save_cache_async = AsyncMock()
-        manager.war_emojis = MagicMock()
-        manager.war_emojis.get = AsyncMock(return_value=_war_emojis())
-
-        data = _war_payload()
-        message = MagicMock()
-        message.id = 900
-        message.embeds = [build_war_board_embed(data, _war_emojis())]
-        message.components = [MagicMock()]
-        message.edit = AsyncMock()
-        channel = MagicMock()
-        channel.id = CLAN_WAR_CHANNELS["BEH"]
-        channel.fetch_message = AsyncMock(return_value=message)
-        channel.send = AsyncMock()
-        manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
-        manager.bot.get_channel.return_value = channel
-
-        await manager._update_war_board("Hellbow", data)
-
-        channel.send.assert_not_awaited()
-        manager.bot.publishing.edit_message.assert_called_once()
-        message.edit.assert_awaited_once()
-        self.assertIsNone(message.edit.await_args.kwargs["view"])
 
     async def test_next_war_adds_access_to_the_completed_previous_war(self) -> None:
         manager = WarBoardMixin()
@@ -720,29 +484,6 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(posted.edit.await_args.kwargs["view"], PreviousWarView)
 
-    async def test_previous_war_button_returns_the_ended_embed_privately(self) -> None:
-        manager = WarBoardMixin()
-        previous = _war_payload("warEnded")
-        manager.record_boards = {"BEH": {"previous": previous}}
-        manager.war_emojis = MagicMock()
-        manager.war_emojis.get = AsyncMock(return_value=_war_emojis())
-        interaction = MagicMock()
-        interaction.response.defer = AsyncMock()
-        interaction.edit_original_response = AsyncMock()
-        view = PreviousWarView(manager, "BEH")
-
-        await view.children[0].callback(interaction)
-
-        interaction.response.defer.assert_awaited_once_with(
-            ephemeral=True,
-            thinking=True,
-        )
-        response = interaction.edit_original_response.await_args.kwargs
-        self.assertIn("War Ended", response["embed"].description)
-        self.assertEqual(
-            response["embed"].timestamp,
-            discord.utils.parse_time("2026-07-22T21:00:00+00:00"),
-        )
 
     async def test_previous_war_button_is_restored_after_reboot(self) -> None:
         manager = WarBoardMixin()

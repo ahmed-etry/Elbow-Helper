@@ -1,12 +1,10 @@
 """Clan transfer routing and shared config."""
 
-from pathlib import Path
 
 from discord import app_commands
 
 from elbow_helper.configuration.clans import CLAN_MEMBER_ROLE_IDS
 
-CLAN_TRANSFER_STATE_FILE = Path("data/clan_transfers/transfer_queue.json")
 REQUEST_TTL_HOURS = 12
 CWL_SEASON_TRANSFER_CLANS = frozenset({"BEE", "BEP"})
 
@@ -32,7 +30,6 @@ CLAN_CHOICES = [app_commands.Choice(name=code, value=code) for code in CLAN_TRAN
 __all__ = [
     "CLAN_CHOICES",
     "CLAN_TRANSFER_QUEUES",
-    "CLAN_TRANSFER_STATE_FILE",
     "CLAN_TRANSFER_THREADS",
     "CWL_SEASON_TRANSFER_CLANS",
     "REQUEST_TTL_HOURS",

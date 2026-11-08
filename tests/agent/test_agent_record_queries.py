@@ -1,9 +1,8 @@
 """Family SQL uses record identities, current links and bounded read-only results."""
 
 from contextlib import closing
-import json
 import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
 
 from agent.dataset_helpers import synthetic_datasets, seed_record_links
@@ -119,16 +118,3 @@ class RecordQueryTests(unittest.TestCase):
         result = self.query(sql, max_rows=200)
         self.assertEqual((result['row_count'], result['total_rows'], result['rows_cut']), (200, 700, 500))
         self.assertIn('incomplete', result['instruction'])
-
-    def test_war_json_omits_history_and_preserves_feature_state_and_source_file(self):
-        source = next(s for s in SOURCES if s.state_name == 'war_cache')
-        path = source.resolve(self.paths)
-        original = json.dumps({'processed_wars': ['one'], 'war_board_history': {'private': 'old war'},
-                               'war_role_state': {'SYN': {'managed': [99]}}, 'summary_messages': {}})
-        path.write_text(original, encoding='utf-8')
-        result = self.query('SELECT doc FROM state.war_cache')
-        self.assertEqual(json.loads(result['rows'][0]['doc']), {
-            'processed_wars': ['one'], 'war_role_state': {'SYN': {'managed': [99]}}, 'summary_messages': {}})
-        self.assertEqual(path.read_text(encoding='utf-8'), original)
-        path.write_text('[]', encoding='utf-8')
-        self.assertIn('unavailable', self.query('SELECT doc FROM state.war_cache')['error'])

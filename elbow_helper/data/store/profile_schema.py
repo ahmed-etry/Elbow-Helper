@@ -1,4 +1,4 @@
-"""Old profile totals and source-specific history coverage, separate from live collecting."""
+"""Imported profile totals and source-specific history coverage."""
 
 import sqlite3
 

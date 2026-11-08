@@ -7,16 +7,18 @@ from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration
 from .war_schema import create_war_schema, extend_war_schema
 from .api_fields import create_api_field_schema, rebuild_field_changes
 from .source_schema import create_source_schema
+from .link_reviews import create_schema as create_review_schema
+from .saved_payloads import create_schema as create_saved_payload_schema
 from .link_schema import create_link_schema, create_current_link_schema
 from .battle_coverage import create_watch_schema
 from .profile_schema import create_profile_history_schema
 from .raids import create_raid_schema
-from .old_history_schema import create_old_history_schema
+from .imported_history_schema import create_imported_history_schema
 from .war_completeness import fill_cwl_allowance, upgrade_cwl_completeness
 
 
 # Later subjects add migrations; they must not rewrite this baseline.
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 20
 STATEMENTS = (
     """CREATE TABLE collection_runs (
         id INTEGER PRIMARY KEY, collector TEXT NOT NULL, scope_kind TEXT NOT NULL,
@@ -276,10 +278,12 @@ def create_schema(connection: sqlite3.Connection) -> None:
     create_profile_history_schema(connection)
     create_current_link_schema(connection)
     create_raid_schema(connection)
-    create_old_history_schema(connection)
+    create_imported_history_schema(connection)
     upgrade_cwl_completeness(connection)
     create_last_message_schema(connection)
     fill_cwl_allowance(connection)
+    create_review_schema(connection)
+    create_saved_payload_schema(connection)
 
 
 MIGRATIONS = (
@@ -297,8 +301,10 @@ MIGRATIONS = (
     SQLiteMigration(12, "old profile history and separate coverage", create_profile_history_schema),
     SQLiteMigration(13, "current account link presentation", create_current_link_schema),
     SQLiteMigration(14, "capital raid member lines", create_raid_schema),
-    SQLiteMigration(15, "old clan stays and raid weekends", create_old_history_schema),
+    SQLiteMigration(15, "old clan stays and raid weekends", create_imported_history_schema),
     SQLiteMigration(16, "whole CWL war completeness", upgrade_cwl_completeness),
     SQLiteMigration(17, "each member's last message time and channel", create_last_message_schema),
     SQLiteMigration(18, "CWL attack allowance", fill_cwl_allowance),
+    SQLiteMigration(19, "account review state", create_review_schema),
+    SQLiteMigration(20, "saved board evidence", create_saved_payload_schema),
 )

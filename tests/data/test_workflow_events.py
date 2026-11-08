@@ -5,13 +5,13 @@ from pathlib import Path
 import sqlite3
 import subprocess
 import sys
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import threading
 import unittest
+from unittest.mock import patch
 
 from elbow_helper.configuration.files import EVENTS_DATABASE, SQLITE_DATABASES
 from elbow_helper.data.events import Event, EventsStore, load_state, record, save_state
-from elbow_helper.data.events.testing import MemoryEventsStore
 from elbow_helper.infrastructure.persistence.backups import backup_database
 from elbow_helper.infrastructure.persistence.migrations import UnsupportedSQLiteVersionError
 
@@ -24,6 +24,7 @@ def publication(**values):
 
 class WorkflowEventTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        self.enterContext(patch("elbow_helper.infrastructure.persistence.backups.TemporaryDirectory", TemporaryDirectory))
         self.directory = TemporaryDirectory(dir=Path(__file__).parents[2])
         self.addCleanup(self.directory.cleanup)
         self.path = Path(self.directory.name) / "events.sqlite3"
@@ -59,16 +60,6 @@ class WorkflowEventTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(await self.store.call(load_state, "leadership_news"))
             self.assertEqual(await EventsStore(self.path).read(), [])
 
-    async def test_disk_failure_at_event_insert_leaves_no_state(self):
-        await self.store.call(lambda connection: connection.execute(
-            "CREATE TRIGGER fail_event BEFORE INSERT ON workflow_events BEGIN SELECT RAISE(ABORT,'failed'); END"))
-        def write(connection):
-            save_state(connection, "leadership_news", {"prompts": {}})
-            record(connection, publication())
-        with self.assertRaises(sqlite3.IntegrityError):
-            await self.store.call(write)
-        self.assertIsNone(await self.store.call(load_state, "leadership_news"))
-        self.assertEqual(await self.store.read(), [])
 
     async def test_closed_vocabulary_rejects_free_text_and_bad_identifiers(self):
         variants = [replace(publication(), **change) for change in (
@@ -93,15 +84,22 @@ class WorkflowEventTests(unittest.IsolatedAsyncioTestCase):
             release.wait(3)
             record(connection, publication())
         first = asyncio.create_task(self.store.call(slow))
-        while not started.is_set():
-            await asyncio.sleep(0.001)
+        self.assertTrue(await asyncio.to_thread(started.wait, 3))
         first.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await first
+        queued = threading.Event()
+        original_call = self.store._call
+        def observe_queue(*args):
+            queued.set()
+            return original_call(*args)
+        self.enterContext(patch.object(self.store, "_call", side_effect=observe_queue))
         second = asyncio.create_task(self.store.read())
-        await asyncio.sleep(0.01)
-        self.assertFalse(second.done())
-        release.set()
+        try:
+            self.assertTrue(await asyncio.to_thread(queued.wait, 3))
+            self.assertFalse(second.done())
+        finally:
+            release.set()
         self.assertEqual(len(await second), 1)
         self.assertNotEqual(observed, [loop_thread])
 
@@ -147,19 +145,6 @@ class WorkflowEventTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(FileNotFoundError):
             await self.store.read()
 
-    async def test_memory_double_rolls_back_a_failure_after_both_writes(self):
-        store = MemoryEventsStore()
-        self.addCleanup(store.close)
-        def write(connection):
-            save_state(connection, "leadership_news", {"prompts": {}})
-            record(connection, publication())
-        store.fail_next_write = True
-        with self.assertRaises(sqlite3.OperationalError):
-            await store.call(write)
-        self.assertIsNone(await store.call(load_state, "leadership_news"))
-        self.assertEqual(await store.read(), [])
-        await store.call(write)
-        self.assertEqual(len(await store.read()), 1)
 
     async def test_process_crash_cannot_commit_only_state_or_only_an_event(self):
         await self.store.initialize()

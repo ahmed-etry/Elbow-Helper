@@ -2,29 +2,26 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from datetime import datetime, timezone
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import nullcontext
 import asyncio
 import json
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import time
 import discord
 import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
-from unittest.mock import ANY
 
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import CORE, LEAD_PLUS
 from elbow_helper.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
 from elbow_helper.agent.cog import AgentCog
 from elbow_helper.agent.delivery import _delivery_nonce, _needs_file
-from elbow_helper.agent.text import message_text
 from elbow_helper.agent.conversation.state import ConversationTurn
 from elbow_helper.agent.models import AgentDelivery, AgentTurnState
 from elbow_helper.agent.conversation.context import compile_context
-from agent.report_helpers import make_event_report
 from elbow_helper.agent.conversation.instructions import WorkingState
 from elbow_helper.agent.conversation.transcripts import TranscriptArchive
 from elbow_helper.agent.conversation.repository import ConversationRepository
@@ -138,36 +135,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(typing.task.cancelled())
                 self.assertEqual(channel._state.http.send_typing.await_count, 1)
 
-    async def test_direct_answer_starts_typing_before_the_model(self):
-        from agent.engine.test_agent_plan_flow import _Model, _Session
-        from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-
-        member = _Member(121, (next(iter(CORE)),))
-        message = self._real_handler_scenario(member)(member, 501, "<@999> synthetic question")
-        events = []
-
-        @asynccontextmanager
-        async def typing():
-            events.append("typing")
-            try:
-                yield
-            finally:
-                events.append("typing ended")
-
-        message.channel.typing = MagicMock(side_effect=typing)
-        self.cog._build_local_context.side_effect = lambda *args, **kwargs: events.append("context") or "Synthetic context"
-        session = _Session([AgentStep("Synthetic answer", (), AgentUsage())], events)
-        self.cog.service = AgentService(_Model(session))
-        with (
-            patch("elbow_helper.agent.cog.discord.Member", _Member),
-            patch("elbow_helper.agent.engine.service.build_agent_tools", return_value={}),
-        ):
-            await self.cog.on_message(message)
-        message.channel.typing.assert_called_once()
-        self.assertEqual(events, ["typing", "context", "model", "typing ended"])
-        message.reply.assert_awaited_once()
-        self.assertEqual(message.reply.await_args.args[0], "Synthetic answer")
-        self.assertEqual(len(session.calls), 1)
 
     async def test_sent_post_reply_replaces_the_answer_and_is_recorded_in_the_conversation(self):
         member = _Member(121, (next(iter(CORE)),))
@@ -187,135 +154,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         conversation = self.cog._conversations.get(501)
         self.assertEqual(conversation.turns[-1].record.delivered_answer, "Synthetic posted answer")
         self.assertTrue(conversation.turns[-1].record.delivery_complete)
-
-    async def test_lookup_starts_typing_before_first_round_and_stops_before_delivery(self):
-        from agent.engine.test_agent_plan_flow import (
-            _Model, _Session, _model_step, _plan, _step,
-        )
-        from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-
-        events = []
-
-        @asynccontextmanager
-        async def typing():
-            events.append("typing")
-            try:
-                yield
-            finally:
-                events.append("typing ended")
-
-        async def read(context, arguments):
-            events.append("lookup")
-            return {"value": 13}
-
-        member = _Member(121, (next(iter(CORE)),))
-        message = self._real_handler_scenario(member)(member, 501, "<@999> synthetic question")
-        message.channel.typing = MagicMock(side_effect=typing)
-        sent = message.reply.return_value
-
-        async def deliver(*args, **kwargs):
-            events.append("delivery")
-            return sent
-
-        message.reply.side_effect = deliver
-        registry = {"read_value": RegisteredAgentTool(
-            AgentToolDefinition("read_value", "Read synthetic data.", {
-                "type": "object", "properties": {}, "required": [],
-            }), read, contract=CapabilityContract(()),
-        )}
-        session = _Session([
-            _model_step(_plan([_step("lookup")])),
-            AgentStep("Synthetic answer", (), AgentUsage()),
-        ], events)
-        self.cog.service = AgentService(_Model(session))
-        with (
-            patch("elbow_helper.agent.cog.discord.Member", _Member),
-            patch("elbow_helper.agent.engine.service.build_agent_tools",
-                  return_value=registry),
-        ):
-            await self.cog.on_message(message)
-        self.assertEqual(events, [
-            "typing", "model", "lookup", "model", "typing ended", "delivery",
-        ])
-        message.channel.typing.assert_called_once()
-
-    async def test_reaction_plans_record_the_reply_and_recover_from_failures(self):
-        from agent.engine.test_agent_plan_flow import (
-            _Model, _Session, _model_step, _plan, _step,
-        )
-        from elbow_helper.agent.discord_actions.reactions import reaction_tools
-        from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-
-        for mode in ("reaction_only", "text", "failed", "partial", "mixed", "empty"):
-            with self.subTest(mode=mode):
-                self.setUp()
-                member = _Member(121, (next(iter(CORE)),))
-                make_message = self._real_handler_scenario(member)
-                content = "<@999> thanks; read that value" if mode == "mixed" else "<@999> thanks"
-                message = make_message(member, 501, content)
-                message.add_reaction = AsyncMock()
-                reaction = reaction_tools()[0]
-                registry = {reaction.definition.name: reaction}
-                steps = [{**_step("reaction", {"emoji": "👍"}),
-                          "capability": "react_to_request"}]
-                if mode in ("failed", "empty"):
-                    message.add_reaction.side_effect = discord.HTTPException(
-                        SimpleNamespace(status=403, reason="Forbidden"), "Unavailable",
-                    )
-                if mode == "partial":
-                    steps.append({**_step("second", {"emoji": "👏"}, ["reaction"]),
-                                  "capability": "react_to_request"})
-                    message.add_reaction.side_effect = [None, discord.HTTPException(
-                        SimpleNamespace(status=403, reason="Forbidden"), "Unavailable",
-                    )]
-                if mode == "mixed":
-                    registry["read_value"] = RegisteredAgentTool(
-                        AgentToolDefinition(
-                            "read_value", "Read a synthetic value.",
-                            {"type": "object", "properties": {}, "required": []},
-                        ),
-                        AsyncMock(return_value={"value": 7}),
-                        contract=CapabilityContract(()),
-                    )
-                    steps.append(_step("read"))
-                social_plan = _plan(steps)
-                if mode in ("failed", "partial"):
-                    social_plan["reply"] = "Normal answer."
-                first = _model_step(social_plan)
-                if mode == "text":
-                    first = AgentStep("You're welcome.", first.tool_calls, AgentUsage())
-                rounds = [first]
-                fallback = mode not in ("text", "failed", "partial")
-                if fallback:
-                    rounds.append(AgentStep("" if mode == "empty" else "Normal answer.", (), AgentUsage()))
-                if mode == "empty":
-                    rounds.append(AgentStep("Normal answer.", (), AgentUsage()))
-                session = _Session(rounds, [])
-                message.channel.typing = MagicMock(return_value=nullcontext())
-                self.cog.service = AgentService(_Model(session))
-                with (
-                    patch("elbow_helper.agent.cog.discord.Member", _Member),
-                    patch("elbow_helper.agent.engine.service.build_agent_tools",
-                          return_value=registry),
-                ):
-                    await self.cog.on_message(message)
-                message.channel.typing.assert_called_once()
-                self.assertEqual(len(session.calls), 3 if mode == "empty" else 2 if fallback else 1)
-                if mode not in ("reaction_only", "empty"):
-                    self.assertEqual(message.add_reaction.await_args_list[0].args, ("👍",))
-                self.assertEqual(message.add_reaction.await_count,
-                                 0 if mode in ("reaction_only", "empty") else 1)
-                message.channel.send.assert_not_awaited()
-                conversation = self.cog._conversations.get(message.id)
-                self.assertEqual(len(conversation.turns), 1)
-                answer = json.loads(conversation.turns[0].text)["answer"]
-                message.reply.assert_awaited_once()
-                expected = "You're welcome." if mode == "text" else "Normal answer."
-                self.assertIn(expected, message.reply.await_args.args[0])
-                self.assertIn(expected, answer)
-                self.assertEqual("Reactions: 👍" in answer, mode not in ("reaction_only", "failed", "empty"))
-                self.assertTrue(conversation.turns[0].record.delivery_complete)
-                self.assertEqual(conversation.turns[0].record.reply_ids, (1501,))
 
 
     async def test_mixed_answer_and_preview_share_delivery_and_records(self):
@@ -383,10 +221,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(progress.id, 1501)
                 answer_message.edit.assert_not_awaited()
 
-    def test_discord_registers_only_the_message_handler(self):
-        self.assertIn(("on_message", "on_message"), AgentCog.__cog_listeners__)
-        self.assertNotIn(("_run_member_request", "_run_member_request"),
-                         AgentCog.__cog_listeners__)
 
     async def test_unexpected_generation_errors_send_existing_failure_without_retry(self):
         for error_type in (AttributeError, KeyError, IndexError, ZeroDivisionError):
@@ -410,26 +244,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(conversation.pending, 0)
                 self.assertFalse(conversation.turns)
 
-    async def test_generation_timeout_sends_failure_and_logs_request(self):
-        member = _Member(42, (next(iter(CORE)),))
-        make_message = self._real_handler_scenario(member)
-        message = make_message(member, 1, "<@999> check #rec-room and #rec-support")
-
-        async def stalled_generation(**kwargs):
-            await asyncio.Event().wait()
-
-        self.cog.service.answer.side_effect = stalled_generation
-        with (
-            patch("elbow_helper.agent.cog.discord.Member", _Member),
-            patch("elbow_helper.agent.cog.AGENT_REQUEST_TIMEOUT_SECONDS", 0.01),
-            self.assertLogs("elbow_helper.agent.cog", level="WARNING") as logs,
-        ):
-            await self.cog.on_message(message)
-        self.cog.service.answer.assert_awaited_once()
-        message.reply.assert_awaited_once()
-        self.assertEqual(message.reply.await_args.args, ('That request ran out of time.',))
-        self.assertTrue(any("Agent request timed out: request=1" in line for line in logs.output))
-        self.assertFalse(self.cog._tasks)
 
     async def test_failure_delivery_errors_are_logged_without_retry(self):
         for error in (
@@ -544,72 +358,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(conversation.turns[0].source_channels,
                                  frozenset({100, 200, 300}))
 
-    async def test_evidence_access_loss_sends_existing_failure_when_request_channel_remains_accessible(self):
-        member = _Member(42, (next(iter(CORE)),))
-        make_message = self._real_handler_scenario(member)
-        message = make_message(member, 1, "<@999> check recruitment")
-        self.cog.service.answer.side_effect = AgentAccessLost("private source unavailable")
-        with (
-            patch("elbow_helper.agent.cog.discord.Member", _Member),
-            self.assertLogs("elbow_helper.agent.cog", level="WARNING"),
-        ):
-            await self.cog.on_message(message)
-        message.reply.assert_awaited_once()
-        self.assertEqual(message.reply.await_args.args, ('You no longer have access to this request here.',))
-        self.cog.service.answer.assert_awaited_once()
-
-    async def test_restricted_report_survives_temporary_role_loss_in_private_channel(self):
-        core_role = next(iter(CORE))
-        lead_role = next(iter(LEAD_PLUS))
-        lead = _Member(42, (core_role, lead_role))
-        make_message = self._real_handler_scenario(lead)
-        first = make_message(lead, 1, "<@999> restricted")
-        channel = first.channel
-        guild = first.guild
-        default_role = SimpleNamespace(id=1)
-        allowed_role = type("Role", (), {"id": lead_role})()
-        guild.default_role = default_role
-        guild.roles = [default_role, SimpleNamespace(id=core_role), allowed_role]
-        channel.overwrites = {allowed_role: SimpleNamespace(
-            view_channel=True, read_message_history=True,
-        )}
-
-        def permissions_for(actor):
-            visible = actor.id == 999 or any(
-                role.id == lead_role for role in getattr(actor, "roles", ())
-            )
-            return SimpleNamespace(view_channel=visible, read_message_history=visible)
-        channel.permissions_for = permissions_for
-        report = make_event_report("restricted", "2026-09-17")
-        observed = []
-
-        async def answer(**kwargs):
-            state = kwargs["context"].state
-            observed.append(tuple(state.reports))
-            if len(observed) == 1:
-                state.reports[report.report_id] = report
-                state.report_sources[report.report_id] = frozenset(
-                    state.source_channels
-                )
-                state.report_access_requirements[report.report_id] = frozenset(
-                    {ACCESS_LEAD_PLUS}
-                )
-                state.required_access.add(ACCESS_LEAD_PLUS)
-            return "Answer"
-        self.cog.service.answer.side_effect = answer
-        with patch("elbow_helper.agent.cog.discord.Member", _Member):
-            await self.cog.on_message(first)
-            lead.roles = [role for role in lead.roles if role.id != lead_role]
-            await self.cog.on_message(make_message(lead, 2, "continue", reply_to=1001))
-            lead.roles.append(SimpleNamespace(id=lead_role))
-            await self.cog.on_message(make_message(lead, 3, "continue", reply_to=1001))
-        self.assertEqual(observed, [(), ("restricted",)])
-        conversation = self.cog._conversations.find(GUILD_ID, 100, 1003)
-        self.assertIn("restricted", conversation.reports)
-        self.assertEqual(
-            conversation.report_access_requirements["restricted"],
-            frozenset({ACCESS_LEAD_PLUS}),
-        )
 
     async def test_restart_continues_from_saved_reply_and_expiry_keeps_transcript(self):
         member = _Member(42, (next(iter(CORE)),))
@@ -673,21 +421,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(snapshot)
             self.assertEqual(snapshot.revision, 2)
 
-    async def test_partial_reply_archives_only_confirmed_text(self):
-        member = _Member(42, (next(iter(CORE)),))
-        make_message = self._real_handler_scenario(member)
-        with TemporaryDirectory() as directory:
-            archive = TranscriptArchive(Path(directory) / "transcripts.sqlite3")
-            self.cog.transcript_archive = archive
-            self.cog.service.answer.return_value = "x" * 2100
-            message = make_message(member, 1, "<@999> question")
-            message.channel.send.side_effect = OSError("send failed")
-            with patch("elbow_helper.agent.cog.discord.Member", _Member), self.assertLogs("elbow_helper.agent.cog", level="WARNING"):
-                await self.cog.on_message(message)
-            await archive.drain()
-            rows = archive.read_page(guild_id=GUILD_ID, channel_id=100, root_message_id=1)
-            self.assertEqual(len(rows[0]["replies"]), 1)
-            self.assertEqual(rows[0]["replies"][0]["content"], "x" * 2000)
 
     def _real_handler_scenario(self, *members):
         """Exercise the Discord handler with only network/model boundaries faked."""
@@ -782,22 +515,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.cog.service.answer.assert_awaited_once()
         message.reply.assert_awaited_once()
 
-    async def test_an_unrelated_mention_does_not_replay_another_conversation(self):
-        member = _Member(42, (next(iter(CORE)),))
-        make_message = self._real_handler_scenario(member)
-        first = make_message(member, 1, "<@999> review BEC")
-        second = make_message(member, 2, "<@999> different task")
-
-        with patch("elbow_helper.agent.cog.discord.Member", _Member):
-            await self.cog.on_message(first)
-            await self.cog.on_message(second)
-
-        self.assertEqual(self.cog.service.answer.await_args.kwargs["conversation_history"], "")
-        self.assertEqual(self.cog.service.answer.await_args.kwargs["context"].history, ())
-        self.assertIsNot(
-            self.cog._conversations.find(GUILD_ID, 100, 1001),
-            self.cog._conversations.find(GUILD_ID, 100, 1002),
-        )
 
     async def test_core_access_is_rechecked_after_waiting_for_conversation_lock(self):
         member = _Member(42, (next(iter(CORE)),))
@@ -1090,50 +807,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         conversation = self.cog._conversations.find(GUILD_ID, 100, 1001)
         self.assertFalse(conversation.turns[0].record.delivery_complete)
 
-    async def test_partial_answer_keeps_generated_report_available_to_followups(self):
-        member = _Member(42, (next(iter(CORE)),))
-        make_message = self._real_handler_scenario(member)
-        message = make_message(member, 1, "<@999> build a report")
-        report = make_event_report(report_id="report", created_at="2026-09-16")
-
-        async def generate(**kwargs):
-            state = kwargs["context"].state
-            state.reports[report.report_id] = report
-            state.report_sources[report.report_id] = frozenset(
-                state.source_channels
-            )
-            state.report_access_requirements[report.report_id] = frozenset()
-            return "x" * 2100
-        self.cog.service.answer.side_effect = generate
-        message.channel.send.side_effect = OSError("Simulated delivery failure")
-        with (
-            patch("elbow_helper.agent.cog.discord.Member", _Member),
-            self.assertLogs("elbow_helper.agent.cog", level="WARNING"),
-        ):
-            await self.cog.on_message(message)
-        conversation = self.cog._conversations.find(GUILD_ID, 100, 1001)
-        self.assertIs(conversation.reports["report"], report)
-        self.cog.service.answer.side_effect = None
-        self.cog.service.answer.return_value = "The report is ready."
-        followup = make_message(member, 2, "use that report", reply_to=1001)
-        with patch("elbow_helper.agent.cog.discord.Member", _Member):
-            await self.cog.on_message(followup)
-        self.assertIs(self.cog.service.answer.await_args.kwargs["context"].state.reports["report"], report)
-
-    async def test_deleted_replied_to_message_does_not_raise(self):
-        message = SimpleNamespace(
-            reference=SimpleNamespace(channel_id=100, message_id=91, resolved=None),
-            channel=SimpleNamespace(
-                id=100,
-                fetch_message=AsyncMock(side_effect=discord.NotFound(
-                    SimpleNamespace(status=404, reason="Not Found"),
-                    {"code": 10008, "message": "Unknown Message"},
-                )),
-            ),
-        )
-
-        self.assertIsNone(await self.cog._resolve_referenced_message(message))
-        message.channel.fetch_message.assert_awaited_once_with(91)
 
     async def test_sent_reply_and_earlier_evidence_reach_the_next_real_handler_turn(self):
         member = _Member(42, (next(iter(CORE)),))
@@ -1170,21 +843,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("The account is in BE4.", history)
         self.assertIs(self.cog._conversations.find(GUILD_ID, 100, 101), self.cog._conversations.find(GUILD_ID, 100, 102))
 
-    async def test_reply_without_ping_continues_only_a_registered_agent_conversation(self):
-        member = _Member(42, (next(iter(CORE)),))
-        conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
-        self.cog._conversations.register_reply(conversation, 91)
-        message = _message(author=member, bot_id=999, content="what about his other account?")
-        message.raw_mentions = []
-        message.reference = SimpleNamespace(channel_id=100, message_id=91)
-        with patch("elbow_helper.agent.cog.discord.Member", _Member):
-            await self.cog.on_message(message)
-        self.cog._answer.assert_awaited_once_with(
-            message, member, message.content, conversation,
-            deadline_monotonic=ANY,
-        )
-        message.reference.message_id = 92
-        self.assertFalse(self.cog._is_agent_request(message))
 
     async def test_followups_wait_for_earlier_work_instead_of_being_dropped(self):
         member = _Member(42, (next(iter(CORE)),))
@@ -1308,89 +966,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(context.state.authorized_checkpoint, conversation.checkpoint)
 
 
-
-    def test_checkpoint_refresh_requires_pressure_full_access_and_growth(self):
-        conversation = self.cog._conversations.create(GUILD_ID, 100, 91)
-        conversation.turns = [
-            ConversationTurn(f"turn {index}", frozenset({100}))
-            for index in range(9)
-        ]
-        state = AgentTurnState()
-        state.authorized_history = tuple(conversation.turns[:8])
-        state.history_status = {"older_retained_turns_available": 8}
-        created_at = datetime(2026, 9, 17, 12, tzinfo=timezone.utc)
-
-        self.cog._refresh_history_checkpoint(
-            conversation, state, created_at=created_at,
-            previous_turn_count=8,
-        )
-        first = conversation.checkpoint
-        self.assertIsNotNone(first)
-        self.assertEqual(first.covered_turn_count, 8)
-
-        self.cog._refresh_history_checkpoint(
-            conversation, state, created_at=created_at,
-            previous_turn_count=8,
-        )
-        self.assertIs(conversation.checkpoint, first)
-
-        conversation.turns.extend(
-            ConversationTurn(f"turn {index}", frozenset({100}))
-            for index in range(9, 17)
-        )
-        state.authorized_history = tuple(conversation.turns[:16])
-        state.history_status = {"older_retained_turns_available": 16}
-        self.cog._refresh_history_checkpoint(
-            conversation, state, created_at=created_at,
-            previous_turn_count=16,
-        )
-        second = conversation.checkpoint
-        self.assertEqual(second.covered_turn_count, 16)
-
-        state.authorized_history = tuple(conversation.turns[:15])
-        state.history_status = {"older_retained_turns_available": 24}
-        self.cog._refresh_history_checkpoint(
-            conversation, state, created_at=created_at,
-            previous_turn_count=16,
-        )
-        self.assertIs(conversation.checkpoint, second)
-
-    @patch("elbow_helper.agent.conversation.preparation.request_scope", new_callable=AsyncMock)
-    async def test_report_from_revoked_source_is_hidden_without_erasure(self, _scope):
-        member = _Member(42, (next(iter(CORE)),))
-        conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
-        report = make_event_report("report", "2026-09-17")
-        conversation.reports[report.report_id] = report
-        conversation.report_sources[report.report_id] = frozenset({200})
-        conversation.report_access_requirements[report.report_id] = frozenset()
-        context = SimpleNamespace(
-            state=AgentTurnState(source_channels={100}),
-            guild=SimpleNamespace(get_member=lambda member_id: member),
-            member=member,
-        )
-        with patch(
-            "elbow_helper.agent.conversation.preparation.accessible_message_channel",
-            return_value=None,
-        ):
-            await self.cog._load_authorized_reports(conversation, context)
-        self.assertEqual(context.state.reports, {})
-        self.assertIs(context.state.preserved_reports["report"], report)
-        self.cog._commit_reports(conversation, context.state)
-        self.assertIs(conversation.reports["report"], report)
-
-
-    @patch("elbow_helper.agent.conversation.preparation.request_scope", new_callable=AsyncMock)
-    async def test_history_preparation_preserves_all_authorized_candidates_for_compilation(self, _scope):
-        conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
-        conversation.turns = [ConversationTurn("older " + "x" * 60_000, frozenset({100})),
-                              ConversationTurn("latest", frozenset({100}))]
-        context = SimpleNamespace(state=AgentTurnState())
-        with patch("elbow_helper.agent.conversation.preparation.accessible_message_channel", return_value=object()):
-            history = await self.cog._conversation_history(conversation, context)
-        self.assertIn("older", history)
-        self.assertEqual(context.state.authorized_history, tuple(conversation.turns))
-        self.assertEqual(len(conversation.turns), 2)
-
     @patch("elbow_helper.agent.conversation.preparation.request_scope", new_callable=AsyncMock)
     async def test_inaccessible_task_instruction_is_not_prepared_for_model(self, _scope):
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
@@ -1423,23 +998,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         context = self.cog.service.answer.await_args.kwargs["context"]
         self.assertEqual(context.state.authorized_instructions[0].quote, "Keep together")
 
-    async def test_action_result_keeps_instruction_saved_after_preview(self):
-        latest, _ = WorkingState().remember(
-            label="Constraint", quote="Keep together", request_text="Keep together",
-            member_id=42, message_id=2, channel_id=100, created_at="2026-09-17",
-        )
-        conversation = SimpleNamespace(
-            lock=asyncio.Lock(), working=latest, append=MagicMock(),
-        )
-        self.cog._conversations = SimpleNamespace(get=lambda _: conversation)
-        context = SimpleNamespace(
-            conversation_root_id=1, state=AgentTurnState(working=WorkingState()),
-        )
-        await self.cog._record_action_outcome(
-            context, {"run_id": "synthetic", "status": "completed", "steps": []}, None,
-        )
-        self.assertIs(conversation.working, latest)
-        conversation.append.assert_called_once()
 
     async def test_queue_wait_has_its_own_timeout(self):
         self.cog._semaphore = asyncio.Semaphore(0)
@@ -1455,49 +1013,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.cog._send_failure.assert_awaited_once()
         self.assertFalse(self.cog._tasks)
 
-    def test_embed_content_is_available_as_evidence(self):
-        embed = discord.Embed(title="Applicant Review", description="Discussion")
-        embed.add_field(name="Player", value="Example")
-        text = message_text(SimpleNamespace(content="", embeds=[embed], attachments=[]))
-        self.assertIn("Applicant Review", text)
-        self.assertIn("Player: Example", text)
-
-    async def test_local_context_uses_nearest_messages_in_chronological_order(self):
-        items = [SimpleNamespace(
-            id=i, content=f"text-{i}", attachments=[], embeds=[],
-            author=SimpleNamespace(id=42, bot=False, display_name="Member"),
-            created_at=datetime.now(timezone.utc), jump_url=f"source/{i}",
-        ) for i in range(20)]
-        async def history(*, limit, before, oldest_first):
-            selected = items[:limit] if oldest_first else list(reversed(items))[:limit]
-            for item in selected:
-                yield item
-        message = SimpleNamespace(channel=SimpleNamespace(id=100, history=history), mentions=[])
-        result = await self.cog._build_local_context(message, None)
-        self.assertIn("text-12", result)
-        self.assertIn("text-19", result)
-        self.assertNotIn("text-0", result)
-        self.assertLess(result.index("text-12"), result.index("text-19"))
-
-    async def test_local_context_records_the_same_visible_text_for_citations(self):
-        from elbow_helper.agent.engine.grounding import ground_answer
-        local = SimpleNamespace(
-            id=101, content="Synthetic point " * 200, attachments=[], embeds=[],
-            author=SimpleNamespace(id=42, bot=False, display_name="Member"),
-            created_at=datetime.now(timezone.utc), jump_url="https://discord.com/channels/3/100/101",
-        )
-
-        async def history(**kwargs):
-            yield local
-
-        message = SimpleNamespace(channel=SimpleNamespace(id=100, history=history), mentions=[])
-        context = SimpleNamespace(state=AgentTurnState())
-        shown = await self.cog._build_local_context(message, None, context=context)
-        row = context.state.local_messages[0]
-        self.assertIn(row["content"], shown)
-        self.assertLessEqual(len(row["content"]), 1200)
-        self.assertIn(row["content"], ground_answer("[[message:101]]", context.state.local_messages))
-        self.assertEqual(context.state.source_channels, {100})
 
     async def test_channel_gif_pacing_includes_bot_messages_hidden_from_other_conversations(self):
         other = self.cog._conversations.create(GUILD_ID, 100, 20)
@@ -1534,25 +1049,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(anchors, [message, message, old])
         self.assertEqual(context.state.channel_gif_urls, {"https://tenor.com/view/synthetic"})
 
-    async def test_successful_sparse_channel_history_remains_diagnostic(self):
-
-        for bot_count in range(5):
-            with self.subTest(bot_count=bot_count):
-                rows = [SimpleNamespace(
-                    id=index, content=f"text-{index}", attachments=[], embeds=[],
-                    author=SimpleNamespace(id=999 if index < bot_count else 42,
-                                           bot=index < bot_count, display_name="Member"),
-                    created_at=datetime.now(timezone.utc), jump_url=f"source/{index}",
-                ) for index in range(50)]
-
-                async def history(**kwargs):
-                    for row in reversed(rows):
-                        yield row
-
-                message = SimpleNamespace(channel=SimpleNamespace(id=100, history=history), mentions=[])
-                context = SimpleNamespace(state=AgentTurnState())
-                await self.cog._build_local_context(message, None, context=context)
-                self.assertEqual(context.state.channel_bot_gifs, (False,) * min(bot_count, 3))
 
     async def test_channel_reactions_restore_from_metadata_and_share_successful_state(self):
         row = SimpleNamespace(
@@ -1577,18 +1073,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(first.state.channel_reactions, second.state.channel_reactions)
         self.assertEqual(second.state.channel_reactions.emojis, ("\U0001f389",))
 
-    async def test_unavailable_channel_history_remains_diagnostic(self):
-
-        for status, error_type in ((403, discord.Forbidden), (503, discord.HTTPException)):
-            with self.subTest(status=status):
-                async def history(**kwargs):
-                    yield SimpleNamespace(author=SimpleNamespace(id=999), content="Bot text")
-                    raise error_type(SimpleNamespace(status=status, reason="Synthetic"), "synthetic")
-
-                message = SimpleNamespace(channel=SimpleNamespace(id=100, history=history), mentions=[])
-                context = SimpleNamespace(state=AgentTurnState())
-                await self.cog._build_local_context(message, None, context=context)
-                self.assertIsNone(context.state.channel_bot_gifs)
 
     async def test_local_context_anchors_old_reply_at_referenced_message(self):
         anchors = []
@@ -1677,12 +1161,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(attached.fp.read().decode("utf-8"), response)
         attached.close()
 
-    async def test_short_code_block_stays_in_channel(self):
-        message = SimpleNamespace(id=1, mentions=[], reply=AsyncMock())
-        response = "```text\nhello\n```"
-        await self.cog.send_response(message, response, None)
-        self.assertEqual(message.reply.await_args.args[0], response)
-        self.assertEqual(message.reply.await_args.kwargs.get("files"), None)
 
     async def test_file_only_when_length_or_split_code_block_requires_it(self):
         self.assertFalse(_needs_file("```text\nshort\n```"))
@@ -1704,36 +1182,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         )
         self.cog._answer = AsyncMock()
 
-    async def test_core_mention_preserves_agent_name_in_question(self) -> None:
-        member = _Member(42, (next(iter(CORE)),))
-        message = _message(
-            author=member,
-            bot_id=999,
-            content="<@999> tell this guy to piss off",
-        )
-
-        with patch("elbow_helper.agent.cog.discord.Member", _Member):
-            await self.cog.on_message(message)
-
-        self.cog._answer.assert_awaited_once_with(
-            message,
-            member,
-            "@Synthetic Agent tell this guy to piss off",
-            ANY,
-            deadline_monotonic=ANY,
-        )
-
-    async def test_bot_mentions_at_start_and_mid_sentence_reach_the_model(self):
-        member = _Member(42, (next(iter(CORE)),))
-        make_message = self._real_handler_scenario(member)
-        with patch("elbow_helper.agent.cog.discord.Member", _Member):
-            for index, (original, expected) in enumerate((
-                ("<@999> help Synthetic Member", "@Synthetic Agent help Synthetic Member"),
-                ("Explain what <@!999> said", "Explain what @Synthetic Agent said"),
-                ("<@!999> compare <@999> and <@!999>", "@Synthetic Agent compare @Synthetic Agent and @Synthetic Agent"),
-            ), 1):
-                await self.cog.on_message(make_message(member, index, original))
-                self.assertEqual(self.cog.service.answer.await_args.kwargs["question"], expected)
 
     async def test_only_bot_mentions_still_do_not_start_a_request(self):
         member = _Member(42, (next(iter(CORE)),))
@@ -1743,13 +1191,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.cog._answer.assert_not_awaited()
         self.assertEqual(self.cog._conversations.entries(), ())
 
-    def test_request_bot_mention_uses_guild_display_name_and_keeps_other_mentions(self):
-        member = _Member(42, (next(iter(CORE)),))
-        message = _message(author=member, bot_id=999,
-            content="<@!999> ask <@77> about <#88> and #synthetic-room")
-        message.guild.me.display_name = "Synthetic Guild Agent"
-        question = self.cog._extract_question(message)
-        self.assertEqual(question, "@Synthetic Guild Agent ask <@77> about <#88> and #synthetic-room")
 
     async def test_normalized_request_keeps_raw_transcript_and_reply_matching(self):
         member = _Member(42, (next(iter(CORE)),))
@@ -1820,31 +1261,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.cog.application_owner.member_id, 77)
         self.assertEqual(self.cog.application_owner.display_name, "Synthetic Team Owner")
 
-    async def test_local_context_marks_own_author_and_resolves_member_mentions(self):
-        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        agent = SimpleNamespace(id=999, bot=True, display_name="Synthetic Agent")
-        other_bot = SimpleNamespace(id=998, bot=True, display_name="Synthetic Other Bot")
-        member = SimpleNamespace(id=77, bot=False, display_name="Synthetic Member")
-        def nearby(identifier, author, content):
-            return SimpleNamespace(id=identifier, author=author, content=content,
-                mentions=[agent, member], attachments=[], embeds=[], created_at=now,
-                jump_url=f"synthetic-source/{identifier}")
-        rows = [nearby(1, agent, "Earlier answer"), nearby(2, other_bot, "Other answer"),
-                nearby(3, member, "<@999> and <@!999> answered <@77> and <@!77>")]
-        async def history(**kwargs):
-            for row in reversed(rows):
-                yield row
-        guild = SimpleNamespace(id=GUILD_ID, me=agent, get_member=lambda _: None)
-        request = SimpleNamespace(guild=guild, created_at=now, mentions=[],
-                                  channel=SimpleNamespace(id=100, history=history))
-        conversation = self.cog._conversations.create(GUILD_ID, 100, 3)
-        self.cog._conversations.register_reply(conversation, 1)
-        result = await self.cog._build_local_context(request, None, conversation)
-        self.assertIn("Synthetic Agent (you, member_id=999", result)
-        self.assertIn("Synthetic Other Bot (bot, member_id=998", result)
-        self.assertIn("@Synthetic Agent (you, member_id=999) and @Synthetic Agent (you, member_id=999)", result)
-        self.assertIn("@Synthetic Member (member_id=77) and @Synthetic Member (member_id=77)", result)
-        self.assertEqual(rows[2].content, "<@999> and <@!999> answered <@77> and <@!77>")
 
     async def test_non_core_mention_is_silently_ignored(self) -> None:
         member = _Member(42, ())

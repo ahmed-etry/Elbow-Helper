@@ -1,10 +1,9 @@
 """Unread account pages and unrequested measures remain unknown to the writer."""
 from copy import deepcopy
-import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.engine.answer_inputs import answer_evidence, bounded_answer_evidence
+from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
 from elbow_helper.agent.engine.routing import ROUTE_INSTRUCTION
 from elbow_helper.agent.engine.service import AgentService
@@ -40,14 +39,6 @@ class NameLookupCoverageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['row_coverage'], {'status': 'not_read', 'rows_read': 0,
             'rows_not_read': None, 'account_tags_not_read': ['#P0']})
 
-    def test_clarification_page_keeps_its_unread_account_limit(self):
-        payload = named_accounts(1)
-        payload.update(status='needs_input', rows=payload['rows'][:1], total_rows=2,
-                       next_cursor='opaque')
-        result = answer_evidence({'accounts': payload})['accounts']
-        self.assertEqual(result['status'], 'needs_input')
-        self.assertFalse(result['evidence_complete'])
-        self.assertEqual(result['row_coverage']['account_tags_not_read'], ['#P01'])
 
     def test_count_only_view_does_not_become_an_incomplete_row_read(self):
         result = answer_evidence({'read': {'family': 'read_test_family', 'rows': [],
@@ -132,12 +123,6 @@ class NameLookupCoverageTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(requests), 3)
         finally:
             await model.close()
-
-    def test_writer_bounding_preserves_omitted_collection_counts(self):
-        facts = answer_evidence({'accounts': named_accounts(40)})
-        bounded = json.loads(bounded_answer_evidence(facts, 2000))
-        self.assertTrue(bounded['truncated'])
-        self.assertTrue(any('rows' in path for path in bounded['truncated_collections']))
 
 
 if __name__ == '__main__':

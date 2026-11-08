@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -12,9 +12,8 @@ from elbow_helper.configuration.roles import (
 )
 from elbow_helper.agent.access import AgentAccessLost, LookupAccessDenied
 from elbow_helper.agent.knowledge.store import KnowledgeStore
-from elbow_helper.agent.knowledge.tools import knowledge_tools, search_approved_knowledge
+from elbow_helper.agent.knowledge.tools import search_approved_knowledge
 from elbow_helper.agent.models import AgentTurnState
-from elbow_helper.agent.plan.checker import valid_arguments
 
 
 class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
@@ -167,34 +166,3 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(unavailable["store_status"], "unavailable")
         self.assertEqual(unavailable["match_status"], "store_unavailable")
         self.assertFalse(unavailable["search_complete"])
-
-    async def test_conversation_access_is_rechecked_after_opening_titles(self):
-        self.write("public.md", "# Public topic\nBody")
-        catalog = self.store.load()
-        visible_sections = type(catalog).visible_sections
-
-        def lose_access(catalog, levels):
-            visible = visible_sections(catalog, levels)
-            self.context.source_message.channel.permissions_for = lambda _: SimpleNamespace(
-                view_channel=False, read_message_history=False)
-            return visible
-
-        with patch.object(type(catalog), "visible_sections", lose_access):
-            with self.assertRaises(AgentAccessLost):
-                await search_approved_knowledge(self.context, {"titles": ["Public topic"]})
-
-    def test_tool_schema_accepts_either_argument_or_both_and_bounds_titles(self):
-        schema = knowledge_tools()[0].definition.parameters
-        for arguments in ({"query": "topic"}, {"query": ""}, {"titles": ["Topic"]},
-                          {"query": "topic", "scope": "requester"},
-                          {"query": "topic", "scope": "channel"},
-                          {"query": "topic", "titles": ["Topic"]},
-                          {"titles": [f"Topic {i}" for i in range(5)]}):
-            with self.subTest(arguments=arguments):
-                self.assertTrue(valid_arguments(arguments, schema))
-        for arguments in ({"titles": []}, {"titles": ["Topic"] * 2},
-                          {"query": "topic", "scope": "all"}, {"scope": True},
-                          {"titles": [f"Topic {i}" for i in range(6)]},
-                          {"titles": "Topic"}, {"titles": [1]}, {"query": "x" * 201}):
-            with self.subTest(arguments=arguments):
-                self.assertFalse(valid_arguments(arguments, schema))

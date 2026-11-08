@@ -1,9 +1,11 @@
 """Workflow history and live state share a versioned SQLite file."""
 
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration
+from .settings import create_schema as create_settings
+from elbow_helper.infrastructure.persistence.documents import create_schema as create_documents
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 
 def _create_history(connection):
@@ -32,9 +34,13 @@ def _create_examination_cases(connection):
 def create_schema(connection):
     _create_history(connection)
     _create_examination_cases(connection)
+    create_settings(connection)
+    create_documents(connection)
 
 
 MIGRATIONS = (
     SQLiteMigration(1, "workflow history and state", _create_history),
     SQLiteMigration(2, "examination cases", _create_examination_cases),
+    SQLiteMigration(3, "health settings and audit", create_settings),
+    SQLiteMigration(4, "feature documents and startup receipt", create_documents),
 )

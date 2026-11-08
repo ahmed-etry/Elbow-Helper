@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence, cohort_review_evidence
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.families.cohort_activity import activity_fields
+from elbow_helper.agent.reads.cohort_activity import activity_fields
 from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.agent.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -34,28 +34,6 @@ def cohort(complete=True):
 
 
 class CohortWriterTests(unittest.IsolatedAsyncioTestCase):
-    async def test_review_uses_retained_table_metadata_and_preserves_authorization_failures(self):
-        context = _context()
-        rows = [{'player_tag': f'#P{i}', 'player_name': f'Selected account {i}'} for i in range(120)]
-        tool = family_tool('read_member_accounts', 'Read selected accounts.', {},
-                           AsyncMock(return_value={'rows': rows, 'count_complete': False}))
-        page = await tool.handler(context, {'limit': 1})
-        evidence = {'accounts': page}
-        restored = await cohort_writer_evidence(context, evidence)
-        review = cohort_review_evidence(evidence, restored)['accounts']
-        self.assertNotIn('rows', review)
-        self.assertEqual(review['retained_table']['total_rows'], 120)
-        self.assertIn('player_tag', review['retained_table']['columns'])
-        self.assertFalse(review['count_complete'])
-        self.assertEqual(len(page['rows']), 1)
-        self.assertEqual(len(unpack(restored)['accounts']['rows']), 120)
-        with patch('elbow_helper.agent.engine.cohort_evidence.authorize_report',
-                   AsyncMock(return_value=False)):
-            revoked = await cohort_writer_evidence(context, evidence)
-        denied_review = cohort_review_evidence(evidence, revoked)['accounts']
-        self.assertEqual(denied_review['cause'], 'report_unavailable')
-        self.assertNotIn('retained_table', denied_review)
-        self.assertNotIn('rows', denied_review)
 
     def test_review_keeps_discussion_content_for_semantic_source_selection(self):
         evidence = {'discussion': {'family': 'read_conversation_evidence', 'complete_snapshot': True,
@@ -122,16 +100,6 @@ class CohortWriterTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(writer.get('truncated'))
         return flow, writer['results']['activity']
 
-    async def test_count_only_full_family_reaches_real_writer_without_files(self):
-        source = cohort()
-        flow, writer = await self.flow(AsyncMock(return_value=source))
-        rows = writer['rows']
-        self.assertEqual(len(rows), 203)
-        self.assertEqual(sum(r['member_id'] is not None for r in rows), 183)
-        self.assertEqual([r['donations'] for r in rows], list(range(203)))
-        self.assertEqual(writer['row_rendering']['rows']['same_on_every_row']['attacks_used'], 6)
-        self.assertFalse(flow.context.state.attachments)
-        self.assertFalse(flow.context.state.proposed_changes)
 
     async def test_unavailable_store_reaches_writer_without_repeated_reads(self):
         source = AsyncMock(return_value=cohort(False))

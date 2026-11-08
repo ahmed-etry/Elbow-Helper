@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from elbow_helper.features.wars.rendering import normalize_war_state
+from elbow_helper.domain.wars import normalize_war_state
 
 from ..helpers import coc_time_to_dt
 

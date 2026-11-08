@@ -11,8 +11,8 @@ from typing import Literal
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.cwl import SEASON_KEY
-from elbow_helper.features.clan_health.attendance import aggregate_attendance
-from elbow_helper.features.wars.record import board_payload, record_fresh
+from elbow_helper.domain.war_attendance import aggregate_attendance
+from elbow_helper.domain.war_views import board_payload, record_fresh
 from . import record_wars
 from .member_context import owner_context
 from ..read_cache import source_revision, stored_read

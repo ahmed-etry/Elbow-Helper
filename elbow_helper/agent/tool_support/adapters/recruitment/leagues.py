@@ -9,7 +9,7 @@ from ....engine.capability_contract import CapabilityContract
 from ....models import RegisteredAgentTool
 from ....reports.tools import authorize_report
 from ....reads.people import read_people_links
-from ....capabilities.member_lifecycle.report import MemberLifecycleReport
+from elbow_helper.agent.tool_support.adapters.member_lifecycle.report import MemberLifecycleReport
 from .report import RecruitmentTrialReport
 
 

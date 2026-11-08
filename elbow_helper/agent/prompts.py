@@ -167,9 +167,6 @@ react to it instead of declining advice. Game updates may have changed what you 
 contradict a member's game claim from memory unless approved knowledge supports the correction."""
 
 
-PERSONA_RULES = "\n\n".join((VOICE_RULES, BANTER_RULES, ANSWER_RULES, GAME_ADVICE_RULES))
-
-
 DISCORD_REPLY_RULES = """Discord conduct:
 When asked to speak to, tease, tag or answer another member, address that recipient: \
 reply to their message without mentioning them \
@@ -568,11 +565,6 @@ are UTC; weekly and monthly times are local, with weekly days 0 Monday through 6
 for an unknown timezone when needed."""
 
 
-CHANGE_REFUSAL_INSTRUCTION = (
-    "Say briefly which changes can't be made and why, and offer to go ahead "
-    "with the rest. Don't say anything ran."
-)
-
 LIMIT_ANSWER_INSTRUCTION = (
     "No further research is available in this request. Write a finished answer from the "
     "evidence already read, leading with what it means for the request. Do not dump knowledge "
@@ -642,10 +634,6 @@ COMMON_SYSTEM_PROMPT = "\n\n".join((
 ))
 SYSTEM_PROMPT = "\n\n".join((
     COMMON_SYSTEM_PROMPT, READ_ONLY_CAPABILITY_PARAGRAPH,
-))
-ACTION_SYSTEM_PROMPT = "\n\n".join((
-    COMMON_SYSTEM_PROMPT, ACTION_CAPABILITY_PARAGRAPH,
-    ACTION_PLANNING_RULES + "\n" + STANDING_RULE_RULES,
 ))
 
 

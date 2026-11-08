@@ -1,4 +1,4 @@
-"""Legacy link selectors and SQL projection; neutral reads live in data.reads."""
+"""Current-link selectors and SQL projection over shared stored facts."""
 
 import asyncio
 from contextlib import closing

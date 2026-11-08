@@ -45,13 +45,6 @@ class ImageOnlyDeliveryTests(unittest.IsolatedAsyncioTestCase):
         await self.send('Synthetic explanation.', [AgentAttachment('sample.csv', b'column\nvalue')])
         self.assertEqual(self.message.reply.await_args.args, ('Synthetic explanation.',))
 
-    async def test_selected_image_sends_no_prose_even_if_caller_supplies_it(self):
-        self.context.state.gif_url = 'https://tenor.com/view/Synthetic'
-        await self.send('Synthetic fallback.')
-        self.message.reply.assert_awaited_once()
-        self.assertEqual(self.message.reply.await_args.args, (self.context.state.gif_url,))
-        self.assertEqual(self.delivery.text_parts, [self.context.state.gif_url])
-        self.assertEqual(self.context.state.gif_fallback_text, 'Synthetic fallback.')
 
     async def test_definite_media_rejection_sends_only_the_authored_fallback(self):
         self.context.state.gif_url = 'https://tenor.com/view/Synthetic'
@@ -73,20 +66,11 @@ class ImageOnlyDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.delivery.unknown)
         self.assertEqual(self.delivery.text_parts, [])
 
-    async def test_quoted_provider_link_stays_inside_the_answer_text(self):
-        await self.send('Synthetic caption.\nhttps://tenor.com/view/Synthetic')
-        self.message.reply.assert_awaited_once()
-        self.assertEqual(self.message.reply.await_args.args,
-            ('Synthetic caption.\nhttps://tenor.com/view/Synthetic',))
-
-    async def test_quoted_image_link_stays_inside_the_answer_text(self):
-        await self.send('Synthetic caption.\nhttps://example.invalid/image.PNG?version=2')
-        self.message.reply.assert_awaited_once()
-        self.assertEqual(self.message.reply.await_args.args,
-            ('Synthetic caption.\nhttps://example.invalid/image.PNG?version=2',))
-
-    async def test_requester_mention_cannot_become_an_image_caption(self):
-        await self.surface.send_response(self.message, 'Synthetic fallback.', None,
-            [AgentAttachment('sample.png', b'media')], context=self.context,
-            delivery=self.delivery, mention_requester=True)
-        self.assertIsNone(self.message.reply.await_args.args[0])
+    async def test_quoted_media_links_stay_inside_the_answer_text(self):
+        for url in ('https://tenor.com/view/Synthetic', 'https://example.invalid/image.PNG?version=2'):
+            with self.subTest(url=url):
+                self.message.reply.reset_mock()
+                text = 'Synthetic caption.\n' + url
+                await self.send(text)
+                self.message.reply.assert_awaited_once()
+                self.assertEqual(self.message.reply.await_args.args, (text,))

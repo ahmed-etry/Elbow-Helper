@@ -13,7 +13,8 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 
 from .config import WAR_BOARD_CLAN_CODES
 from .helpers import build_war_id
-from .rendering import coc_time_to_datetime, normalize_war_state
+from elbow_helper.infrastructure.discord.war_boards import coc_time_to_datetime
+from elbow_helper.domain.wars import normalize_war_state
 
 if TYPE_CHECKING:
     from .cog import WarManager

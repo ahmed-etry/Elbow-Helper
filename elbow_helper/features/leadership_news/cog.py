@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 import re
 import time
 
@@ -16,7 +15,6 @@ from .views import ForwardView
 from . import state
 
 LOGGER = logging.getLogger(__name__)
-STATE_FILE = Path("data/leadership_news/state.json")
 
 
 class LeadNews(commands.Cog):
@@ -36,7 +34,7 @@ class LeadNews(commands.Cog):
     async def cog_load(self) -> None:
         if self._loaded:
             return
-        self._state = await self.events.call(state.import_state, STATE_FILE)
+        self._state = await self.events.call(state.startup)
         self._loaded = True
         self.events.register_member_deletion(state.WORKFLOW, self._refresh_after_deletion)
         for prompt_id in self._state["prompts"]:

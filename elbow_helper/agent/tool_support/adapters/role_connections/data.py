@@ -1,6 +1,5 @@
 """Queryable feature state files."""
 
-from pathlib import Path
 
 from elbow_helper.features.role_connections.config import STATE_FILE
 
@@ -10,7 +9,7 @@ from ...sql.sources import DataSource
 SOURCES = (
     DataSource(
         "state",
-        Path(STATE_FILE),
+        STATE_FILE,
         state_name="role_connections",
         level="lead",
         note=(

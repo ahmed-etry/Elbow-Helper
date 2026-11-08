@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from elbow_helper.infrastructure.persistence.documents import Document
+
 from typing import Any
 
 from elbow_helper.configuration.roles import APPLICANT_ROLE_ID
@@ -16,7 +17,7 @@ from .timeutils import raid_weekend_window
 from .timeutils import season_end_point
 from .timeutils import trader_refresh_point
 
-STATE_FILE = Path("data/event_stats/event_stats.json")
+STATE_FILE = Document("activity_schedule")
 STATE_SCHEMA_VERSION = 2
 ENDING_SOON_HOURS = 12
 DEFAULT_GRACE_HOURS = 24

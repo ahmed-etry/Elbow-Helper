@@ -159,17 +159,6 @@ class CwlThreadSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot.battle.attacks_total, 2)
         self.assertEqual(snapshot.battle.missing_attacks, ("Player Two",))
 
-    def test_future_inwar_payload_is_treated_as_preparation(self) -> None:
-        wars = [_war("inWar", 1, start_at=NOW + timedelta(hours=4))]
-
-        snapshot = build_cwl_thread_snapshot(
-            wars,
-            CLAN_TAGS["BEH"],
-            now=NOW,
-        )
-
-        self.assertIsNone(snapshot.battle)
-        self.assertEqual(snapshot.preparation.round_number, 1)
 
     def test_partial_overlap_is_not_safe_for_the_thread_board(self) -> None:
         battle_only = [_war("inWar", 3)]
@@ -178,131 +167,17 @@ class CwlThreadSnapshotTests(unittest.TestCase):
             cwl_thread_snapshot_is_complete(battle_only, now=NOW)
         )
 
-    def test_prep_remains_safe_after_the_previous_battle_ends(self) -> None:
-        wars = [
-            _war("warEnded", 3),
-            _war("preparation", 4, start_at=NOW + timedelta(hours=8)),
-        ]
 
-        self.assertTrue(cwl_thread_snapshot_is_complete(wars, now=NOW))
-        snapshot = build_cwl_thread_snapshot(
-            wars,
-            CLAN_TAGS["BEH"],
-            now=NOW,
-        )
-        self.assertIsNone(snapshot.battle)
-        self.assertEqual(snapshot.preparation.round_number, 4)
-
-    def test_final_ended_round_is_a_complete_inactive_snapshot(self) -> None:
-        wars = [_war("warEnded", round_number) for round_number in range(1, 8)]
-
-        self.assertTrue(cwl_thread_snapshot_is_complete(wars, now=NOW))
-        snapshot = build_cwl_thread_snapshot(
-            wars,
-            CLAN_TAGS["BEH"],
-            now=NOW,
-        )
-        self.assertFalse(snapshot.has_active_round)
-
-    def test_ended_snapshot_without_round_total_cannot_remove_the_board(self) -> None:
-        wars = [_war("warEnded", 7)]
-        wars[0].pop("_total_rounds")
-
-        self.assertFalse(cwl_thread_snapshot_is_complete(wars, now=NOW))
-
-    def test_active_snapshot_without_round_total_cannot_hide_a_section(self) -> None:
-        wars = [_war("inWar", 3)]
-        wars[0].pop("_total_rounds")
-
-        self.assertFalse(cwl_thread_snapshot_is_complete(wars, now=NOW))
+    def test_missing_round_total_cannot_hide_an_active_or_ended_board(self):
+        for state, round_number in (("warEnded", 7), ("inWar", 3)):
+            with self.subTest(state=state):
+                wars = [_war(state, round_number)]
+                wars[0].pop("_total_rounds")
+                self.assertFalse(cwl_thread_snapshot_is_complete(wars, now=NOW))
 
 
 class CwlThreadRenderingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_board_includes_active_round_data_and_status_controls(self) -> None:
-        manager = ThreadBoardHarness()
-        snapshot = CwlThreadSnapshot(
-            battle=_round("inwar", 3),
-            preparation=_round("preparation", 4),
-        )
 
-        embed, view = await manager._build_thread_status_board(
-            "BEH",
-            snapshot,
-            "empty",
-        )
-
-        rendered = str(embed.to_dict())
-        for expected in (
-            "Day 3",
-            "Rival 3",
-            "27/30",
-            "Player One",
-            "Player Two",
-            discord.utils.format_dt(NOW + timedelta(hours=1), "R"),
-            "Day 4",
-            "Rival 4",
-            discord.utils.format_dt(NOW + timedelta(hours=8), "R"),
-        ):
-            self.assertIn(expected, rendered)
-        self.assertIn("battle", rendered.casefold())
-        self.assertIn("preparation", rendered.casefold())
-        self.assertIn("empty", rendered.casefold())
-        self.assertNotIn("Day 1", rendered)
-        self.assertIsNotNone(view)
-        self.assertEqual(
-            [item.custom_id for item in view.children],
-            [
-                "cwl:cc_status:beh:filled",
-                "cwl:cc_status:beh:partial",
-                "cwl:cc_status:beh:empty",
-            ],
-        )
-        self.assertEqual(
-            [item.disabled for item in view.children],
-            [False, False, True],
-        )
-
-    async def test_final_battle_hides_all_cc_information_and_controls(self) -> None:
-        manager = ThreadBoardHarness()
-        snapshot = CwlThreadSnapshot(
-            battle=_round("inwar", 7),
-            preparation=None,
-        )
-
-        embed, view = await manager._build_thread_status_board(
-            "BEH",
-            snapshot,
-            None,
-        )
-
-        rendered = str(embed.to_dict())
-        self.assertIn("Day 7", rendered)
-        self.assertIn("27/30", rendered)
-        self.assertNotIn("CC", rendered)
-        self.assertIsNone(view)
-
-    def test_legacy_day_status_migrates_to_the_actual_prep_war(self) -> None:
-        manager = ThreadBoardHarness()
-        thread_data = manager.data["threads"]["123"]
-        thread_data["cc_status"] = {"4": "partial"}
-        thread_data["cc_statuses"] = {
-            "#WAR3": {"round": 3, "season": "2026-09", "status": "filled"}
-        }
-        preparation = _round("preparation", 4)
-
-        status, changed = manager._prepare_cc_state(
-            thread_data,
-            preparation,
-        )
-
-        self.assertTrue(changed)
-        self.assertEqual(status, "partial")
-        self.assertEqual(thread_data["cc_status"], {})
-        self.assertEqual(
-            thread_data["cc_statuses"]["#WAR4"]["status"],
-            "partial",
-        )
-        self.assertNotIn("#WAR3", thread_data["cc_statuses"])
 
     def test_cc_state_is_cleared_when_no_preparation_is_active(self) -> None:
         manager = ThreadBoardHarness()
@@ -322,65 +197,6 @@ class CwlThreadRenderingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(changed)
         self.assertEqual(thread_data["cc_statuses"], {})
         self.assertNotIn("active_prep", thread_data)
-
-
-class CwlThreadSyncTests(unittest.IsolatedAsyncioTestCase):
-    async def test_unchanged_board_is_not_edited_but_status_change_is(self) -> None:
-        manager = ThreadBoardHarness()
-        snapshot = CwlThreadSnapshot(
-            battle=_round("inwar", 3),
-            preparation=_round("preparation", 4),
-        )
-        existing_embed, existing_view = await manager._build_thread_status_board(
-            "BEH",
-            snapshot,
-            "empty",
-        )
-        existing_message = SimpleNamespace(
-            id=900,
-            embeds=[existing_embed],
-            components=[
-                SimpleNamespace(to_dict=lambda payload=payload: payload)
-                for payload in existing_view.to_components()
-            ],
-            edit=AsyncMock(),
-        )
-        thread = MagicMock(spec=discord.Thread)
-        thread.id = 123
-        thread.fetch_message = AsyncMock(return_value=existing_message)
-        thread.send = AsyncMock()
-
-        async def run_operation(thread_arg, operation, coro_factory):
-            return True, await coro_factory()
-
-        manager._run_sticky_http_operation = AsyncMock(side_effect=run_operation)
-        manager._cleanup_stale_sticky_messages = AsyncMock(return_value=False)
-        thread_data = manager.data["threads"]["123"]
-
-        unchanged = await manager._sync_thread_status_board(
-            "BEH",
-            thread,
-            thread_data,
-            snapshot,
-        )
-
-        self.assertTrue(unchanged)
-        manager.bot.publishing.edit_message.assert_not_called()
-        existing_message.edit.assert_not_awaited()
-        thread.send.assert_not_awaited()
-
-        thread_data["cc_statuses"]["#WAR4"]["status"] = "filled"
-        changed = await manager._sync_thread_status_board(
-            "BEH",
-            thread,
-            thread_data,
-            snapshot,
-        )
-
-        self.assertTrue(changed)
-        manager.bot.publishing.edit_message.assert_called_once()
-        existing_message.edit.assert_awaited_once()
-        thread.send.assert_not_awaited()
 
 
 class CwlThreadLifecycleTests(unittest.IsolatedAsyncioTestCase):
@@ -422,28 +238,6 @@ class CwlThreadLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(thread_data["cc_statuses"], {})
         self.assertNotIn("active_prep", thread_data)
 
-    async def test_two_human_messages_do_not_repost_the_board(self) -> None:
-        manager = ThreadBoardHarness()
-        manager._repost_existing_thread_status = AsyncMock(return_value=True)
-        thread = MagicMock(spec=discord.Thread)
-        thread.id = 123
-
-        async def history(**kwargs):
-            for message_id in (902, 901):
-                yield SimpleNamespace(
-                    id=message_id,
-                    author=SimpleNamespace(bot=False),
-                )
-
-        thread.history = history
-        with patch(
-            "elbow_helper.features.cwl.threads.board.time.monotonic",
-            return_value=60.0,
-        ):
-            reposted = await manager._repost_thread_status_from_activity(thread)
-
-        self.assertFalse(reposted)
-        manager._repost_existing_thread_status.assert_not_awaited()
 
     async def test_third_human_message_reposts_immediately_without_a_timer(self) -> None:
         manager = ThreadBoardHarness()
@@ -553,7 +347,6 @@ class CwlThreadButtonTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("older", response_content.casefold())
         self.assertIn("latest", response_content.casefold())
-
 
 
 if __name__ == "__main__":

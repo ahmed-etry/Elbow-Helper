@@ -11,8 +11,10 @@ from typing import Any
 
 import discord
 
-from elbow_helper.features.wars.rendering import build_war_board_embed
-from elbow_helper.features.wars.rendering import normalize_war_state
+from elbow_helper.infrastructure.discord.embeds import stable_embed_payload
+
+from elbow_helper.infrastructure.discord.war_boards import build_war_board_embed
+from elbow_helper.domain.wars import normalize_war_state
 from elbow_helper.configuration.channels import CLAN_CWL_INFO_CHANNELS
 
 from .config import CWL_CLAN_TAGS
@@ -20,17 +22,6 @@ from .helpers import coc_time_to_dt
 
 
 LOGGER = logging.getLogger(__name__)
-
-
-def _embed_without_timestamp(embed: discord.Embed) -> dict[str, Any]:
-    payload = embed.to_dict()
-    payload.pop("timestamp", None)
-    for key in ("thumbnail", "image"):
-        media = payload.get(key)
-        if isinstance(media, dict):
-            for dynamic_key in ("proxy_url", "height", "width"):
-                media.pop(dynamic_key, None)
-    return payload
 
 
 def _positive_int(value: Any) -> int:
@@ -239,8 +230,8 @@ class CwlWarBoardMixin:
                 return True
 
             content_changed = len(message.embeds) != len(embeds) or any(
-                _embed_without_timestamp(current)
-                != _embed_without_timestamp(replacement)
+                stable_embed_payload(current)
+                != stable_embed_payload(replacement)
                 for current, replacement in zip(message.embeds, embeds)
             )
             controls_changed = bool(message.components)

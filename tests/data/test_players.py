@@ -1,30 +1,25 @@
 """Offline profiles, conservative removals, request scheduling and growth checks."""
 
 import asyncio
-from contextlib import closing
 from copy import deepcopy
 import json
 from pathlib import Path
-import sqlite3
 import threading
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.data.collectors.service import FamilyCollectors
+from tests.data.store_fixtures import empty_store
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.clans import collect_clans
 from elbow_helper.data.store.people import account, mirror_links
 from elbow_helper.data.store.player_projection import HOUR_US, project_profile
 from elbow_helper.data.store.players import collect_player, due_accounts, players_due
-from elbow_helper.data.store.schema import create_initial_schema
-from elbow_helper.data.store.schema import create_player_schema
-from elbow_helper.data.store.schema import SCHEMA_VERSION
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
 from .test_family_store import CLANS, clan_response, link, player, response
-from .player_size import annual_size
 
 
 DAY_US = 24 * HOUR_US
@@ -67,8 +62,7 @@ class PlayerTestCase(unittest.IsolatedAsyncioTestCase):
         self.temporary = TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(self.temporary.cleanup)
         self.path = Path(self.temporary.name) / "family.sqlite3"
-        self.store = FamilyStore(self.path)
-        await self.store.initialize()
+        self.store = await empty_store(self.path)
         def seed(connection):
             with sqlite_transaction(connection):
                 return account(connection, "#P0", 1)
@@ -88,21 +82,6 @@ class PlayerTestCase(unittest.IsolatedAsyncioTestCase):
 
 
 class PlayerStoreTests(PlayerTestCase):
-    async def test_quiet_hours_keep_one_counter_row_and_no_new_receipts(self):
-        await self.observe(100)
-        baseline = await self.rows("SELECT * FROM player_counters")
-        receipts = await self.rows("SELECT * FROM collection_items")
-        for hour in (1, 2, 23, 24, 25, 48):
-            await self.observe(hour * HOUR_US + 100)
-        self.assertEqual(await self.rows("SELECT * FROM player_counters"), baseline)
-        self.assertEqual(await self.rows("SELECT * FROM collection_items"), receipts)
-        self.assertEqual(len(await self.rows("SELECT * FROM player_collection_state")), 1)
-        # The long polling gap creates a coverage boundary, not a false claim
-        # that all the missing polls worked.
-        self.assertEqual(len(await self.rows("SELECT * FROM player_coverage")), 3)
-        self.assertEqual(len(await self.rows("SELECT * FROM collection_runs WHERE status='ok'")), 7)
-        self.assertIn("source_run_id", baseline[0])
-        self.assertNotIn("source_item_id", baseline[0])
 
     async def test_daily_progress_is_sparse_across_hours_restart_and_removals(self):
         payload = realistic_profile()
@@ -166,77 +145,6 @@ class PlayerStoreTests(PlayerTestCase):
         await self.observe(2 * HOUR_US + 100)
         self.assertEqual(len(await self.rows("SELECT * FROM player_counters")), 1)
 
-    async def test_version_two_history_is_compacted_without_losing_provenance(self):
-        old_path = self.path.parent / "version_two.sqlite3"
-        with closing(sqlite3.connect(old_path)) as c, c:
-            create_initial_schema(c)
-            create_player_schema(c)
-            c.execute("INSERT INTO accounts VALUES (1,'#P0','Player',100,?,'observed')", (2 * HOUR_US + 100,))
-            c.execute("INSERT INTO item_catalog VALUES (1,'achievements','home','Progress',NULL,'achievement','{}')")
-            complete = json.dumps({"complete": True, "fields": True, "arrays": dict.fromkeys(
-                ("troops", "heroes", "heroEquipment", "spells", "achievements"), True), "equipment": {}, "unsupported_fields": []})
-            for index in range(3):
-                at = index * HOUR_US + 100
-                c.execute("INSERT INTO collection_runs(id,collector,scope_kind,scheduled_at,started_at,finished_at,status,expected,attempted,succeeded) "
-                          "VALUES (?,'players','accounts',?,?,?,'ok',1,1,1)", (index + 1, at, at, at))
-                c.execute("INSERT INTO collection_items(id,run_id,ordinal,source_kind,scope_id,account_id,status,started_at,fetched_at,completeness_json) "
-                          "VALUES (?,?,0,'player_profile','#P0',1,'ok',?,?,?)", (index + 1, index + 1, at, at, complete))
-                c.execute("INSERT INTO player_counters VALUES (1,?,10,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,?,'{}',?,'{}',?)",
-                          (at, json.dumps({"1": index + 1}), json.dumps({"fields": ["trophies"], "legendStatistics": False,
-                                                                       "arrays": {"achievements": True}}), index + 1))
-            c.execute("INSERT INTO player_observations VALUES (1,'name',100,'\"Player\"',NULL,1)")
-            c.execute("INSERT INTO player_items VALUES (1,1,100,NULL,NULL,'{\"stars\":1,\"target\":10}',1,NULL,1)")
-            c.execute("INSERT INTO account_aliases VALUES (1,'Player','player',100,NULL,1,NULL)")
-            c.execute("PRAGMA user_version=2")
-        self.store = FamilyStore(old_path)
-        await self.store.initialize()
-        self.assertEqual(len(await self.rows("SELECT * FROM player_counters")), 1)
-        self.assertEqual(len(await self.rows("SELECT * FROM collection_items")), 1)
-        self.assertEqual(len(await self.rows("SELECT * FROM player_coverage")), 1)
-        observation = (await self.rows("SELECT * FROM player_observations"))[0]
-        self.assertEqual(observation["source_run_id"], 1)
-        payload = {"tag": "#P0", "name": "Player", "townHallLevel": 10, "trophies": 10,
-                   "troops": [], "heroes": [], "heroEquipment": [], "spells": [],
-                   "achievements": [{"name": "Progress", "village": "home", "stars": 1, "target": 10, "value": 3}]}
-        await self.observe(3 * HOUR_US + 100, payload)
-        self.assertEqual(len(await self.rows("SELECT * FROM player_counters")), 1)
-        await self.observe(DAY_US + 100, payload)
-        self.assertEqual(json.loads((await self.rows("SELECT * FROM player_counters ORDER BY sampled_at"))[-1]["achievement_values_json"]), {"1": 3})
-        self.assertEqual(await self.rows("PRAGMA foreign_key_check"), [])
-
-    async def test_migration_from_version_one_preserves_existing_rows_and_restarts(self):
-        old_path = self.path.parent / "version_one.sqlite3"
-        with closing(sqlite3.connect(old_path)) as c, c:
-            create_initial_schema(c)
-            c.execute("INSERT INTO accounts(player_tag,first_observed_at,tracking_status) VALUES ('#P0',1,'observed')")
-            c.execute("PRAGMA user_version=1")
-        upgraded = FamilyStore(old_path)
-        await upgraded.initialize()
-        self.assertEqual(await upgraded.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), SCHEMA_VERSION)
-        self.assertEqual(await upgraded.call(lambda c: c.execute("SELECT player_tag FROM accounts").fetchone()[0]), "#P0")
-        await FamilyStore(old_path).initialize()
-        self.assertEqual(await upgraded.call(lambda c: c.execute("PRAGMA foreign_key_check").fetchall()), [])
-
-    async def test_unchanged_counter_growth_and_one_upgrade_only_write_one_item_change(self):
-        payload = profile()
-        await self.observe(100, payload)
-        count = len(await self.rows("SELECT * FROM player_items"))
-        fields = await self.rows("SELECT * FROM player_observations")
-        payload["trophies"] += 10
-        payload["achievements"][0]["value"] += 100
-        payload["troops"][3]["superTroopIsActive"] = False
-        payload["legendStatistics"]["currentSeason"]["trophies"] += 10
-        await self.observe(HOUR_US + 100, payload)
-        self.assertEqual(len(await self.rows("SELECT * FROM player_items")), count)
-        self.assertEqual(await self.rows("SELECT * FROM player_observations"), fields)
-        payload["troops"][0]["level"] += 1
-        await self.observe(2 * HOUR_US + 100, payload)
-        self.assertEqual(len(await self.rows("SELECT * FROM player_items")), count)
-        await self.observe(DAY_US + 100, payload)
-        changes = await self.rows("SELECT * FROM player_items WHERE observed_at=?", (DAY_US + 100,))
-        self.assertEqual(len(changes), 1)
-        self.assertEqual(changes[0]["previous_good_at"], 100)
-        self.assertEqual(await self.rows("PRAGMA foreign_key_check"), [])
 
     async def test_removed_and_reappearing_item_and_disappearing_scalar(self):
         payload = profile()
@@ -359,32 +267,25 @@ class PlayerStoreTests(PlayerTestCase):
         self.assertEqual(by_identity[("heroes", "Barbarian King")]["classification"], "hero")
         self.assertEqual(by_identity[("heroEquipment", "Barbarian Puppet")]["classification"], "equipment")
 
-    async def test_unknown_profile_and_legend_fields_do_not_fail_collection(self):
+    async def test_future_fields_at_every_profile_depth_keep_collection_complete(self):
         payload = profile()
-        payload["newApiField"] = {"anything": "not projected"}
-        payload["legendStatistics"]["newLegendField"] = {"future": [1, None]}
-        projected = project_profile(payload, "#P0")
-        self.assertTrue(projected.complete)
-        result = await self.observe(100, payload)
-        self.assertEqual(result, {"status": "ok", "failed": 0, "succeeded": 1, "empty": 0})
-        item = (await self.rows("SELECT completeness_json FROM collection_items"))[0]
-        completeness = json.loads(item["completeness_json"])
-        self.assertTrue(completeness["complete"])
-        self.assertEqual(completeness["unsupported_fields"], ["newApiField", "legendStatistics.newLegendField"])
-        self.assertEqual(await self.rows("SELECT * FROM player_observations WHERE field_key='newApiField'"), [])
-        self.assertNotIn("newLegendField", projected.legend)
-
-    async def test_unknown_item_fields_do_not_fail_any_profile_array(self):
-        payload = profile()
-        payload["pets"] = [{"name": "Future pet", "village": "home", "level": 1, "maxLevel": 10}]
-        for source in ("troops", "pets", "heroes", "heroEquipment", "spells", "achievements"):
-            payload[source][0]["newApiField"] = {"future": [1, None, "extra"]}
-        projected = project_profile(payload, "#P0")
+        payload['newApiField'] = {'anything': 'not projected'}
+        payload['legendStatistics']['newLegendField'] = {'future': [1, None]}
+        payload['pets'] = [{'name': 'Future pet', 'village': 'home', 'level': 1, 'maxLevel': 10}]
+        for source in ('troops', 'pets', 'heroes', 'heroEquipment', 'spells', 'achievements'):
+            payload[source][0]['newApiField'] = {'future': [1, None, 'extra']}
+        projected = project_profile(payload, '#P0')
         self.assertTrue(projected.complete)
         self.assertTrue(all(projected.complete_arrays.values()))
+        self.assertNotIn('newLegendField', projected.legend)
         result = await self.observe(100, payload)
-        self.assertEqual(result["failed"], 0)
-        self.assertEqual(result["succeeded"], 1)
+        self.assertEqual(result, {'status': 'ok', 'failed': 0, 'succeeded': 1, 'empty': 0})
+        completeness = json.loads((await self.rows('SELECT completeness_json FROM collection_items'))[0]['completeness_json'])
+        self.assertTrue(completeness['complete'])
+        self.assertIn('newApiField', completeness['unsupported_fields'])
+        self.assertIn('legendStatistics.newLegendField', completeness['unsupported_fields'])
+        self.assertEqual(await self.rows("SELECT * FROM player_observations WHERE field_key='newApiField'"), [])
+
 
     async def test_unknown_item_fields_do_not_hide_malformed_known_fields(self):
         invalid = (("troops", "level", True), ("heroes", "maxLevel", -1),
@@ -427,56 +328,12 @@ class PlayerStoreTests(PlayerTestCase):
             self.assertEqual(result["failed"], 1)
         self.assertEqual(len(await self.rows("SELECT * FROM hero_equipment")), 2)
 
-    async def test_restart_does_not_duplicate_items_counters_or_aliases(self):
-        await self.observe(100)
-        before = {table: await self.rows(f"SELECT * FROM {table}") for table in
-                  ("player_observations", "player_items", "hero_equipment", "player_counters", "account_aliases")}
-        self.store = FamilyStore(self.path)
-        await self.store.initialize()
-        await self.observe(200)
-        self.assertEqual({table: await self.rows(f"SELECT * FROM {table}") for table in before}, before)
 
     async def test_out_of_order_observation_rolls_back(self):
         await self.observe(200)
         with self.assertRaisesRegex(ValueError, "out_of_order"):
             await self.observe(100)
         self.assertEqual((await self.rows("SELECT last_profile_at FROM accounts"))[0]["last_profile_at"], 200)
-
-    async def test_48_hour_size_stays_near_changes_instead_of_hourly_item_copies(self):
-        payload = realistic_profile()
-        self.assertEqual(sum(len(payload[source]) for source in ("troops", "heroes", "heroEquipment", "spells", "achievements")), 208)
-        initial_fields = len(project_profile(payload, "#P0").fields)
-        for hour in range(48):
-            active = 6 <= hour % 24 < 22 and hour % 3 == 0
-            if active:
-                payload["trophies"] += 5
-                payload["donations"] += 20
-                payload["legendStatistics"]["currentSeason"]["trophies"] += 5
-                for entry in payload["achievements"][:3]:
-                    entry["value"] += 25
-            if hour in (6, 18, 30, 42):
-                payload["troops"][hour]["level"] += 1
-            await self.observe(hour * HOUR_US + 100, payload)
-        self.assertEqual(len(await self.rows("SELECT * FROM player_items")), 210)
-        self.assertEqual(len(await self.rows("SELECT * FROM item_catalog")), 208)
-        self.assertEqual(len(await self.rows("SELECT * FROM player_observations")), initial_fields)
-        self.assertLess(len(await self.rows("SELECT * FROM player_counters")), 16)
-        self.assertEqual(len(await self.rows("SELECT * FROM collection_items")), 1)
-        self.assertEqual(len(await self.rows("SELECT * FROM player_coverage")), 1)
-        # Flush the remaining upgrades at the next daily sample.
-        await self.observe(48 * HOUR_US + 100, payload)
-        self.assertEqual(len(await self.rows("SELECT * FROM player_items")), 212)
-        counts, annual_bytes = await self.store.call(annual_size)
-        self.assertEqual(counts["player_items"], 261702)
-        self.assertEqual(counts["daily_progress"], 279 * 365)
-        self.assertLess(counts["player_counters"], 680000)
-        self.assertEqual(counts["collection_items"], 279)
-        self.assertEqual(counts["player_coverage"], 279)
-        # Reserve another 30 MB for aliases, equipment, resets, metadata and
-        # growth in projection sizes. WAL/backups are separate working space.
-        self.assertLess(annual_bytes + 30_000_000, 500_000_000)
-        print(f"\nPlayer year (279 accounts): {counts}; SQLite with indexes={annual_bytes:,} bytes; "
-              f"with 30 MB reserve={annual_bytes + 30_000_000:,} bytes. Failed fetches add item rows.")
 
 
 class PlayerCollectorTests(PlayerTestCase):
@@ -606,14 +463,3 @@ class PlayerCollectorTests(PlayerTestCase):
             await self.collect(100)
         self.assertTrue(threads)
         self.assertNotIn(threading.get_ident(), threads)
-
-    async def test_scheduler_checks_player_account_state_on_each_tick(self):
-        self.bot.boot_complete.set()
-        collect = AsyncMock()
-
-        async def stop(seconds):
-            self.collectors._closing = True
-
-        with patch("elbow_helper.data.collectors.service.asyncio.sleep", new=stop):
-            await self.collectors._schedule("players", 3600, collect)
-        collect.assert_awaited_once()

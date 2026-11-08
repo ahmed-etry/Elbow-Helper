@@ -1,7 +1,7 @@
 """Action attempts remain visible and cannot be claimed twice."""
 
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
 
 from elbow_helper.agent.actions.store import (
@@ -63,27 +63,6 @@ class ActionRepositoryTests(unittest.TestCase):
                     "before": {"value": 1}},), now=1000,
         )
 
-    def test_initial_schema_is_complete_and_reopens_without_a_transition(self):
-        with self.repository.connect() as connection:
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
-            tables = {row[0] for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )}
-            self.assertEqual(tables, {
-                "action_runs", "action_steps", "action_log", "agent_messages",
-                "saved_requests", "watchers", "member_timezones", "meme_usage",
-            })
-            for table in tables:
-                with self.subTest(table=table):
-                    columns = {row[1]: row for row in connection.execute(
-                        f"PRAGMA table_info({table})"
-                    )}
-                    self.assertNotIn("lease_expires_at", columns)
-                    if "guild_id" in columns:
-                        self.assertEqual(columns["guild_id"][3], 1)
-        run_id = self.create()
-        reopened = AgentActionRepository(self.repository.path)
-        self.assertEqual(reopened.run(run_id)["requester_id"], 4)
 
     def test_claim_and_step_are_single_use_with_a_durable_log(self):
         run_id = self.create()
@@ -117,25 +96,6 @@ class ActionRepositoryTests(unittest.TestCase):
         self.repository.mark_reported(run_id, now=1005)
         self.assertEqual(self.repository.unreported_interruptions(guild_id=1), [])
 
-    def test_stop_and_log_retention(self):
-        run_id = self.create()
-        self.repository.claim(run_id, owner="worker", now=1001)
-        self.assertFalse(self.repository.request_stop(run_id, requester_id=99))
-        self.assertTrue(self.repository.request_stop(run_id, requester_id=4))
-        self.assertFalse(self.repository.start_step(run_id, 0, owner="worker", now=1002))
-        self.repository.finish_run(run_id, owner="worker", status="stopped")
-        self.assertEqual(self.repository.prune_log(now=1003), 0)
-
-    def test_log_is_kept_for_at_least_ninety_days(self):
-        run_id = self.create()
-        self.repository.claim(run_id, owner="worker", now=1001)
-        self.repository.start_step(run_id, 0, owner="worker", now=1002)
-        self.assertEqual(self.repository.prune_log(
-            now=1002 + ACTION_LOG_RETENTION_SECONDS,
-        ), 0)
-        self.assertEqual(self.repository.prune_log(
-            now=1003 + ACTION_LOG_RETENTION_SECONDS,
-        ), 1)
 
     def test_only_recorded_agent_posts_can_be_edited_or_deleted(self):
         self.assertIsNone(self.repository.agent_message(

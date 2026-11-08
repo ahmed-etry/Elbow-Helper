@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from elbow_helper.infrastructure.persistence.documents import Document
+
 
 from discord import app_commands
 
@@ -13,13 +14,13 @@ from elbow_helper.configuration.clans import CLAN_NAMES
 from elbow_helper.configuration.clans import CLAN_ORDER
 from elbow_helper.configuration.clans import CLAN_TAGS
 
-THREAD_STATE_FILE = Path("data/cwl/cwl_threads.json")
-SCHEDULER_STATE_FILE = Path("data/cwl/cwl_scheduler_state.json")
-TRANSFER_STATE_FILE = Path("data/cwl/cwl_transfer_state.json")
-DASHBOARD_STATE_FILE = Path("data/cwl/cwl_dashboard_state.json")
-ROUTER_STATE_FILE = Path("data/cwl/cwl_router_state.json")
-BONUS_CONFIG_FILE = Path("data/cwl/cwl_bonus_config.json")
-BONUS_DASHBOARD_STATE_FILE = Path("data/cwl/cwl_bonus_dashboard_state.json")
+THREAD_STATE_FILE = Document("cwl_threads")
+SCHEDULER_STATE_FILE = Document("cwl_reminders")
+TRANSFER_STATE_FILE = Document("cwl_transfers")
+DASHBOARD_STATE_FILE = Document("cwl_dashboards")
+ROUTER_STATE_FILE = Document("cwl_routing")
+BONUS_CONFIG_FILE = Document("cwl_bonus_rules")
+BONUS_DASHBOARD_STATE_FILE = Document("cwl_bonus_boards")
 BONUS_AUTOMATION_START_MONTH_KEY = (2026 * 12) + 5
 
 # Temporary feature switch for the bonus workflow.
@@ -34,7 +35,6 @@ THREAD_STICKY_REPOST_COOLDOWN_SECONDS = 120.0
 THREAD_STICKY_BURIAL_SCAN_LIMIT = 25
 THREAD_SNAPSHOT_MAX_AGE_SECONDS = 90.0
 HERO_SUM_CACHE_SECONDS = 6 * 60 * 60
-LEAGUE_NAME_CACHE_SECONDS = 6 * 60 * 60
 MANUAL_DASHBOARD_REFRESH_COOLDOWN_SECONDS = 90
 # After a start, the dashboards wait this long for the collectors' first war pass before their first refresh.
 FIRST_WAR_CHECK_WAIT_SECONDS = 180.0

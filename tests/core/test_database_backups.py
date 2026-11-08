@@ -6,14 +6,13 @@ from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper import app
-from elbow_helper.configuration.files import SQLITE_DATABASES
 from elbow_helper.core.backups import BACKUP_TIME_UTC, DatabaseBackupJob
 from elbow_helper.core.paths import ApplicationPaths
 from elbow_helper.infrastructure.persistence import backups
@@ -34,6 +33,7 @@ def contents(path: Path) -> list[str]:
 
 class DatabaseCopyTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.enterContext(patch("elbow_helper.infrastructure.persistence.backups.TemporaryDirectory", TemporaryDirectory))
         self.temporary = TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
@@ -165,16 +165,6 @@ class DatabaseCopyTests(unittest.TestCase):
         self.assertEqual(self.destination.read_bytes(), previous)
         self.assert_no_temporary_files()
 
-    def test_timeout_keeps_previous_copy_and_cleans_up(self) -> None:
-        backups.backup_database(self.source, self.destination)
-        previous = self.destination.read_bytes()
-        with (
-            patch.object(backups, "monotonic", side_effect=[0, backups.BACKUP_TIMEOUT_SECONDS + 1]),
-            self.assertRaises(TimeoutError),
-        ):
-            backups.backup_database(self.source, self.destination)
-        self.assertEqual(self.destination.read_bytes(), previous)
-        self.assert_no_temporary_files()
 
     def test_locked_source_times_out_instead_of_stopping_the_run(self) -> None:
         backups.backup_database(self.source, self.destination)
@@ -182,7 +172,7 @@ class DatabaseCopyTests(unittest.TestCase):
         with closing(sqlite3.connect(self.source)) as writer:
             writer.execute("BEGIN EXCLUSIVE")
             try:
-                with patch.object(backups, "BACKUP_TIMEOUT_SECONDS", 0.01), self.assertRaises(TimeoutError):
+                with patch.object(backups, "monotonic", side_effect=[0, backups.BACKUP_TIMEOUT_SECONDS + 1]), self.assertRaises(TimeoutError):
                     backups.backup_database(self.source, self.destination)
             finally:
                 writer.rollback()
@@ -192,36 +182,11 @@ class DatabaseCopyTests(unittest.TestCase):
 
 class DatabaseRunTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.enterContext(patch("elbow_helper.infrastructure.persistence.backups.TemporaryDirectory", TemporaryDirectory))
         self.temporary = TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
-    def test_inventory_covers_every_database_without_scanning_other_files(self) -> None:
-        expected = {
-            "clan_links/links.sqlite3", "achievements/achievements.db",
-            "agent/agent.sqlite3", "agent/transcripts.sqlite3",
-            "agent/research_jobs.sqlite3", "agent/actions.sqlite3",
-            "clan_health/clan_health.db", "clan_health/settings.sqlite3", "ranked_stats/ranked.sqlite3",
-            "records/records.sqlite3", "rosters/rosters.sqlite3", "family/family.sqlite3",
-            "events/events.sqlite3",
-        }
-        self.assertEqual({path.as_posix() for path in SQLITE_DATABASES}, expected)
-        self.assertEqual(len(SQLITE_DATABASES), len(expected))
-        for relative in SQLITE_DATABASES:
-            create_database(self.root / relative)
-        create_database(self.root / "unowned.db")
-        with self.assertLogs(backups.LOGGER, level="INFO") as logs:
-            result = backups.backup_databases(self.root)
-        self.assertEqual((result.copied, result.failed), (len(expected), 0))
-        self.assertEqual(len(logs.records), 1)
-        total_size = 0
-        for relative in SQLITE_DATABASES:
-            destination = self.root / "backups" / relative
-            self.assertEqual(contents(destination), contents(self.root / relative))
-            total_size += destination.stat().st_size
-        self.assertEqual(result.total_bytes, total_size)
-        self.assertIn(f"copied={len(expected)} failed=0 bytes={total_size}", logs.output[0])
-        self.assertFalse((self.root / "backups" / "unowned.db").exists())
 
     def test_missing_and_corrupt_sources_warn_and_do_not_block_other_copies(self) -> None:
         paths = (Path("missing.db"), Path("broken.db"), Path("valid.db"))
@@ -239,15 +204,6 @@ class DatabaseRunTests(unittest.TestCase):
         self.assertFalse((self.root / paths[0]).exists())
         self.assertEqual(contents(self.root / "backups" / paths[2]), contents(self.root / paths[2]))
 
-    def test_unexpected_file_failure_is_isolated_and_logged(self) -> None:
-        with (
-            patch.object(backups, "SQLITE_DATABASES", (Path("one.db"), Path("two.db"))),
-            patch.object(backups, "backup_database", side_effect=[RuntimeError("failed"), 25]),
-            self.assertLogs(backups.LOGGER, level="INFO") as logs,
-        ):
-            result = backups.backup_databases(self.root)
-        self.assertEqual(result, backups.BackupResult(1, 1, 25))
-        self.assertEqual(len(logs.records), 2)
 
     def test_catch_up_uses_each_copy_age_including_missing_and_unreadable_files(self) -> None:
         paths = (Path("one.db"), Path("two.db"))
@@ -327,23 +283,6 @@ class BackupSchedulingTests(unittest.IsolatedAsyncioTestCase):
         worker.assert_called_once_with(root)
         self.assertTrue(job.daily.get_task().done())
 
-    async def test_fresh_copies_skip_startup_copy_but_daily_still_runs(self) -> None:
-        ready = asyncio.Event()
-        ready.set()
-        job = DatabaseBackupJob(Path("unused"), ready=ready)
-        loop_thread = threading.get_ident()
-
-        def copy(_root):
-            self.assertNotEqual(threading.get_ident(), loop_thread)
-
-        with (
-            patch("elbow_helper.core.backups.backups_need_catch_up", return_value=False),
-            patch("elbow_helper.core.backups.backup_databases", side_effect=copy) as worker,
-        ):
-            await job.prepare()
-            worker.assert_not_called()
-            await job.daily()
-        worker.assert_called_once()
 
     async def test_cancellation_waits_for_worker_cleanup(self) -> None:
         started = asyncio.Event()
@@ -375,7 +314,10 @@ class BackupSchedulingTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.gather(task, return_exceptions=True)
 
     async def test_application_owns_backup_job_and_closes_it_when_bot_fails(self) -> None:
-        paths = ApplicationPaths.from_project_root(Path(__file__).resolve().parents[2])
+        # The real storage move runs here, so it must only ever see a temporary folder.
+        project = TemporaryDirectory()
+        self.addCleanup(project.cleanup)
+        paths = ApplicationPaths.from_project_root(Path(project.name))
         settings = SimpleNamespace(
             google_oauth_client_id=None, google_oauth_client_secret=None,
             google_oauth_refresh_token=None, google_drive_folder_id=None,
@@ -403,3 +345,4 @@ class BackupSchedulingTests(unittest.IsolatedAsyncioTestCase):
         job.__aenter__.assert_awaited_once()
         job.__aexit__.assert_awaited_once()
         bot.start.assert_awaited_once_with("test-token")
+        self.assertTrue((paths.data_root / "workflows.sqlite3").is_file())

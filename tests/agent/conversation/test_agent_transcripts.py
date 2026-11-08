@@ -1,6 +1,6 @@
 from pathlib import Path
 import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
 
 from elbow_helper.agent.conversation.transcripts import TranscriptArchive

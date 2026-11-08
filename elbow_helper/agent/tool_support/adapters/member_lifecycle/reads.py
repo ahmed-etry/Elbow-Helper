@@ -1,0 +1,189 @@
+"""Permission-filtered adapters for member-lifecycle observations."""
+
+from __future__ import annotations
+
+import sqlite3
+from typing import Any, Mapping
+from uuid import uuid4
+
+from elbow_helper.configuration.channels import OVERSEEING_TERRACE
+from elbow_helper.infrastructure.ai import AgentToolDefinition
+
+from elbow_helper.agent.engine.capability_contract import CapabilityContract
+from elbow_helper.agent.access import accessible_message_channel, can_access_message_channel, require_evidence_access
+from elbow_helper.agent.reports.base import ArtifactCapacityError, retain_report
+from elbow_helper.agent.tool_support.adapters.member_lifecycle.report import MemberLifecycleReport
+from elbow_helper.agent.tool_support.adapters.member_lifecycle.history import read_member_history
+from elbow_helper.agent.models import AgentRequestContext, RegisteredAgentTool
+
+
+USAGE_NOTES = {
+    "read_member_history": "Only joins and leaves the bot recorded; earlier ones are unavailable.",
+    "read_member_lifecycle": (
+        "Omit platform for all sources; never guess a source label. For server-join cohorts use read_discord_members. Observations do not prove inactivity."
+    ),
+}
+
+
+TOOL_CONTRACTS = {
+    "read_member_history": CapabilityContract(entity_fields=(("member_id", "discord_member"),)),
+    "read_member_lifecycle": CapabilityContract(
+        entity_fields=(), filter_fields=("platform", "activity", "overdue_only"),
+    ),
+    "read_member_lifecycle_report": CapabilityContract(
+        entity_fields=(("report_id", "member_lifecycle_report"),),
+        filter_fields=("platform", "activity", "overdue_only"),
+        retained_fields=("report_id",),
+    ),
+}
+
+
+def member_lifecycle_tools() -> tuple[RegisteredAgentTool, ...]:
+    activity = {
+        "type": "string", "enum": ["all", "observed", "not_observed"],
+    }
+    definitions = (
+        (
+            "read_member_history",
+            "Read a member's server joins and leaves, with recruitment source and leave reason, oldest first.",
+            {"member_id": {"type": "integer", "minimum": 1},
+             "cursor": {"type": "string", "maxLength": 64}},
+            ("member_id",), read_member_history,
+        ),
+        (
+            "read_member_lifecycle",
+            "Read joins, recruitment sources and activity for the current stay only.",
+            {
+                "platform": {"type": "string", "minLength": 1, "maxLength": 100},
+                "activity": activity,
+                "overdue_only": {"type": "boolean"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 25},
+            },
+            (), read_member_lifecycle,
+        ),
+        (
+            "read_member_lifecycle_report",
+            "Read another filtered page from one retained member-lifecycle snapshot.",
+            {
+                "report_id": {"type": "string", "minLength": 1, "maxLength": 32},
+                "platform": {"type": "string", "minLength": 1, "maxLength": 100},
+                "activity": activity,
+                "overdue_only": {"type": "boolean"},
+                "offset": {"type": "integer", "minimum": 0},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 25},
+            },
+            ("report_id",), read_member_lifecycle_report,
+        ),
+    )
+    return tuple(RegisteredAgentTool(
+        AgentToolDefinition(
+            name=name, description=description,
+            parameters={
+                "type": "object", "properties": properties,
+                "required": list(required), "additionalProperties": False,
+            },
+            usage_note=USAGE_NOTES.get(name, ""),
+        ), handler,
+        contract=TOOL_CONTRACTS[name],
+    ) for name, description, properties, required, handler in definitions)
+
+
+async def read_member_lifecycle(
+    context: AgentRequestContext, arguments: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    if context.member_lifecycle_queries is None:
+        return {"error": "Member lifecycle observations are not available."}
+    if await accessible_message_channel(context, OVERSEEING_TERRACE) is None:
+        return {"error": "The member lifecycle source is not accessible."}
+    current_members = {
+        member.id: member.display_name for member in context.guild.members
+    }
+    try:
+        queries = await context.member_lifecycle_queries.current()
+        registrations = queries.activity_registrations(
+            current_member_ids=set(current_members),
+        )
+    except (ValueError, OSError, sqlite3.Error):
+        return {"error": "Stored member lifecycle observations could not be listed."}
+    activity_channels = {}
+    checked_channels: dict[int, bool] = {}
+    for registration in registrations:
+        if registration.channel_id not in checked_channels:
+            # Last-seen records outlive deleted tickets and evicted threads.
+            # This optional observation must not fetch old channels merely to
+            # build a lifecycle snapshot. Explicit history tools can resolve
+            # uncached sources when the request actually calls for them.
+            channel = context.guild.get_channel_or_thread(registration.channel_id)
+            checked_channels[registration.channel_id] = (
+                channel is not None and await can_access_message_channel(context, channel)
+            )
+        if checked_channels[registration.channel_id]:
+            activity_channels[registration.member_id] = registration.channel_id
+    try:
+        snapshot = queries.snapshot(
+            current_members=current_members,
+            activity_channels=activity_channels,
+        )
+        report = MemberLifecycleReport(
+            uuid4().hex, context.guild.id, OVERSEEING_TERRACE, snapshot,
+        )
+    except (RuntimeError, TypeError, ValueError):
+        return {"error": "Stored member lifecycle observations could not be read."}
+    context.state.source_channels.update(report.source_channels)
+    await require_evidence_access(context)
+    try:
+        retain_report(context.state.reports, report)
+    except ArtifactCapacityError:
+        return {
+            "error": (
+                "The complete member lifecycle snapshot is too large to retain "
+                "in this conversation."
+            ),
+        }
+    try:
+        return _page(report, arguments)
+    except ValueError as error:
+        context.state.reports.pop(report.report_id, None)
+        return {"error": str(error)}
+
+
+async def read_member_lifecycle_report(
+    context: AgentRequestContext, arguments: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    report = context.state.reports.get(arguments["report_id"])
+    if (
+        not isinstance(report, MemberLifecycleReport)
+        or report.guild_id != context.guild.id
+    ):
+        return {
+            "error": (
+                "That member lifecycle snapshot is not available in this "
+                "conversation."
+            ),
+        }
+    try:
+        result = _page(report, arguments)
+    except ValueError as error:
+        return {"error": str(error)}
+    await require_evidence_access(context)
+    return result
+
+
+def _page(
+    report: MemberLifecycleReport, arguments: Mapping[str, Any],
+) -> dict[str, Any]:
+    return report.page(
+        platform=arguments.get("platform"),
+        activity=arguments.get("activity", "all"),
+        overdue_only=arguments.get("overdue_only", False),
+        offset=arguments.get("offset", 0),
+        limit=arguments.get("limit", 25),
+    )
+
+
+__all__ = [
+    "member_lifecycle_tools", "read_member_lifecycle",
+    "read_member_lifecycle_report",
+]

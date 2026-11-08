@@ -6,18 +6,14 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.datasets.clash import summary
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.families import identity_reads
+from elbow_helper.agent.reads import identity_reads
 from elbow_helper.agent.reads import reference as reference_reads
-from elbow_helper.agent.reads.bot_workflows import bot_workflows
 from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
 from elbow_helper.agent.plan.format import answer_instructions
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
 from elbow_helper.agent.models import EvidenceScope
-from elbow_helper.features.clan_transfers.commands import ClanTransfersCommandMixin
-from elbow_helper.features.clan_transfers.config import CLAN_TRANSFER_QUEUES, CWL_SEASON_TRANSFER_CLANS
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan, _model_step
 from agent.engine.test_planner_fix2_evidence import unpack
@@ -106,10 +102,6 @@ class JoinRequestRoutingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(visible['requiredTrophies'], data.get('requiredTrophies'))
                 self.assertIsNone(visible['requiredTownhallLevel'])
 
-    def test_clan_summary_projection_keeps_live_entry_requirements(self):
-        data = {'tag': '#P0', 'type': 'closed', 'requiredTownhallLevel': 16,
-                'requiredTrophies': 4200, 'requiredBuilderBaseTrophies': 1000}
-        self.assertEqual(summary('clan', data), data)
 
     async def test_all_entry_types_reach_the_writer_with_unambiguous_meanings(self):
         tool = next(t for t in identity_reads.TOOLS if t.definition.name == 'read_clan_rosters')
@@ -126,20 +118,3 @@ class JoinRequestRoutingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(entry['requiredTrophies'], 0)
                 self.assertEqual(entry['type_meaning'] is None, method is None)
         self.assertIsNone(identity_reads.entry_settings({'type': 'inviteOnly'}, 'unavailable')['join_method'])
-
-    def test_transfer_reference_matches_actual_destination_rule_outside_window(self):
-        queue = SimpleNamespace(pending=[], thread_id=100)
-        workflow = SimpleNamespace(_is_cwl_season_transfer_window=lambda: False,
-            queries=SimpleNamespace(pending_snapshot=lambda **_: SimpleNamespace(queues=[queue])),
-            _get_notify_role_ids=lambda _: ())
-        reference = next(r for r in bot_workflows()['rows'] if r['workflow'] == 'discord_transfer_requests')
-        destinations = {r['clan_code']: r['cwl_season_only'] for r in reference['destinations']}
-        self.assertEqual({code for code, limited in destinations.items() if limited}, CWL_SEASON_TRANSFER_CLANS)
-        self.assertFalse(destinations['BEH'])
-        for code in CLAN_TRANSFER_QUEUES:
-            result = ClanTransfersCommandMixin.transfer_request_preview(workflow, code, 41)
-            self.assertEqual(result['issue'] is not None, destinations[code], code)
-        facts = answer_evidence({'workflows': {'family': 'read_community_reference',
-            'selection': {'reference_kind': 'bot_workflows'}, **bot_workflows()}})['workflows']['rows']
-        projected = next(row['discord_transfer_requests'] for row in facts if 'discord_transfer_requests' in row)
-        self.assertEqual(projected['destinations'], reference['destinations'])

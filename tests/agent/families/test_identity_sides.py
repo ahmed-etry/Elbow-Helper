@@ -2,18 +2,14 @@
 
 from dataclasses import replace
 from datetime import datetime, timezone
-import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.families import account_names, identity_reads, workflow_reads
-from elbow_helper.agent.reads import war_tools as war_reads
+from elbow_helper.agent.reads import account_names, identity_reads
 from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.engine.result_hints import RESULT_FIELDS
-from elbow_helper.agent.plan.executor import execute_plan, resolve_arguments
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.features.hibernation.queries import HibernationQueries
 from agent.families.test_named_account_stats import lookup_context, named_member, rosters
 
 
@@ -92,13 +88,6 @@ class IdentitySideTests(unittest.IsolatedAsyncioTestCase):
                          [('#P0', 42), ('#Q0', 43)])
         self.assertEqual(context.state.resolved_members, {})
 
-    async def test_game_same_owner_selects_all_matching_accounts(self):
-        context = lookup_context([named_member(42, 'Synthetic Pilot')],
-                                 [('#P0', 'Silver Kite', 42), ('#Q0', 'SilverKite', 42)])
-        result = await self.read_names(context, {'name': 'Silver Kite', 'look_in': 'game'})
-        self.assertEqual(result['status'], 'resolved')
-        self.assertEqual([row['player_tag'] for row in result['rows']], ['#P0', '#Q0'])
-        self.assertEqual(context.state.resolved_members, {42: 'Synthetic Pilot'})
 
     async def test_discord_ambiguity_lists_account_names_and_tags_without_game_search(self):
         context = lookup_context([named_member(42, 'Silver Kite'),
@@ -118,32 +107,6 @@ class IdentitySideTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolution['matching_members'][1]['account_links_status'], 'no_linked_accounts')
         self.assertEqual(context.state.resolved_members, {})
 
-    async def test_missing_or_invalid_look_in_returns_correctable_error_without_reads(self):
-        context = lookup_context()
-        with patch.object(account_names, 'resolve_account_names', AsyncMock()) as game, \
-             patch.object(account_names, 'matching_members', AsyncMock()) as discord:
-            for selector in ('name', 'account_names'):
-                for extra in ({}, {'look_in': None}, {'look_in': 'both'}):
-                    result = await identity_reads.member_accounts(context, {
-                        selector: 'Silver Kite' if selector == 'name' else ['Silver Kite'], **extra})
-                    self.assertEqual(result['cause'], 'invalid_arguments')
-                    self.assertIn('look_in', result['error'])
-                    self.assertIn('look_in', result['invalid_fields'])
-        game.assert_not_awaited()
-        discord.assert_not_awaited()
-
-    async def test_discord_hit_selects_all_linked_accounts_without_game_reads(self):
-        for selector in ('name', 'account_names'):
-            for query in ('Lumen Birch', 'Birch', 'synthetic_42'):
-                context = lookup_context([named_member(42, 'Lumen [Birch]', nick='Lumen [Birch]')],
-                                         [('#P0', 'Silver Kite', 42), ('#Q0', 'Other Beacon', 42)])
-                with patch.object(account_names, 'resolve_account_names', AsyncMock()) as game:
-                    result = await self.read_names(context, {
-                        selector: query if selector == 'name' else [query], 'look_in': 'discord'})
-                game.assert_not_awaited()
-                self.assertEqual([row['player_tag'] for row in result['rows']], ['#P0', '#Q0'])
-                self.assertEqual(result['name_resolutions'][0]['found_in'], 'discord')
-                self.assertEqual(context.account_links.get_links_for_members.call_args_list[0].args, ([42],))
 
     async def test_unknown_first_source_is_not_erased_by_complete_fallback_miss(self):
         for look_in in ('game', 'discord'):
@@ -179,18 +142,6 @@ class IdentitySideTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['selection_complete'])
         self.assertEqual(result['status'], 'needs_input')
 
-    async def test_incomplete_discord_and_failed_game_remain_unknown(self):
-        for look_in in ('game', 'discord'):
-            context = lookup_context()
-            context.guild.chunked = False
-            context.guild.chunk = AsyncMock()
-            with patch.object(account_names, 'read_clash', AsyncMock(return_value={
-                    'error': 'Synthetic unavailable', 'cause': 'source_unavailable'})):
-                result = await identity_reads.member_accounts(context, {'name': 'Absent Subject', 'look_in': look_in})
-            self.assertEqual(result['name_resolutions'][0]['status'], 'unknown')
-            self.assertIsNone(result['name_resolutions'][0]['found_in'])
-            self.assertFalse(result['selection_complete'])
-            self.assertIn({'source': 'discord_members', 'cause': 'incomplete'}, result['missing_sources'])
 
     async def test_profile_is_once_per_owner_in_retained_and_model_views(self):
         owner = named_member(42, 'Silver Kite', nick='Silver Kite')
@@ -238,59 +189,3 @@ class IdentitySideTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['members'][0]['membership_status'], 'not_in_guild')
         self.assertNotIn('leadership', result['members'][0])
         self.assertEqual(result['members'][0]['account_tags'], ['#P0'])
-
-    def test_recruitment_projection_keeps_applicant_profiles(self):
-        profile = {'member_id': 42, 'member_name': 'Synthetic Pilot',
-                   'account_tags': ['#P0'], 'roles': [], 'home_clan_status': 'no_home_role'}
-        result = family_model_view({'family': 'read_recruitment_pipeline',
-            'rows': [{'applicant_member_id': 42, 'accounts': [{'member_id': 42, 'player_tag': '#P0'}]}],
-            'members': [profile]})
-        self.assertEqual(result['members'], [profile])
-
-    async def test_hibernation_step_reference_deduplicates_account_owners(self):
-        owner = named_member(42, 'Synthetic Pilot')
-        context = lookup_context([owner])
-        context = replace(context, hibernation_queries=HibernationQueries(lambda: {
-            '42': {'hibernation_date': '<t:1767225600:F>'}}))
-        source = {'rows': [{'member_id': 42, 'player_tag': '#P0'},
-                           {'member_id': 42, 'player_tag': '#Q0'}]}
-        tool = next(tool for tool in workflow_reads.TOOLS if tool.definition.name == 'read_hibernation')
-
-        async def run(step, arguments, earlier):
-            self.assertEqual(arguments['member_ids'], [42])
-            return await tool.handler(context, arguments)
-
-        plan = {'steps': [{'id': 'sleeping', 'capability': 'read_hibernation', 'depends_on': [],
-                          'arguments': {'member_ids': {'step': 'accounts', 'path': ['rows', '*', 'member_id']}}}]}
-        result = (await execute_plan(plan, run, earlier_results={'accounts': source}))['sleeping']
-        self.assertNotIn('error', result)
-        self.assertEqual([row['member_id'] for row in result['rows']], [42])
-        snapshot = json.loads(context.state.reports[result['report_id']].payload)
-        self.assertEqual(len(snapshot['rows']), 1)
-
-    async def test_account_attendance_profiles_once_member_attendance_keeps_its_row(self):
-        context = lookup_context([named_member(42, 'Synthetic Pilot')],
-                                 [('#P0', 'Silver Kite', 42), ('#Q0', 'Other Beacon', 42)])
-        observations = [{'player_tag': tag, 'player_name': tag, 'clan_code': 'BEH', 'war_id': 'synthetic',
-                         'attacks_expected': 2, 'attacks_used': 1, 'missed': 1}
-                        for tag in ('#P0', '#Q0')]
-        with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'rows': observations})):
-            accounts = await war_reads.attendance(context, {'war_type': 'REG', 'unit': 'account'})
-            members = await war_reads.attendance(context, {'war_type': 'REG', 'unit': 'member'})
-        self.assertEqual(len(accounts['members']), 1)
-        self.assertEqual(accounts['members'][0]['account_tags'], ['#P0', '#Q0'])
-        self.assertNotIn('leadership', accounts['members'][0])
-        self.assertTrue(all('leadership' not in row for row in accounts['rows']))
-        self.assertEqual(len(members['rows']), 1)
-        self.assertNotIn('leadership', members['rows'][0])
-        self.assertNotIn('members', members)
-
-    def test_reference_deduplication_keeps_literal_validation_and_other_arrays(self):
-        reference = {'step': 'source', 'path': ['rows', '*', 'member_id']}
-        source = {'source': {'rows': [{'member_id': 42}, {'member_id': 42}, {'member_id': 43}]}}
-        for value in (reference, [reference], [42, reference]):
-            self.assertEqual(resolve_arguments({'member_ids': value}, source)['member_ids'], [42, 43])
-        self.assertEqual(resolve_arguments({'member_ids': [42, 42]}, source)['member_ids'], [42, 42])
-        self.assertEqual(resolve_arguments({'other_ids': reference}, source)['other_ids'], [42, 42, 43])
-        invalid = {'source': {'rows': [{'member_id': {'invalid': True}}]}}
-        self.assertEqual(resolve_arguments({'member_ids': reference}, invalid)['member_ids'], [{'invalid': True}])

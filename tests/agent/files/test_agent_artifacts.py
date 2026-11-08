@@ -10,18 +10,18 @@ from agent.report_helpers import make_event_report
 
 class ArtifactTests(unittest.TestCase):
 
-    def test_byte_budget_evicts_oldest_complete_reports(self):
-        reports = {}
-        with patch("elbow_helper.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES", 100):
-            for report_id in ("first", "second", "third"):
-                retain_report(reports, SimpleNamespace(report_id=report_id, retained_bytes=40))
-        self.assertEqual(list(reports), ["second", "third"])
+    def test_retention_evicts_oldest_at_byte_or_count_boundary(self):
+        for cap, size, count, remaining in (
+            (100, 40, 3, ['1', '2']),
+            (100, 1, 8, ['2', '3', '4', '5', '6', '7']),
+        ):
+            with self.subTest(cap=cap, size=size):
+                reports = {}
+                with patch('elbow_helper.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES', cap):
+                    for index in range(count):
+                        retain_report(reports, SimpleNamespace(report_id=str(index), retained_bytes=size))
+                self.assertEqual(list(reports), remaining)
 
-    def test_count_budget_applies_across_report_kinds(self):
-        reports = {}
-        for index in range(8):
-            retain_report(reports, SimpleNamespace(report_id=str(index), retained_bytes=1))
-        self.assertEqual(list(reports), ["2", "3", "4", "5", "6", "7"])
 
     def test_linked_retention_preserves_sources_and_evicts_unrelated_report(self):
         reports = {
@@ -80,21 +80,21 @@ class ArtifactTests(unittest.TestCase):
             "baseline", "source-one", "source-two", "briefing",
         ])
 
-    def test_oversize_rejection_does_not_destroy_existing_report(self):
-        first = SimpleNamespace(report_id="first", retained_bytes=40)
-        reports = {"first": first}
-        with patch("elbow_helper.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES", 100):
-            with self.assertRaises(ArtifactCapacityError):
-                retain_report(reports, SimpleNamespace(report_id="first", retained_bytes=101))
-        self.assertIs(reports["first"], first)
+    def test_replacement_is_atomic_at_the_payload_boundary(self):
+        for size, accepted in ((100, True), (101, False)):
+            with self.subTest(size=size):
+                first = SimpleNamespace(report_id='same', retained_bytes=40)
+                replacement = SimpleNamespace(report_id='same', retained_bytes=size)
+                reports = {'same': first}
+                with patch('elbow_helper.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES', 100):
+                    if accepted:
+                        retain_report(reports, replacement)
+                    else:
+                        with self.assertRaises(ArtifactCapacityError):
+                            retain_report(reports, replacement)
+                self.assertEqual(list(reports), ['same'])
+                self.assertIs(reports['same'], replacement if accepted else first)
 
-    def test_replacement_counts_only_new_payload(self):
-        reports = {"same": SimpleNamespace(report_id="same", retained_bytes=40)}
-        replacement = SimpleNamespace(report_id="same", retained_bytes=100)
-        with patch("elbow_helper.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES", 100):
-            retain_report(reports, replacement)
-        self.assertEqual(list(reports), ["same"])
-        self.assertIs(reports["same"], replacement)
 
     def test_report_accounting_counts_utf8_payload(self):
         ascii_report = make_event_report("x", "now")

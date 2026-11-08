@@ -1,7 +1,7 @@
 """Collect the datasets explicitly declared by their features."""
 
 from ..adapters.account_links.data import SOURCES as ACCOUNT_LINKS
-from ...capabilities.clan_health.data import SOURCES as CLAN_HEALTH
+from elbow_helper.agent.tool_support.adapters.clan_health.data import SOURCES as CLAN_HEALTH
 from ..adapters.rosters.data import SOURCES as ROSTERS
 from ..adapters.achievements.data import SOURCES as ACHIEVEMENTS
 from ..adapters.cwl.data import SOURCES as CWL

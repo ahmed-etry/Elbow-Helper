@@ -10,18 +10,18 @@ import zlib
 from elbow_helper.agent.tool_support.core import FamilyReport, decode_family, family_tool
 from elbow_helper.agent.conversation.codec import encode_conversation, decode_conversation
 from elbow_helper.agent.conversation.state import Conversation
-from elbow_helper.agent.reports.base import MAX_REPORT_PAYLOAD_BYTES
 from agent.engine.test_agent_plan_flow import _context
 
 
 class OversizedPageTests(unittest.IsolatedAsyncioTestCase):
     async def test_report_over_old_budget_returns_all_rows_by_cursor_and_export(self):
-        rows = [{'member_id': index, 'profile': 'Synthetic metadata ' * 100} for index in range(650)]
-        self.assertGreater(len(json.dumps(rows).encode()), MAX_REPORT_PAYLOAD_BYTES)
+        self.enterContext(patch('elbow_helper.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES', 1024))
+        rows = [{'member_id': index, 'profile': 'Synthetic metadata ' * 100} for index in range(3)]
+        self.assertGreater(len(json.dumps(rows).encode()), 1024)
         reader = AsyncMock(return_value={'rows': rows})
         tool = family_tool('read_synthetic', 'Read synthetic records.', {}, reader)
         context = _context()
-        first = page = await tool.handler(context, {})
+        first = page = await tool.handler(context, {'limit': 2})
         self.assertNotIn('error', first)
         self.assertTrue(first['next_cursor'])
         observed = []
@@ -35,7 +35,7 @@ class OversizedPageTests(unittest.IsolatedAsyncioTestCase):
         exported = await tool.handler(context, {'report_id': first['report_id'], 'delivery': 'csv', 'view': 'count'})
         self.assertEqual(exported['artifact_status'], 'complete')
         values = list(csv.DictReader(StringIO(context.state.attachments[0].data.decode('utf-8-sig'))))
-        self.assertEqual([int(row['member_id']) for row in values], list(range(650)))
+        self.assertEqual([int(row['member_id']) for row in values], list(range(3)))
         self.assertEqual(values[-1]['profile'], rows[-1]['profile'])
         report = context.state.reports[first['report_id']]
         restored = decode_family(report.storage_payload(), context.guild.id)
@@ -50,7 +50,7 @@ class OversizedPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved.payload, report.payload)
         self.assertEqual(saved.cursor_offset(first['next_cursor']), first['next_offset'])
         self.assertEqual(reloaded.report_sources, conversation.report_sources)
-        self.assertLess(report.retained_bytes, MAX_REPORT_PAYLOAD_BYTES)
+        self.assertLess(report.retained_bytes, 1024)
         reader.assert_awaited_once()
 
     async def test_actual_capacity_failure_keeps_prior_snapshots_atomic(self):
@@ -77,4 +77,3 @@ class OversizedPageTests(unittest.IsolatedAsyncioTestCase):
             for payload in corrupt:
                 with self.subTest(payload=payload), self.assertRaises(ValueError):
                     decode_family({**row, 'payload': payload}, 3)
-

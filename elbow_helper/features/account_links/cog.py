@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 import logging
 import sqlite3
 from typing import Any
@@ -58,11 +57,6 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         self._clan_badge_urls: dict[str, str] = {}
         self._player_locations: dict[str, dict[str, Any]] = {}
         self._last_snapshot_complete = False
-        self._location_snapshot_observed_at: str | None = None
-        self._location_evidence_snapshot: dict[str, Any] = {
-            "observed_at": None, "complete": False, "locations": {},
-            "location_statuses": {},
-        }
 
     async def cog_load(self) -> None:
         start_resilient_loop(self._poll_clans_loop)
@@ -93,14 +87,6 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             return
         self._ready_refresh_task = asyncio.create_task(self._refresh_after_ready())
 
-    async def _fetch_clan_members(self, clan_code: str, *, fresh: bool = False) -> list[dict[str, Any]] | None:
-        snapshot = await self.membership_reads.rosters(clans=[clan_code])
-        row = snapshot["rows"][0]
-        if row["badge_url"]:
-            self._clan_badge_urls[clan_code] = row["badge_url"]
-        return None if row["members"] is None else [
-            {**member, "clan_code": clan_code, "clan_tag": CLANS[clan_code].tag}
-            for member in row["members"]]
 
     def get_clan_badge_url(self, clan_code: str) -> str | None:
         """Return the latest badge URL from the existing clan snapshot."""
@@ -111,33 +97,6 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         location = self._player_locations.get(player_tag)
         return dict(location) if location is not None else None
 
-    def get_location_snapshot_status(self) -> dict[str, Any]:
-        """Describe the clan-location snapshot without exposing mutable state."""
-        return {
-            "observed_at": self._location_snapshot_observed_at,
-            "complete": bool(self._last_snapshot_complete),
-        }
-
-    def get_player_locations_snapshot(self, player_tags: tuple[str, ...]) -> dict[str, Any]:
-        """Return requested locations and their coverage from one memory generation."""
-        snapshot = getattr(self, "_location_evidence_snapshot", None) or {
-            "observed_at": getattr(self, "_location_snapshot_observed_at", None),
-            "complete": bool(getattr(self, "_last_snapshot_complete", False)),
-            "locations": getattr(self, "_player_locations", {}),
-            "location_statuses": {},
-        }
-        locations = snapshot["locations"]
-        return {
-            "observed_at": snapshot["observed_at"],
-            "complete": bool(snapshot["complete"]),
-            "locations": {
-                tag: dict(locations[tag]) for tag in player_tags if tag in locations
-            },
-            "location_statuses": {
-                tag: snapshot.get("location_statuses", {}).get(tag, "observed_family_clan")
-                for tag in player_tags if tag in locations
-            },
-        }
 
     async def _candidate_members(self) -> list[discord.Member]:
         guild = self.bot.get_guild(GUILD_ID)
@@ -165,9 +124,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
                 for member in row["members"]]
             results.append((clan_code, members))
         self._last_snapshot_complete = snapshot["complete"]
-        location_statuses: dict[str, str] = {}
         for clan_code, members in results:
-            carried_forward = members is None
             if members is None:
                 clan_map = dict(self._clan_members.get(clan_code, {}))
             else:
@@ -176,17 +133,9 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             for row in clan_map.values():
                 tag = str(row["player_tag"])
                 player_locations[tag] = row
-                location_statuses[tag] = "stale_family_clan" if carried_forward else "observed_family_clan"
 
         self._clan_members = fresh_members
         self._player_locations = player_locations
-        self._location_snapshot_observed_at = datetime.now(timezone.utc).isoformat()
-        self._location_evidence_snapshot = {
-            "observed_at": self._location_snapshot_observed_at,
-            "complete": bool(self._last_snapshot_complete),
-            "locations": player_locations,
-            "location_statuses": location_statuses,
-        }
 
     async def _prune_departed_suggestions(self) -> None:
         if not self._last_snapshot_complete:

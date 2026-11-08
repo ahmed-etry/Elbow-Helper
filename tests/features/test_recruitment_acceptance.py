@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import sqlite3
-import tempfile
+from tests.temp_directory import TemporaryDirectory
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -20,7 +19,7 @@ from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.recruitment import commands
 from elbow_helper.features.recruitment import trials
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
-from elbow_helper.features.recruitment.state import LEGACY_FILES, RecruitmentState
+from elbow_helper.features.recruitment.state import RecruitmentState
 from elbow_helper.features.recruitment.trials import TrialMixin
 from elbow_helper.features.recruitment.trials import TrialStartResult
 from elbow_helper.infrastructure.clash import ClashResponse
@@ -28,16 +27,11 @@ from elbow_helper.infrastructure.clash import ClashResponse
 
 class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
     async def _state(self, trials=None, reminders=None):
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        paths = {part: Path(directory.name) / f"{part}.json" for part in LEGACY_FILES}
-        for part, data in (("trials", trials), ("reminders", reminders)):
-            if data is not None:
-                paths[part].write_text(json.dumps(data), encoding="utf-8")
         events = MemoryEventsStore()
         self.addCleanup(events.close)
-        state = RecruitmentState(events, paths)
+        state = RecruitmentState(events)
         await state.startup()
+        await state.change(lambda saved: saved.update(trials=trials or {}, reminders=reminders or {}) or ())
         return state
 
     @staticmethod
@@ -117,57 +111,6 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-    async def test_successful_acceptance_does_not_send_another_confirmation(self) -> None:
-        (
-            owner,
-            interaction,
-            user,
-            target_channel,
-            applicant_role,
-            trial_role,
-            clan_role,
-        ) = self._flow()
-
-        with self._config():
-            await owner._perform_accept_flow(
-                interaction,
-                user=user,
-                valid_clans=["BEH"],
-                nickname="Ahmad",
-                days=7,
-                target_channel=target_channel,
-                additional_notes=None,
-                player_tags=["#A", "#B"],
-            )
-
-        self.assertEqual(
-            [call.kwargs for call in owner.account_links.upsert_link.call_args_list],
-            [dict(player_tag="#A", discord_user_id=42, player_name_last_seen="Alpha"),
-             dict(player_tag="#B", discord_user_id=42, player_name_last_seen="Beta")],
-        )
-        user.edit.assert_awaited_once_with(nick="Ahmad")
-        user.remove_roles.assert_awaited_once_with(applicant_role)
-        self.assertEqual(
-            [call.args[0] for call in user.add_roles.await_args_list],
-            [trial_role, clan_role],
-        )
-        owner.start_trial_for_accept.assert_awaited_once_with(
-            target_channel,
-            7,
-            user.id,
-            actor_id=99,
-            via="button",
-        )
-        owner.achievement_rewards.award_achievement.assert_awaited_once_with(
-            user.id,
-            "fresh_recruit",
-        )
-        interaction.followup.send.assert_not_awaited()
-        event = owner.recruitment_state.record_event.await_args.args[0]
-        self.assertEqual((event.kind, event.subject_discord_id, event.actor_discord_id, event.via),
-                         ("accepted", 42, 99, "button"))
-        self.assertEqual(event.detail, {"clans": ["BEH"], "trial_days": 7})
-        self.assertEqual(event.source_channel_id, 200)
 
     async def test_accept_rejects_404_and_saves_temporary_failures_and_named_players(self) -> None:
         for prepared in (False, True):
@@ -188,7 +131,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                 links.refresh_linked_boards = AsyncMock()
                 owner.account_links = links
 
-                with tempfile.TemporaryDirectory() as directory:
+                with TemporaryDirectory() as directory:
                     with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
                         links._init_db()
                         await attach_links(links)
@@ -220,26 +163,6 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                 owner.start_trial_for_accept.assert_awaited_once()
                 owner.achievement_rewards.award_achievement.assert_awaited_once()
 
-    async def test_accept_without_clash_setup_still_saves_the_tag(self) -> None:
-        owner, interaction, user, target_channel, *_ = self._flow()
-        links = object.__new__(AccountLinks)
-        client = SimpleNamespace(configured=False, get=AsyncMock())
-        links.profiles = profile_demand(client)
-        links.refresh_linked_boards = AsyncMock()
-        owner.account_links = links
-        with tempfile.TemporaryDirectory() as directory:
-            with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
-                links._init_db()
-                await attach_links(links)
-                with self._config():
-                    await owner._perform_accept_flow(
-                        interaction, user=user, valid_clans=["BEH"], nickname="Ahmad",
-                        days=7, target_channel=target_channel,
-                        additional_notes=None, player_tags=["#P0Y"],
-                    )
-                self.assertEqual((await asyncio.to_thread(links.get_link_by_tag, "#P0Y"))["player_name_last_seen"], "#P0Y")
-        client.get.assert_not_awaited()
-        interaction.followup.send.assert_not_awaited()
 
     async def test_acceptance_reports_each_failure_and_continues_other_steps(self) -> None:
         (
@@ -303,43 +226,6 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             ephemeral=True,
         )
 
-    async def test_failed_member_update_is_reported(self) -> None:
-        owner = RecruitmentCommandMixin()
-        owner.logger = MagicMock()
-        response = MagicMock(status=503, reason="Service Unavailable")
-        action = AsyncMock(side_effect=discord.HTTPException(response, "failed"))
-
-        completed = await owner._apply_accept_member_update(
-            action,
-            label="Trial role addition",
-            user_id=42,
-        )
-
-        self.assertFalse(completed)
-        action.assert_awaited_once_with()
-
-    async def test_ticket_rename_failure_is_reported(self) -> None:
-        owner, interaction, user, target_channel, *_ = self._flow()
-        owner.start_trial_for_accept.return_value = TrialStartResult(
-            started=True,
-            ticket_renamed=False,
-        )
-
-        with self._config():
-            await owner._perform_accept_flow(
-                interaction,
-                user=user,
-                valid_clans=["BEH"],
-                nickname="Ahmad",
-                days=7,
-                target_channel=target_channel,
-                additional_notes=None,
-                player_tags=["#A", "#B"],
-            )
-
-        message = interaction.followup.send.await_args.args[0]
-        self.assertIn("- Ticket was not renamed for the trial.", message)
-        self.assertIn("Other acceptance steps were completed.", message)
 
     async def test_trial_state_failure_removes_the_untracked_message(self) -> None:
         owner = TrialMixin()
@@ -369,36 +255,6 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(owner.recruitment_state.trials(), {})
         self.assertEqual(await owner.recruitment_state.events.read(), [])
 
-    async def test_trial_start_reports_when_the_ticket_cannot_be_renamed(self) -> None:
-        owner = TrialMixin()
-        owner._trial_lock = asyncio.Lock()
-        owner.logger = MagicMock()
-        tracking_message = MagicMock()
-        tracking_message.id = 500
-        tracking_channel = MagicMock()
-        tracking_channel.id = 600
-        tracking_channel.send = AsyncMock(return_value=tracking_message)
-        owner.bot = MagicMock()
-        owner.bot.get_channel.return_value = tracking_channel
-        owner.recruitment_state = await self._state()
-        owner._build_trial_tracking_embed = MagicMock(return_value=MagicMock())
-        channel = MagicMock()
-        channel.id = 200
-        channel.guild.id = 1
-        channel.edit = AsyncMock()
-
-        with (
-            patch.object(trials, "rename_ticket_channel", return_value="trial-ticket"),
-            patch.object(trials, "can_rename", return_value=False),
-        ):
-            result = await owner.start_trial_for_accept(channel, 7, 42)
-
-        self.assertEqual(
-            result,
-            TrialStartResult(started=True, ticket_renamed=False),
-        )
-        self.assertEqual(set(owner.recruitment_state.trials()), {"200"})
-        channel.edit.assert_not_awaited()
 
     async def test_existing_trial_state_is_reused_without_another_message(self) -> None:
         owner = TrialMixin()

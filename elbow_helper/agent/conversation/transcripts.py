@@ -8,8 +8,9 @@ import logging
 from pathlib import Path
 import sqlite3
 
-from elbow_helper.infrastructure.persistence import SQLiteMigration, run_sqlite_migrations, sqlite_connection, sqlite_transaction
-from .feedback import ReplyReportArchiveMixin, feedback_schema, store_diagnostics
+from elbow_helper.infrastructure.persistence import sqlite_transaction
+from ..storage import agent_connection, initialize_agent
+from .feedback import ReplyReportArchiveMixin, store_diagnostics
 
 LOGGER = logging.getLogger(__name__)
 DEBUG_RETENTION_DAYS = 30
@@ -48,11 +49,7 @@ class TranscriptArchive(ReplyReportArchiveMixin):
         self._write_tasks: set[asyncio.Task] = set()
         self._write_lock = asyncio.Lock()
         with self.connect() as connection:
-            run_sqlite_migrations(connection, (
-                SQLiteMigration(1, "visible chat transcripts", _schema),
-                SQLiteMigration(2, "operator request diagnostics", _debug_schema),
-                SQLiteMigration(3, "reply reports and retained request summaries", feedback_schema),
-            ), target_version=3)
+            initialize_agent(connection)
 
     def enqueue_debug(self, context, record) -> None:
         """Schedule best-effort diagnostics without waiting on SQLite or serialization."""
@@ -113,7 +110,7 @@ class TranscriptArchive(ReplyReportArchiveMixin):
             self._prune_debug(connection, datetime.now(timezone.utc))
 
     def connect(self):
-        return sqlite_connection(self.path, synchronous="FULL", busy_timeout_ms=5000)
+        return agent_connection(self.path, synchronous="FULL", busy_timeout_ms=5000)
 
     def record_request(self, *, message_id: int, guild_id: int, channel_id: int,
                        root_message_id: int, member_id: int, created_at: str,

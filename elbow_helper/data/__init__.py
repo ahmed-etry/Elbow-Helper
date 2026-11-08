@@ -1,1 +1,1 @@
-"""The family record: collection and storage, with no feature readers yet."""
+"""Shared collection, storage, workflow events and factual reads."""

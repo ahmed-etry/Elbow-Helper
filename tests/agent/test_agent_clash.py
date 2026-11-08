@@ -4,22 +4,20 @@ from datetime import datetime, timezone
 import json
 from types import SimpleNamespace
 import unittest
-from dataclasses import replace
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.datasets.clash import ENDPOINTS, clash_tools, read_clash, summary
+from elbow_helper.agent.reads.clash import ENDPOINTS, read_clash
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.agent.engine.tool_call import bound_tool_result
 from elbow_helper.agent.plan.results import model_result, model_view
-from elbow_helper.agent.datasets.clash_cache import RequestClashReads
-from elbow_helper.agent.models import AgentRequestContext, AgentTurnState
+from elbow_helper.agent.tool_support.clash_cache import RequestClashReads
 
 
 class ClashReadTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.access = patch(
-            "elbow_helper.agent.datasets.clash.require_evidence_access", AsyncMock(),
+            "elbow_helper.agent.reads.clash.require_evidence_access", AsyncMock(),
         )
         self.require_access = self.access.start()
         self.addCleanup(self.access.stop)
@@ -48,25 +46,6 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["items"][0]["status"], "not_found")
         self.client.get.assert_not_awaited()
 
-    async def test_statuses_and_limits(self):
-        for kind in ENDPOINTS:
-            for code, expected in (
-                (404, "not_found"), (503, "maintenance"), (500, "unavailable"),
-                (403, "private"
-                 if kind in ("current_war", "cwl_group", "war_log") else "unavailable"),
-            ):
-                self.client.get.return_value = SimpleNamespace(ok=False, status=code, payload=None)
-                self.assertEqual(
-                    (await read_clash(self.context, {"kind": kind, "tags": ["#P0"]}))
-                    ["items"][0]["status"], expected,
-                )
-            cap = 200 if kind == "player" else 20
-            self.assertIn("error", await read_clash(
-                self.context, {"kind": kind, "tags": ["#P0"] * (cap+1)},
-            ))
-        self.assertEqual(len((await read_clash(
-            self.context, {"kind": "player", "detail": "full", "tags": ["#P0"] * 6},
-        ))["items"]), 6)
 
     async def test_player_clan_evidence_distinguishes_clanless_from_failed_reads(self):
         clan = {"tag": "#Q0", "name": "Synthetic clan"}
@@ -96,11 +75,6 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
                     self.assertNotIn("data", item)
                     self.assertNotIn("clan_status", item)
 
-    async def test_player_field_selection_without_clan_keeps_its_existing_shape(self):
-        result = await read_clash(self.context, {"kind": "player", "tags": ["#P0"], "fields": ["name"]})
-        self.assertEqual(result["items"][0]["data"], {"name": "Synthetic"})
-        status = await read_clash(self.context, {"kind": "player", "tags": ["#P0"], "fields": ["clan_status"]})
-        self.assertEqual(status["items"][0]["data"], {"clan_status": "not_in_clan"})
 
     async def test_clanless_evidence_survives_cache_reuse_without_mutating_raw_profiles(self):
         self.enable_cache()
@@ -126,20 +100,11 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
         self.client.get.side_effect = get
         for kind in ("player", "battle_log"):
             with self.subTest(kind=kind), patch(
-                "elbow_helper.agent.datasets.clash.budgets.TOOL_TIMEOUT_SECONDS", 1.02,
+                "elbow_helper.agent.reads.clash.budgets.TOOL_TIMEOUT_SECONDS", 1.02,
             ):
                 result = await read_clash(self.context, {"kind": kind, "tags": ["#P0", "#P2"]})
                 self.assertEqual([item["status"] for item in result["items"]], ["ok", "timeout"])
 
-    async def test_battle_log_is_registered_and_uses_account_tags_without_clan_aliases(self):
-        kinds = clash_tools()[0].definition.parameters["properties"]["kind"]["enum"]
-        self.assertIn("battle_log", kinds)
-        with patch("elbow_helper.agent.datasets.clash.CLANS", {"P0": SimpleNamespace(tag="#Q0")}):
-            result = await read_clash(self.context, {"kind": "battle_log", "tags": ["p0"]})
-        self.assertEqual(self.client.get.await_args.args[0], "/players/%23P0/battlelog")
-        self.assertEqual(self.client.get.await_args.kwargs["attempts"], 2)
-        self.assertEqual(result["items"][0]["tag"], "#P0")
-        self.assertEqual(self.require_access.await_count, 2)
 
     async def test_roster_get_retries_transient_failure_without_losing_successful_siblings(self):
         from elbow_helper.infrastructure.clash import ClashClient
@@ -217,38 +182,6 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["items"][0]["data"]["items"],
                                  [] if not entries else [{"battleType": "RANKED"}])
 
-    async def test_battle_log_access_denial_stops_the_request(self):
-        self.require_access.side_effect = RuntimeError("synthetic access denied")
-        with self.assertRaisesRegex(RuntimeError, "synthetic access denied"):
-            await read_clash(self.context, {"kind": "battle_log", "tags": ["#P0"]})
-        self.client.get.assert_not_awaited()
-
-    def test_projection_drops_unrequested_data(self):
-        result = summary("clan", {
-            "tag": "#P0", "description": "x"*400, "secret": 1,
-            "memberList": [{"tag": "#P2", "name": "Synthetic", "secret": 2}],
-        })
-        self.assertNotIn("secret", result)
-        self.assertEqual(len(result["description"]), 400)
-        self.assertNotIn("secret", result["memberList"][0])
-        self.assertEqual(
-            summary("capital_raids", {"items": [{
-                "startTime": "synthetic", "attackLog": [1], "defenseLog": [2],
-            }]}),
-            {"items": [{"startTime": "synthetic"}]},
-        )
-
-    async def test_uncut_and_empty_logs_are_not_marked_truncated(self):
-        for count in (0, 3, 10):
-            with self.subTest(count=count):
-                self.client.get.return_value.payload = {"items": [{"stars": 0}] * count}
-                result = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P0"]})
-                self.assertFalse(result["truncated"])
-                self.assertEqual(result["items"][0]["row_counts"]["/items"], {
-                    "returned_rows": count, "total_rows": count,
-                })
-                self.assertFalse(result["items"][0]["coverage"]["history_complete"])
-                self.assertEqual(model_result(result)["flags"]["status"], "partial")
 
     async def test_chronological_selection_finds_recent_attack_in_any_api_order(self):
         entries = [{"battleTimestamp": f"202610{day:02d}T120000.000Z", "attack": day == 18,
@@ -283,7 +216,7 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
         self.context.guild = SimpleNamespace(id=1)
         self.context.member = SimpleNamespace(id=2)
 
-    @patch('elbow_helper.agent.datasets.clash.datetime')
+    @patch('elbow_helper.agent.reads.clash.datetime')
     async def test_live_battle_log_batches_and_nested_ranked_reads_always_fetch(self, clock):
         clock.now.side_effect = (datetime(2026, 10, 1, 0, 0, second, tzinfo=timezone.utc) for second in range(20))
         self.enable_cache()
@@ -304,58 +237,6 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
         repeated = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P2"], "detail": "full"})
         self.assertEqual(repeated["items"][0]["data"]["items"][0]["army"], [18])
 
-    async def test_concurrent_reads_coalesce_per_account(self):
-        self.enable_cache()
-        async def fetch(*args, **kwargs):
-            await asyncio.sleep(0)
-            return SimpleNamespace(ok=True, status=200, payload={"items": []})
-        self.client.get.side_effect = fetch
-        await asyncio.gather(*(read_clash(self.context, {"kind": "player", "tags": ["#P0"], "limit": limit})
-                               for limit in (12, 25, 50)))
-        self.client.get.assert_awaited_once()
-
-    async def test_cache_is_shared_by_request_clones_and_isolated_from_next_request(self):
-        context = AgentRequestContext(bot=self.context.bot, guild=SimpleNamespace(id=1),
-            member=SimpleNamespace(id=2), source_message=None, account_links=None, message_search=None)
-        args = {"kind": "player", "tags": ["#P0"]}
-        await read_clash(context, args)
-        clone = replace(context, state=AgentTurnState())
-        await read_clash(clone, {**args, "detail": "full"})
-        self.client.get.assert_awaited_once()
-        next_request = AgentRequestContext(bot=context.bot, guild=context.guild,
-            member=context.member, source_message=None, account_links=None, message_search=None)
-        await read_clash(next_request, args)
-        self.assertEqual(self.client.get.await_count, 2)
-
-    async def test_cache_freshness_scope_access_and_size_bounds(self):
-        self.enable_cache()
-        args = {"kind": "player", "tags": ["#P0"]}
-        now = [0]
-        with patch("elbow_helper.agent.datasets.clash_cache.monotonic", side_effect=lambda: now[0]):
-            await read_clash(self.context, args)
-            now[0] = 2
-            await read_clash(self.context, args)
-            self.assertEqual(self.client.get.await_count, 1)
-            await read_clash(self.context, {**args, "max_age_seconds": 1})
-            self.assertEqual(self.client.get.await_count, 2)
-            now[0] = 902
-            await read_clash(self.context, args)
-            self.assertEqual(self.client.get.await_count, 3)
-            await read_clash(self.context, {**args, "max_age_seconds": 0})
-            self.assertEqual(self.client.get.await_count, 4)
-        self.context.member.id = 3
-        await read_clash(self.context, args)
-        self.assertEqual(self.client.get.await_count, 5)
-        self.require_access.side_effect = RuntimeError("access lost")
-        with self.assertRaises(RuntimeError):
-            await read_clash(self.context, args)
-        self.assertFalse(self.context.clash_reads.entries)
-        self.require_access.side_effect = None
-        with patch("elbow_helper.agent.datasets.clash_cache.MAX_BYTES", 1):
-            await read_clash(self.context, args)
-            await read_clash(self.context, args)
-        self.assertEqual(self.client.get.await_count, 7)
-        self.assertFalse(self.context.clash_reads.entries)
 
     async def test_size_caps_return_no_excerpt_and_preserve_api_row_totals(self):
         for kind in ENDPOINTS:

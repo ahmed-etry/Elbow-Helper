@@ -29,8 +29,8 @@ from elbow_helper.configuration.channels import CLAN_TRANSFERS
 from elbow_helper.configuration.clans import CLAN_NAMES
 from elbow_helper.configuration.roles import CWL_HELPERS
 from elbow_helper.configuration.roles import LEAD_PLUS
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic
+from elbow_helper.infrastructure.persistence.documents import read_document as read_json
+from elbow_helper.infrastructure.persistence.documents import write_document as write_json_atomic
 from .config import CLAN_LINKS
 from .config import CWL_CLAN_CODES
 from .config import TRANSFER_STATE_FILE
@@ -200,7 +200,7 @@ class CwlTransferMixin:
             unresolved = await self._delete_transfer_reminder_messages(previous_entries)
             if prepared["status"] == "clear":
                 self.transfer_state["reminder_messages"] = unresolved
-                self._save_transfer_state()
+                await asyncio.to_thread(self._save_transfer_state)
                 if unresolved:
                     result_lines.append("I couldn't clear the previous reminder.")
                 return {"status": "partial" if unresolved else "complete",
@@ -208,13 +208,13 @@ class CwlTransferMixin:
                         "message_ids": ()}
             if unresolved:
                 self.transfer_state["reminder_messages"] = unresolved
-                self._save_transfer_state()
+                await asyncio.to_thread(self._save_transfer_state)
                 result_lines.insert(0, "Couldn't clear the old reminder, so no new one was posted.")
                 return {"status": "partial", "result_lines": tuple(result_lines),
                         "message_ids": ()}
             if previous_entries:
                 self.transfer_state["reminder_messages"] = []
-                self._save_transfer_state()
+                await asyncio.to_thread(self._save_transfer_state)
             sent_messages: list[discord.Message] = []
             try:
                 for chunk in prepared["chunks"]:
@@ -233,7 +233,7 @@ class CwlTransferMixin:
                     if unresolved_partial:
                         partial_visible = True
                         self.transfer_state["reminder_messages"] = unresolved_partial
-                        self._save_transfer_state()
+                        await asyncio.to_thread(self._save_transfer_state)
                 if partial_visible:
                     message = (
                         "I couldn't post the full transfer reminder. Part of it may still be "
@@ -245,7 +245,7 @@ class CwlTransferMixin:
                 return {"status": "partial", "result_lines": tuple(result_lines),
                         "message_ids": tuple(message.id for message in sent_messages)}
             self.transfer_state["reminder_messages"] = self._build_transfer_reminder_message_refs(sent_messages)
-            self._save_transfer_state()
+            await asyncio.to_thread(self._save_transfer_state)
         result_lines.insert(0, "Transfer reminder posted.")
         return {"status": "complete", "result_lines": tuple(result_lines),
                 "message_ids": tuple(message.id for message in sent_messages)}
@@ -473,7 +473,7 @@ class CwlTransferMixin:
 
             if changed or len(active_entries) != len(reminders):
                 self.transfer_state["reminder_messages"] = active_entries
-                self._save_transfer_state()
+                await asyncio.to_thread(self._save_transfer_state)
 
 
     async def _resolve_clan_transfers_channel(self) -> Optional[discord.abc.Messageable]:

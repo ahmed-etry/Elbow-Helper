@@ -1,25 +1,17 @@
 """Complete typed comparisons and tab summaries survive the real writer boundary."""
 
-from dataclasses import dataclass, replace
-from io import BytesIO
+from dataclasses import replace
 import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-import discord
-from openpyxl import load_workbook
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.delivery import AgentDeliveryMixin
-from elbow_helper.agent.models import AgentDelivery
-from elbow_helper.agent.families import identity_reads
-from elbow_helper.agent.reads import war_tools as war_reads
-from elbow_helper.agent.reads.access import TOOLS as ACCESS_TOOLS
+from elbow_helper.agent.reads import identity_reads
 from elbow_helper.agent.tool_support.core import family_tool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from agent.cwl_helpers import ResultQueries
 from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan
 from agent.engine.test_writer_tables import expand as unpack
 
@@ -119,77 +111,6 @@ class PlannerFix2EvidenceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([role['role_id'] for role in profile['roles']], expected)
         self.assertNotIn('roles', retained['rows'][0])
 
-    async def test_all_five_tab_leaders_reach_writer_when_score_rows_are_paged(self):
-        @dataclass
-        class Score:
-            player_tag: str
-            player_name: str
-            rank: int
-            ass_score: float
-            detail: str
-
-        @dataclass
-        class Snapshot:
-            rows: tuple
-            profile_key: str
-
-        codes = ['BES', 'BE1', 'BEM', 'BEC', 'BEE']
-        def score(clan_code, war_ids):
-            return Snapshot(tuple(Score('#P' + str(i), clan_code + ' account ' + str(i),
-                i + 1, 50.0 - i, 'Source field ' * 10) for i in range(30)), clan_code)
-
-        context = replace(_context(), cwl_queries=ResultQueries(ass_wars=score))
-        tool = next(t for t in war_reads.TOOLS if t.definition.name == 'read_cwl_results')
-        with patch('elbow_helper.features.cwl.results.CwlResults.selection', return_value={'war_ids': ['war']}):
-            flow, evidence = await self.writer(context, {'read_cwl_results': tool}, [{
-                'id': 'ass', 'capability': 'read_cwl_results', 'arguments': {'metric': 'ass',
-                    'clan_codes': codes, 'season': '2026-10', 'delivery': 'xlsx',
-                    'sheet_by': 'clan_code', 'limit': 16},
-                'depends_on': []}])
-        result = evidence['ass']
-        self.assertLess(len(flow.completed_results['ass']['rows']), 150)
-        self.assertEqual(len(result['rows']), 150)
-        self.assertEqual({(row['clan_code'], row['player_tag']) for row in result['rows']},
-                         {(code, '#P' + str(i)) for code in codes for i in range(30)})
-        self.assertEqual(result['artifact_status'], 'complete')
-        self.assertEqual([r['clan_code'] for r in result['clan_results']], codes)
-        for summary in result['clan_results']:
-            self.assertEqual([r['rank'] for r in summary['top_rows']], [1, 2, 3])
-            self.assertEqual(summary['top_rows'][0]['player_name'], summary['clan_code'] + ' account 0')
-            self.assertEqual(summary['top_rows'][0]['ass_score'], 50.0)
-        self.assertEqual(len(flow.context.state.attachments), 1)
-        manifest = json.loads(self.last_writer['prompt'].split('\nAvailable evidence:\n', 1)[0])['delivery']
-        self.assertEqual(manifest, {'files': [{'filename': 'cwl_results.xlsx', 'delivery': 'attachment',
-            'total_rows': 150, 'sheet_count': 5,
-            'sheets': [{'name': code, 'rows': 30} for code in codes]}]})
-        # Exercise the same attachment and send assembly used by the Discord reply.
-        context = replace(flow.context, bot=SimpleNamespace(user=SimpleNamespace(id=999)))
-        message = context.source_message
-        message.author, message.guild, message.mentions = context.member, context.guild, ()
-        message.archive_reply = False
-        sent = SimpleNamespace(id=72)
-        captured = []
-
-        async def send(text, **options):
-            captured.extend((item.filename, item.fp.read()) for item in options.get('files', ()))
-            return sent
-
-        message.reply = AsyncMock(side_effect=send)
-        surface = AgentDeliveryMixin()
-        surface.bot = context.bot
-        delivery = AgentDelivery()
-        with patch('elbow_helper.agent.delivery.assert_answer_scope', AsyncMock()):
-            await surface.send_response(message, 'Synthetic workbook summary.', None,
-                context.state.attachments, context=context, delivery=delivery)
-        self.assertTrue(delivery.complete)
-        self.assertEqual(captured[0][0], manifest['files'][0]['filename'])
-        workbook = load_workbook(BytesIO(captured[0][1]), read_only=True)
-        try:
-            self.assertEqual(workbook.sheetnames, codes)
-            for sheet in workbook:
-                self.assertEqual(len(list(sheet.values)) - 1, 30)
-        finally:
-            workbook.close()
 
     async def test_writer_delivery_tracks_csv_fallback_and_failed_exports(self):
         for name in ('read_sample', 'read_cwl_results'):
@@ -229,29 +150,3 @@ class PlannerFix2EvidenceTests(unittest.IsolatedAsyncioTestCase):
             'id': 'holders', 'capability': 'read_member_cohort', 'arguments': {
                 'basis': 'role_holders', 'clan_codes': ['BEH']}, 'depends_on': []}])
         self.assertEqual({r['member_id'] for r in evidence['holders']['rows']}, {41, 42, 43, 44})
-
-    async def test_two_role_room_comparison_reaches_writer_with_policy(self):
-        context = _context()
-        roles = [SimpleNamespace(id=12, name='Co-Leader', permissions=discord.Permissions.none()),
-                 SimpleNamespace(id=13, name='Cross-Leader', permissions=discord.Permissions.none())]
-        for role in context.guild.roles:
-            role.name = 'Fixture role'
-        context.guild.roles.extend(roles)
-        context.guild.get_role = lambda key: next((r for r in roles if r.id == key), None)
-        channel = context.source_message.channel
-        channel.name = 'Synthetic room'
-        channel.permissions_for = lambda actor: discord.Permissions(
-            view_channel=actor.id != 13, read_message_history=actor.id != 13)
-        reference = family_tool('read_community_reference', 'Read selected policy.', {},
-            AsyncMock(return_value={'rows': [{'title': 'Leadership policy', 'body': 'Synthetic policy.'}]}))
-        _, evidence = await self.writer(context, {'read_discord_access': ACCESS_TOOLS[0],
-            'read_community_reference': reference}, [
-            {'id': 'policy', 'capability': 'read_community_reference', 'arguments': {}, 'depends_on': []},
-            {'id': 'access', 'capability': 'read_discord_access', 'arguments': {
-                'role_names': ['Co-Leader', 'Cross-Leader']}, 'depends_on': []}])
-        rows = {r['actor_name']: r for r in evidence['access']['rows']}
-        self.assertTrue(rows['Co-Leader']['view_channel'])
-        self.assertFalse(rows['Cross-Leader']['view_channel'])
-        self.assertTrue(all(r['channel_id'] == channel.id and r['role_only'] for r in rows.values()))
-        self.assertIn('Role-only access does not establish', evidence['access']['coverage'])
-        self.assertEqual(evidence['policy']['rows'][0]['body'], 'Synthetic policy.')

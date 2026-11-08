@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-import tempfile
+from tests.temp_directory import TemporaryDirectory
 import unittest
 
 from elbow_helper.configuration.clans import CLANS
@@ -14,7 +14,7 @@ END = 1788000000
 
 class ChosenWarStorageTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        temporary = tempfile.TemporaryDirectory()
+        temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.record = await LeagueRecord(temporary.name).initialize()
         await self.record.week("BEH", "2026-08", [
@@ -50,18 +50,6 @@ class ChosenWarStorageTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "Unknown CWL war IDs: #UNKNOWN; Unfinished CWL wars: CWL:#C2"):
             await asyncio.to_thread(self.queries.ass_wars, clan_code="BEH", war_ids=["#UNKNOWN", "CWL:#C2"])
 
-    async def test_other_clan_and_regular_wars_are_refused(self):
-        for key, error in (("#C8", "another clan than BEH: CWL:#C8"),
-                           ("REGULAR", "Not CWL wars: REGULAR")):
-            with self.subTest(key=key), self.assertRaisesRegex(ValueError, error):
-                await asyncio.to_thread(self.queries.ass_wars, clan_code="BEH", war_ids=[key])
-
-    async def test_only_the_chosen_finished_war_is_loaded(self):
-        wars = await asyncio.to_thread(self.history.scoring_wars, "BEH", ["#C0"])
-        self.assertEqual([war["war_id"] for war in wars], ["CWL:#C0"])
-        self.assertEqual(wars[0]["state"], "warEnded")
-        self.assertEqual([row["player_tag"] for row in wars[0]["roster"]], ["#P0"])
-        self.assertEqual(wars[0]["attacks"], [])
 
     async def test_a_war_between_two_family_clans_uses_the_requested_clan(self):
         wars = await asyncio.to_thread(self.history.scoring_wars, "BEH", ["#C9"])

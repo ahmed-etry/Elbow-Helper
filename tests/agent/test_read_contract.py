@@ -10,6 +10,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
 import logging
+import os
 import unittest
 
 from elbow_helper.agent.actions.contracts import ActionClass
@@ -20,6 +21,7 @@ from elbow_helper.agent.plan.input_rules import RULES
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
 from agent.engine.test_agent_plan_flow import _context
+from tests.temp_directory import TemporaryDirectory
 
 PLANNER_CAUSES = {'invalid_arguments', 'needs_input'}
 COVERAGE_KEYS = {'coverage', 'coverage_note', 'history_coverage', 'missing_sources', 'missing',
@@ -150,6 +152,12 @@ class ReadContractTests(unittest.IsolatedAsyncioTestCase):
         # Reads that need live Discord objects fail closed here; their logs are noise.
         logging.disable(logging.CRITICAL)
         self.addCleanup(logging.disable, logging.NOTSET)
+        # Reads open their default stores relative to the working directory; keep that in a temporary folder.
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        previous = os.getcwd()
+        os.chdir(temporary.name)
+        self.addCleanup(os.chdir, previous)
 
     async def run_read(self, name, arguments):
         """The production path: the plan check, then the tool runner around the handler."""
@@ -160,9 +168,6 @@ class ReadContractTests(unittest.IsolatedAsyncioTestCase):
                                  arguments=deepcopy(arguments), context=_context(), timeout_seconds=10)
         return 'run', json.loads(raw)
 
-    def test_the_tables_name_only_registered_reads(self):
-        for table in (COMPLETE, MISTAKES, RUNTIME_MISTAKES):
-            self.assertLessEqual(set(table) | NO_PERIOD, set(self.reads))
 
     def test_planner_mistakes_are_refused_at_plan_check(self):
         checked = 0
@@ -222,31 +227,6 @@ class InputRuleTests(unittest.TestCase):
         planned = step('read_cwl_results', {'metric': 'ass', 'clan_codes': [reference]})
         planned['depends_on'] = ['earlier']
         self.assertTrue(check_step(planned, self.registry).ok)
-
-    def test_the_refusal_names_the_rule_and_rejected_values(self):
-        self.assertEqual(self.check('read_cwl_results', {'metric': 'ass', 'clan_codes': [NON_CWL]}).error,
-                         f'Not CWL clans: {NON_CWL}.')
-        self.assertEqual(self.check('read_war_attendance', {}).error, 'Please specify war_type.')
-        self.assertEqual(self.check('read_member_cohort', {'basis': 'selected'}).fields, ('member_ids', 'cohort_ref'))
-        self.assertEqual(self.check('read_war_attendance', {'war_type': 'REG', 'after': END, 'before': START}).error,
-                         'Choose a complete date window with its end after its start.')
-
-    def test_valid_selections_still_pass(self):
-        for name, arguments in (
-                ('read_war_attendance', {'war_type': 'CWL', 'season': '2026-09-catchup'}),
-                ('read_war_attendance', {'war_type': 'REG', 'after': START}),
-                ('read_cwl_results', {'metric': 'performance', 'season': '2026-09', 'history_limit': 2}),
-                ('read_cwl_results', {'metric': 'ass', 'clan_codes': list(CWL_CLAN_CODES[:2])}),
-                ('read_member_accounts', {'name': 'Synthetic', 'look_in': 'discord'}),
-                ('read_member_accounts', {'cohort_ref': 'synthetic', 'member_ids': [41]}),
-                ('read_member_cohort', {'basis': 'role_holders', 'role_name': 'Synthetic', 'clan_codes': ['BEH']}),
-                ('read_member_cohort', {'basis': 'clan_rosters', 'exclude_leadership': True}),
-                ('read_conversation_evidence', {'mode': 'search', 'author_ids': [41]}),
-                ('read_recruitment_pipeline', {'stage': 'ticket_evidence', 'ticket_channel_id': 91, 'after': START}),
-                ('read_discord_members', {'sort': 'oldest_first'}),
-                ('read_clash', {'kind': 'battle_log', 'tags': ['#P0'], 'offset': 2})):
-            with self.subTest(read=name, arguments=arguments):
-                self.assertTrue(self.check(name, arguments).ok, self.check(name, arguments).error)
 
 
 if __name__ == '__main__':

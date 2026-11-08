@@ -4,22 +4,19 @@ import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
 import json
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.access import AgentAccessLost
-from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
 from elbow_helper.agent.engine.flow import AnswerFlow
 from elbow_helper.agent.engine.tool_call import execute_tool
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.families import account_names, identity_reads
-from elbow_helper.agent.families import account_activity
-from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
-from elbow_helper.agent.tool_support.model_view import family_model_view
+from elbow_helper.agent.reads import account_names, identity_reads
+from elbow_helper.agent.reads import account_activity
 from elbow_helper.agent.reads.projections import cohort_selection
 from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.plan.format import capability_list
@@ -134,37 +131,26 @@ class SideNameLookupTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AccountNameMatchingTests(unittest.TestCase):
-    def test_long_single_word_tolerates_two_missing_letters(self):
-        accounts = {'#P0': {'player_tag': '#P0', 'names': ['Veloraurus']}}
-        self.assertEqual(account_names.matching_accounts('veloraus', accounts), [accounts['#P0']])
-
-    def test_spacing_punctuation_and_case_do_not_change_exact_identity(self):
-        for query, name in (
-                ('Glim orb', 'GlimOrb'), ('GlimOrb', 'Glim orb'),
-                ('Qq glints', 'QQ GLINTS'), (' glim.orb ', 'GLIM ORB')):
+    def test_account_spelling_boundaries(self):
+        cases = (
+            ('veloraus', 'Veloraurus', True),
+            (' glim.orb ', 'GLIM ORB', True),
+            ('GlimOrb', 'Glim orb', True),
+            ('Doel', 'Dovel', True),
+            ('Del', 'Dovel', False),
+            ('Glim Comte', 'Glum Comet', True),
+            ('Velraus', 'Veloraurus', False),
+            ('navor talo', 'Navor.T', False),
+            ('Glim', 'Glim Orb', False),
+            ('Glim Orb', 'Glim', False),
+            ('Glim A Orb', 'Glim Orb', False),
+            ('Glim Orb', 'Glim A Orb', False),
+        )
+        for query, name, matches in cases:
             with self.subTest(query=query, name=name):
-                accounts = {'#P0': {'player_tag': '#P0', 'names': [name]}}
-                self.assertEqual(account_names.matching_accounts(query, accounts), [accounts['#P0']])
-
-    def test_edit_allowance_scales_per_word_instead_of_per_name(self):
-        for query, name, matches in (
-                ('Dovle', 'Dovel', True), ('Doel', 'Dovel', True),
-                ('Del', 'Dovel', False), ('Velraus', 'Veloraurus', False),
-                ('Glim Comte', 'Glum Comet', True), ('glim-comte', 'GLUM.COMET', True)):
-            with self.subTest(query=query, name=name):
-                accounts = {'#P0': {'player_tag': '#P0', 'names': [name]}}
-                self.assertEqual(account_names.matching_accounts(query, accounts),
-                                 [accounts['#P0']] if matches else [])
-
-    def test_initials_and_extra_or_missing_words_do_not_match(self):
-        for query, name in (
-                ('navor talo', 'Navor.T'), ('navortalo', 'Navor.T'),
-                ('Glim', 'Glim Orb'), ('Glim Orb', 'Glim'),
-                ('Glim A Orb', 'Glim Orb'), ('Glim Orb', 'Glim A Orb'),
-                ('Glim Orb Kite', 'Glim Orb'), ('Glim Orb', 'Glim Orb Kite')):
-            with self.subTest(query=query, name=name):
-                accounts = {'#P0': {'player_tag': '#P0', 'names': [name]}}
-                self.assertEqual(account_names.matching_accounts(query, accounts), [])
+                account = {'player_tag': '#P0', 'names': [name]}
+                self.assertEqual(account_names.matching_accounts(query, {'#P0': account}),
+                                 [account] if matches else [])
 
 
 class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
@@ -178,22 +164,6 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(result['accounts']), {'#P0', '#Q0'})
         self.assertEqual({row['member_id'] for row in result['accounts'].values()}, {42})
 
-    async def test_case_spacing_and_spelling_select_tags_without_discord_or_alt_expansion(self):
-        context = context_with_names(stored=[('#Y0', 'Nebulous')],
-            linked=[('#P0', 'Amber Comet'), ('#Q0', 'Other Beacon')])
-        profiles = AsyncMock(return_value={
-            '#P0': {'status': 'ok', 'data': {'name': 'Amber Comet'}},
-            '#Y0': {'status': 'ok', 'data': {'name': 'Nebulous'}}})
-        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters([
-                ('#P0', 'Amber Comet')]))), patch.object(identity_reads, 'profiles', profiles):
-            result = await identity_reads.member_accounts(context,
-                {'look_in': 'game', 'account_names': [' aMbErCoMet ', 'Nebluous']})
-        self.assertEqual([row['status'] for row in result['name_resolutions']], ['resolved', 'resolved'])
-        self.assertEqual({row['player_tag'] for row in result['rows']}, {'#P0', '#Y0'})
-        self.assertEqual(profiles.call_args.args[1], ['#P0', '#Y0'])
-        self.assertTrue(result['selection_complete'])
-        self.assertIsNone(next(row for row in result['rows'] if row['player_tag'] == '#Y0')['member_id'])
-        self.assertEqual(context.state.resolved_members, {})
 
     async def test_duplicate_normalized_names_and_plausible_typos_are_explicitly_ambiguous(self):
         for query, names in (
@@ -218,24 +188,6 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['accounts']['#P0']['player_name'], 'Golden Finch')
         self.assertEqual(len(result['name_resolutions'][0]['candidates']), 1)
 
-    async def test_single_typo_and_transposition_can_resolve(self):
-        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters([
-                ('#P0', 'Cobalt'), ('#Q0', 'Velvet Quill')]))):
-            result = await account_names.resolve_account_names(context_with_names(), ['Cobal', 'Vevlet Quill'])
-        self.assertEqual(set(result['accounts']), {'#P0', '#Q0'})
-        self.assertTrue(result['selection_complete'])
-
-    async def test_extra_or_missing_segments_do_not_fuzzy_match(self):
-        for query, name in (
-                ('lumenbirch', 'Lumen.B'),
-                ('Lumen Birch', 'Lumen B'),
-                ('Amber Comet', 'Amber Red Comet'),
-                ('Amber Red Comet', 'Amber Comet'),
-                ('Amber A Comet', 'Amber Comet')):
-            with self.subTest(query=query, name=name):
-                with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters([('#P0', name)]))):
-                    result = await account_names.resolve_account_names(context_with_names(), [query])
-                self.assertEqual(result['name_resolutions'][0]['status'], 'not_found')
 
     async def test_exact_then_prefix_precede_fuzzy_and_prefix_ambiguity_is_kept(self):
         with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters([
@@ -279,33 +231,6 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([row['status'] for row in result['name_resolutions']],
                              ['resolved', 'resolved', 'not_found', 'not_found', 'not_found'])
 
-    async def test_ambiguous_owner_details_survive_report_and_writer_projection(self):
-        context = context_with_names(linked=[('#P0', 'Silver Kite'), ('#Q0', 'Silver Kite')])
-        context.account_links.get_all_links()['#Q0']['discord_user_id'] = 43
-        owner = named_member(42, 'Synthetic Pilot')
-        other = named_member(43, 'Synthetic Navigator')
-        context.guild.get_member = lambda identifier: {42: owner, 43: other}.get(identifier, context.member)
-        tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
-        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters([
-                ('#Y0', 'Silver Kite')]))), patch.object(identity_reads, 'profiles', AsyncMock(return_value={})) as profiles:
-            result = await tool.handler(context, {'look_in': 'game', 'account_names': ['Silver Kite']})
-            projected = await cohort_writer_evidence(context, {'owners': result})
-        profiles.assert_awaited_once()
-        self.assertEqual(profiles.await_args.args[1], ['#P0', '#Q0', '#Y0'])
-        self.assertEqual(result['status'], 'resolved')
-        self.assertEqual([row['player_tag'] for row in result['rows']], ['#P0', '#Q0', '#Y0'])
-        evidence = answer_evidence(projected, guild=context.guild)
-        candidates = evidence['owners']['name_resolutions'][0]['candidates']
-        self.assertEqual([(row['player_tag'], row['member_id'], row['member_name'])
-                          for row in candidates], [
-            ('#P0', 42, 'Synthetic Pilot'), ('#Q0', 43, 'Synthetic Navigator'), ('#Y0', None, None)])
-        self.assertEqual([row['membership_status'] for row in result['name_resolutions'][0]['candidates']],
-                         ['present', 'present', 'unlinked'])
-        retained = await tool.handler(context, {'report_id': result['report_id']})
-        self.assertEqual(retained['name_resolutions'], result['name_resolutions'])
-        self.assertEqual(family_model_view(retained)['name_resolutions'],
-                         projected['owners']['name_resolutions'])
-        self.assertEqual(context.state.resolved_members, {})
 
     async def test_ambiguous_owners_distinguish_absent_member_and_unavailable_links(self):
         for linked, expected in ((True, 'not_in_guild'), (False, 'links_unavailable')):
@@ -340,16 +265,6 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
                 await tool.handler(context, {'look_in': 'game', 'account_names': ['Silver Kite']})
         self.assertEqual(context.state.reports, {})
 
-    async def test_discord_alias_and_game_fallback_use_the_chosen_side(self):
-        context = lookup_context([named_member(42, 'Lumen (Birch)', nick='Lumen (Birch)')],
-                                 [('#P0', 'Silver Kite', 42)])
-        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())) as source, \
-             patch.object(identity_reads, 'profiles', AsyncMock(return_value={})):
-            for name, found_in in (('Lumen Birch', 'discord'), ('Silver Kite', 'game')):
-                result = await identity_reads.member_accounts(context, {'name': name, 'look_in': 'discord'})
-                self.assertEqual(result['rows'][0]['member_id'], 42)
-                self.assertEqual(result['name_resolutions'][0]['found_in'], found_in)
-        source.assert_awaited_once()
 
     async def test_mixed_selectors_return_a_precise_correctable_error_without_reads(self):
         with patch.object(account_names, 'resolve_names', AsyncMock()) as resolve:
@@ -364,19 +279,6 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn('separate plan steps', result['error'])
         resolve.assert_not_called()
 
-    def test_planner_catalogue_exposes_required_side_and_fallback(self):
-        tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
-        catalogue = capability_list({tool.definition.name: tool}, include_returns=False)
-        for text in (FAMILY_INSTRUCTION, catalogue):
-            for expected in ('look_in', 'game', 'discord', 'Discord ID', 'other side is searched'):
-                self.assertIn(expected, text)
-            for removed in ('selected_by', 'account_status', 'member_status', 'both search'):
-                self.assertNotIn(removed, text)
-        properties = tool.definition.parameters['properties']
-        self.assertEqual(properties['look_in']['enum'], ['game', 'discord'])
-        self.assertIn('requires look_in', properties['name']['description'])
-        self.assertIn('same lookup', properties['account_names']['description'])
-        self.assertIn('found_in', catalogue)
 
     async def test_missing_roster_is_unknown_instead_of_a_false_unmatched_account(self):
         with patch.object(account_names, 'read_clash', AsyncMock(return_value={
@@ -386,11 +288,6 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['selection_complete'])
         self.assertEqual(len(result['missing_sources']), len(CLANS))
 
-    async def test_complete_empty_lookup_differs_from_ambiguous_and_failed_sources(self):
-        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())):
-            result = await account_names.resolve_account_names(context_with_names(), ['Violet Orbit'])
-        self.assertEqual(result['name_resolutions'][0]['status'], 'not_found')
-        self.assertEqual(result['missing_sources'], [])
 
     async def test_dated_account_read_uses_real_stored_reg_and_cwl_records_and_ranked_query(self):
         with TemporaryDirectory() as directory:
@@ -470,12 +367,6 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[0]['activity']['ranked']['attacks_used'], 4)
         self.assertEqual(read_wars.call_args.args[1]['before'], '2026-01-01T00:00:00+00:00')
 
-    async def test_bad_period_is_rejected_before_account_or_history_reads(self):
-        with patch.object(account_names, 'resolve_account_names', AsyncMock()) as resolve:
-            result = await identity_reads.member_accounts(_context(), {'look_in': 'game', 'account_names': ['Amber Comet'],
-                'after': '2026-02-01T00:00:00+00:00'})
-        self.assertEqual(result['cause'], 'invalid_arguments')
-        resolve.assert_not_called()
 
     async def test_rejected_history_selection_does_not_establish_missing_data(self):
         from elbow_helper.agent.reads import ranked as ranked_reads

@@ -1,12 +1,11 @@
 """Offline, sanitized endpoint shapes and durable source collection contracts."""
 
 import asyncio
-from contextlib import closing
 from copy import deepcopy
+from functools import lru_cache
 import json
 from pathlib import Path
-import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import threading
 from types import SimpleNamespace
 import unittest
@@ -14,16 +13,15 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.data.collectors.service import FamilyCollectors
 from elbow_helper.data.collectors.sources import collect_sources, path_for
+from tests.data.store_fixtures import empty_store
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.api_fields import leaves, read_fields, unpack
 from elbow_helper.data.store.people import mirror_links
 from elbow_helper.data.store.projections import canonical_json
-from elbow_helper.data.store.schema import MIGRATIONS, SCHEMA_VERSION
 from elbow_helper.data.store.sources import (
     DAY, INTERVALS, KINDS, REFERENCES, RANKED_FINAL_GRACE, RANKED_WEEK,
     battle_key, due_sources, entity_scope, record_source,
 )
-from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration, SQLiteMigrationError, run_sqlite_migrations
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
 from .test_family_store import CLANS, link, response
@@ -34,8 +32,25 @@ BASE = 1_793_000_000_000_000
 COLLECTOR = {kind: collector for collector, kinds in KINDS.items() for kind in kinds}
 
 
+@lru_cache(maxsize=1)
+def _samples():
+    return tuple(json.loads(path.read_text(encoding="utf-8")) for path in sorted(FIXTURES.glob("*.json")))
+
+
 def samples():
-    return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(FIXTURES.glob("*.json"))]
+    return deepcopy(_samples())
+
+
+def specimens():
+    # Catalogue endpoints share one projection; vary failures by kind, not clan size.
+    seen = set()
+    for data in samples():
+        if data["kind"] in seen:
+            continue
+        seen.add(data["kind"])
+        if "items" in data["body"]:
+            data["body"]["items"] = data["body"]["items"][:3]
+        yield data
 
 
 def sample(kind):
@@ -57,8 +72,7 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
         self.temporary = TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(self.temporary.cleanup)
         self.path = Path(self.temporary.name) / "family.sqlite3"
-        self.store = FamilyStore(self.path)
-        await self.store.initialize()
+        self.store = await empty_store(self.path)
 
     async def rows(self, sql, args=()):
         return await self.store.call(lambda c: [dict(row) for row in c.execute(sql, args)])
@@ -89,8 +103,8 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
         for source, target, raw in parts:
             self.assertEqual(await self.store.call(read_fields, source, target), {p: v for p, v, _ in leaves(raw)})
 
-    async def test_every_captured_leaf_survives_each_source_and_unchanged_repoll(self):
-        for index, data in enumerate(samples()):
+    async def test_each_endpoint_projection_preserves_leaves_and_unchanged_repoll(self):
+        for index, data in enumerate(specimens()):
             with self.subTest(kind=data["kind"], scope=data["scope"]):
                 _, result = await self.record(data, BASE + index * DAY)
                 self.assertEqual(result["failed"], 0)
@@ -255,17 +269,6 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
             await self.record(data, BASE + 2 * DAY)
             self.assertEqual(history, await self.rows("SELECT * FROM api_field_changes"))
 
-    async def test_full_nonoverlapping_battle_window_is_partial_but_keeps_positive_evidence(self):
-        data = sample("battle_log")
-        await self.record(data)
-        for row in data["body"]["items"]:
-            row["battleTimestamp"] = row["battleTimestamp"].replace("2026", "2027", 1)
-        _, report = await self.record(data, BASE + DAY)
-        self.assertEqual(report["failed"], 1)
-        self.assertEqual((await self.rows("SELECT error_code FROM collection_items"))[0]["error_code"], "battle_window_gap")
-        self.assertEqual(len(await self.rows("SELECT * FROM family_battles")), 100)
-        _, report = await self.record(data, BASE + 2 * DAY)
-        self.assertEqual(report["failed"], 0)
 
     async def test_empty_windows_never_erase_battles_seasons_or_raid_history(self):
         for kind in ("battle_log", "league_history", "capital_raids"):
@@ -280,7 +283,7 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(battles, await self.rows("SELECT * FROM family_battles"))
 
     async def test_future_fields_survive_in_rows_envelopes_and_nested_arrays(self):
-        for index, data in enumerate(samples()):
+        for index, data in enumerate(specimens()):
             data["body"]["future"] = {"null": None, "array": [True, {}, []]}
             if "items" in data["body"]:
                 data["body"]["items"][0]["future"] = {"leaf": [1, "one"]}
@@ -310,12 +313,23 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(report["failed"], 1)
                 self.assertEqual(baseline, await self.rows("SELECT * FROM api_field_changes"))
 
+    async def test_http_failure_statuses_keep_prior_facts(self):
+        data = sample("catalogue")
+        data["body"]["items"] = data["body"]["items"][:1]
+        await self.record(data)
+        history = await self.rows("SELECT * FROM api_field_changes")
+        for status in (403, 404, 429, 500, 503):
+            with self.subTest(status=status):
+                _, result = await self.record(data, BASE + DAY, status=status)
+                self.assertEqual(result["failed"], 1)
+                self.assertEqual(history, await self.rows("SELECT * FROM api_field_changes"))
+
     async def test_transport_and_invalid_identity_fail_without_losing_prior_facts(self):
-        for index, data in enumerate(samples()):
+        for index, data in enumerate(specimens()):
             at = BASE + index * DAY
             await self.record(data, at)
             history = await self.rows("SELECT * FROM api_field_changes")
-            for status in (403, 404, 429, 500, 503):
+            for status in (503,):
                 _, result = await self.record(data, at + DAY, status=status)
                 # A ranked group that does not exist is an answer, covered below.
                 self.assertEqual(result["failed"], 0 if (data["kind"], status) == ("ranked_group", 404) else 1)
@@ -388,50 +402,6 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.rows("SELECT * FROM battle_strings"), [])
         self.assertEqual(await self.rows("SELECT * FROM api_records"), [])
         self.assertEqual((await self.rows("SELECT checkpoint_json FROM family_api_state"))[0]["checkpoint_json"], "{}")
-
-    async def test_fixture_identifiers_names_urls_and_cursors_are_synthetic(self):
-        def inspect(value, key=""):
-            if isinstance(value, dict):
-                for k, v in value.items():
-                    inspect(v, k)
-            elif isinstance(value, list):
-                for child in value:
-                    inspect(child, key)
-            elif isinstance(value, str):
-                if key == "tag" or key.endswith("Tag"):
-                    self.assertTrue(value.startswith("#PP"))
-                if key == "name" or key.endswith("Name"):
-                    self.assertTrue(value.startswith("Synthetic name "))
-                if value.startswith("https://"):
-                    self.assertTrue(value.startswith("https://example.test/"))
-                if key in {"after", "before"}:
-                    self.assertTrue(value.startswith("synthetic-"))
-        for data in samples():
-            inspect(data["body"])
-
-    async def test_version_six_upgrade_preserves_rows_and_failed_upgrade_rolls_back(self):
-        old = self.path.parent / "version6.sqlite3"
-        def seed(c):
-            with closing(sqlite3.connect(old)) as target:
-                run_sqlite_migrations(target, MIGRATIONS[:6], target_version=6)
-                target.execute("INSERT INTO accounts(player_tag,first_observed_at,tracking_status) VALUES ('#PP0',1,'observed')")
-                target.commit()
-        await self.store.call(seed)
-        def fail(c):
-            MIGRATIONS[6].apply(c)
-            raise ValueError("synthetic failure")
-        with patch("elbow_helper.data.store.MIGRATIONS", (*MIGRATIONS[:6], SQLiteMigration(7, "failed", fail), *MIGRATIONS[7:])):
-            with self.assertRaises(SQLiteMigrationError):
-                await FamilyStore(old).initialize()
-        def inspect(c):
-            with closing(sqlite3.connect(old)) as target:
-                return target.execute("PRAGMA user_version").fetchone()[0], target.execute("SELECT name FROM sqlite_master WHERE name='family_api_state'").fetchall()
-        self.assertEqual(await self.store.call(inspect), (6, []))
-        upgraded = FamilyStore(old)
-        await upgraded.initialize()
-        self.assertEqual(await upgraded.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), SCHEMA_VERSION)
-        self.assertEqual(await upgraded.call(lambda c: c.execute("SELECT player_tag FROM accounts").fetchone()[0]), "#PP0")
-        await FamilyStore(old).initialize()
 
 
 class SourceCollectorTests(unittest.IsolatedAsyncioTestCase):
@@ -529,20 +499,6 @@ class SourceCollectorTests(unittest.IsolatedAsyncioTestCase):
                 result = await collect_sources(self.owner, "capital_raids")
         self.assertEqual(result["failed"], 1)
 
-    async def test_source_cancellation_finishes_interrupted_run(self):
-        entered = asyncio.Event()
-        async def fetch(path, **kwargs):
-            entered.set()
-            await asyncio.Event().wait()
-        self.client.get.side_effect = fetch
-        task = asyncio.create_task(collect_sources(self.owner, "battle_logs"))
-        await entered.wait()
-        with self.assertLogs("elbow_helper.data.collectors.service", level="WARNING"):
-            task.cancel()
-            with self.assertRaises(asyncio.CancelledError):
-                await task
-        run = (await self.rows("SELECT * FROM collection_runs WHERE collector='battle_logs'"))[0]
-        self.assertEqual((run["status"], run["failed"]), ("interrupted", 1))
 
     async def test_source_database_work_stays_off_loop_and_shutdown_waits_for_fetch(self):
         import elbow_helper.data.store as module

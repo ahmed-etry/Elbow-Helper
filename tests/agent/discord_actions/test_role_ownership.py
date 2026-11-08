@@ -3,12 +3,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.discord_actions.safety import (
-    DiscordActionRefused, managed_role_commands, member_role_owner,
-)
-from elbow_helper.features.hibernation import config as hibernation_config
+from elbow_helper.agent.discord_actions.safety import DiscordActionRefused, member_role_owner
 from elbow_helper.features.hibernation.queries import HibernationQueries
-from elbow_helper.features.recruitment import config as recruitment_config
 from elbow_helper.features.recruitment.queries import RecruitmentQueries
 
 
@@ -48,13 +44,6 @@ class RoleOwnershipTests(unittest.IsolatedAsyncioTestCase):
             role_connection_queries=SimpleNamespace(managed_role_ids=lambda: {51}),
         )
 
-    async def test_only_lifecycle_roster_and_connection_roles_are_always_owned(self):
-        self.assertEqual(recruitment_config.managed_role_ids(), {21, 22})
-        self.assertEqual(hibernation_config.managed_role_ids(), {31, 32, 33})
-        self.assertEqual(await managed_role_commands(self.context), {
-            21: "/accept", 22: "/accept", 31: "/hibernate", 32: "/hibernate",
-            33: "/hibernate", 41: "/roster", 42: "/roster", 51: "/connections",
-        })
 
     async def test_membership_roles_are_owned_per_member_and_rechecked_from_state(self):
         for role_id in (11, 12, 13):

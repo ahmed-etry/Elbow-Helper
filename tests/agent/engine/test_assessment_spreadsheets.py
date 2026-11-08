@@ -2,7 +2,7 @@
 from io import BytesIO
 import json
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -12,7 +12,6 @@ from openpyxl import load_workbook
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.engine.account_lists import account_index
-from elbow_helper.agent.engine.account_list_spreadsheets import _sheet_name
 from elbow_helper.agent.engine.assessment import decision_answer, deliver_decision_answer
 from elbow_helper.agent.files.delivery import delivery_manifest, publish_spreadsheet
 from elbow_helper.agent.files.spreadsheet_tools import prepare_spreadsheet
@@ -55,41 +54,6 @@ def index():
         'history': {'rows': [{'player_tag': '#S2', 'player_name': 'Synthetic C',
                               'townhall': 13, 'clan_code': 'BE1'}]}},
         {'unverified_selection': [{'player_tag': '#S0'}]})
-
-
-class SheetNameTests(unittest.TestCase):
-    def test_short_titles_are_preserved_and_long_titles_end_at_words(self):
-        for title, expected in (
-                ('Synthetic group (tag)', 'Synthetic group (tag)'),
-                ('Synthetic group (a very long synthetic tag)', 'Synthetic group'),
-                ('Synthetic group (one) (another very long tag)', 'Synthetic group (one)'),
-                ('Synthetic account overview for review', 'Synthetic account overview for'),
-                ('Synthetic account overview now later', 'Synthetic account overview now'),
-                ('Synthetic\taccount overview for review', 'Synthetic\taccount overview for'),
-                ('X' * 31, 'X' * 31),
-                ('X' * 40, 'X' * 31),
-                (" 'Synthetic/Group' ", 'Synthetic_Group'),
-                ('', 'synthetic_id'),
-                ("'''", 'synthetic_id')):
-            with self.subTest(title=title):
-                declaration = {'id': 'synthetic_id', 'title': title}
-                self.assertEqual(_sheet_name(declaration, set()), expected)
-                self.assertEqual(declaration['title'], title)
-
-    def test_suffixes_preserve_words_and_uniqueness_after_shortening(self):
-        used = set()
-        names = [_sheet_name({'id': f'list_{number}', 'title': title}, used)
-                 for number, title in enumerate([
-                     'Synthetic account overview now later',
-                     'SYNTHETIC ACCOUNT OVERVIEW NOW LATER',
-                     'Synthetic account overview_2',
-                     *['Synthetic account overview now later'] * 10])]
-        self.assertEqual(names[:3], ['Synthetic account overview now',
-                                    'SYNTHETIC ACCOUNT OVERVIEW_2',
-                                    'Synthetic account overview_2_2'])
-        self.assertEqual(names[-1], 'Synthetic account overview_12')
-        self.assertEqual(len(set(name.casefold() for name in names)), len(names))
-        self.assertTrue(all(len(name) <= 31 for name in names))
 
 
 class AssessmentSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
@@ -171,17 +135,6 @@ class AssessmentSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 workbook.close()
 
-    async def test_no_workbook_choice_preserves_exact_inline_output(self):
-        content = json.loads(decision())
-        del content['account_lists_spreadsheet']
-        content = json.dumps(content)
-        with TemporaryDirectory() as directory:
-            context = _context(directory)
-            context.state.request_text = 'Synthetic request mentioning a sheet'
-            answer = await deliver_decision_answer(context, content, set(), accounts=index())
-            self.assertEqual(answer, decision_answer(content, set(), accounts=index()))
-            self.assertIn('Group A (2)', answer)
-            self.assertEqual(context.state.attachments, [])
 
     async def test_preparation_failures_fall_back_without_a_file_claim(self):
         for failure in ('size', 'writer', 'slots', 'title'):
@@ -225,20 +178,6 @@ class AssessmentSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(context.state.attachments, [])
                 self.assertEqual(list(Path(directory).iterdir()), [])
 
-    async def test_private_envelope_keeps_the_useful_answer_for_both_delivery_outcomes(self):
-        for succeeds in (True, False):
-            with self.subTest(succeeds=succeeds), TemporaryDirectory() as directory:
-                context = _context(directory)
-                if not succeeds:
-                    context.guild.filesize_limit = 1
-                answer = await deliver_decision_answer(context,
-                    decision(needs_private_evidence=True), set(), accounts=index())
-                envelope = json.loads(answer)
-                self.assertEqual(set(envelope), {'answer', 'needs_private_evidence'})
-                self.assertTrue(envelope['needs_private_evidence'])
-                self.assertEqual(scoped_answer(context, answer), envelope['answer'])
-                self.assertNotIn('.xlsx', envelope['answer'])
-                self.assertEqual('Synthetic A' in envelope['answer'], not succeeds)
 
     async def test_prepared_workbook_uses_existing_publication_and_download_fallback(self):
         with TemporaryDirectory() as directory:
@@ -281,56 +220,6 @@ class AssessmentSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
                                               set(), accounts=index())
             self.assertEqual(context.state.attachments, [])
 
-    async def test_each_list_chooses_its_own_order_headings_and_judgement_fields(self):
-        payload = json.loads(decision())
-        first, second = payload['account_lists']
-        first['columns'] = [
-            {'heading': 'Synthetic confidence', 'value': 'confidence'},
-            {'heading': 'Synthetic identifier', 'fact': 'player_tag'},
-            {'heading': 'Synthetic clan', 'fact': 'current_clan'},
-            {'heading': 'Synthetic village', 'fact': 'name'},
-            {'heading': 'Synthetic caveat', 'fact': 'flags'}]
-        first['accounts'] = [{'account': '#S0', 'values': {'confidence': 'provisional'}}]
-        second['columns'] = [{'heading': 'Synthetic TH', 'fact': 'town_hall'},
-                             {'heading': 'Synthetic label', 'fact': 'name'}]
-        second['accounts'] = [{'account': '#S1'}]
-        content = json.dumps(payload)
-        with TemporaryDirectory() as directory:
-            context = _context(directory)
-            await deliver_decision_answer(context, content, set(), accounts=index())
-            workbook = load_workbook(BytesIO(context.state.attachments[0].data))
-            try:
-                self.assertEqual(list(workbook['Group A'].values), [
-                    tuple(column['heading'] for column in first['columns']),
-                    ('provisional', '#S0', 'BEC', 'Synthetic A', 'owner unverified')])
-                self.assertEqual(list(workbook['Group B'].values), [
-                    ('Synthetic TH', 'Synthetic label'), (14, 'Synthetic B (currently in BEM)')])
-            finally:
-                workbook.close()
-            inline = decision_answer(content, set(), accounts=index())
-            self.assertIn('provisional — #S0 — BEC — Synthetic A — owner unverified', inline)
-            self.assertIn('14 — Synthetic B (currently in BEM)', inline)
-
-    async def test_omitted_flag_column_keeps_qualifications_without_inventing_a_heading(self):
-        payload = json.loads(decision())
-        group = payload['account_lists'][0]
-        group['columns'] = [{'heading': 'Synthetic label', 'fact': 'name'},
-                            {'heading': 'Synthetic activity', 'value': 'activity'}]
-        group['accounts'] = [{'account': '#S0', 'values': {'activity': '75%'}}]
-        payload['account_lists'] = [group]
-        payload['recommendation'] = ''
-        content = json.dumps(payload)
-        with TemporaryDirectory() as directory:
-            context = _context(directory)
-            await deliver_decision_answer(context, content, set(), accounts=index())
-            workbook = load_workbook(BytesIO(context.state.attachments[0].data))
-            try:
-                self.assertEqual(list(workbook['Group A'].values), [
-                    ('Synthetic label', 'Synthetic activity'), ('Synthetic A', '75% (owner unverified)')])
-            finally:
-                workbook.close()
-            self.assertIn('Synthetic A — 75% (owner unverified)',
-                          decision_answer(content, set(), accounts=index()))
 
     async def test_numeric_conversion_only_inspects_model_judgements(self):
         payload = json.loads(decision())

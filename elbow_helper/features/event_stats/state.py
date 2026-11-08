@@ -6,8 +6,8 @@ import json
 import logging
 from typing import Any
 
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic
+from elbow_helper.infrastructure.persistence.documents import Document, read_document as read_json
+from elbow_helper.infrastructure.persistence.documents import write_document as write_json_atomic
 from elbow_helper.domain.timezones import canonical_timezone_name
 from .config import DEFAULT_GRACE_HOURS
 from .config import MAX_GRACE_HOURS
@@ -158,7 +158,8 @@ def normalize_state(raw_state: Any) -> dict[str, Any]:
 
 
 def ensure_state() -> dict[str, Any]:
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if not isinstance(STATE_FILE, Document):
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     if not STATE_FILE.exists():
         state = _default_state()
         try:

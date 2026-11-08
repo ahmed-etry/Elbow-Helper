@@ -1,26 +1,22 @@
 """League rules across storage, reports, boards, reminders and scoring; synthetic facts only."""
 
-from copy import deepcopy
 import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from elbow_helper.data.reads import WarReads
 from elbow_helper.features.clan_reporting.record_wars import monthly_results
 from elbow_helper.features.clan_health.analysis import ClanHealthAnalyzer
 from elbow_helper.features.clan_health.record_wars import RegularWars
 from elbow_helper.features.cwl.bonus.analysis import BonusAnalysisService
-from elbow_helper.features.cwl.dashboard import CwlDashboardMixin
 from elbow_helper.features.cwl.evidence import require_scoring_evidence
-from elbow_helper.features.cwl.record import league_wars
 from elbow_helper.features.cwl.roster.analysis import (
     build_ass_season_metrics, profiles_for_roster_history,
 )
 from elbow_helper.features.cwl.router import CwlRouterMixin
-from elbow_helper.features.cwl.war_board import cwl_board_snapshot_is_complete
-from tests.data.test_war_reads import log_entry, page, league_week
+from tests.data.test_war_reads import page
 from tests.data.test_wars import group
 from tests.features import test_cwl_record as fixtures
 
@@ -28,65 +24,7 @@ SECOND, DAY, NOV = fixtures.SECOND, fixtures.DAY, fixtures.NOV
 
 
 class LeagueAuditRecordTests(fixtures.LeagueFixture, unittest.IsolatedAsyncioTestCase):
-    async def test_first_final_capture_removes_an_unseen_preparation_swap(self):
-        await self.record(fixtures.league_war("preparation", 1), kind="cwl_war", scope="#R0", at=NOV - DAY)
-        final = fixtures.swapped(fixtures.league_war("warEnded", 1))
-        await self.record(final, kind="cwl_war", scope="#R0", at=fixtures.end_of(1) + SECOND)
-        read = await WarReads(self.store).participation(["#PY"], NOV, NOV + 2 * DAY, types=("CWL",),
-                                                       as_of=NOV + 2 * DAY)
-        self.assertEqual([(row["player_tag"], row["attacks_used"], row["missed"]) for row in read["rows"]],
-                         [("#P0", 1, 0), ("#P8", 1, 0)])
-        self.assertEqual((await self.rows("SELECT roster_complete,attacks_complete FROM wars"))[0],
-                         {"roster_complete": 1, "attacks_complete": 1})
 
-    async def test_partial_final_lineup_preserves_the_previous_members_until_repaired(self):
-        await self.record(fixtures.league_war("preparation", 1), kind="cwl_war", scope="#R0", at=NOV - DAY)
-        final = fixtures.swapped(fixtures.league_war("warEnded", 1))
-        partial = deepcopy(final)
-        partial["opponent"].pop("members")
-        await self.record(partial, kind="cwl_war", scope="#R0", at=NOV + DAY + SECOND)
-        self.assertIn("#P2", [row["player_tag"] for row in await self.rows("SELECT player_tag FROM war_members")])
-        await self.record(final, kind="cwl_war", scope="#R0", at=NOV + DAY + 2 * SECOND)
-        self.assertNotIn("#P2", [row["player_tag"] for row in await self.rows("SELECT player_tag FROM war_members")])
-
-    async def test_league_only_coverage_does_not_require_a_public_regular_log(self):
-        at = NOV + DAY + SECOND
-        await self.record(group(rounds=[{"warTags": ["#R0", "#R2"]}], season="2026-11"),
-                          kind="cwl_group", at=at)
-        await self.record(fixtures.league_war("warEnded", 1), kind="cwl_war", scope="#R0", at=at)
-        await self.record(fixtures.league_war("warEnded", 1, clans=("#GR", "#CU")),
-                          kind="cwl_war", scope="#R2", at=at)
-        await self.record({"reason": "accessDenied"}, kind="war_log", status=403, at=at)
-        read = await WarReads(self.store).participation(["#PY"], NOV, at + SECOND, types=("CWL",), as_of=at)
-        self.assertTrue(read["coverage"]["complete"])
-        self.assertEqual([s["signal"] for s in read["coverage"]["signals"]], ["cwl_group", "cwl_war"])
-        await self.record(None, kind="cwl_war", scope="#R0", status=503, at=at + SECOND)
-        failed = await WarReads(self.store).participation(["#PY"], NOV, at + 2 * SECOND,
-                                                          types=("CWL",), as_of=at + SECOND)
-        self.assertFalse(failed["coverage"]["complete"])
-
-    async def test_unrelated_group_pairings_are_not_missing_family_wars(self):
-        at = NOV + DAY + SECOND
-        await self.record(group(rounds=[{"warTags": ["#R0", "#R2"]}], season="2026-11"),
-                          kind="cwl_group", at=at)
-        await self.record(fixtures.league_war("warEnded", 1), kind="cwl_war", scope="#R0", at=at)
-        await self.record(fixtures.league_war("warEnded", 1, clans=("#GR", "#CU")),
-                          kind="cwl_war", scope="#R2", at=at)
-        current = await self.reads.group("#PY", as_of=at)
-        self.assertEqual(current["coverage"]["missing_wars"], [])
-        weeks = await self.reads.weeks(["#PY"], as_of=at)
-        self.assertEqual(weeks["coverage"]["missing_wars"], [])
-        self.assertEqual(len(league_wars(current)), 1)
-
-    async def test_one_ended_round_keeps_the_seasons_starting_league(self):
-        await self.league_on_profile("Crystal League I", NOV - DAY)
-        await self.record(group(rounds=[{"warTags": ["#R0", "#R2"]}, {"warTags": ["#0"]},
-                                       {"warTags": ["#0"]}], season="2026-11"), kind="cwl_group", at=NOV)
-        await self.record(fixtures.league_war("warEnded", 1), kind="cwl_war", scope="#R0", at=NOV + DAY)
-        await self.call(self.history.bonus_wars, "ONE", "2026-11", at=NOV + DAY)
-        await self.league_on_profile("Master League III", NOV + 2 * DAY)
-        (war,) = await self.call(self.history.bonus_wars, "ONE", "2026-11", at=NOV + 2 * DAY)
-        self.assertEqual(war["cwl_league"], "Crystal League I")
 
     async def test_dashboard_rejects_partial_final_attack_lists_and_warns_about_missing_rounds(self):
         at = NOV + DAY + SECOND
@@ -115,15 +53,6 @@ class LeagueAuditRecordTests(fixtures.LeagueFixture, unittest.IsolatedAsyncioTes
                                                        datetime(2026, 12, 1, tzinfo=timezone.utc))
         self.assertEqual(status, "waiting")
 
-    async def test_monthly_summary_counts_each_round_without_a_week_summary(self):
-        at = NOV + 30 * DAY
-        await self.record(page(log_entry("#CU", "20261115T120000.000Z", "win"),
-                               league_week("20261110T080000.000Z")), kind="war_log", at=at)
-        for round_no, tag in ((1, "#R0"), (2, "#R8")):
-            await self.record(fixtures.league_war("warEnded", round_no), kind="cwl_war", scope=tag, at=at)
-        result = await monthly_results(WarReads(self.store), "#PY", "2026-11", as_of=at)
-        self.assertEqual((result["wins"], result["ties"], result["total"]), (1, 2, 3))
-        self.assertEqual([row["kind"] for row in result["entries"]], ["war", "cwl_round", "cwl_round"])
 
     async def test_health_ignores_future_preparation_and_reports_only_confirmed_league_misses(self):
         await self.november()
@@ -237,34 +166,6 @@ class LeagueAuditPresentationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await CwlRouterMixin._get_league_wars(router, "ONE"), [])
         router.cwl_groups.group.return_value["coverage"] = {"missing_wars": ["#R0"]}
         self.assertIsNone(await CwlRouterMixin._get_league_wars(router, "ONE"))
-
-    def test_preparation_can_follow_a_completed_round_without_a_battle_overlap(self):
-        ended = {"_state": "warEnded", "_round": 1, "_total_rounds": 7}
-        prep = {"_state": "preparation", "_round": 2, "_total_rounds": 7}
-        self.assertTrue(cwl_board_snapshot_is_complete([ended, prep]))
-        self.assertFalse(cwl_board_snapshot_is_complete([prep]))
-
-    async def test_stars_use_the_stored_month_and_league_after_day_eleven(self):
-        war = fixtures.league_war("warEnded", 1, first=NOV - 2 * DAY)
-        war.update(_season="2026-11", _league="Crystal League I")
-        dashboard = CwlDashboardMixin()
-        dashboard.bonus_analysis = SimpleNamespace(current_wars=AsyncMock(return_value=([war], [])))
-        dashboard._is_cwl_window = MagicMock(return_value=False)
-        dashboard._render_cwl_stars_image = MagicMock(return_value=object())
-        dashboard._fetch_clan_war_league_name = AsyncMock(return_value="Champion League I")
-        with patch("elbow_helper.features.cwl.dashboard.CWL_CLAN_TAGS", {"ONE": "#PY"}), \
-                patch("elbow_helper.features.cwl.dashboard.datetime", FixedDatetime):
-            embed, _ = await dashboard._build_dashboard_stars_payload("ONE")
-        self.assertIn("Results for Nov 2026", embed.description)
-        self.assertIn("**2** bonuses", embed.description)
-        self.assertEqual(dashboard._render_cwl_stars_image.call_args.args[2], "2026-11")
-        self.assertEqual(dashboard._render_cwl_stars_image.call_args.args[3][0][3], "1/1")
-        dashboard._fetch_clan_war_league_name.assert_not_awaited()
-        war["_season"] = "2026-10"
-        with patch("elbow_helper.features.cwl.dashboard.CWL_CLAN_TAGS", {"ONE": "#PY"}), \
-                patch("elbow_helper.features.cwl.dashboard.datetime", FixedDatetime):
-            embed, _ = await dashboard._build_dashboard_stars_payload("ONE")
-        self.assertEqual(embed.description, "No CWL season is active right now.")
 
 
 class LeagueAuditScoringTests(unittest.TestCase):

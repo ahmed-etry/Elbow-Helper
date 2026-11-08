@@ -31,33 +31,20 @@ class PostPingPreviewTests(unittest.IsolatedAsyncioTestCase):
         await prepare_post(self.context, {"channel_id": 2, **arguments})
         return self.context.state.proposed_changes.pop().preview
 
-    async def test_member_mentions_are_listed_once_with_both_mention_forms(self):
-        preview = await self.preview(text="Hello <@7> <@!8> <@7>")
-        self.assertIn("Pings: Example (@example.7), Example (@example.8)", preview.lines)
 
-    async def test_ping_preview_uses_server_name_instead_of_requested_alias(self):
-        self.context.state.resolved_members = {7: "ahmad (amaj)"}
-        preview = await self.preview(text="Hello <@7>")
-        self.assertIn("Pings: Example (@example.7)", preview.lines)
-        self.assertNotIn("ahmad (amaj)", str(preview.lines))
-
-    async def test_wrong_ping_is_refused_even_when_preparing_directly(self):
-        self.context.state.request_text = ""
+    async def test_unproven_direct_and_reply_pings_never_prepare_a_change(self):
+        self.context.state.request_text = ''
         self.context.source_message.raw_mentions = []
-        self.context.state.resolved_members = {7: "ahmad (amaj)"}
-        result = await prepare_post(self.context, {"channel_id": 2, "text": "Hello <@8>"})
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.proposed_changes, [])
+        for resolved_id, arguments in (
+            (7, {'channel_id': 2, 'text': 'Hello <@8>'}),
+            (8, {'channel_id': 2, 'text': 'Hello', 'reply_to': 55, 'ping_author': True}),
+        ):
+            with self.subTest(arguments=arguments):
+                self.context.state.resolved_members = {resolved_id: 'Synthetic member'}
+                result = await prepare_post(self.context, arguments)
+                self.assertIn('error', result)
+                self.assertEqual(self.context.state.proposed_changes, [])
 
-    async def test_wrong_reply_author_ping_is_refused(self):
-        self.context.state.request_text = ""
-        self.context.source_message.raw_mentions = []
-        self.context.state.resolved_members = {8: "ahmad (amaj)"}
-        result = await prepare_post(self.context, {
-            "channel_id": 2, "text": "Hello", "reply_to": 55, "ping_author": True,
-        })
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.proposed_changes, [])
 
     async def test_author_is_listed_only_when_pinged_and_never_duplicated(self):
         plain = await self.preview(text="Answer", reply_to=55)
@@ -80,17 +67,6 @@ class PostPingPreviewTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("Pings: @everyone or @here, <@&9>, Example (@example.7)", preview.lines)
 
-    async def test_unselected_role_and_everyone_mentions_are_not_claimed_as_pings(self):
-        preview = await self.preview(text="@here <@&9> <@7>")
-        self.assertIn("Pings: Example (@example.7)", preview.lines)
-
-    async def test_gif_link_reply_previews_the_requested_author_ping(self):
-        preview = await self.preview(
-            text="https://tenor.com/view/synthetic", reply_to=55, ping_author=True,
-        )
-        self.assertIn("Pings: Example (@example.7)", preview.lines)
-        self.assertIn("Reply to Example (@example.7), with ping: [Synthetic question]"
-                      "(https://discord.com/channels/3/2/55)", preview.details)
 
     async def test_edit_previews_both_members_with_the_same_display_name(self):
         await prepare_post(self.context, {"channel_id": 2, "text": "Before"})

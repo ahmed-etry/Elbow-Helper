@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import copy
 import math
 from datetime import datetime
@@ -479,16 +481,8 @@ class ExpectedScoreConfirmView(LeadBonusSettingsView):
         updated_payload["matchup_expected"][self.matchup_key] = self.new_value
         attacker, defender = self.matchup_key.split(":", 1)
         try:
-            self.cog.save_bonus_scoring(
-                self.clan_code,
-                updated_payload,
-                interaction.user,
-                expected_revision=self.revision,
-                summary=(
-                    f"TH{attacker} vs TH{defender} Expected Score: "
-                    f"{_number(self.old_value)} -> {_number(self.new_value)}"
-                ),
-            )
+            await asyncio.to_thread(self.cog.save_bonus_scoring, self.clan_code, updated_payload, interaction.user, expected_revision=self.revision, summary=f"TH{attacker} vs TH{defender} Expected Score: "
+                    f"{_number(self.old_value)} -> {_number(self.new_value)}")
         except BonusConfigConflictError as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
@@ -650,13 +644,7 @@ class AdjustmentsConfirmView(LeadBonusSettingsView):
             for _, label, old, new in self.changes
         )
         try:
-            self.cog.save_bonus_scoring(
-                self.clan_code,
-                updated_payload,
-                interaction.user,
-                expected_revision=self.revision,
-                summary=summary,
-            )
+            await asyncio.to_thread(self.cog.save_bonus_scoring, self.clan_code, updated_payload, interaction.user, expected_revision=self.revision, summary=summary)
         except BonusConfigConflictError as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
@@ -758,12 +746,7 @@ class CopyConfirmView(LeadBonusSettingsView):
 
     async def confirm(self, interaction: discord.Interaction) -> None:
         try:
-            self.cog.copy_bonus_scoring(
-                self.source_clan,
-                self.clan_code,
-                interaction.user,
-                expected_revision=self.revision,
-            )
+            await asyncio.to_thread(self.cog.copy_bonus_scoring, self.source_clan, self.clan_code, interaction.user, expected_revision=self.revision)
         except BonusConfigConflictError as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return

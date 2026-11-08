@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import logging
 import time
 from typing import Any
@@ -123,7 +125,7 @@ class CwlThreadBoardMixin:
             "round": preparation.round_number,
             "season": preparation.season,
         }
-        self.save_data()
+        await asyncio.to_thread(self.save_data)
         refreshed = await self.sync_registered_cwl_thread(clan_code, wars)
         message = f"Day {preparation.round_number} CCs marked **{status}**."
         if not refreshed:
@@ -395,7 +397,7 @@ class CwlThreadBoardMixin:
             thread_data["cc_status"] = {}
             thread_data["cc_statuses"] = {}
             thread_data.pop("active_prep", None)
-            self.save_data()
+            await asyncio.to_thread(self.save_data)
             return await self._remove_thread_status_board(thread_key, thread_data)
 
         thread = await self._resolve_registered_thread(thread_key)
@@ -429,7 +431,7 @@ class CwlThreadBoardMixin:
                 snapshot.preparation,
             )
             if state_changed:
-                self.save_data()
+                await asyncio.to_thread(self.save_data)
             embed, view = await self._build_thread_status_board(
                 clan_code,
                 snapshot,
@@ -465,7 +467,7 @@ class CwlThreadBoardMixin:
                         thread_data,
                         current_sticky_id=old_message.id,
                     ):
-                        self.save_data()
+                        await asyncio.to_thread(self.save_data)
                     return True
                 result = await self.bot.publishing.edit_message(old_message, embed=embed, view=view)
                 if isinstance(result.error, discord.NotFound):
@@ -479,7 +481,7 @@ class CwlThreadBoardMixin:
                         thread_data,
                         current_sticky_id=old_message.id,
                     )
-                    self.save_data()
+                    await asyncio.to_thread(self.save_data)
                     return True
 
             completed, new_message = await self._run_sticky_http_operation(
@@ -491,7 +493,7 @@ class CwlThreadBoardMixin:
                 return False
             thread_data["sticky_message_id"] = new_message.id
             thread_data["sticky_last_updated"] = self._utc_now_iso()
-            self.save_data()
+            await asyncio.to_thread(self.save_data)
             return True
 
     async def _remove_thread_status_board(
@@ -535,8 +537,8 @@ class CwlThreadBoardMixin:
                 thread_data,
                 current_sticky_id=None,
             ):
-                self.save_data()
-            self.save_data()
+                await asyncio.to_thread(self.save_data)
+            await asyncio.to_thread(self.save_data)
             return True
 
     async def _repost_thread_status_from_activity(
@@ -638,13 +640,13 @@ class CwlThreadBoardMixin:
             thread_data["sticky_message_id"] = new_message.id
             self._set_pending_stale_sticky_ids(thread_data, stale_ids)
             self._sticky_last_repost_at[thread_key] = time.monotonic()
-            self.save_data()
+            await asyncio.to_thread(self.save_data)
             if await self._cleanup_stale_sticky_messages(
                 thread,
                 thread_data,
                 current_sticky_id=new_message.id,
             ):
-                self.save_data()
+                await asyncio.to_thread(self.save_data)
             return True
 
     async def refresh_registered_cwl_status_for_clan(self, clan_code: str) -> bool:

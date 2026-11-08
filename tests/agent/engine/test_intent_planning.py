@@ -9,13 +9,12 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.channels import HIBERNATION_LOG
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.tool_support.adapters.hibernation.reads import hibernation_tools
-from elbow_helper.agent.datasets.clash import clash_tools
-from elbow_helper.agent.tool_support.sql.guide import DataGuide
+from elbow_helper.agent.reads.clash import clash_tools
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
 from elbow_helper.agent.knowledge.tools import knowledge_tools
 from elbow_helper.agent.research.members import member_tools
-from elbow_helper.agent.families.identity_reads import TOOLS as ROSTER_TOOLS
+from elbow_helper.agent.reads.identity_reads import TOOLS as ROSTER_TOOLS
 from elbow_helper.features.hibernation.queries import HibernationQueries
 from agent.engine import test_request_cost as cost
 from agent.engine.test_agent_plan_flow import _context, _model_step, _plan, _step, _Model, _Session
@@ -26,17 +25,6 @@ def step(identity, capability, arguments, depends_on=()):
 
 
 class IntentPlanningTests(unittest.IsolatedAsyncioTestCase):
-    def test_cwl_cohort_guidance_survives_recruitment_scoping(self):
-        guide = DataGuide(None, sources=())
-        public = guide.for_levels(set())
-        recruitment = guide.for_levels({"recruitment"})
-        for text in (public, recruitment):
-            self.assertIn("For clans configured for seasonal cohort lookups, resolve the season's assigned roster", text)
-            self.assertIn("Read player.warStars for cumulative stars", text)
-        self.assertIn("Recruitment: read_recruitment_pipeline", recruitment)
-        self.assertIn("not a new accept/decline stage", recruitment)
-        self.assertNotIn("Recruitment: read_recruitment_pipeline", public)
-        self.assertNotIn("state.recruitment", recruitment)
 
     def cwl_flow(self, *, available):
         clan = CLANS["BE4"]

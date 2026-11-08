@@ -1,4 +1,4 @@
-"""Checked legacy imports and family-record ownership operations."""
+"""Account ownership schema and current-link presentation metadata."""
 
 
 def create_link_schema(connection):

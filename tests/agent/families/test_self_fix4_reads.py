@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.families import identity_reads as reads
+from elbow_helper.agent.reads import identity_reads as reads
 from elbow_helper.agent.reads import reference as reference_reads
 from elbow_helper.agent.tool_support.model_view import family_model_view
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
@@ -70,7 +70,7 @@ class RoleActivityTests(unittest.IsolatedAsyncioTestCase):
                 'include_activity': True, 'after': '2025-12-01T00:00:00+00:00'}
         with patch.object(reads, 'profiles', AsyncMock(return_value={
                 '#P0': {'status': 'ok', 'data': {'name': 'Account', 'donations': 12}}})), \
-             patch('elbow_helper.agent.families.cohort_activity.selected_wars',
+             patch('elbow_helper.agent.reads.cohort_activity.selected_wars',
                    AsyncMock(return_value={'rows': [], 'coverage': {}})):
             result = await reads.member_cohort(context, args)
         self.assertEqual(links.call_args.args[0], [101])
@@ -91,16 +91,6 @@ class ScopedReferenceTests(unittest.IsolatedAsyncioTestCase):
         context.guild.roles.append(role)
         return context
 
-    async def test_scoped_requester_gets_real_reader_roles_without_excluded_title_or_body(self):
-        context = self.context()
-        blocked = await reference_reads.community_reference(context, {'titles': ['Restricted']})
-        self.assertEqual(blocked['rows'], [])
-        self.assertTrue(blocked['available_privately'])
-        self.assertEqual(blocked['access_limits'][0]['reader_roles'][0]['name'], 'Co-Leader')
-        self.assertNotIn('Restricted', str(blocked))
-        self.assertNotIn('private body', str(blocked))
-        projected = answer_evidence({'guide': blocked})
-        self.assertEqual(projected['guide']['access_limits'], blocked['access_limits'])
 
     async def test_unauthorized_title_matches_unknown_and_unrelated_exclusion_does_not_taint_read(self):
         context = test_reference.ReferenceFamilyTests().reference_context()

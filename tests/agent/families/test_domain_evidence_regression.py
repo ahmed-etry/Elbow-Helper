@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID
-from elbow_helper.agent.families import identity_reads
+from elbow_helper.agent.reads import identity_reads
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.test_compact_family_regressions import delivered
 

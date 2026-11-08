@@ -8,8 +8,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic
+from elbow_helper.infrastructure.persistence.documents import read_document as read_json
+from elbow_helper.infrastructure.persistence.documents import write_document as write_json_atomic
 
 from ..config import BONUS_DASHBOARD_STATE_FILE
 
@@ -23,10 +23,11 @@ class BonusDashboardStore:
     def __init__(
         self,
         path: Path = BONUS_DASHBOARD_STATE_FILE,
+        *, load=True,
     ):
         self._path = path
         self._locks: dict[str, asyncio.Lock] = {}
-        self.state = self._load()
+        self.state = self._load() if load else {}
 
     def _load(self) -> dict[str, Any]:
         try:

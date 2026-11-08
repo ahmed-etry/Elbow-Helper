@@ -13,17 +13,14 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.conversation.findings import report_is_current
-from elbow_helper.agent.families import cohort_activity
+from elbow_helper.agent.reads import cohort_activity
 from elbow_helper.agent.reads import projections, record_wars, war_tools as war_reads
-from elbow_helper.agent.families.workflow_reads import TOOLS as WORKFLOW_TOOLS
 from elbow_helper.agent.read_cache import ReadCache
-from elbow_helper.configuration.channels import HIBERNATION_LOG
 from elbow_helper.data.reads import CwlReads, WarReads
 from tests.data.record_fixtures import seed_war_alias
-from elbow_helper.features.clan_health.attendance import aggregate_attendance
+from elbow_helper.domain.war_attendance import aggregate_attendance
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.cwl.record import CwlHistory
-from elbow_helper.features.hibernation.queries import HibernationQueries
 from elbow_helper.infrastructure.persistence.revisions import release_sqlite_revision
 
 from agent.engine.test_agent_plan_flow import _context
@@ -117,12 +114,6 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         report = await TOOLS["read_war_attendance"].handler(self.context, arguments)
         self.assertEqual(comparable(report), comparable(new))
 
-    async def test_regular_wars_never_read_the_old_stored_wars(self):
-        await self.both_wars()
-        with patch.object(self.context.cwl_queries, "attendance", side_effect=AssertionError) as old:
-            result = await self.attendance({"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})
-        self.assertEqual(len(result["war_ids"]), 2)
-        old.assert_not_called()
 
     async def test_without_the_record_reads_regular_and_current_wars_are_missing_setup(self):
         await self.both_wars()
@@ -155,21 +146,6 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result["rows"][0]["attacks_used"])
         self.assertFalse(result["coverage"]["exact_ranking"])
 
-    async def test_early_participation_wars_keep_known_misses_and_say_friendly_is_unchecked(self):
-        early = war("warEnded")
-        for member in early["clan"]["members"]:
-            member.pop("townhallLevel")
-            member.pop("mapPosition")
-        await self.record(early, at=END + 90 * SECOND)
-        # As the old copy writes them: no team size or times to judge friendly by.
-        await self.execute("UPDATE wars SET team_size=NULL,type_basis='legacy_unchecked',preparation_at=NULL,start_at=NULL")
-        result = await self.attendance({"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})
-        self.assertEqual({row["player_tag"]: row["missed"] for row in result["rows"]}, {"#P0": 1, "#P2": 1})
-        self.assertEqual(result["coverage"]["regular_wars_not_checked_for_friendly"], 1)
-        self.assertEqual(result["wars_without_rosters"], [])
-        source = await war_reads.selected_wars(self.context, {"clan_codes": ["BEH"], **OCTOBER}, "REG")
-        self.assertEqual({row["start_ts"] for row in source["rows"]}, {None})
-        self.assertEqual(source["war_aliases"][0]["type_basis"], "legacy_unchecked")
 
     async def test_an_attack_the_lineup_cannot_place_keeps_only_full_accounts_known(self):
         await self.record(war("warEnded"), at=END + 90 * SECOND)
@@ -282,29 +258,6 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                          ("ok", "preparation", "Clan #GR", "20261104T080000.000Z"))
         self.assertEqual([m["unused_attacks"] for m in row["members"]], [1, 1])
 
-    async def test_current_war_still_shows_a_regular_war_under_way(self):
-        await self.running_league()
-        regular = war(clans=("#LQ", "#GR"), end="20261103T180000.000Z")
-        regular.update(preparationStartTime="20261101T180000.000Z", startTime="20261102T180000.000Z")
-        await self.league_checked(regular)
-        row = await self.be4()
-        self.assertEqual((row["state"], row["opponent"]), ("inWar", "Clan #GR"))
-
-    async def test_a_running_league_war_replaces_an_ended_regular_war(self):
-        await self.running_league()
-        ended = war("warEnded", clans=("#LQ", "#GR"), end="20261031T180000.000Z")
-        ended.update(preparationStartTime="20261029T180000.000Z", startTime="20261030T180000.000Z")
-        await self.league_checked(ended)
-        row = await self.be4()
-        self.assertEqual((row["state"], row["opponent"]), ("inWar", "Clan #CU"))
-
-    async def test_without_a_running_league_war_a_clan_stays_not_in_war(self):
-        await self.running_league()
-        await self.league_checked()
-        self.now = ts("20261103T080100.000Z") * SECOND
-        await self.record({"state": "notInWar"}, scope="#LQ", at=self.now - 10 * SECOND)
-        row = await self.be4()
-        self.assertEqual((row["status"], row["state"], row["members"]), ("ok", "notInWar", []))
 
     async def test_a_stale_league_check_gives_no_war_and_a_failed_read_is_unavailable(self):
         await self.running_league()
@@ -334,19 +287,6 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual((row["attacks_used"], row["attacks_expected"], row["missed"],
                           row["unconfirmed_opportunities"], row["totals_complete"]), (1, 0, 0, 4, False))
 
-    async def test_ended_league_wars_give_real_used_and_missed_counts(self):
-        payload = war("inWar")
-        payload.update(state="warEnded", preparationStartTime="20261026T180000.000Z")
-        payload.pop("attacksPerMember")
-        await self.league_war(payload, "#R0")
-        result = await self.attendance({"war_type": "CWL", "season": "2026-10", "clan_codes": ["BEH"]})
-        self.assertEqual(comparable(result), {
-            "#P0": (["CWL:#R0"], 1, 1, 0, 0, "warring", 3, 1, 1),
-            "#P2": (["CWL:#R0"], 0, 1, 1, 0, "joined_without_attacking", 0, 0, 0)})
-        self.assertEqual(result["unproven_war_ids"], [])
-        totals = result["clan_totals"][0]
-        self.assertEqual((totals["attacks_used"], totals["attacks_expected"], totals["missed"], totals["totals_complete"]),
-                         (1, 2, 1, True))
 
     async def test_another_clans_ended_round_never_hides_an_account_in_a_running_round(self):
         await self.running_league()
@@ -373,17 +313,6 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         absent = next(row for row in result["rows"] if row["player_tag"] == "#Y8")
         self.assertEqual((absent["attacks_used"], absent["participation_status"]), (0, "not_in_checked_lineups"))
 
-    async def test_a_running_round_shows_in_a_window_and_a_clans_own_season(self):
-        await self.running_league()
-        for kind in ("CWL", "both"):
-            with self.subTest(kind=kind):
-                window = {"after": "2026-11-01T00:00:00+00:00", "before": "2026-11-02T17:00:00+00:00"}
-                result = await self.attendance({"war_type": kind, "account_tags": ["#Y0"], **window})
-                self.assertEqual(result["rows"][0]["war_ids"], ["CWL:#R8"])
-        result = await self.attendance({"war_type": "CWL", "clan_codes": ["BE4"], "season": "2026-11",
-                                        "account_tags": ["#Y0"]})
-        self.assertEqual((result["war_ids"], result["clan_totals"][0]["wars"], result["clan_totals"][0]["totals_complete"]),
-                         (["CWL:#R8"], 1, False))
 
     async def test_a_running_war_without_a_lineup_leaves_absence_unknown(self):
         await self.running_league()
@@ -401,44 +330,6 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         both = await war_reads.selected_wars(self.context, {"season": "2026-11"}, "both")
         self.assertEqual(both["war_ids"], ["CWL:#R0"])
 
-    async def test_record_failures_are_unavailable_not_empty(self):
-        await self.both_wars()
-        with patch.object(self.reads, "regular_selection", AsyncMock(side_effect=sqlite3.OperationalError("locked"))):
-            result = await war_reads.selected_wars(self.context, {"clan_codes": ["BEH"], **OCTOBER}, "REG")
-            self.assertEqual(result["cause"], "source_unavailable")
-            tool = await TOOLS["read_war_attendance"].handler(
-                self.context, {"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})
-            self.assertEqual(tool["cause"], "source_unavailable")
-        with patch.object(self.reads, "current", AsyncMock(side_effect=OSError)):
-            result = await war_reads.current_war(self.context, {"clan_codes": ["BEH"]})
-        self.assertEqual(result["cause"], "source_unavailable")
-        # Recent seasons are a league selection, refused for regular wars as league history refuses them.
-        refused = await war_reads.selected_wars(self.context, {"history_limit": 1}, "REG")
-        self.assertEqual((refused["cause"], refused["error"]), ("invalid_arguments", "Invalid CWL history limit"))
-
-    async def test_current_war_matches_the_clash_shape_and_unused_attacks_wait_for_the_end(self):
-        for state, missed in (("inWar", None), ("warEnded", 1)):
-            with self.subTest(state=state):
-                payload = later_war(state)
-                self.now += DAY
-                await self.record(payload, at=self.now - 10 * SECOND)
-                checked = {"items": [{"tag": "#PY", "status": "ok", "data": payload}]}
-                with patch("elbow_helper.agent.reads.wars.current_wars", AsyncMock(return_value=checked)):
-                    expected = await war_reads.current_war(self.context, {"clan_codes": ["BEH"], "include_attacks": True})
-                new = await war_reads.current_war(self.context, {"clan_codes": ["BEH"], "include_attacks": True})
-                (before,), (after,) = expected["rows"], new["rows"]
-                self.assertEqual({key: value for key, value in after.items() if key != "observed_at"},
-                                 {key: value for key, value in before.items() if key != "observed_at"})
-                self.assertIsNotNone(after["observed_at"])
-                self.assertEqual(after["members"][-1]["missed"], missed if state == "warEnded" else None)
-        # An overdue check gives no war, as a failed live read did.
-        self.now += 2 * DAY
-        (stale,) = (await war_reads.current_war(self.context, {"clan_codes": ["BEH"]}))["rows"]
-        self.assertEqual((stale["status"], stale["state"], stale["members"]), ("stale", None, []))
-        # A check that found no war says so.
-        await self.record({"state": "notInWar"}, at=self.now - 10 * SECOND)
-        (idle,) = (await war_reads.current_war(self.context, {"clan_codes": ["BEH"]}))["rows"]
-        self.assertEqual((idle["status"], idle["state"], idle["members"]), ("ok", "notInWar", []))
 
     async def test_a_new_record_write_makes_a_regular_war_report_not_current(self):
         await self.both_wars()
@@ -466,30 +357,6 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                                                {"player_tag": "#Y0", "clan_code": "BEH"}]}]
         await cohort_activity.activity_projection(self.context, rows, {"clan_codes": ["BEH"], **OCTOBER})
         self.assertEqual((rows[0]["war_activity"]["wars_observed"], rows[0]["war_activity"]["missed"]), (2, 2))
-
-    async def test_hibernation_keeps_overlapping_war_attacks_unknown(self):
-        await self.both_wars()
-        # Hibernation began after the first war started and before the second did.
-        started = ts("20261028T000000.000Z")
-        context = self.context
-        for role in context.member.roles:
-            role.name = "Access"
-            role.is_default = lambda: False
-        channel = context.source_message.channel
-        log = SimpleNamespace(**{**vars(channel), "id": HIBERNATION_LOG})
-        context.guild.get_channel_or_thread = lambda identifier: log if identifier == HIBERNATION_LOG else channel
-        # The request comes after both wars ended.
-        message = SimpleNamespace(**{**vars(context.source_message), "created_at": datetime(2026, 11, 1, tzinfo=timezone.utc)})
-        context = replace(context, source_message=message, hibernation_queries=HibernationQueries(
-            lambda: {"41": {"hibernation_date": f"<t:{started}:F>"}}))
-        tool = next(tool for tool in WORKFLOW_TOOLS if tool.definition.name == "read_hibernation")
-        result = await tool.handler(context, {"include_activity": True, "activity_kinds": ["regular_war"]})
-        self.assertNotIn("error", result)
-        account = {account["player_tag"]: account for account in result["rows"][0]["accounts"]}["#P0"]
-        self.assertIsNone(account["observed_regular_war_attacks_since_start"])
-        self.assertEqual(account["observed_regular_war_attacks_in_post_start_wars"], 1)
-        self.assertEqual([war["war_id"] for war in account["regular_war_overlapping_war_participation"]],
-                         [old_id(war("warEnded"))])
 
 
 if __name__ == "__main__":

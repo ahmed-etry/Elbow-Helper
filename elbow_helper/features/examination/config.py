@@ -8,7 +8,6 @@ import discord
 
 from elbow_helper.infrastructure.discord.timezones import build_timezone_select_options
 
-STATE_FILE = "data/examination/examination_state.json"
 
 RESPONSE_DELAY = timedelta(hours=18)
 FALLBACK_DELAY = timedelta(hours=24)

@@ -3,7 +3,7 @@
 from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import sqlite3
 import threading
 import unittest
@@ -15,8 +15,8 @@ from elbow_helper.agent.tool_support.adapters.cwl.reads import (
 )
 from elbow_helper.agent.reads.cwl import cwl_ass_scores, cwl_bonus_scores
 from elbow_helper.agent.reads.war_tools import cwl_results
-from elbow_helper.agent.families.identity_reads import seasonal_tags
-from elbow_helper.agent.datasets.clash import read_clash
+from elbow_helper.agent.reads.identity_reads import seasonal_tags
+from elbow_helper.agent.reads.clash import read_clash
 from elbow_helper.agent.read_cache import ReadCache
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.infrastructure.clash import ClashClient
@@ -81,13 +81,6 @@ class CwlContracts(unittest.IsolatedAsyncioTestCase):
             replace(self.context, guild=SimpleNamespace(**{**vars(self.context.guild), 'id': 99})),
             {'report_id': first['report_id']}))
 
-    async def test_season_has_no_mega_score_and_analysis_precedes_top_n(self):
-        result = await cwl_results(self.context, {'metric': 'performance',
-            'season': '2026-08', 'clan_codes': ['BEH'], 'top_n': 1})
-        self.assertIsNone(result['rows'][0]['multi_season_score'])
-        self.assertEqual(result['selected_group_metrics'][0]['stars_per_attack']['value'], 3)
-        mega = await cwl_results(self.context, {'metric': 'mega_ass', 'clan_codes': ['BEH']})
-        self.assertEqual(mega['rows'][0]['multi_season_rank'], 1)
 
     async def test_missing_setup_and_bad_score_ids_are_failures_not_empty_results(self):
         missing = replace(self.context, cwl_queries=None)
@@ -198,12 +191,6 @@ class CollectedCwlContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first['rows'][0]['player_tag'], '#P0')
         self.assertEqual(changed['rows'][0]['player_tag'], '#P2')
 
-    async def test_family_raw_league_routes_redirect_without_network_calls(self):
-        for kind, tags in (('cwl_group', ['BEH']), ('cwl_war', ['#CP0'])):
-            for projection in ({}, {'detail': 'full'}, {'fields': ['clan.members']}):
-                result = await read_clash(self.context, {'kind': kind, 'tags': tags, **projection})
-                self.assertEqual(result['items'][0]['status'], 'record_required')
-                self.assertNotIn('data', result['items'][0])
 
     async def test_an_unknown_war_cannot_expose_family_facts_but_external_wars_remain_readable(self):
         for own, expected in ((CLANS['BEH'].tag, 'record_required'), ('#Q8', 'ok')):

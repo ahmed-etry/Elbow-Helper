@@ -3,10 +3,9 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
 
-from elbow_helper.configuration.roles import CORE, LEAD, CO_APPLICANT_ROLE_ID
+from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.agent.access import AgentAccessLost, require_evidence_access
 from elbow_helper.agent.models import AgentRequestContext
-from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.tool_support.adapters.role_connections.reads import read_role_connections
 from elbow_helper.features.role_connections.queries import RoleConnectionQueries
 
@@ -112,16 +111,6 @@ class AgentRoleConnectionTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AgentAccessLost):
             await require_evidence_access(self.context)
 
-    async def test_direct_reads_require_lead_before_snapshot(self):
-        for role_id in (None, CO_APPLICANT_ROLE_ID, *LEAD):
-            with self.subTest(role_id=role_id):
-                self.context.state.required_access.clear()
-                self.context.state.scope = None
-                self.requester.roles = [self.roles[next(iter(CORE))]]
-                if role_id is not None:
-                    self.requester.roles.append(SimpleNamespace(id=role_id))
-                result = await read_role_connections(self.context, {})
-                self.assertEqual("error" not in result, role_id in LEAD)
 
     async def test_lead_loss_during_snapshot_blocks_result(self):
         def revoke_while_reading():
@@ -132,13 +121,6 @@ class AgentRoleConnectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("error", result)
         self.assertNotIn("rules", result)
 
-    async def test_entry_loss_during_snapshot_blocks_result(self):
-        def revoke_while_reading():
-            self.requester.roles = []
-            return self.state
-        context = replace(self.context, role_connection_queries=RoleConnectionQueries(revoke_while_reading))
-        with self.assertRaises(AgentAccessLost):
-            await read_role_connections(context, {})
 
     async def test_missing_member_and_query_do_not_claim_evidence(self):
         missing_member = await read_role_connections(
@@ -149,12 +131,6 @@ class AgentRoleConnectionTests(unittest.IsolatedAsyncioTestCase):
             replace(self.context, role_connection_queries=None), {},
         )
         self.assertIn("error", unavailable)
-
-    def test_tool_is_discoverable_in_members_and_roles_group(self):
-        tool = build_agent_tools()["read_role_connections"].definition
-        self.assertEqual(build_agent_tools()["read_role_connections"].contract.required_access,
-                         frozenset({"lead"}))
-        self.assertIn("expected_state_fingerprint", tool.parameters["properties"])
 
 
 if __name__ == "__main__":

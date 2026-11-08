@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from datetime import date
 from datetime import datetime
 from datetime import timezone as dt_timezone
@@ -15,8 +14,8 @@ from typing import Optional
 from typing import Set
 
 from elbow_helper.core.background import start_resilient_loop
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic
+from elbow_helper.infrastructure.persistence.documents import read_document as read_json, document_exists
+from elbow_helper.infrastructure.persistence.documents import write_document as write_json_atomic
 
 from .emojis import CwlThreadEmojiProvider
 
@@ -34,12 +33,14 @@ class CwlThreadStateMixin:
         return self._utc_now().isoformat()
 
 
-    def init_thread_feature(self) -> None:
+    def init_thread_feature(self, *, load=True) -> None:
         self._sticky_update_locks: Dict[str, asyncio.Lock] = {}
         self._sticky_last_repost_at: Dict[str, float] = {}
         self._thread_snapshot_cache: Dict[str, tuple[float, list[dict[str, Any]], Any]] = {}
         self.cwl_thread_emojis = CwlThreadEmojiProvider(self.bot)
-        self.load_data()
+        self.data = {"threads": {}, "settings": {}}
+        if load:
+            self.load_data()
 
 
     def start_thread_tasks(self) -> None:
@@ -63,7 +64,7 @@ class CwlThreadStateMixin:
     def load_data(self) -> None:
         """Load CWL thread data from file."""
         try:
-            if os.path.exists(self.data_file):
+            if document_exists(self.data_file):
                 self.data = read_json(self.data_file)
             else:
                 self.data = {

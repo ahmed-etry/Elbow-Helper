@@ -22,7 +22,7 @@ from typing import Any, Iterable
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.cwl import is_cwl_window
-from elbow_helper.features.wars.record import board_payload
+from elbow_helper.domain.war_views import board_payload
 
 from .helpers import coc_time_to_dt
 from .record_rows import feature_week

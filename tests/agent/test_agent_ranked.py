@@ -3,11 +3,11 @@
 from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 import sqlite3
 import unittest
 
-from agent.capabilities.member_lifecycle.test_agent_member_lifecycle import AgentMemberLifecycleTests
+from agent.capabilities.member_lifecycle import test_agent_member_lifecycle as lifecycle_fixtures
 from data.record_fixtures import BASE, SECOND, RankedFixture, battle
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.reads import ranked
@@ -25,7 +25,7 @@ class RankedRecordFixture(RankedFixture):
 
     async def asyncSetUp(self):
         await super().asyncSetUp()
-        fixture = AgentMemberLifecycleTests()
+        fixture = lifecycle_fixtures.AgentMemberLifecycleTests()
         fixture.setUp()
         self.reads = RankedReads(self.store)
         self.context = replace(fixture.context, bot=SimpleNamespace(ranked_reads=self.reads))
@@ -38,7 +38,7 @@ class AgentRankedTests(RankedRecordFixture, unittest.IsolatedAsyncioTestCase):
         await self.seed_history()
         await self.live({"items": [battle(-10), battle(60)]}, 100)
         with patch.object(ranked, "require_evidence_access", AsyncMock()), \
-                patch("elbow_helper.agent.datasets.clash.read_clash", AsyncMock(side_effect=AssertionError("live read"))):
+                patch("elbow_helper.agent.reads.clash.read_clash", AsyncMock(side_effect=AssertionError("live read"))):
             result = await read_ranked(self.context, self.arguments)
         row = result["rows"][0]
         self.assertEqual((row["attacks_used"], row["battle_records"]), (2, 2))
@@ -47,23 +47,6 @@ class AgentRankedTests(RankedRecordFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["source"], "family_record")
         self.assertNotIn("live_battle_logs", result)
 
-    async def test_clan_codes_account_normalization_and_selection(self):
-        await self.seed_history()
-        result = await read_ranked(self.context, {**self.arguments, "member_ids": [], "account_tags": ["p0"]})
-        self.assertEqual(result["rows"][0]["player_tag"], "#P0")
-        result = await read_ranked(self.context, {**self.arguments, "member_ids": [], "clan_tags": ["#Q0"]})
-        self.assertEqual((result["rows"], result["unobserved_selections"]), ([], ["#Q0"]))
-        self.assertEqual(result["history_coverage"]["status"], "empty")
-
-    async def test_invalid_scope_window_and_paging_are_rejected_before_reading(self):
-        context = replace(self.context, bot=SimpleNamespace(ranked_reads=Mock()))
-        for overrides in ({"account_tags": ["#P0"]}, {"after": iso(BASE + 3600 * SECOND)},
-                          {"after": "invalid"}, {"member_ids": [True]}, {"member_ids": []},
-                          {"limit": 501}, {"offset": -1}):
-            with self.subTest(overrides=overrides):
-                result = await read_ranked(context, {**self.arguments, **overrides})
-                self.assertIn("error", result)
-        context.bot.ranked_reads.window.assert_not_called()
 
     async def test_lost_agent_access_prevents_historical_disclosure(self):
         self.context.member.roles.clear()

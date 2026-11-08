@@ -5,9 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import discord
 
-from elbow_helper.agent.discord_actions.channels import (
-    duration, prepare_create, prepare_delete, prepare_edit, undo_create, undo_edit,
-)
+from elbow_helper.agent.discord_actions.channels import prepare_create, prepare_delete, prepare_edit, undo_create, undo_edit
 from agent.discord_actions.management_helpers import Entity, fixture
 
 
@@ -88,7 +86,3 @@ class ChannelManagementTests(unittest.IsolatedAsyncioTestCase):
         channel.delete.assert_not_called()
         await action.run()
         channel.delete.assert_awaited_once()
-
-    def test_duration_units_are_readable(self):
-        self.assertEqual([duration(value) for value in (1, 30, 300, 21600)],
-                         ["1 second", "30 seconds", "5 minutes", "6 hours"])

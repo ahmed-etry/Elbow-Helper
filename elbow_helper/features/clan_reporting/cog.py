@@ -36,11 +36,12 @@ class ClanReporting(
         self,
         bot: commands.Bot,
         account_links,
+        *, initial_state=None,
     ):
         self.bot = bot
         self.account_links = account_links
         self.war_reads = getattr(bot, "war_reads", None)
-        self.state = load_state()
+        self.state = initial_state if initial_state is not None else load_state()
         self.queries = ClanReportingQueries(account_links.get_missing_elder_rows)
         self._board_last_repost_at: dict[str, float] = {}
         self._board_repost_locks: dict[str, asyncio.Lock] = {}

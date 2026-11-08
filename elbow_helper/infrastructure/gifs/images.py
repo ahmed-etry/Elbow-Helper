@@ -23,16 +23,6 @@ def contact_sheet(frames, *, labels=None):
     return output.getvalue()
 
 
-def still_sheet(images):
-    frames = []
-    for data in images:
-        with Image.open(io.BytesIO(data)) as image:
-            if image.width * image.height > 16_000_000:
-                raise ValueError("Image is too large")
-            frames.append(image.copy())
-    return contact_sheet(frames)
-
-
 def animation_sheet(data):
     with Image.open(io.BytesIO(data)) as image:
         if image.width * image.height > 16_000_000:

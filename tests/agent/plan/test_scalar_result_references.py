@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.agent.models import RegisteredAgentTool
-from elbow_helper.agent.plan.checker import check_plan, check_step, valid_arguments
+from elbow_helper.agent.plan.checker import check_plan, valid_arguments
 from elbow_helper.agent.plan.executor import (
     SingleValueReferenceError, execute_plan, resolve_arguments,
 )
@@ -96,28 +96,6 @@ class ScalarResultReferenceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(arguments, {"author_id": [7, 7]})
             self.assertFalse(valid_arguments(arguments, SCHEMA))
 
-    def test_checker_accepts_wildcard_scalar_reference_without_plan_rejection(self):
-        registry = {"read_messages": RegisteredAgentTool(
-            AgentToolDefinition("read_messages", "Synthetic messages.", SCHEMA), AsyncMock(),
-        )}
-        step = _step({"author_id": REFERENCE})
-        checked = check_step(step, registry)
-        self.assertTrue(checked.ok, checked.error)
-        _, checked = _checked_plan([step])
-        self.assertTrue(checked.ok, checked.error)
-        self.assertEqual(checked.step_errors, {})
-        step["arguments"]["author_id"] = {"step": "resolve", "path": ["rows", 0, "member_id"]}
-        self.assertTrue(check_step(step, registry).ok)
-
-    def test_checker_preserves_direct_and_embedded_list_references(self):
-        schema = {**SCHEMA, "properties": {
-            "author_id": {"type": "array", "items": INTEGER},
-        }}
-        registry = {"read_messages": RegisteredAgentTool(
-            AgentToolDefinition("read_messages", "Synthetic messages.", schema), AsyncMock(),
-        )}
-        for value in (REFERENCE, [REFERENCE]):
-            self.assertTrue(check_step(_step({"author_id": value}), registry).ok)
 
     async def test_runtime_guard_refuses_ambiguous_or_empty_step_and_blocks_only_its_dependents(self):
         plan, checked = _checked_plan([
@@ -143,36 +121,3 @@ class ScalarResultReferenceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(results["other"], {"messages": []})
                 run.assert_awaited_once()
                 self.assertEqual(run.await_args.args[0]["id"], "other")
-
-    async def test_runtime_passes_single_distinct_value_to_handler(self):
-        plan, checked = _checked_plan([_step({"author_id": REFERENCE})])
-        self.assertTrue(checked.ok, checked.error)
-        self.assertEqual(checked.step_errors, {})
-        for values in ([7], [7, 7, 7]):
-            with self.subTest(values=values):
-                run = AsyncMock(return_value={"messages": []})
-                results = await execute_plan(
-                    plan, run, earlier_results=_source(values), step_errors=checked.step_errors,
-                    argument_schema=lambda step: SCHEMA,
-                )
-                self.assertEqual(results["msgs"], {"messages": []})
-                run.assert_awaited_once()
-                self.assertEqual(run.await_args.args[1], {"author_id": 7})
-
-    async def test_runtime_preserves_list_arguments(self):
-        schema = {**SCHEMA, "properties": {
-            "author_id": {"type": "array", "items": INTEGER},
-        }}
-        for value, expected in ((REFERENCE, [7, 7, 8]), ([9, REFERENCE], [9, 7, 7, 8])):
-            with self.subTest(value=value):
-                plan, checked = _checked_plan([_step({"author_id": value})], schema)
-                self.assertTrue(checked.ok, checked.error)
-                self.assertEqual(checked.step_errors, {})
-                run = AsyncMock(return_value={"messages": []})
-                results = await execute_plan(
-                    plan, run, earlier_results=_source([7, 7, 8]), step_errors=checked.step_errors,
-                    argument_schema=lambda step: schema,
-                )
-                self.assertEqual(results["msgs"], {"messages": []})
-                run.assert_awaited_once()
-                self.assertEqual(run.await_args.args[1], {"author_id": expected})

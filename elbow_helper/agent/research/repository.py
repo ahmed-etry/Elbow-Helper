@@ -9,9 +9,10 @@ from typing import Sequence
 from uuid import uuid4
 
 from elbow_helper.infrastructure.persistence import (
-    SQLiteMigration, run_sqlite_migrations, sqlite_connection,
+
     sqlite_transaction,
 )
+from ..storage import agent_connection, initialize_agent
 from .contracts import (
     DiscordResearchJob,
     JOB_IDLE_SECONDS,
@@ -80,18 +81,11 @@ class ResearchJobRepository(ResearchTransitionStore):
     def __init__(self, path: Path):
         self.path = path
         with self.connect() as connection:
-            run_sqlite_migrations(
-                connection,
-                (
-                    SQLiteMigration(1, "Discord research jobs", _create_schema),
-                    SQLiteMigration(2, "Discord research job kinds", _add_job_kind),
-                ),
-                target_version=2,
-            )
+            initialize_agent(connection)
             connection.execute("SELECT * FROM research_jobs LIMIT 0")
 
     def connect(self):
-        return sqlite_connection(
+        return agent_connection(
             self.path, timeout_seconds=30, busy_timeout_ms=30_000,
             synchronous="FULL",
         )

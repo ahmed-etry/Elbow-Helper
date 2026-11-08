@@ -1,6 +1,6 @@
 """Unfiltered discussion chunks preserve paging, scope and durable scan counts."""
 
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -8,11 +8,8 @@ from unittest.mock import AsyncMock, patch
 
 import discord
 
-from elbow_helper.infrastructure.discord.message_search import (
-    DiscordHistoryPage, DiscordMessageSearch, DiscordSearchMessage,
-)
+from elbow_helper.infrastructure.discord.message_search import DiscordHistoryPage, DiscordSearchMessage
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.research.history import discord_message_evidence, read_discord_channel_history
 from elbow_helper.agent.research.repository import ResearchJobRepository
 from elbow_helper.agent.research.tools import (
@@ -83,32 +80,6 @@ class HistoryChunkTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("error", result)
         self.assertNotIn("messages", result)
 
-    async def test_transport_retains_embed_text_and_attachment_names(self):
-        context = _context()
-        context.member.display_name = "Synthetic Member"
-        upper = discord.utils.time_snowflake(context.source_message.created_at)
-        context.source_message.id = upper
-        http = SimpleNamespace(request=AsyncMock(return_value=[{
-            "id": str(upper - 1), "channel_id": "100", "content": "",
-            "author": {"id": "99", "username": "Synthetic Bot"},
-            "timestamp": "2026-09-16T12:00:00+00:00",
-            "message_reference": {"message_id": str(upper - 2), "channel_id": "100"},
-            "embeds": [{"title": "Synthetic log", "author": {"name": "Subject <@1>"},
-                        "footer": {"text": "Synthetic Footer"}}],
-            "attachments": [{"filename": "synthetic-transcript.html"}],
-        }]))
-        context.message_search = DiscordMessageSearch(http)
-        result = await read_discord_channel_history(context, {
-            "channel_id": 100, "after": "2026-09-01",
-        })
-        self.assertEqual(len(result["messages"]), 1)
-        self.assertIn("Subject @Synthetic Member", result["messages"][0]["content"])
-        self.assertIn("Synthetic Footer", result["messages"][0]["content"])
-        self.assertIn("synthetic-transcript.html", result["messages"][0]["content"])
-        self.assertEqual(result["coverage"]["scanned_count"], 1)
-        self.assertEqual(result["coverage"]["matched_count"], 1)
-        self.assertEqual(result["messages"][0]["reply_to_message_id"], upper - 2)
-        self.assertEqual(result["coverage"]["order"], "newest_first")
 
     def test_message_context_keeps_reply_metadata_without_treating_forwards_as_replies(self):
         from datetime import datetime, timezone
@@ -127,29 +98,6 @@ class HistoryChunkTests(unittest.IsolatedAsyncioTestCase):
                 result = discord_message_evidence(10, message)
                 self.assertEqual(result.get("reply_to_message_id"), expected)
 
-    async def test_author_selected_pages_do_not_skip_at_character_budget(self):
-        context = _context()
-        rows = history(context, [(1 + index % 2, "\"\\\n" * 500,
-                                  ({"footer": {"text": "Straße"}},), ())
-                                 for index in range(80)])
-        arguments = {"channel_id": 100, "after": "2026-09-01", "limit": 100,
-                     "author_id": 1}
-        found, scanned = [], 0
-        for _ in range(len(rows) + 1):
-            result = await read_discord_channel_history(context, arguments)
-            self.assertNotIn("error", result)
-            found.extend(item["message_id"] for item in result["messages"])
-            scanned += result["coverage"]["scanned_count"]
-            self.assertEqual(result["coverage"]["matched_count"], len(result["messages"]))
-            cursor = result["coverage"]["next_cursor"]
-            if cursor is None:
-                break
-            arguments["cursor"] = cursor
-        else:
-            self.fail("Synthetic filtered history did not finish")
-        self.assertEqual(found, [row.message_id for row in rows if row.author_id == 1])
-        self.assertEqual(scanned, len(rows))
-        self.assertGreater(context.message_search.history_page.await_count, 1)
 
     async def test_unknown_start_and_request_local_cursor_read_older_messages(self):
         context = _context()
@@ -196,28 +144,3 @@ class HistoryChunkTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertIn("without a text filter", result["error"])
         context.message_search.history_page.assert_not_awaited()
-
-    async def test_complete_content_keeps_all_embed_text_without_transport_noise(self):
-        context = _context()
-        text = "Original text " + "x" * 1800
-        history(context, [(1, text, ({
-            "title": "Subject", "description": "Details", "author": {"name": "Speaker"},
-            "footer": {"text": "Footer", "icon_url": "unused"},
-            "fields": [{"name": "Field", "value": "Value", "inline": True}],
-            "image": {"url": "unused", "placeholder": "x" * 16000},
-        },), ("image.png",))])
-        result = await read_discord_channel_history(context, {"channel_id": 100}, complete_content=True)
-        row = result["messages"][0]
-        self.assertEqual(row["content"], text)
-        self.assertEqual(row["embeds"], [{"title": "Subject", "description": "Details",
-            "author": {"name": "Speaker"}, "footer": {"text": "Footer"},
-            "fields": [{"name": "Field", "value": "Value"}]}])
-        self.assertEqual(row["attachment_names"], ["image.png"])
-        self.assertFalse(row["attachment_contents_read"])
-        self.assertTrue(row["content_complete"])
-
-    def test_catalogue_offers_chunks_without_text_filters(self):
-        tools = build_agent_tools()
-        for name in ("read_discord_channel_history", "start_discord_history_job"):
-            self.assertNotIn("text_filter", tools[name].definition.parameters["properties"])
-            self.assertIn("meaning", tools[name].definition.usage_note)

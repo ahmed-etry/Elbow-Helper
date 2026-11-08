@@ -37,6 +37,15 @@ def load_state(connection, workflow):
     return json.loads(row[0]) if row else None
 
 
+def initialize_state(connection, workflow, default):
+    """Load saved workflow state, creating its defaults in the same transaction."""
+    state = load_state(connection, workflow)
+    if state is None:
+        state = default()
+        save_state(connection, workflow, state)
+    return state
+
+
 def save_state(connection, workflow, state):
     if workflow not in KINDS or not connection.in_transaction:
         raise ValueError("Workflow state requires a known workflow and transaction")
@@ -154,6 +163,8 @@ class EventsStore:
                     state["prompts"] = {key: row for key, row in state["prompts"].items()
                                         if row.get("subject_discord_id") != discord_id}
                 save_state(connection, workflow, state)
+            from .privacy import delete_document_member
+            delete_document_member(connection, discord_id)
             return count
         async def complete():
             count = await self.call(delete)
@@ -163,4 +174,4 @@ class EventsStore:
         return await finish_on_cancel(complete())
 
 
-__all__ = ["Event", "EventsStore", "finish_on_cancel", "load_state", "now_us", "record", "save_state"]
+__all__ = ["Event", "EventsStore", "finish_on_cancel", "initialize_state", "load_state", "now_us", "record", "save_state"]

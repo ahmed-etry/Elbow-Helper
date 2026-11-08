@@ -1,8 +1,8 @@
 """Public CWL scores do not authorize retained bonus-review source text."""
 
 from dataclasses import replace
-import json
-from tempfile import TemporaryDirectory
+from elbow_helper.infrastructure.persistence.documents import write_document
+from tests.temp_directory import TemporaryDirectory
 import unittest
 
 from elbow_helper.configuration import roles
@@ -21,15 +21,15 @@ class BonusEvidenceGateTests(unittest.IsolatedAsyncioTestCase):
         self.context = replace(fixture.context, private_pass=True)
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.context.bot.paths = synthetic_datasets(directory.name)
+        self.context.bot.paths = synthetic_datasets(directory.name, only=['state'])
         self.source = fixture.personal
         self.hq = fixtures.Channel(CWL_HQ_CHANNEL_ID, fixture.guild, {10, 11, 99}, level=roles.CWL_HELPERS)
         fixture.guild.channels.append(self.hq)
         self.data_source = next(source for source in SOURCES if source.state_name == "cwl_bonus_dashboard")
-        self.data_source.resolve(self.context.bot.paths).write_text(json.dumps({"boards": {"review:1": {
+        write_document(self.data_source.resolve(self.context.bot.paths), {"boards": {"review:1": {
             "channel_id": self.hq.id, "clans": {"BE1": {"source_channel_id": self.source.id,
             "source_url": f"https://discord.com/channels/1/{self.source.id}/123",
-            "source_text": "Restricted review evidence", "recipient_ids": [10]}}}}}), encoding="utf-8")
+            "source_text": "Restricted review evidence", "recipient_ids": [10]}}}}})
         self.sql = "SELECT doc FROM state.cwl_bonus_dashboard"
 
     async def test_each_operator_role_can_read_in_suitable_scope(self):

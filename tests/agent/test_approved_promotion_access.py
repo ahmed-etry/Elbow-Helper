@@ -8,7 +8,7 @@ import discord
 
 from elbow_helper.configuration import channels, roles
 from elbow_helper.agent.access import accessible_message_channel
-from elbow_helper.agent.capabilities.examination.reads import read_accessible_examination_cases
+from elbow_helper.agent.tool_support.adapters.examination.reads import read_accessible_examination_cases
 from elbow_helper.agent.disclosure import can_show_in_dm
 from elbow_helper.agent.models import AgentTurnState
 from elbow_helper.features.examination.queries import ExaminationQueries

@@ -14,7 +14,7 @@ from elbow_helper.configuration.roles import LEAD_PLUS, RECRUITERS
 
 from .analysis import ClanHealthAnalyzer
 from .commands import ClanHealthCommandMixin
-from .config import DB_PATH, OLD_DB_PATH
+from .config import DB_PATH
 from .export import ClanHealthExportMixin
 from .record import HealthRecord
 
@@ -46,9 +46,9 @@ class ClanHealth(
 
     async def cog_load(self) -> None:
         from .database.config_store import seed_missing_configs
-        from .database.schema import copy_old_settings
+        from .database.schema import DATABASE
 
-        await asyncio.to_thread(copy_old_settings, DB_PATH, OLD_DB_PATH)
+        await asyncio.to_thread(DATABASE.initialize, DB_PATH)
         await asyncio.to_thread(seed_missing_configs)
 
     @staticmethod

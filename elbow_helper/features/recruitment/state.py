@@ -8,29 +8,18 @@ from datetime import datetime, timezone
 import logging
 from typing import Any, Dict
 
-from elbow_helper.data.events import Event, finish_on_cancel, load_state, now_us, record, save_state
-from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.infrastructure.persistence import write_json_atomic
-from .config import APPLICANT_AI_FILE
-from .config import TICKET_ACTIVITY_FILE
-from .config import TRIAL_DATA_FILE
-from .config import TRIAL_DAYS_DEFAULT
-from .config import TRIAL_REMINDERS_FILE
+from elbow_helper.data.events import Event, finish_on_cancel, initialize_state, load_state, now_us, record, save_state
 
 LOGGER = logging.getLogger(__name__)
 WORKFLOW = "recruitment"
-# Each part is mirrored to its old file for one update, so a revert keeps open work.
-LEGACY_FILES = {
-    "trials": TRIAL_DATA_FILE,
-    "reminders": TRIAL_REMINDERS_FILE,
-    "ticket_activity": TICKET_ACTIVITY_FILE,
-    "ai_messages": APPLICANT_AI_FILE,
-}
-INDENTS = {"ticket_activity": 4}
+
+
+def default_state():
+    return {part: {} for part in ("trials", "reminders", "ticket_activity", "ai_messages")}
 
 
 def parse_ticket_activity(data: Dict[str, Any]) -> Dict[int, Dict[str, Any]]:
-    """Old file and stored shape to the in-memory shape the reminder loops use."""
+    """Stored shape to the in-memory shape the reminder loops use."""
     parsed: Dict[int, Dict[str, Any]] = {}
     for key, value in data.items():
         channel_id = int(key)
@@ -131,23 +120,12 @@ def decision_event(kind, ticket_id, applicant_id, *, actor_id, via, detail=None)
                              via=via, detail=detail, at=at)
 
 
-def _legacy(path) -> Dict[str, Any]:
-    try:
-        data = read_json(path)
-    except FileNotFoundError:
-        return {}
-    if not isinstance(data, dict):
-        raise ValueError("Invalid recruitment state")
-    return data
-
-
 class RecruitmentState:
-    """SQLite owns recruitment state with its events; JSON files are a one-update revert mirror."""
+    """Save recruitment state and its events together in SQLite."""
 
-    def __init__(self, events, paths=None):
+    def __init__(self, events):
         self.events = events
-        self.paths = {**LEGACY_FILES, **(paths or {})}
-        self.state = {part: {} for part in LEGACY_FILES}
+        self.state = default_state()
         self._lock = asyncio.Lock()
 
     # Readers return copies; the stored state is replaced, never changed in place.
@@ -169,43 +147,12 @@ class RecruitmentState:
     async def startup(self):
         async with self._lock:
             async def complete():
-                self.state = await self.events.call(self._import)
-                await self._mirror(None)
+                self.state = await self.events.call(self._load)
             await finish_on_cancel(complete())
         self.events.register_member_deletion(WORKFLOW, self.refresh_after_deletion)
 
-    def _import(self, connection):
-        state = load_state(connection, WORKFLOW)
-        if state is not None:
-            return state
-        trials = _legacy(self.paths["trials"])
-        reminders = _legacy(self.paths["reminders"])
-        activity = serialize_ticket_activity(parse_ticket_activity(_legacy(self.paths["ticket_activity"])))
-        try:
-            ai_messages = _legacy(self.paths["ai_messages"])
-        except ValueError as error:
-            # As before the move, unreadable AI message IDs only skip their cleanup.
-            LOGGER.error("Failed loading applicant AI messages: %s", error)
-            ai_messages = {}
-        started = 0
-        for ticket, info in trials.items():
-            try:
-                started += record(connection, trial_event(
-                    "trial_started", ticket, info, via="import", at=trial_started_at(info),
-                    detail={"days": int(info.get("days", TRIAL_DAYS_DEFAULT))}))
-            except (AttributeError, KeyError, TypeError, ValueError):
-                # The trial stays open in state; only its start history is unknown.
-                LOGGER.warning("Imported trial %s without a start event", ticket)
-        for info in reminders.values():
-            if isinstance(info, dict):
-                # The trial start is gone once a reminder exists; its creation names the case.
-                info["_case_started_at"] = reminder_case(info)
-        state = {"trials": trials, "reminders": reminders, "ticket_activity": activity,
-                 "ai_messages": ai_messages}
-        save_state(connection, WORKFLOW, state)
-        LOGGER.info("Imported %s open trials (%s start events), %s trial reminders, %s ticket reminders "
-                    "and %s AI messages", len(trials), started, len(reminders), len(activity), len(ai_messages))
-        return state
+    def _load(self, connection):
+        return initialize_state(connection, 'recruitment', default_state)
 
     async def change(self, edit):
         """Apply edit(state) with the events it returns; None means nothing changed."""
@@ -220,10 +167,7 @@ class RecruitmentState:
                     for event in events:
                         record(connection, event)
                     return state, True
-                previous = self.state
                 self.state, changed = await self.events.call(write)
-                if changed:
-                    await self._mirror(previous)
                 return changed
             return await finish_on_cancel(complete())
 
@@ -248,17 +192,4 @@ class RecruitmentState:
 
     async def refresh_after_deletion(self, discord_id):
         async with self._lock:
-            previous = self.state
             self.state = await self.events.call(load_state, WORKFLOW)
-            await self._mirror(previous)
-
-    async def _mirror(self, previous):
-        for part, path in self.paths.items():
-            if previous is not None and previous.get(part) == self.state[part]:
-                continue
-            try:
-                await asyncio.to_thread(write_json_atomic, path, self.state[part],
-                                        indent=INDENTS.get(part, 2))
-            except (OSError, TypeError) as exc:
-                # SQLite stays authoritative; startup and the next change retry the mirror.
-                LOGGER.error("Failed saving %s: %s", path, exc)

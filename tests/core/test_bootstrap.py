@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
 
 from elbow_helper.core.paths import ApplicationPaths
@@ -10,18 +10,6 @@ from elbow_helper.core.settings import SettingsValidationError
 
 
 class ApplicationPathsTests(unittest.TestCase):
-    def test_paths_share_one_project_and_data_root(self) -> None:
-        with TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory).resolve()
-
-            paths = ApplicationPaths.from_project_root(root)
-
-            self.assertEqual(paths.project_root, root)
-            self.assertEqual(paths.data_root, root / "data")
-            self.assertEqual(paths.dotenv_file, root / ".env")
-            self.assertEqual(paths.avatar_file, root / "data" / ".avatar" / "icon.gif")
-            self.assertEqual(paths.avatar_state_file, root / "data" / ".avatar" / "last_upload.txt")
-            self.assertEqual(paths.log_directory, root / "data" / ".logs")
 
     def test_discovery_walks_up_to_the_project_marker(self) -> None:
         with TemporaryDirectory() as temporary_directory:

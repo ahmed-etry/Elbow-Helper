@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import logging
 import copy
 
@@ -105,7 +107,7 @@ class CwlThreadCommandMixin:
             "cc_statuses": {},
             "last_activity": self._utc_now_iso(),
         }
-        self.save_data()
+        await asyncio.to_thread(self.save_data)
         await thread.send(embed=self.cwl_registration_welcome_embed(clan))
         clan_code = CLAN_NAME_TO_CODE.get(clan)
         if clan_code is not None:

@@ -1,3 +1,4 @@
+import asyncio
 import discord
 
 from elbow_helper.core.lifecycle import ElbowHelperBot
@@ -9,7 +10,7 @@ from .queries import WarQueries
 
 
 async def setup(bot: ElbowHelperBot) -> None:
-    await bot.add_cog(WarManager(bot))
+    await bot.add_cog(await asyncio.to_thread(WarManager, bot))
     await bot.add_cog(WarStatements(bot), guild=discord.Object(GUILD_ID))
 
 

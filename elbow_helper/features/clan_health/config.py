@@ -10,13 +10,11 @@ from pathlib import Path
 from discord import app_commands
 
 from elbow_helper.configuration.clans import CLANS, CLAN_ORDER
-from elbow_helper.configuration.files import CLAN_HEALTH_DATABASE, CLAN_HEALTH_SETTINGS_DATABASE
+from elbow_helper.configuration.files import CLAN_HEALTH_SETTINGS_DATABASE
 
 UTC = timezone.utc
 # Clan health's own file: settings and their change log.
 DB_PATH = Path("data") / CLAN_HEALTH_SETTINGS_DATABASE
-# The old clan health file, read once at startup for the settings copy.
-OLD_DB_PATH = Path("data") / CLAN_HEALTH_DATABASE
 
 UTILITY_CLANS = {code for code, clan in CLANS.items() if clan.is_utility}
 CWL_CLAN_CODES = tuple(code for code in CLAN_ORDER if CLANS[code].cwl_role_id is not None)

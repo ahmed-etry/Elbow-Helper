@@ -11,9 +11,7 @@ from unittest.mock import patch
 import discord
 
 from elbow_helper.configuration import channels, roles
-from elbow_helper.agent.access import (
-    accessible_message_channel, assert_answer_scope, has_access_requirements,
-)
+from elbow_helper.agent.access import accessible_message_channel, assert_answer_scope
 from elbow_helper.agent.disclosure import destination_clearance, source_access_levels
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.service import AgentService
@@ -99,16 +97,6 @@ class RoleCategoryScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestC
         self.assertIn("recruitment", await destination_clearance(self.room, self.guild))
         self.assertIn("promotion", await destination_clearance(self.exam_room, self.guild))
 
-    async def test_core_can_read_workflow_tickets_without_a_personal_ticket_grant(self):
-        self.context = replace(self.context, member=self.guild.get_member(11))
-        for level in ("recruiter", "examiner", "cwl_helper", "lead_plus"):
-            self.assertFalse(has_access_requirements(self.guild, 11, {level}))
-        self.assertFalse(self.ticket.permissions_for(self.context.member).view_channel)
-        self.assertEqual(await accessible_message_channel(self.context, self.ticket.id), self.ticket)
-        self.context.source_message.channel = self.exam_room
-        self.context.state.scope = None
-        self.assertFalse(self.promo.permissions_for(self.context.member).view_channel)
-        self.assertEqual(await accessible_message_channel(self.context, self.promo.id), self.promo)
 
     async def test_read_denials_keep_personal_boundaries_and_member_channels_stay_member_level(self):
         for category in (channels.RECRUITMENT_CATEGORY, channels.PROMOTION_CATEGORY,

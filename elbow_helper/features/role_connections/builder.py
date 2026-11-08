@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from typing import TYPE_CHECKING
 
 import discord
@@ -146,7 +148,7 @@ class ConditionBuilderView(BaseTimeoutView):
             )
             return
         try:
-            self.cog.add_connection(connection)
+            await asyncio.to_thread(self.cog.add_connection, connection)
         except (OSError, TypeError):
             await interaction.response.send_message(
                 PERSISTENCE_ERROR_MESSAGE,

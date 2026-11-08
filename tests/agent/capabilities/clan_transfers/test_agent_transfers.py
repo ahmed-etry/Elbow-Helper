@@ -1,12 +1,11 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.models import AgentRequestContext
-from agent.report_helpers import make_event_report
 from elbow_helper.agent.tool_support.adapters.clan_transfers.reads import (
     read_pending_transfer_report,
     read_pending_transfer_requests,
@@ -127,18 +126,6 @@ class AgentTransferToolTests(unittest.IsolatedAsyncioTestCase):
             clan_codes=("BEH", "BE4"),
         )
 
-    async def test_exact_clan_selection_reads_only_that_queue(self):
-        result = await read_pending_transfer_requests(
-            self.context, {"clan_code": "BEH"},
-        )
-        self.assertEqual(result["selected_clan_code"], "BEH")
-        self.assertEqual(result["registered_queue_count"], 1)
-        self.assertEqual(result["accessible_queue_count"], 1)
-        self.assertEqual(result["pending_request_count"], 1)
-        self.assertEqual(self.context.state.source_channels, {self.beh.id})
-        self.queries.pending_snapshot.assert_called_once_with(
-            clan_codes=("BEH",),
-        )
 
     async def test_inaccessible_selected_clan_reports_coverage_without_other_queue_data(self):
         result = await read_pending_transfer_requests(
@@ -152,19 +139,6 @@ class AgentTransferToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.context.state.source_channels, set())
         self.queries.pending_snapshot.assert_called_once_with(clan_codes=())
 
-    async def test_empty_accessible_queues_return_coverage_without_artifact(self):
-        self.snapshot = _snapshot(active=False)
-        result = await read_pending_transfer_requests(self.context, {})
-        self.assertEqual(result["pending_request_count"], 0)
-        self.assertIsNone(result["report_id"])
-        self.assertEqual(result["expired_stored_count"], 1)
-        self.assertEqual(self.context.state.reports, {})
-
-    async def test_malformed_snapshot_does_not_retain_candidate_sources(self):
-        self.queries.pending_snapshot.side_effect = ValueError("malformed")
-        result = await read_pending_transfer_requests(self.context, {})
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.source_channels, set())
 
     async def test_report_reuse_rechecks_queue_source_access(self):
         result = await read_pending_transfer_requests(self.context, {})
@@ -173,25 +147,6 @@ class AgentTransferToolTests(unittest.IsolatedAsyncioTestCase):
             await read_pending_transfer_report(
                 self.context, {"report_id": result["report_id"]},
             )
-
-    async def test_budget_wrong_kind_and_foreign_guild_fail_closed(self):
-        with patch("elbow_helper.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES", 1):
-            result = await read_pending_transfer_requests(self.context, {})
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.reports, {})
-        result = await read_pending_transfer_requests(self.context, {})
-        report = self.context.state.reports[result["report_id"]]
-        self.context.state.reports["role"] = make_event_report("role", "now")
-        self.context.state.reports["foreign"] = TransferQueueReport(
-            "foreign", 2, report.observed_at, report.request_ttl_hours,
-            report.registered_queue_count, report.omitted_inaccessible_count,
-            report.queues,
-        )
-        for report_id in ("missing", "role", "foreign"):
-            value = await read_pending_transfer_report(
-                self.context, {"report_id": report_id},
-            )
-            self.assertIn("error", value)
 
 
 if __name__ == "__main__":

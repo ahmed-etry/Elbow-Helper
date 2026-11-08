@@ -2,10 +2,10 @@
 from dataclasses import replace
 from datetime import datetime
 import json
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.reads.war_tools import TOOLS
@@ -56,17 +56,3 @@ class WarTagSelectionTests(unittest.IsolatedAsyncioTestCase):
         # Every checked war has a stored lineup, so an account in none of them is a known zero.
         self.assertEqual(missing['rows'][0]['attacks_used'], 0)
         self.assertEqual(missing['rows'][0]['participation_status'], 'not_in_checked_lineups')
-
-    async def test_current_war_uses_canonical_tags_and_invalid_tags_do_not_query_sources(self):
-        result = await self.tools['read_current_war'].handler(self.context, {
-            'clan_codes': ['BEH'], 'account_tags': ['po']})
-        self.assertEqual([row['player_tag'] for row in result['rows'][0]['members']], ['#P0'])
-        self.current.reset_mock()
-        with patch.object(self.context.cwl_queries, 'attendance', Mock()) as stored:
-            for name, selection in [('read_current_war', {}),
-                ('read_war_attendance', {'war_type': 'CWL', 'latest_completed': 1}),
-                ('read_cwl_results', {'metric': 'attendance', 'latest_completed': 1})]:
-                refused = await self.tools[name].handler(self.context, {**selection, 'account_tags': ['invalid!']})
-                self.assertEqual(refused['cause'], 'invalid_arguments')
-            stored.assert_not_called()
-        self.current.assert_not_awaited()

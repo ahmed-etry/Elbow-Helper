@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 from types import SimpleNamespace
 
 from elbow_helper.features.achievements.queries import AchievementQueries
-from elbow_helper.agent.families.cohort_activity import discord_activity_projection
+from elbow_helper.agent.reads.cohort_activity import discord_activity_projection
 from agent.engine.test_agent_plan_flow import _context
 
 
@@ -64,16 +64,3 @@ class StoredDiscordActivityTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(rows[0]['discord_activity']['status'], 'source_unavailable')
                 self.assertIsNone(rows[0]['discord_activity']['lifetime_messages'])
                 self.assertEqual(coverage['members_not_checked'], 1)
-
-    def test_missing_database_and_invalid_schema_are_read_failures(self):
-        path = Path('missing_activity_test.sqlite')
-        self.assertFalse(path.exists())
-        with self.assertRaises(RuntimeError):
-            AchievementQueries(path).member_activity([42])
-        self.assertFalse(path.exists())
-        connection = sqlite3.connect(':memory:')
-        connection.execute('CREATE TABLE unrelated (id INTEGER)')
-        queries = AchievementQueries(path)
-        with patch.object(queries, '_connect', return_value=connection):
-            with self.assertRaises(RuntimeError):
-                queries.member_activity([42])

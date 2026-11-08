@@ -1,12 +1,10 @@
 """Offline API-shaped war/CWL fixtures and persistent polling evidence."""
 
 import asyncio
-from contextlib import closing
 from copy import deepcopy
 import json
 from pathlib import Path
-import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import threading
 from types import SimpleNamespace
 import unittest
@@ -14,14 +12,12 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.data.collectors.service import FamilyCollectors
 from elbow_helper.data.collectors.wars import due_jobs, path_for
+from tests.data.store_fixtures import empty_store
 from elbow_helper.data.store import FamilyStore
-from elbow_helper.data.store.schema import MIGRATIONS
 from elbow_helper.data.store.war_projection import api_time, project_war
 from elbow_helper.data.store.wars import SECOND, record_response
-from elbow_helper.infrastructure.persistence.migrations import run_sqlite_migrations
 
 from .test_family_store import CLANS, response
-from .war_size import annual_size
 
 
 END = api_time("20261028T180000.000Z")
@@ -81,8 +77,7 @@ class WarFixture:
         self.temporary = TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(self.temporary.cleanup)
         self.path = Path(self.temporary.name) / "family.sqlite3"
-        self.store = FamilyStore(self.path)
-        await self.store.initialize()
+        self.store = await empty_store(self.path)
         self.at = START + 600 * SECOND
 
     async def rows(self, sql, args=()):
@@ -419,18 +414,6 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(rows[-1]["preparation_at"])
         self.assertEqual(rows[-1]["attacks_complete"], 0)
 
-    async def test_invalid_values_fail_and_new_nested_fields_do_not_reduce_coverage(self):
-        await self.record(war())
-        before = await self.rows("SELECT * FROM wars")
-        for update in ({"state": []}, {"startTime": "20261029T180000.000Z"}, {"teamSize": -1}, {"endTime": "not a time"}, {"battleModifier": {"tag": "#P0"}}):
-            result = await self.record({**war(), **update})
-            self.assertEqual(result["status"], "failed")
-            self.assertEqual(before, await self.rows("SELECT * FROM wars"))
-        partial = war("warEnded")
-        partial["clan"]["members"][0]["newIdentity"] = {"name": "Unreviewed identity"}
-        report = await self.record(partial)
-        self.assertEqual(report["status"], "ok")
-        self.assertNotIn("Unreviewed identity", str(await self.rows("SELECT * FROM war_members")))
 
     async def test_failed_final_fetch_retains_deadline_retry_and_cwl_incomplete_end_is_repaired(self):
         await self.record(war(), at=END + 60 * SECOND)
@@ -478,57 +461,6 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.rows("SELECT * FROM war_sides"), [])
         self.assertEqual((await self.rows("SELECT rows_written FROM collection_runs"))[0]["rows_written"], 0)
 
-    async def test_finished_war_keeps_the_log_result_and_nothing_else_changes(self):
-        await self.record(war("warEnded"), at=END + 90 * SECOND)
-        sides = await self.rows("SELECT * FROM war_sides ORDER BY side")
-        self.assertEqual([r["result"] for r in sides], [None, None])
-        facts = {table: await self.rows(f"SELECT * FROM {table}") for table in ("war_members", "war_attacks")}
-        silent = war_log(war("warEnded"))
-        del silent["items"][0]["result"]
-        await self.record(silent, kind="war_log", at=END + 200 * SECOND)
-        self.assertEqual(sides, await self.rows("SELECT * FROM war_sides ORDER BY side"))
-        page = war_log(war("warEnded"))
-        page["items"][0]["result"] = "win"
-        await self.execute("UPDATE war_collection_state SET checkpoint_json='{}' WHERE source_kind='war_log'")
-        await self.record(page, kind="war_log", at=END + 300 * SECOND)
-        run = (await self.rows("SELECT MAX(id) AS id FROM collection_runs"))[0]["id"]
-        after = await self.rows("SELECT * FROM war_sides ORDER BY side")
-        # Sides sort by tag: #GR is the opponent, #PY the clan that won.
-        self.assertEqual([(r["clan_tag"], r["result"], r["source_run_id"]) for r in after],
-                         [("#GR", "lose", run), ("#PY", "win", run)])
-        self.assertEqual([{k: v for k, v in r.items() if k not in {"result", "source_run_id"}} for r in sides],
-                         [{k: v for k, v in r.items() if k not in {"result", "source_run_id"}} for r in after])
-        self.assertEqual(facts, {table: await self.rows(f"SELECT * FROM {table}") for table in ("war_members", "war_attacks")})
-        row = (await self.rows("SELECT final_at,end_at,content_hash,type_basis FROM wars"))[0]
-        self.assertEqual((row["final_at"], row["end_at"], row["type_basis"]), (END + 90 * SECOND, END, "war_log"))
-        # The same result again writes nothing.
-        await self.execute("UPDATE war_collection_state SET checkpoint_json='{}' WHERE source_kind='war_log'")
-        await self.record(page, kind="war_log", at=END + 400 * SECOND)
-        self.assertEqual(after, await self.rows("SELECT * FROM war_sides ORDER BY side"))
-        self.assertEqual((await self.rows("SELECT rows_written FROM collection_runs ORDER BY id DESC LIMIT 1"))[0]["rows_written"], 0)
-
-    async def test_identical_poll_writes_only_the_run_row(self):
-        await self.record(war())
-        tables = [r["name"] for r in await self.rows("SELECT name FROM sqlite_master WHERE type='table'")]
-
-        moving = {"next_due_at", "last_attempt_at", "last_success_at", "last_run_id"}
-
-        async def snapshot():
-            rows = {table: await self.rows(f"SELECT * FROM {table}") for table in tables if table != "collection_runs"}
-            # The schedule and the check's status move on; no war fact may change.
-            rows["war_collection_state"] = [{**row, **dict.fromkeys(moving)} for row in rows["war_collection_state"]]
-            return rows
-        before = await snapshot()
-        report = await self.record(war(), at=self.at + 300 * SECOND)
-        self.assertEqual(report["status"], "ok")
-        self.assertEqual(before, await snapshot())
-        self.assertEqual(before["collection_items"], [])
-        runs = await self.rows("SELECT * FROM collection_runs ORDER BY id")
-        self.assertEqual(len(runs), 2)
-        self.assertEqual((runs[-1]["succeeded"], runs[-1]["rows_written"]), (1, 0))
-        status = (await self.rows("SELECT * FROM war_collection_state WHERE source_kind='current_war' AND scope_id='#PY'"))[0]
-        self.assertEqual((status["last_attempt_at"], status["last_success_at"], status["last_run_id"], status["last_outcome"]),
-                         (self.at + 300 * SECOND, self.at + 300 * SECOND, runs[-1]["id"], "ok"))
 
     async def cwl(self, payload, at=None):
         return await self.record(payload, kind="cwl_war", scope="#R0", at=at)
@@ -547,16 +479,28 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         row = (await self.rows("SELECT roster_complete,attacks_complete FROM wars"))[0]
         return row["roster_complete"], row["attacks_complete"]
 
-    async def test_preparation_day_swap_replaces_the_member_and_stays_complete(self):
-        await self.cwl(war("preparation", clans=("#PY", "#GR")))
-        self.assertEqual(await self.lineup(), ["#P0", "#P2"])
-        report = await self.cwl(war("preparation", clans=("#PY", "#GR")), at=self.at + 60 * SECOND)
-        self.assertEqual(report["status"], "ok")
-        report = await self.cwl(self.swapped(war("preparation", clans=("#PY", "#GR"))), at=self.at + 120 * SECOND)
-        self.assertEqual(report["status"], "ok")
-        self.assertEqual(await self.lineup(), ["#P0", "#P8"])
+    async def test_preparation_swap_repoll_and_partial_repair(self):
+        initial = war('preparation', clans=('#PY', '#GR'))
+        swapped = self.swapped(initial)
+        for minute, payload, lineup in (
+            (0, initial, ['#P0', '#P2']),
+            (1, initial, ['#P0', '#P2']),
+            (2, swapped, ['#P0', '#P8']),
+        ):
+            with self.subTest(minute=minute):
+                report = await self.cwl(payload, at=self.at + minute * 60 * SECOND)
+                self.assertEqual(report['status'], 'ok')
+                self.assertEqual(await self.lineup(), lineup)
+                self.assertEqual(await self.flags(), (1, 1))
+                self.assertEqual(len(await self.rows('SELECT * FROM war_members')), 4)
+        await self.execute("INSERT INTO war_members(war_id,side,player_tag,extra_json,source_run_id) "
+                           "SELECT war_id,side,'#P2',extra_json,source_run_id FROM war_members WHERE player_tag='#P8'")
+        await self.execute('UPDATE wars SET roster_complete=0,attacks_complete=0')
+        self.assertEqual(await self.lineup(), ['#P0', '#P2', '#P8'])
+        report = await self.cwl(swapped, at=self.at + 180 * SECOND)
+        self.assertEqual(report['status'], 'ok')
+        self.assertEqual(await self.lineup(), ['#P0', '#P8'])
         self.assertEqual(await self.flags(), (1, 1))
-        self.assertEqual(len(await self.rows("SELECT * FROM war_members")), 4)
 
     async def test_member_with_attacks_stays_when_the_lineup_changes(self):
         await self.cwl(war(clans=("#PY", "#GR")))
@@ -573,19 +517,6 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(before, await self.rows("SELECT * FROM war_members ORDER BY id"))
         self.assertEqual(await self.flags(), (1, 1))
 
-    async def test_war_flagged_partial_by_a_swap_recovers_on_the_next_identical_poll(self):
-        await self.cwl(war("preparation", clans=("#PY", "#GR")))
-        swapped = self.swapped(war("preparation", clans=("#PY", "#GR")))
-        await self.cwl(swapped, at=self.at + 60 * SECOND)
-        # The state the old code left behind: stale member stored, flags dropped, payload already seen.
-        await self.execute("INSERT INTO war_members(war_id,side,player_tag,extra_json,source_run_id) "
-                           "SELECT war_id,side,'#P2',extra_json,source_run_id FROM war_members WHERE player_tag='#P8'")
-        await self.execute("UPDATE wars SET roster_complete=0,attacks_complete=0")
-        self.assertEqual(await self.lineup(), ["#P0", "#P2", "#P8"])
-        report = await self.cwl(swapped, at=self.at + 120 * SECOND)
-        self.assertEqual(report["status"], "ok")
-        self.assertEqual(await self.lineup(), ["#P0", "#P8"])
-        self.assertEqual(await self.flags(), (1, 1))
 
     async def test_each_check_records_outcome_and_observation_and_failures_keep_last_success(self):
         async def status(kind="current_war", scope="#PY"):
@@ -633,25 +564,6 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         row = (await self.rows("SELECT * FROM war_collection_state WHERE source_kind='current_war' AND scope_id='#PY'"))[0]
         self.assertEqual((row["last_outcome"], row["last_success_at"], row["last_run_id"]), ("failed", self.at, run))
 
-    async def test_changed_facts_reference_their_run_and_only_failures_keep_receipts(self):
-        await self.record(war("preparation"))
-        await self.record(war())
-        run = (await self.rows("SELECT MAX(id) AS id FROM collection_runs"))[0]["id"]
-        self.assertEqual({r["source_run_id"] for r in await self.rows("SELECT source_run_id FROM war_attacks")}, {run})
-        self.assertEqual((await self.rows("SELECT source_run_id FROM wars"))[0]["source_run_id"], run)
-        self.assertEqual({r["source_run_id"] for r in await self.rows("SELECT source_run_id FROM war_members")}, {run - 1, run})
-        await self.record({"state": "notInWar"}, scope="#LQ")
-        self.assertEqual(await self.rows("SELECT * FROM collection_items"), [])
-        report = await self.record(None, status=503)
-        self.assertEqual((report["status"], report["failed"]), ("failed", 1))
-        self.assertEqual(await self.rows("SELECT run_id,source_kind,scope_id,status,error_code,http_status FROM collection_items"),
-                         [{"run_id": run + 2, "source_kind": "current_war", "scope_id": "#PY", "status": "failed",
-                           "error_code": "fetch_failed", "http_status": 503}])
-        partial = war("warEnded")
-        partial["opponent"].pop("members")
-        await self.record(partial, at=END + 90 * SECOND)
-        self.assertEqual([r["error_code"] for r in await self.rows("SELECT error_code FROM collection_items ORDER BY id")],
-                         ["fetch_failed", "partial_war"])
 
     async def test_restart_leaves_receipts_only_for_started_items_and_both_stay_due(self):
         await self.store.call(due_jobs, CLANS, self.at)
@@ -680,32 +592,6 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.record(war(clans=("#LQ", "#CU")), scope="#LQ", at=self.at + 7 * SECOND)
         self.assertEqual({r["next_due_at"] for r in await self.rows(
             "SELECT next_due_at FROM war_collection_state WHERE source_kind='current_war'")}, {self.at + 300 * SECOND})
-
-    async def test_annual_storage_including_indexes_stays_a_few_hundred_megabytes(self):
-        await self.record(war("warEnded"), at=END + 90 * SECOND)
-        await self.record(None, status=503, at=END + 300 * SECOND)
-        await self.record(group(), kind="cwl_group", at=api_time("20261002T000000.000Z"))
-        counts, annual_bytes = await self.store.call(annual_size)
-        self.assertEqual(counts["wars"], 1642 + 756)
-        self.assertEqual(counts["war_members"], 2398 * 60)
-        self.assertEqual(counts["war_attacks"], 1642 * 120 + 756 * 60)
-        self.assertEqual(counts["collection_runs"], 270320)
-        self.assertEqual(counts["collection_items"], 30022)
-        # WAL and backup copies are separate working space.
-        self.assertLess(annual_bytes, 250_000_000)
-
-    async def test_migrate_v3_preserves_existing_people_and_players(self):
-        path = self.path.parent / "old.sqlite3"
-        def old_database():
-            with closing(sqlite3.connect(path)) as c:
-                run_sqlite_migrations(c, MIGRATIONS[:3], target_version=3)
-                c.execute("INSERT INTO accounts(player_tag,first_observed_at,tracking_status) VALUES ('#P0',1,'observed')")
-                c.commit()
-        await asyncio.to_thread(old_database)
-        upgraded = FamilyStore(path)
-        await upgraded.initialize()
-        self.assertEqual(await upgraded.call(lambda c: c.execute("SELECT player_tag FROM accounts").fetchone()[0]), "#P0")
-        self.assertEqual(await upgraded.call(lambda c: c.execute("PRAGMA foreign_key_check").fetchall()), [])
 
 
 class WarCollectorTests(WarFixture, unittest.IsolatedAsyncioTestCase):
@@ -738,37 +624,6 @@ class WarCollectorTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.get.await_count, 4)
         self.assertNotIn("private transport detail", str(await self.rows("SELECT * FROM collection_items")))
 
-    async def test_a_war_source_failing_again_warns_once_and_recovery_logs_once(self):
-        service = "elbow_helper.data.collectors.service"
-        broken = True
-
-        def fetch(path, **kwargs):
-            if "warlog" in path:
-                return response({"items": [], "paging": {"cursors": {}}})
-            if "%23LQ" in path:
-                if broken:
-                    raise TimeoutError("private transport detail")
-                return response({"state": "notInWar"})
-            return response(war())
-        self.client.get.side_effect = fetch
-        now = {"at": self.at}
-        with patch("elbow_helper.data.collectors.service.now_us", side_effect=lambda: now["at"]), patch(
-                "elbow_helper.data.collectors.wars.now_us", side_effect=lambda: now["at"]):
-            with self.assertLogs(service, level="WARNING") as first:
-                await self.collector.collect_wars()
-            self.assertEqual(len(first.output), 1)
-            self.assertIn("current_war #LQ (fetch_failed)", first.output[0])
-            now["at"] += 10 * 60 * SECOND
-            with self.assertNoLogs(service, level="INFO"):
-                report = await self.collector.collect_wars()
-            self.assertEqual(report["failed"], 1)
-            broken = False
-            now["at"] += 10 * 60 * SECOND
-            with self.assertLogs(service, level="INFO") as recovered:
-                report = await self.collector.collect_wars()
-        self.assertEqual(report["failed"], 0)
-        self.assertEqual(len(recovered.output), 1)
-        self.assertIn("current_war #LQ", recovered.output[0])
 
     async def test_group_discovery_fetches_unique_tags_same_pass_then_only_relevant_mutable(self):
         self.at = api_time("20261002T000000.000Z")

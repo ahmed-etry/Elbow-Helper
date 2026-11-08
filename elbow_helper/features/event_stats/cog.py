@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from elbow_helper.infrastructure.persistence.documents import serialized_mutation
+
 import asyncio
 import logging
 import re
@@ -51,11 +53,11 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
                       "type": event.get("type")}
                      for event in self.events)
 
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot: commands.Bot, *, initial_state=None):
         self.bot = bot
         self._startup_task: Optional[asyncio.Task] = None
         self._refresh_lock = asyncio.Lock()
-        self.state = ensure_state()
+        self.state = initial_state if initial_state is not None else ensure_state()
         self.events: list[dict[str, Any]] = []
         self._reload_events_from_state()
         self.queries = EventStatsQueries(
@@ -181,6 +183,7 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
         slug = re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_") or "event"
         return f"event_{slug}_{uuid4().hex[:8]}"
 
+    @serialized_mutation
     def create_one_time_event(
         self,
         *,
@@ -238,6 +241,7 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
             "grace_hours": grace_hours,
         }, None
 
+    @serialized_mutation
     def update_one_time_event(
         self,
         key: str,
@@ -259,6 +263,7 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
         self._persist_state()
         return True
 
+    @serialized_mutation
     def update_preset_event(self, key: str, *, name: str, grace_hours: int | None = None) -> bool:
         state_event = self._find_state_event(key)
         if state_event is None or state_event.get("source") != "preset":
@@ -272,6 +277,7 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
         self._persist_state()
         return True
 
+    @serialized_mutation
     def reset_preset_event(self, key: str) -> bool:
         state_event = self._find_state_event(key)
         preset = get_preset_definition(key)
@@ -284,6 +290,7 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
         self._persist_state()
         return True
 
+    @serialized_mutation
     def toggle_event(self, key: str) -> bool:
         state_event = self._find_state_event(key)
         if state_event is None:
@@ -292,6 +299,7 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
         self._persist_state()
         return True
 
+    @serialized_mutation
     def set_event_category(self, key: str, category_id: int | None) -> bool:
         state_event = self._find_state_event(key)
         if state_event is None:
@@ -300,6 +308,7 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
         self._persist_state()
         return True
 
+    @serialized_mutation
     def move_event(self, key: str, direction: int) -> bool:
         ordered = sorted(self._state_events(), key=lambda item: (int(item.get("position", 0)), str(item.get("key") or "")))
         index = next((i for i, event in enumerate(ordered) if event.get("key") == key), None)
@@ -307,6 +316,7 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
             return False
         return self.move_event_to_position(key, index + direction)
 
+    @serialized_mutation
     def move_event_to_position(self, key: str, target_index: int) -> bool:
         """Place an event at an absolute position for panel and agent changes."""
         ordered = sorted(self._state_events(), key=lambda item: (int(item.get("position", 0)), str(item.get("key") or "")))
@@ -356,7 +366,7 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
                 return False, "I couldn't delete the event's voice channel right now. Try again in a moment."
 
         self.state["events"] = [item for item in self._state_events() if item.get("key") != key]
-        self._persist_state()
+        await asyncio.to_thread(self._persist_state)
         return True, "Event removed."
 
     async def force_refresh(self, guild: discord.Guild) -> None:
@@ -551,4 +561,4 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(EventStatsCog(bot))
+    await bot.add_cog(EventStatsCog(bot, initial_state=await asyncio.to_thread(ensure_state)))

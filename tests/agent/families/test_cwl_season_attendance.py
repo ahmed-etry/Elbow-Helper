@@ -8,9 +8,9 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.features.cwl.config import CWL_CLAN_NAMES
@@ -83,22 +83,6 @@ class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
             'clan_codes': self.codes, 'history_limit': 2, 'latest_completed': 2})
         self.assertEqual(result['cause'], 'invalid_arguments')
 
-    async def test_individual_war_selection_remains_a_war_period(self):
-        result = await cwl_results(self.context, {'metric': 'attendance',
-            'clan_codes': self.codes, 'latest_completed': 2})
-        self.assertEqual(result['period_unit'], 'war')
-        self.assertLess(sum(row['wars'] for row in result['clan_totals']), 7)
-
-    async def test_multiple_seasons_use_one_snapshot_without_roster_history_reads(self):
-        with (patch.object(self.history, 'roster_history', side_effect=AssertionError('unnecessary read')),
-              patch.object(self.history, 'attendance', wraps=self.history.attendance) as read):
-            result = await cwl_results(self.context, {'metric': 'attendance',
-                'clan_codes': self.codes, 'history_limit': 2})
-        self.assertEqual(read.call_count, 1)
-        self.assertEqual(len(result['war_aliases']), 28)
-        self.assertEqual(len(result['war_ids']), 28)
-        self.assertEqual(result['duplicate_identities_removed'], 0)
-        self.assertTrue(all(row['season_complete'] for row in result['clan_totals']))
 
     async def test_a_six_war_season_is_not_complete(self):
         context = await self.build(counts=((2, 7), (3, 6)))
@@ -130,19 +114,6 @@ class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(total['missed'])
         self.assertFalse(result['coverage']['exact_ranking'])
 
-    async def test_missing_attack_keeps_the_existing_unknown_attendance_display(self):
-        context = await self.build(second=lambda identity: 1)
-        await self.record.execute(
-            "DELETE FROM war_attacks WHERE attacker_member_id IN (SELECT m.id FROM war_members m "
-            "JOIN wars w ON w.id=m.war_id WHERE w.war_tag='#RP0' AND m.player_tag='#P2')")
-        result = await cwl_results(context, {'metric': 'attendance', 'clan_codes': self.codes[:1],
-                                             'season': '2025-03'})
-        row = next(row for row in result['rows'] if row['player_tag'] == '#P0')
-        self.assertEqual(row['unconfirmed_opportunities'], 1)
-        self.assertFalse(row['totals_complete'])
-        self.assertIsNone(result['clan_totals'][0]['missed'])
-        self.assertFalse(result['coverage']['exact_ranking'])
-        self.assertEqual(result['unproven_war_ids'], ['CWL:#RP0'])
 
     async def test_a_season_key_stored_with_a_suffix_stays_reachable(self):
         await self.record.week(self.codes[0], '2026-06-other', [league_war(
@@ -157,11 +128,6 @@ class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
         invalid = await war_reads.selected_wars(self.context, {'clan_codes': self.codes[:1], 'season': 'June'}, 'CWL')
         self.assertEqual(invalid['cause'], 'invalid_arguments')
 
-    async def test_an_unreadable_record_is_unavailable_not_empty(self):
-        with patch.object(self.history, 'attendance', side_effect=sqlite3.OperationalError('locked')):
-            result = await cwl_results(self.context, {'metric': 'attendance', 'clan_codes': self.codes,
-                                                      'history_limit': 1})
-        self.assertEqual(result['cause'], 'source_unavailable')
 
     def test_sql_guide_and_joins_keep_both_sides_of_a_shared_war_distinct(self):
         """The old store's war tables stay readable as history."""

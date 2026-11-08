@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from typing import TYPE_CHECKING
 
 import discord
@@ -304,7 +306,7 @@ class EventActionView(BaseTimeoutView):
                 ephemeral=True,
             )
             return
-        if not self.cog.toggle_event(self.key):
+        if not await asyncio.to_thread(self.cog.toggle_event, self.key):
             await interaction.response.send_message("That event no longer exists.", ephemeral=True)
             return
         await interaction.response.defer()
@@ -331,7 +333,7 @@ class EventActionView(BaseTimeoutView):
                 ephemeral=True,
             )
             return
-        if not self.cog.move_event(self.key, -1):
+        if not await asyncio.to_thread(self.cog.move_event, self.key, -1):
             await interaction.response.send_message("I couldn't move that event. Try again in a moment.", ephemeral=True)
             return
         await interaction.response.defer()
@@ -350,7 +352,7 @@ class EventActionView(BaseTimeoutView):
                 ephemeral=True,
             )
             return
-        if not self.cog.move_event(self.key, 1):
+        if not await asyncio.to_thread(self.cog.move_event, self.key, 1):
             await interaction.response.send_message("I couldn't move that event. Try again in a moment.", ephemeral=True)
             return
         await interaction.response.defer()
@@ -374,7 +376,7 @@ class EventActionView(BaseTimeoutView):
                     ephemeral=True,
                 )
                 return
-            if not self.cog.reset_preset_event(self.key):
+            if not await asyncio.to_thread(self.cog.reset_preset_event, self.key):
                 await interaction.response.send_message("I couldn't reset that event. Try again in a moment.", ephemeral=True)
                 return
             await interaction.response.defer()
@@ -434,7 +436,7 @@ class EventCategorySelect(discord.ui.ChannelSelect):
         if not isinstance(category, discord.CategoryChannel):
             await interaction.response.send_message("Choose a category channel.", ephemeral=True)
             return
-        if not self._parent_view.cog.set_event_category(self._parent_view.key, category.id):
+        if not await asyncio.to_thread(self._parent_view.cog.set_event_category, self._parent_view.key, category.id):
             await interaction.response.send_message("That event no longer exists.", ephemeral=True)
             return
         await interaction.response.defer()
@@ -476,7 +478,7 @@ class EventCategoryView(BaseTimeoutView):
                 ephemeral=True,
             )
             return
-        if not self.cog.set_event_category(self.key, None):
+        if not await asyncio.to_thread(self.cog.set_event_category, self.key, None):
             await interaction.response.send_message("That event no longer exists.", ephemeral=True)
             return
         await interaction.response.defer()
@@ -617,9 +619,9 @@ class OneTimeEventModal(BaseErrorModal):
             return
         await interaction.response.defer(ephemeral=True)
         if self.event_key is None:
-            event_key = self.cog.create_one_time_event(**values)
+            event_key = await asyncio.to_thread(self.cog.create_one_time_event, **values)
         else:
-            updated = self.cog.update_one_time_event(self.event_key, **values)
+            updated = await asyncio.to_thread(self.cog.update_one_time_event, self.event_key, **values)
             if not updated:
                 await interaction.followup.send("That event no longer exists.", ephemeral=True)
                 return
@@ -681,11 +683,7 @@ class PresetEventModal(BaseErrorModal):
                 )
                 return
 
-        updated = self.cog.update_preset_event(
-            self.event_key,
-            name=display_name,
-            grace_hours=grace_hours,
-        )
+        updated = await asyncio.to_thread(self.cog.update_preset_event, self.event_key, name=display_name, grace_hours=grace_hours)
         if not updated:
             await interaction.response.send_message("That event no longer exists.", ephemeral=True)
             return

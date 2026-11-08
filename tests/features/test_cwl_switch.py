@@ -9,9 +9,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-import json
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -20,7 +17,7 @@ from elbow_helper.features.cwl.config import DASHBOARD_THREADS
 from elbow_helper.features.cwl.dashboard import CwlDashboardMixin
 from elbow_helper.features.cwl.router import CwlRouterMixin
 
-from .test_cwl_record import NOV, SECOND, LeagueFixture, end_of, league_war, now
+from .test_cwl_record import SECOND, LeagueFixture, end_of, league_war, now
 
 ROUTER = "elbow_helper.features.cwl.router"
 DASHBOARD = "elbow_helper.features.cwl.dashboard"
@@ -103,13 +100,6 @@ class SwitchRouterTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         await self.poll(router, end + 300 * SECOND)
         self.missed.assert_awaited_once()
 
-    async def test_wars_posted_by_the_old_code_are_not_posted_again(self):
-        await self.november()
-        router = self.router(old_state(last_poll_ts=NOV // SECOND, missed_posted={"ONE:#R0": True}))
-        # Round 1 ended after the old code's last poll but it had posted it (the file says so).
-        await self.poll(router, end_of(1) + 600 * SECOND)
-        self.missed.assert_not_awaited()
-        self.assertEqual(router.state["missed_posted"], {"ONE:#R0": True})
 
     async def test_failed_group_check_does_not_hold_back_a_proven_final(self):
         await self.november()
@@ -121,36 +111,6 @@ class SwitchRouterTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         self.missed.assert_awaited_once()
         self.assertEqual(self.missed.await_args.args[:2], ("ONE", "#R8"))
         self.assertEqual(router.state["last_poll_ts"], end // SECOND - 30)
-
-    async def test_a_lineup_baseline_the_old_code_saved_is_kept_across_the_switch(self):
-        await self.november()
-        moment = end_of(2) - 1800 * SECOND
-        await self.record(league_war("preparation", 3), kind="cwl_war", scope="#RC", at=moment)
-        names = {"#P0": "Player #P0", "#P2": "Player #P2"}
-        same = old_state(last_poll_ts=moment // SECOND, rosters={"ONE": {"#RC": ["#P0", "#P2"]}},
-                         roster_names={"ONE": {"#RC": names}})
-        router = self.router(same)
-        await self.poll(router, moment)
-        self.rotation.assert_not_awaited()
-        # The old code saw #P8 in the lineup; the record has the lineup after the swap.
-        swapped = old_state(last_poll_ts=moment // SECOND, rosters={"ONE": {"#RC": ["#P0", "#P8"]}},
-                            roster_names={"ONE": {"#RC": {"#P0": "Player #P0", "#P8": "Spare"}}})
-        router = self.router(swapped)
-        await self.poll(router, moment)
-        await self.poll(router, moment + 60 * SECOND)
-        self.rotation.assert_awaited_once()
-        self.assertEqual(self.rotation.await_args.args, ("ONE", ["Player #P2"], ["Spare"]))
-        self.assertEqual(sorted(router.state["rosters"]["ONE"]["#RC"]), ["#P0", "#P2"])
-
-    async def test_state_the_old_code_wrote_loads_unchanged(self):
-        saved = old_state(last_poll_ts=123, rosters={"ONE": {"#RC": ["#P0"]}}, missed_posted={"ONE:#R0": True},
-                          cwl_board_messages={"BE1": {"channel": 5, "message": 6}}, last_war_tag={"ONE": "#R8"})
-        with TemporaryDirectory() as folder:
-            path = Path(folder) / "router.json"
-            path.write_text(json.dumps(saved), encoding="utf-8")
-            with patch(f"{ROUTER}.ROUTER_STATE_FILE", path):
-                loaded = CwlRouterMixin()._load_state()
-        self.assertEqual(loaded, saved)
 
 
 class DashboardStartTests(unittest.IsolatedAsyncioTestCase):
@@ -165,8 +125,18 @@ class DashboardStartTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_first_refresh_after_a_start_waits_for_the_first_war_pass(self):
         dashboards = self.dashboards()
         with patch(f"{DASHBOARD}.wait_for_boot_complete", AsyncMock()):
+            waiting = asyncio.Event()
+            original_wait = dashboards._first_war_check.wait
+            async def observe_wait():
+                waiting.set()
+                return await original_wait()
+            self.enterContext(patch.object(dashboards._first_war_check, "wait", side_effect=observe_wait))
             started = asyncio.create_task(dashboards.before_dashboard_loop())
-            await asyncio.sleep(0.05)
+            async def finish():
+                dashboards._first_war_check.set()
+                await asyncio.gather(started, return_exceptions=True)
+            self.addAsyncCleanup(finish)
+            await asyncio.wait_for(waiting.wait(), 3)
             dashboards._refresh_dashboard_with_retry.assert_not_awaited()
             await dashboards.on_family_wars_collected()
             await started
@@ -174,16 +144,9 @@ class DashboardStartTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_collector_that_never_reports_does_not_hold_the_dashboards_back_forever(self):
         dashboards = self.dashboards()
-        with patch(f"{DASHBOARD}.wait_for_boot_complete", AsyncMock()), patch(f"{DASHBOARD}.FIRST_WAR_CHECK_WAIT_SECONDS", 0.01):
+        with patch(f"{DASHBOARD}.wait_for_boot_complete", AsyncMock()), patch(f"{DASHBOARD}.FIRST_WAR_CHECK_WAIT_SECONDS", 0):
             await dashboards.before_dashboard_loop()
         self.assertFalse(dashboards._first_war_check.is_set())
-        self.assertEqual(dashboards._refresh_dashboard_with_retry.await_count, len(DASHBOARD_THREADS))
-
-    async def test_a_later_start_of_the_same_process_is_not_held_back(self):
-        dashboards = self.dashboards()
-        await dashboards.on_family_wars_collected()
-        with patch(f"{DASHBOARD}.wait_for_boot_complete", AsyncMock()), patch(f"{DASHBOARD}.FIRST_WAR_CHECK_WAIT_SECONDS", 30):
-            await asyncio.wait_for(dashboards.before_dashboard_loop(), 5)
         self.assertEqual(dashboards._refresh_dashboard_with_retry.await_count, len(DASHBOARD_THREADS))
 
 

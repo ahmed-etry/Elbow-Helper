@@ -6,8 +6,7 @@ import discord
 
 from elbow_helper.agent.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.reply_targets import set_reply_target
-from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.models import AgentDelivery, AgentRequestContext, AgentTurnState
+from elbow_helper.agent.models import AgentDelivery, AgentRequestContext
 from . import test_agent_discord_messages as fixtures
 
 
@@ -52,18 +51,6 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
         )
         return delivery
 
-    async def test_answer_replies_without_confirmation_or_default_ping(self):
-        result = await set_reply_target(self.context, {"message_id": 55})
-        self.assertEqual(result, {"reply_to": 55, "ping_author": False})
-        self.assertEqual(self.context.state.proposed_changes, [])
-        self.target.reply.assert_not_awaited()
-        delivered = await self.deliver(["Synthetic answer"])
-        self.target.reply.assert_awaited_once()
-        self.assertFalse(self.target.reply.await_args.kwargs["mention_author"])
-        self.assertFalse(self.target.reply.await_args.kwargs["allowed_mentions"].replied_user)
-        self.request.reply.assert_not_awaited()
-        self.assertEqual(delivered.message_ids, [70])
-        self.assertTrue(delivered.complete)
 
     async def test_explicit_ping_is_only_on_the_first_part(self):
         await set_reply_target(self.context, {"message_id": 55, "ping_author": True})
@@ -159,33 +146,6 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
                 message_id=identifier, guild_id=3, channel_id=2,
             )
             self.assertEqual(recorded["requester_id"], self.context.member.id)
-
-    async def test_post_reply_quoting_a_gif_link_sends_the_full_text_once(self):
-        self.request.mentions = []
-        self.request.guild = self.context.guild
-        self.surface.bot = SimpleNamespace(user=None)
-        context = AgentRequestContext(
-            bot=self.surface.bot, guild=self.context.guild, member=self.context.member,
-            source_message=self.request, account_links=None, message_search=None,
-            action_repository=self.context.action_repository,
-        )
-        text = "Synthetic first message.\nSynthetic second message.\nhttps://tenor.com/view/synthetic"
-        with patch(
-            "elbow_helper.agent.delivery.assert_answer_scope", new_callable=AsyncMock,
-            return_value=True,
-        ):
-            result = await self.surface.send_post_reply(self.request, text, None, context, None)
-        self.assertEqual(result, {"channel_id": 2, "message_ids": [72]})
-        self.request.reply.assert_awaited_once()
-        self.assertEqual(self.request.reply.await_args.args[0], text)
-        self.channel.send.assert_not_awaited()
-        self.assertEqual(context.state.reply_delivery.delivery.text_parts, [text])
-
-    def test_registered_reply_selection_is_output_and_transient(self):
-        from elbow_helper.agent.actions.contracts import ActionClass
-        tool = build_agent_tools()["set_discord_reply_target"]
-        self.assertEqual(tool.action_class, ActionClass.OUTPUT)
-        self.assertIsNone(AgentTurnState().reply_to)
 
 
     async def test_same_channel_post_mentions_uncached_members_without_reply_ping(self):

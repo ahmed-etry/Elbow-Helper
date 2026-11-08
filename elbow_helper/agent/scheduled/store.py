@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from elbow_helper.infrastructure.persistence import sqlite_connection, sqlite_transaction
+from elbow_helper.infrastructure.persistence import sqlite_transaction
+from ..storage import agent_connection
 from ..actions.codec import encode_record
 from .time_rules import schedule_expired
 from .destination_limits import require_destination_spacing
@@ -22,7 +23,7 @@ class ScheduledStore:
         self.path = path
 
     def connect(self):
-        return sqlite_connection(
+        return agent_connection(
             self.path,
             timeout_seconds=30,
             busy_timeout_ms=30_000,

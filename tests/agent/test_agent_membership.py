@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.datasets.membership import read_membership_history
+from elbow_helper.agent.reads.membership import read_membership_history
 from elbow_helper.agent.models import AgentTurnState
 
 HOUR = 3600 * 1_000_000

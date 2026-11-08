@@ -932,7 +932,7 @@ class AnswerFlow:
         for value in results.values():
             if (value.get('family') == 'read_member_accounts'
                     and value.get('selection', {}).get('after')):
-                from ..families.account_activity import HISTORY_KINDS
+                from elbow_helper.agent.reads.account_activity import HISTORY_KINDS
                 history = value.get('history_reads', {})
                 if any(history.get(kind, {}).get('read_ran') is not True for kind in HISTORY_KINDS):
                     return False

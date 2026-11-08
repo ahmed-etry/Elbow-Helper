@@ -1,44 +1,16 @@
-﻿from __future__ import annotations
-
+"""Active SQLite files, relative to the application data folder."""
 from pathlib import Path
 
-CREATED_TICKETS_FILE = Path("data/support/created_tickets.json")
-
-# SQLite inventory relative to the application's data root. Database owners and
-# the nightly backup job share these path definitions.
-ACCOUNT_LINKS_DATABASE = Path("clan_links/links.sqlite3")
-ACHIEVEMENTS_DATABASE = Path("achievements/achievements.db")
-AGENT_CONVERSATIONS_DATABASE = Path("agent/agent.sqlite3")
-AGENT_TRANSCRIPTS_DATABASE = Path("agent/transcripts.sqlite3")
-AGENT_RESEARCH_DATABASE = Path("agent/research_jobs.sqlite3")
-AGENT_ACTIONS_DATABASE = Path("agent/actions.sqlite3")
-# The old clan health file: read only by the once-only startup copies; kept on disk and backed up until a
-# later update deletes it.
-CLAN_HEALTH_DATABASE = Path("clan_health/clan_health.db")
-# Clan health's settings and their change log.
-CLAN_HEALTH_SETTINGS_DATABASE = Path("clan_health/settings.sqlite3")
-RANKED_DATABASE = Path("ranked_stats/ranked.sqlite3")
-# Kept on disk and in the backup list while the leadership records feature is rethought.
-RECORDS_DATABASE = Path("records/records.sqlite3")
-ROSTERS_DATABASE = Path("rosters/rosters.sqlite3")
-FAMILY_DATABASE = Path("family/family.sqlite3")
-EVENTS_DATABASE = Path("events/events.sqlite3")
-# The member lifecycle feature's old file (its STATE_FILE); its members' last messages are copied once into
-# the family record.
-MEMBER_LIFECYCLE_FILE = Path("snapshot_intel/snapshot_intel.json")
-
-SQLITE_DATABASES = (
-    ACCOUNT_LINKS_DATABASE,
-    ACHIEVEMENTS_DATABASE,
-    AGENT_CONVERSATIONS_DATABASE,
-    AGENT_TRANSCRIPTS_DATABASE,
-    AGENT_RESEARCH_DATABASE,
-    AGENT_ACTIONS_DATABASE,
-    CLAN_HEALTH_DATABASE,
-    CLAN_HEALTH_SETTINGS_DATABASE,
-    RANKED_DATABASE,
-    RECORDS_DATABASE,
-    ROSTERS_DATABASE,
-    FAMILY_DATABASE,
-    EVENTS_DATABASE,
-)
+FAMILY_DATABASE = Path("family.sqlite3")
+EVENTS_DATABASE = Path("workflows.sqlite3")
+ACHIEVEMENTS_DATABASE = Path("economy.sqlite3")
+ROSTERS_DATABASE = Path("rosters.sqlite3")
+AGENT_DATABASE = Path("agent.sqlite3")
+ACCOUNT_LINKS_DATABASE = FAMILY_DATABASE
+CLAN_HEALTH_SETTINGS_DATABASE = EVENTS_DATABASE
+AGENT_CONVERSATIONS_DATABASE = AGENT_DATABASE
+AGENT_TRANSCRIPTS_DATABASE = AGENT_DATABASE
+AGENT_RESEARCH_DATABASE = AGENT_DATABASE
+AGENT_ACTIONS_DATABASE = AGENT_DATABASE
+SQLITE_DATABASES = (FAMILY_DATABASE, EVENTS_DATABASE, ACHIEVEMENTS_DATABASE,
+                    ROSTERS_DATABASE, AGENT_DATABASE)

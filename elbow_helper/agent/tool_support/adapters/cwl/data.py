@@ -1,6 +1,5 @@
 """Queryable feature state files."""
 
-from pathlib import Path
 import re
 
 from elbow_helper.features.cwl.config import (
@@ -48,7 +47,7 @@ def _bonus_evidence_channels(data):
 
 SOURCES = (
     DataSource(
-        "state", Path(ROUTER_STATE_FILE),
+        "state", ROUTER_STATE_FILE,
         state_name="cwl_router", level="none",
         note=(
             "CWL roster/rotation cache: {rosters:{<clan_code>:{<war_tag>:[player_tag]}},"
@@ -62,13 +61,13 @@ SOURCES = (
         config_constant="elbow_helper.features.cwl.config.ROUTER_STATE_FILE",
     ),
     DataSource(
-        "state", Path(SCHEDULER_STATE_FILE),
+        "state", SCHEDULER_STATE_FILE,
         state_name="cwl_scheduler", level="none",
         note="{sent_keys:[string]}; completed announcement/reminder schedule keys.",
         config_constant="elbow_helper.features.cwl.config.SCHEDULER_STATE_FILE",
     ),
     DataSource(
-        "state", Path(TRANSFER_STATE_FILE),
+        "state", TRANSFER_STATE_FILE,
         state_name="cwl_transfer", level="none",
         note=(
             "Transfer checkpoints: {hub_message_id:int|null,"
@@ -79,7 +78,7 @@ SOURCES = (
         config_constant="elbow_helper.features.cwl.config.TRANSFER_STATE_FILE",
     ),
     DataSource(
-        "state", Path(DASHBOARD_STATE_FILE),
+        "state", DASHBOARD_STATE_FILE,
         state_name="cwl_dashboard", level="none",
         note=(
             "Dashboard posts: {prep_message_ids:{<clan_code>:message_id},"
@@ -88,7 +87,7 @@ SOURCES = (
         config_constant="elbow_helper.features.cwl.config.DASHBOARD_STATE_FILE",
     ),
     DataSource(
-        "state", Path(BONUS_CONFIG_FILE),
+        "state", BONUS_CONFIG_FILE,
         state_name="cwl_bonus_config", level="none",
         note=(
             "Scoring rules: {revision:int,clans:{<clan_code>:object},clan_meta:{<clan_code>:{"
@@ -98,7 +97,7 @@ SOURCES = (
         config_constant="elbow_helper.features.cwl.config.BONUS_CONFIG_FILE",
     ),
     DataSource(
-        "state", Path(BONUS_DASHBOARD_STATE_FILE),
+        "state", BONUS_DASHBOARD_STATE_FILE,
         state_name="cwl_bonus_dashboard", level="cwl",
         evidence_channels=_bonus_evidence_channels,
         note=(

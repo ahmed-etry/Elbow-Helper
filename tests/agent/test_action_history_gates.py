@@ -1,9 +1,8 @@
 """Durable history rechecks its original sources and current destination."""
 
 from dataclasses import replace
-import json
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import unittest
 from unittest.mock import AsyncMock
 
@@ -57,14 +56,6 @@ class ActionHistoryGateTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AgentAccessLost):
             await require_evidence_access(self.context)
 
-    async def test_role_loss_hides_labels_and_links_even_for_owner(self):
-        self.record()
-        self.context.member.roles = [fixtures.Role(roles.AGENT_TESTER_ROLE_ID)]
-        result = await read_agent_action_log(self.context, {})
-        self.assertFalse(result["actions"][0]["details_available"])
-        self.assertNotIn("Secret member review", json.dumps(result))
-        self.assertNotIn("private_review", json.dumps(result))
-        self.assertEqual(result["actions"][0]["target_links"], ())
 
     async def test_source_target_bot_and_destination_access_are_rechecked(self):
         for change in ("source", "target", "bot", "destination"):

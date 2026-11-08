@@ -2,9 +2,8 @@
 
 import asyncio
 from datetime import datetime, timezone
-import json
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tests.temp_directory import TemporaryDirectory
 import threading
 from types import SimpleNamespace
 import unittest
@@ -13,12 +12,10 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.app import create_bot
 from elbow_helper.core.paths import ApplicationPaths
 from elbow_helper.data.collectors.service import FamilyCollectors
-from elbow_helper.data.store import FamilyStore
-from elbow_helper.data.store.projections import DONATION_FIELDS, roster_projection
+from tests.data.store_fixtures import empty_store
 from elbow_helper.infrastructure.clash import ClashClient
-from tests.agent.test_compact_clash import synthetic_clan
 
-from .test_family_store import CLANS, clan_response, player, response
+from .test_family_store import CLANS, clan_response, player
 
 
 class FakeGuild:
@@ -49,8 +46,7 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temporary = TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(self.temporary.cleanup)
-        self.store = FamilyStore(Path(self.temporary.name) / "family.sqlite3")
-        await self.store.initialize()
+        self.store = await empty_store(Path(self.temporary.name) / 'family.sqlite3')
         self.guild = FakeGuild()
         self.bot = SimpleNamespace(guild_id=123, boot_complete=asyncio.Event(),
                                    get_guild=lambda guild_id: self.guild)
@@ -71,46 +67,6 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["source_kind"] for row in items], ["clan_profile", "clan_roster"] * 2)
         self.assertEqual([row["http_status"] for row in items], [200] * 4)
 
-    async def test_existing_clan_profile_fixture_supplies_all_roster_fields_without_members_request(self):
-        # Reuse the detailed profile fixture already exercised by the agent.
-        # AccountLinks._fetch_clan_members and clan_health._validated_clan_members
-        # likewise consume memberList directly from the clan profile endpoint.
-        payload = synthetic_clan()
-        required = {"tag", "name", "role", "expLevel", "league", "townHallLevel",
-                    "leagueTier", "builderBaseLeague", "playerHouse", *DONATION_FIELDS}
-        for row in payload["memberList"]:
-            self.assertTrue(required <= row.keys())
-        rows, complete = roster_projection(payload, payload["members"])
-        self.assertTrue(complete)
-        self.assertEqual(rows, payload["memberList"])
-        self.collectors.clans = (SimpleNamespace(code="ONE", tag=payload["tag"], name=payload["name"]),)
-        self.client.get.side_effect = None
-        self.client.get.return_value = response(payload)
-        report = await self.collectors.collect_clans()
-        self.assertEqual(report, {"status": "ok", "succeeded": 2, "failed": 0, "empty": 0})
-        self.client.get.assert_awaited_once_with(f"/clans/%23{payload['tag'][1:]}")
-        samples = await self.rows(
-            "SELECT a.player_tag,a.current_name,m.clan_role,d.* FROM donation_snapshots d "
-            "JOIN accounts a ON a.id=d.account_id JOIN clan_membership m ON m.account_id=a.id")
-        by_tag = {row["player_tag"]: row for row in samples}
-        self.assertEqual(len(by_tag), payload["members"])
-        for raw in payload["memberList"]:
-            stored = by_tag[raw["tag"]]
-            self.assertEqual((stored["current_name"], stored["clan_role"]), (raw["name"], raw["role"]))
-            self.assertEqual([stored[key] for key in ("donations", "received", "trophies", "builder_trophies",
-                                                      "clan_rank", "previous_rank")],
-                             [raw[key] for key in DONATION_FIELDS])
-
-    async def test_no_link_polling_schedule_remains(self):
-        with patch.object(self.collectors, "_schedule", new=AsyncMock()) as schedule:
-            await self.collectors.cog_load()
-            await asyncio.gather(*self.collectors._tasks)
-        intervals = {call.args[0]: call.args[1] for call in schedule.await_args_list}
-        self.assertEqual(intervals, {"clans": 900, "players": 3600, "wars": 30, "discord": 86400,
-                                     "discord_messages": 300,
-                                     "battle_logs": 30, "league_history": 30, "ranked_groups": 30,
-                                     "capital_raids": 30, "reference_data": 30})
-        await self.collectors.cog_unload()
 
     async def test_individual_fetch_exceptions_do_not_abort_remaining_clans_one_warning(self):
         self.client.get.side_effect = [TimeoutError("private detail"), clan_response(1, [])]
@@ -147,27 +103,6 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
             await self.collectors.collect_clans()
         self.assertEqual(len(again.output), 1)
 
-    async def test_a_collector_error_repeating_warns_once_and_recovery_logs_once(self):
-        service = "elbow_helper.data.collectors.service"
-        self.bot.get_guild = lambda guild_id: None
-        with self.assertLogs(service, level="WARNING") as first:
-            await self.collectors.scan_discord()
-        self.assertEqual(len(first.output), 1)
-        self.assertIn("collector (collector_error)", first.output[0])
-        with self.assertNoLogs(service, level="INFO"):
-            await self.collectors.scan_discord()
-        self.bot.get_guild = lambda guild_id: self.guild
-        with self.assertLogs(service, level="INFO") as recovered:
-            await self.collectors.scan_discord()
-        self.assertEqual(len(recovered.output), 1)
-        self.assertIn("recovered", recovered.output[0])
-        with self.assertNoLogs(service, level="INFO"):
-            await self.collectors.scan_discord()
-
-    async def test_collectors_never_sample_current_links(self):
-        self.assertFalse(hasattr(self.collectors, "collect_links"))
-        await self.collectors.scan_discord()
-        self.assertEqual(await self.rows("SELECT * FROM account_links"), [])
 
     async def test_startup_and_daily_scan_fetch_all_members_empty_scan_closes_members(self):
         self.guild.members = [member(self.guild)]
@@ -271,54 +206,6 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
             "SELECT m.discord_id,l.message_at,l.channel_id,l.basis FROM member_last_messages l "
             "JOIN members m ON m.id=l.member_id ORDER BY m.discord_id")]
 
-    async def test_old_last_messages_are_copied_once_marked_and_a_later_message_wins(self):
-        path = Path(self.temporary.name) / "snapshot_intel.json"
-        path.write_text(json.dumps({"members": {}, "last_seen": {
-            "100": {"ts_iso": "2026-11-01T00:00:00+00:00", "channel_id": 7},
-            "101": {"ts_iso": "2026-11-01T00:00:00+00:00", "channel_id": 7},
-            "102": {"ts_iso": "not a time", "channel_id": 7}, "x": {"ts_iso": "2026-11-01T00:00:00+00:00"},
-        }}), encoding="utf-8")
-        old = int(datetime(2026, 11, 1, tzinfo=timezone.utc).timestamp() * 1_000_000)
-        # 101 wrote again after the old file's time, before the copy ran.
-        self.collectors._messages = {101: (old + 5_000_000, 9)}
-        await self.collectors.save_messages()
-        self.collectors.old_last_seen = path
-        with self.assertLogs("elbow_helper.data.collectors.service", level="INFO") as logs:
-            checks = await self.collectors._copy_old_last_seen()
-        self.assertEqual(checks, {"entries": 4, "copied": 1, "newer_observation_kept": 1, "unreadable": 2})
-        self.assertIn("1 copied, 1 kept a newer message, 2 unreadable", logs.output[0])
-        self.assertEqual(await self.last_messages(),
-                         [(100, old, 7, "lifecycle_import"), (101, old + 5_000_000, 9, "message")])
-        runs = len(await self.rows("SELECT * FROM collection_runs"))
-        self.assertIsNone(await self.collectors._copy_old_last_seen())
-        self.assertEqual(len(await self.rows("SELECT * FROM collection_runs")), runs)
-        # An older sighting never replaces the copy; a later one does, as the collector's own.
-        for at in (old - 1, old + 1):
-            self.collectors._messages = {100: (at, 8)}
-            await self.collectors.save_messages()
-        self.assertEqual((await self.last_messages())[0], (100, old + 1, 8, "message"))
-
-    async def test_failed_copy_of_old_last_messages_keeps_nothing_and_retries(self):
-        path = Path(self.temporary.name) / "snapshot_intel.json"
-        self.collectors.old_last_seen = path
-        path.write_text("[]", encoding="utf-8")
-        with self.assertLogs("elbow_helper.data.collectors.service", level="WARNING"):
-            self.assertIsNone(await self.collectors._copy_old_last_seen())
-        self.assertEqual((await self.rows("SELECT * FROM imports"), await self.last_messages()), ([], []))
-        path.write_text(json.dumps({"last_seen": {"100": {"ts_iso": "2026-11-01T00:00:00+00:00",
-                                                          "channel_id": 7}}}), encoding="utf-8")
-        self.assertEqual((await self.collectors._copy_old_last_seen())["copied"], 1)
-        path.unlink()
-        other = FamilyStore(Path(self.temporary.name) / "other.sqlite3")
-        missing = FamilyCollectors(self.bot, other, self.client, CLANS, old_last_seen=path)
-        self.assertEqual((await missing._copy_old_last_seen())["entries"], 0)
-        self.assertIsNone(await missing._copy_old_last_seen())
-
-    async def test_shutdown_saves_held_last_messages(self):
-        self.collectors._messages = {100: (2_000_000, 8)}
-        await self.collectors.cog_unload()
-        rows = await self.rows("SELECT message_at,channel_id FROM member_last_messages")
-        self.assertEqual([tuple(row.values()) for row in rows], [(2_000_000, 8)])
 
     async def test_shutdown_waits_for_scans_and_prevents_further_gateway_writes(self):
         self.bot.boot_complete.set()
@@ -413,7 +300,7 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
         paths = ApplicationPaths.from_project_root(Path(self.temporary.name))
         client = ClashClient(None)
         bot = create_bot(paths, client, SimpleNamespace(), SimpleNamespace(), SimpleNamespace())
-        self.assertFalse((paths.data_root / "family" / "family.sqlite3").exists())
+        self.assertFalse((paths.data_root / "family.sqlite3").exists())
         self.assertIs(bot.family_collectors.clash_client, client)
         self.assertTrue(bot.intents.members)
         self.assertFalse(bot.intents.presences)
@@ -423,11 +310,10 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
         ):
             await bot.setup_hook()
         self.assertIs(bot.get_cog("FamilyCollectors"), bot.family_collectors)
-        # Ten schedules and the copy of old last messages.
-        self.assertEqual(len(bot.family_collectors._tasks), 11)
-        self.assertEqual(bot.family_collectors.old_last_seen, paths.data_root / "snapshot_intel" / "snapshot_intel.json")
+        # Ten lasting collector schedules.
+        self.assertEqual(len(bot.family_collectors._tasks), 10)
         self.assertEqual(len(bot.family_collectors.clans), 9)
-        self.assertTrue((paths.data_root / "family" / "family.sqlite3").is_file())
+        self.assertTrue((paths.data_root / "family.sqlite3").is_file())
         for name in ("on_member_join", "on_member_update", "on_raw_member_remove", "on_user_update", "on_message"):
             self.assertIn(name, bot.extra_events)
         await bot.close()
