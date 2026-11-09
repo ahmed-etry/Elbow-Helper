@@ -634,11 +634,26 @@ class TrialMixin:
 
                 ticket_channel = self.bot.get_channel(ticket_id)
                 if not ticket_channel:
-                    self.logger.warning(
-                        "Expired trial retained because ticket %s is unavailable",
-                        ticket_id,
-                    )
-                    continue
+                    try:
+                        ticket_channel = await self.bot.fetch_channel(ticket_id)
+                    except discord.NotFound:
+                        # The ticket was deleted, so no reminder can point to it.
+                        if await self._delete_tracking_message(info, ticket_channel_id=ticket_id):
+                            def end_deleted(state):
+                                if state["trials"].get(trial_key) != info:
+                                    return None
+                                state["trials"].pop(trial_key)
+                                return trial_events("trial_ended", ticket_id, info,
+                                                    detail={"how": "expired"})
+                            await self.recruitment_state.change(end_deleted)
+                            self.logger.info("Expired trial ended because ticket %s was deleted", ticket_id)
+                        continue
+                    except (discord.Forbidden, discord.HTTPException):
+                        self.logger.warning(
+                            "Expired trial retained because ticket %s is unavailable",
+                            ticket_id,
+                        )
+                        continue
 
                 applicant_id = info.get("applicant_id", 0)
                 async with self._reminder_lock:
