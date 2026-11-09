@@ -1,7 +1,7 @@
 # Elbow Helper
 
 Elbow Helper is a Discord bot built for Brown Elbow, a Clash of Clans
-community made up of several clans. It started as a way to automate
+community made up of a family of clans. It started as a way to automate
 recruitment work.
 
 Recruitment was one of my main responsibilities in the server, and there
@@ -24,12 +24,14 @@ maintain by hand.
   membership;
 - member achievements, coins, raffle tickets, events, and rewards;
 - rosters, schedules, posts, roles, and exports;
-- CWL signups, planning, clan transfers, briefs, war boards, and bonus reports;
+- Clan War League (CWL) signups, planning, clan transfers, briefs, war boards,
+  and bonus medal sheets;
 - regular war boards, summaries, role updates, and follow-up messages;
 - clan and account activity history, health reports, and workbooks;
 - hibernation and returns, promotion examinations, support tickets, role
   connections, and community news;
-- the agent, which answers questions, builds reports and makes changes you approve.
+- an agent that answers questions about members, wars and CWL, builds reports, and
+  handles roles, channels, posts and reminders.
 
 ## Code layout
 
