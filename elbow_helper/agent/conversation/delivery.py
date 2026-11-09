@@ -82,6 +82,7 @@ class AgentDeliveryMixin:
                 message, text, referenced, conversation=conversation,
                 delivery=delivery, context=answer_context,
                 _nonce_seed=seed, _post_mentions=True,
+                _feedback_hint=False,
             )
         identifiers = delivery.message_ids[first:]
         if context.action_repository is not None:
@@ -176,6 +177,7 @@ class AgentDeliveryMixin:
         mention_requester: bool = False,
         _nonce_seed: int | None = None,
         _post_mentions: bool = False,
+        _feedback_hint: bool = True,
     ) -> None:
         has_answer_text = bool(response.strip())
         if context is not None and (stop_typing := getattr(context, "stop_typing", None)):
@@ -248,7 +250,7 @@ class AgentDeliveryMixin:
             chunks = [None]
         else:
             chunks = _chunk_response(response)
-        if has_answer_text and self._research_feedback_hint_due(context, response, chunks):
+        if has_answer_text and _feedback_hint and await self._research_feedback_hint_due(context, response, chunks):
             # Split the original answer first. Never create a message for the hint,
             # move answer text, or change the existing file fallback decision.
             suffix = "\n" + RESEARCH_FEEDBACK_HINT
@@ -280,8 +282,8 @@ class AgentDeliveryMixin:
             for file in files:
                 file.close()
 
-    def _research_feedback_hint_due(self, context, response, chunks):
-        if (context is None or not context.state.research_answer_completed
+    async def _research_feedback_hint_due(self, context, response, chunks):
+        if (context is None
                 or not chunks or chunks[-1] is None or not response.strip()
                 or context.state.proposed_changes or context.state.preview_reply is not None
                 or context.private_pass or context.dm_delivery or context.state.scope_audit.offered
@@ -309,10 +311,18 @@ class AgentDeliveryMixin:
                     fence = None
         if fence is not None:
             return False
-        # Per delivery surface, reset on restart; ineligible replies do not advance it.
-        count = getattr(self, "_research_feedback_answers", 0) + 1
-        self._research_feedback_answers = count
-        return count % RESEARCH_FEEDBACK_HINT_INTERVAL == 0
+        archive = getattr(self, "transcript_archive", None)
+        if archive is not None:
+            try:
+                count = await asyncio.to_thread(archive.next_feedback_answer)
+            except (OSError, sqlite3.Error):
+                LOGGER.exception("Agent feedback hint count save failed")
+                return context.state.feedback_lookup_problem
+        else:
+            # Delivery-only callers may have no agent persistence configured.
+            count = getattr(self, "_research_feedback_answers", 0) + 1
+            self._research_feedback_answers = count
+        return context.state.feedback_lookup_problem or count % RESEARCH_FEEDBACK_HINT_INTERVAL == 0
 
     async def _send_mixed_response(
         self, message, response, referenced, attachments, conversation, context,
@@ -412,6 +422,7 @@ class AgentDeliveryMixin:
                     message, content, referenced, files, conversation, delivery=active, context=selected,
                     preview_timeout=preview_timeout, mention_requester=mention_requester,
                     _nonce_seed=None if index == 0 else _delivery_nonce(message.id, 1_000_001),
+                    _feedback_hint=False,
                 )
             except BaseException:
                 if index == 0:

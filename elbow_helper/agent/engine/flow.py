@@ -120,6 +120,12 @@ class AnswerFlow:
         return {*state.reports, *state.unkept_reports, *state.preserved_report_sources,
                 *self.runner.report_snapshots, *self.runner.source_identities}
 
+    def _feedback_plan_check(self, call_id, check):
+        if not check.ok or check.step_errors:
+            self.context.state.feedback_lookup_problem = True
+        if self.context.operator_debug is not None:
+            self.context.operator_debug.checked(call_id, check)
+
     async def run(self) -> str:
         assessed_decision = None
         assessed_answer = None
@@ -128,6 +134,7 @@ class AnswerFlow:
         except AgentLimitReached as error:
             answer = await self._limit_reply(error)
         except PlanNotSettled as error:
+            self.context.state.feedback_lookup_problem = True
             LOGGER.info("Agent planning recovery: request=%s reason=%s", self.request_id, error)
             answer = await self._limit_reply(AgentLimitReached(AGENT_PLAN_UNFINISHED))
         if self.assessment_requested and not self.rounder.final_attempted:
@@ -717,8 +724,7 @@ class AnswerFlow:
             self.registry,
             self.request_id,
             advance=self.rounder.advance,
-            on_check=(self.context.operator_debug.checked
-                      if self.context.operator_debug is not None else None),
+            on_check=self._feedback_plan_check,
             reasoning_effort=(AgentReasoningEffort.LOW if self.rounder.social_route
                               else AgentReasoningEffort.HIGH),
             validate_answer=lambda answer, plan: unprepared_change_issue(
@@ -1124,9 +1130,8 @@ class AnswerFlow:
                            report_ids=self._held_report_ids())
         if check.ok and (issue := social_reply_issue(next_plan, model_step.content)):
             check = replace(check, ok=False, error=issue)
-        if self.context.operator_debug is not None:
-            for call in model_step.tool_calls:
-                self.context.operator_debug.checked(call.call_id, check)
+        for call in model_step.tool_calls:
+            self._feedback_plan_check(call.call_id, check)
         LOGGER.info(
             "Agent plan: request=%s revision=%s plan=%s",
             self.request_id,
@@ -1167,9 +1172,8 @@ class AnswerFlow:
             )
             if check.ok and (issue := social_reply_issue(next_plan, corrected.content)):
                 check = replace(check, ok=False, error=issue)
-            if self.context.operator_debug is not None:
-                for call in corrected.tool_calls:
-                    self.context.operator_debug.checked(call.call_id, check)
+            for call in corrected.tool_calls:
+                self._feedback_plan_check(call.call_id, check)
             LOGGER.info(
                 "Agent plan correction: request=%s ok=%s plan=%s error=%s",
                 self.request_id,

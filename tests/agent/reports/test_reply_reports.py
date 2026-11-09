@@ -11,8 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
-from elbow_helper.configuration import channels
-from elbow_helper.configuration.guild import GUILD_ID
+from elbow_helper.configuration.guild import GUILD_ID, OWNER_DISCORD_ID
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.agent.cog import AgentCog
 from elbow_helper.agent.conversation.debug import OperatorDebugRecord
@@ -151,38 +150,27 @@ class ReplyReportReactionTests(unittest.IsolatedAsyncioTestCase):
         self.destination = _Channel(200, self.guild, {42, 99})
         self.channel_map = {100: self.source, 200: self.destination}
         self.guild.get_channel_or_thread = self.channel_map.get
+        self.owner = SimpleNamespace(id=OWNER_DISCORD_ID, send=AsyncMock())
         self.bot = SimpleNamespace(user=self.bot_member, agent_model=MagicMock(),
+            get_user=MagicMock(return_value=self.owner), fetch_user=AsyncMock(return_value=self.owner),
             get_guild=lambda identifier: self.guild if identifier == GUILD_ID else None,
             fetch_channel=AsyncMock(return_value=None))
         self.cog = AgentCog(self.bot, account_links=None, message_search=None,
                             roster_queries=None, transcript_archive=self.archive)
         self.payload = SimpleNamespace(guild_id=GUILD_ID, channel_id=100, message_id=10,
             user_id=42, member=self.member, emoji=SimpleNamespace(id=None, name="👎"))
-        self.channel_patch = patch.object(channels, "AGENT_REPORTS", None)
-        self.channel_patch.start()
-        self.addCleanup(self.channel_patch.stop)
 
     def reports(self):
         with self.archive.connect() as connection:
             return connection.execute("SELECT * FROM reply_reports").fetchall()
 
 
-    async def test_disabled_channel_stores_and_logs_without_any_reply_or_send(self):
-        with self.assertLogs("elbow_helper.agent.reports.feedback", level="INFO"):
-            await self.cog.on_raw_reaction_add(self.payload)
+    async def test_owner_dm_has_full_card_and_duplicates_do_not_send(self):
+        await asyncio.gather(*(self.cog.on_raw_reaction_add(self.payload) for _ in range(3)))
+        await self.cog.on_raw_reaction_add(self.payload)
         self.assertEqual(len(self.reports()), 1)
-        self.destination.send.assert_not_awaited()
-        self.bot.fetch_channel.assert_not_awaited()
-        self.cog.service._model.create_agent_session.assert_not_called()
-
-
-    async def test_enabled_channel_posts_one_compact_card_and_duplicate_events_do_not_post(self):
-        with patch.object(channels, "AGENT_REPORTS", 200):
-            await asyncio.gather(*(self.cog.on_raw_reaction_add(self.payload) for _ in range(3)))
-            await self.cog.on_raw_reaction_add(self.payload)
-        self.assertEqual(len(self.reports()), 1)
-        self.destination.send.assert_awaited_once()
-        options = self.destination.send.await_args.kwargs
+        self.owner.send.assert_awaited_once()
+        options = self.owner.send.await_args.kwargs
         card = options["embed"]
         self.assertEqual(card.title, "Agent reply report")
         fields = {field.name: field.value for field in card.fields}
@@ -194,45 +182,38 @@ class ReplyReportReactionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fields["Reply"], f"https://discord.com/channels/{GUILD_ID}/100/10")
         self.assertEqual(options["allowed_mentions"].to_dict(), discord.AllowedMentions.none().to_dict())
 
-    async def test_private_channel_with_extra_report_room_viewer_gets_only_link_and_request(self):
-        self.destination.viewers.add(43)
-        with patch.object(channels, "AGENT_REPORTS", 200):
-            await self.cog.on_raw_reaction_add(self.payload)
-        card = self.destination.send.await_args.kwargs["embed"]
-        self.assertIsNone(card.title)
-        self.assertEqual([field.name for field in card.fields], ["Reply", "Request"])
-        self.assertNotIn("Synthetic", json.dumps(card.to_dict()))
-        self.assertEqual(json.loads(self.reports()[0]["evidence_json"])["question"], "Synthetic question")
-
-    async def test_private_thread_membership_is_checked_even_when_parent_is_readable(self):
-        self.source.viewers.add(43)
-        self.destination.viewers.add(43)
-        thread = MagicMock(spec=discord.Thread)
-        thread.id, thread.guild, thread.parent = 100, self.guild, self.source
-        thread.is_private.return_value = True
-        thread.permissions_for.side_effect = lambda actor: SimpleNamespace(
-            view_channel=True, read_message_history=True, manage_threads=False)
-        thread.fetch_members = AsyncMock(return_value=[SimpleNamespace(id=42)])
-        self.channel_map[100] = thread
-        with patch.object(channels, "AGENT_REPORTS", 200):
-            await self.cog.on_raw_reaction_add(self.payload)
-        self.assertEqual([field.name for field in self.destination.send.await_args.kwargs["embed"].fields],
-                         ["Reply", "Request"])
-        thread.fetch_members.assert_awaited_once()
-
-
-    async def test_missing_source_and_disclosure_failure_reduce_card_and_wrong_guild_never_sends(self):
-        self.channel_map.pop(100)
-        with patch.object(channels, "AGENT_REPORTS", 200):
-            await self.cog.on_raw_reaction_add(self.payload)
-        self.assertEqual(len(self.destination.send.await_args.kwargs["embed"].fields), 2)
-        self.destination.send.reset_mock()
-        self.destination.guild = SimpleNamespace(id=123)
-        self.payload.user_id, self.payload.member = 43, self.outsider
-        self.outsider.roles = self.member.roles
-        with patch.object(channels, "AGENT_REPORTS", 200):
-            await self.cog.on_raw_reaction_add(self.payload)
+    async def test_uncached_owner_is_fetched_without_resolving_source_channel(self):
+        self.bot.get_user.return_value = None
+        self.channel_map.clear()
+        await self.cog.on_raw_reaction_add(self.payload)
+        self.bot.get_user.assert_called_once_with(OWNER_DISCORD_ID)
+        self.bot.fetch_user.assert_awaited_once_with(OWNER_DISCORD_ID)
+        self.bot.fetch_channel.assert_not_awaited()
+        self.source.send.assert_not_awaited()
         self.destination.send.assert_not_awaited()
+        fields = {field.name: field.value for field in self.owner.send.await_args.kwargs['embed'].fields}
+        self.assertEqual(fields['Question'], 'Synthetic question')
+        self.assertEqual(fields['Answer'], 'Synthetic delivered answer')
+        self.cog.service._model.create_agent_session.assert_not_called()
+
+    async def test_fetch_failure_logs_and_preserves_saved_report(self):
+        self.bot.get_user.return_value = None
+        self.bot.fetch_user.side_effect = OSError('Synthetic fetch failure')
+        with self.assertLogs('elbow_helper.agent.reports.feedback', level='ERROR') as logs:
+            await self.cog.on_raw_reaction_add(self.payload)
+        self.assertIn('owner DM failed', '\n'.join(logs.output))
+        self.assertEqual(len(self.reports()), 1)
+        self.owner.send.assert_not_awaited()
+
+    async def test_unrelated_reactions_and_ineligible_reporters_are_ignored(self):
+        for changes in ({'guild_id': 123}, {'user_id': 99, 'member': self.bot_member},
+                        {'user_id': 43, 'member': self.outsider}, {'message_id': 999},
+                        {'emoji': SimpleNamespace(id=None, name='\U0001f44d')}):
+            with self.subTest(changes=changes):
+                payload = SimpleNamespace(**{**vars(self.payload), **changes})
+                await self.cog.on_raw_reaction_add(payload)
+        self.assertEqual(self.reports(), [])
+        self.owner.send.assert_not_awaited()
 
     async def test_reaction_waits_for_existing_request_and_pending_archive_writes(self):
         finished = asyncio.Event()
@@ -283,13 +264,14 @@ class ReplyReportReactionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.reports()[0]["reply_message_id"], 11)
 
     async def test_send_failure_preserves_report_and_is_not_repeated_on_duplicate(self):
-        self.destination.send.side_effect = OSError("Synthetic delivery failure")
-        with patch.object(channels, "AGENT_REPORTS", 200):
-            with self.assertLogs("elbow_helper.agent.reports.feedback", level="ERROR"):
-                await self.cog.on_raw_reaction_add(self.payload)
+        self.owner.send.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason='Forbidden'),
+                                                       'Synthetic blocked DM')
+        with self.assertLogs('elbow_helper.agent.reports.feedback', level='ERROR') as logs:
             await self.cog.on_raw_reaction_add(self.payload)
+        self.assertIn('owner DM failed', '\n'.join(logs.output))
+        await self.cog.on_raw_reaction_add(self.payload)
         self.assertEqual(len(self.reports()), 1)
-        self.destination.send.assert_awaited_once()
+        self.owner.send.assert_awaited_once()
 
     async def test_real_delivery_archives_answer_and_file_names_but_excludes_pure_preview(self):
         message = SimpleNamespace(id=1, guild=self.guild, channel=self.source, mentions=[],

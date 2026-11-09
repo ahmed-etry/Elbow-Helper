@@ -26,6 +26,7 @@ from ..plan.executor import execute_plan, referenced_report_ids
 from ..plan.input_rules import without_rules
 from ..plan.results import model_result, model_view
 from . import budgets as limits
+from .lookup_health import lookup_problem
 from functools import partial
 from .rounds import ModelRounds
 from .budgets import ContextBudget
@@ -526,6 +527,7 @@ class PlanRunner:
             }
             await require_evidence_access(self.context)
             self.results.update(result)
+            self.context.state.feedback_lookup_problem |= lookup_problem(result)
             self.completed_steps.update({
                 step["id"]: step for step in plan["steps"]
                 if "error" not in result[step["id"]]

@@ -23,6 +23,7 @@ from elbow_helper.agent.conversation.state import ConversationRecord, Conversati
 from elbow_helper.agent.reads.sql.query import run_query
 from elbow_helper.agent.reads.sql.sources import DataSource
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
+from elbow_helper.agent.conversation.wording import RESEARCH_FEEDBACK_HINT
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.models import AgentTurnState
@@ -92,7 +93,7 @@ class RepairConversationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
                 delivery = AgentDeliveryMixin()
                 delivery.bot = context.bot
                 await delivery.send_response(context.source_message, answer, None, context=context)
-                self.assertEqual(context.source_message.reply.await_args.args[0], answer)
+                self.assertEqual(context.source_message.reply.await_args.args[0], answer + "\n" + RESEARCH_FEEDBACK_HINT)
 
 
     async def test_cohort_leagues_count_members_across_accounts_and_page_without_extra_candidates(self):
