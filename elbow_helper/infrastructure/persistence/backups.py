@@ -19,7 +19,9 @@ from elbow_helper.configuration.files import SQLITE_DATABASES
 
 LOGGER = logging.getLogger(__name__)
 BACKUP_MAX_AGE = timedelta(hours=24)
-BACKUP_PAGES_PER_STEP = 256
+# One step copies from a single read of the database. In smaller steps, every write
+# the bot makes meanwhile restarts the copy, so a busy database never finishes.
+BACKUP_PAGES_PER_STEP = -1
 BACKUP_TIMEOUT_SECONDS = 300
 
 
