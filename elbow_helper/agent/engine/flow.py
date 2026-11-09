@@ -343,6 +343,10 @@ class AnswerFlow:
                               and options.get('allow_tools', True)
                               else AgentReasoningEffort.NONE if self.assessment_requested
                               else AgentReasoningEffort.LOW)
+        if options.get('correction'):
+            # Fixing a refused lookup is planning again, not writing the answer.
+            composition_effort = max((composition_effort, planning_effort),
+                                     key=list(AgentReasoningEffort).index)
         if self.assessment_requested:
             if (not options.get('allow_tools', True) and not self.decision_composed
                     and self.rounder.session is not self.decision_session):
