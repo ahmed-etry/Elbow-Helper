@@ -23,6 +23,7 @@ from .capability_contract import require_source_provenance
 from ..reports.base import ArtifactCapacityError, retain_reports
 from ..research.member_provenance import member_target_issue
 from . import budgets as limits
+from .lookup_health import lookup_problem
 
 LOGGER = logging.getLogger(__name__)
 
@@ -83,6 +84,7 @@ async def execute_tool(
             capture_detail_provenance(context, snapshot, capability_scope or {})
         await require_evidence_access(context)
         outcome = "completed"
+        context.state.feedback_lookup_problem |= lookup_problem(payload)
         content = json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":"))
         result_characters = len(content)
         return content
@@ -132,6 +134,8 @@ async def execute_tool(
         restore_tool_state(context, snapshot)
         raise
     finally:
+        if outcome not in ("completed", "cancelled", "access_lost"):
+            context.state.feedback_lookup_problem = True
         LOGGER.info(
             (
                 "Agent tool: tool=%s invoker=%s outcome=%s "
@@ -280,6 +284,7 @@ def merge_tool_state(
             retain_reports(target.state.reports, additions)
             target.state.unkept_reports.update((held & kept) - target.state.reports.keys())
     target.state.unkept_reports.update(local.state.unkept_reports)
+    target.state.feedback_lookup_problem |= local.state.feedback_lookup_problem
     target.state.source_channels.update(local.state.source_channels)
     target.state.source_access.update(local.state.source_access)
     target.state.required_access.update(local.state.required_access)

@@ -17,7 +17,7 @@ from elbow_helper.agent.engine.evidence_delta import access_refused
 from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.research.history import read_discord_channel_history, read_message_context
 from elbow_helper.agent.research.search import search_discord_messages
-from elbow_helper.agent.conversation.wording import AGENT_PRIVATE_OFFER, AGENT_PRIVATE_CHECK_BUTTON
+from elbow_helper.agent.conversation.wording import AGENT_PRIVATE_OFFER, AGENT_PRIVATE_CHECK_BUTTON, RESEARCH_FEEDBACK_HINT
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from elbow_helper.infrastructure.discord.message_search import DiscordHistoryPage, DiscordSearchMessage, DiscordSearchPage
 from tests.agent.safety import test_evidence_scope as fixtures
@@ -103,7 +103,7 @@ class PrivateSourceTests(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(self.context.state.scope_audit.private_candidates)
                     self.assertFalse(self.context.state.scope_audit.offered)
                     await self.delivery.send_response(self.message, answer, None, context=self.context)
-                    self.assertEqual(self.message.reply.await_args.args[0], refusal)
+                    self.assertEqual(self.message.reply.await_args.args[0], refusal + "\n" + RESEARCH_FEEDBACK_HINT)
                     self.assertNotIn("view", self.message.reply.await_args.kwargs)
                     private = replace(self.context, private_pass=True, state=AgentTurnState())
                     self.assertEqual(await read_message_context(private, {"channel_id": 201, "message_id": 123}),

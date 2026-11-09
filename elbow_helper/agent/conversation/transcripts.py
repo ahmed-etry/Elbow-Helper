@@ -16,6 +16,13 @@ LOGGER = logging.getLogger(__name__)
 DEBUG_RETENTION_DAYS = 30
 
 
+def _feedback_hint_schema(connection):
+    connection.execute("""CREATE TABLE feedback_hint_counter (
+        id INTEGER PRIMARY KEY CHECK (id = 1), answers INTEGER NOT NULL
+    )""")
+    connection.execute("INSERT INTO feedback_hint_counter VALUES (1, 0)")
+
+
 def _debug_schema(connection: sqlite3.Connection) -> None:
     connection.execute("""CREATE TABLE operator_debug_records (
         record_id INTEGER PRIMARY KEY, request_message_id INTEGER,
@@ -111,6 +118,12 @@ class TranscriptArchive(ReplyReportArchiveMixin):
 
     def connect(self):
         return agent_connection(self.path, synchronous="FULL", busy_timeout_ms=5000)
+
+    def next_feedback_answer(self):
+        """Atomically advance the shared cadence across concurrent replies and restarts."""
+        with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            connection.execute("UPDATE feedback_hint_counter SET answers=answers+1 WHERE id=1")
+            return connection.execute("SELECT answers FROM feedback_hint_counter WHERE id=1").fetchone()[0]
 
     def record_request(self, *, message_id: int, guild_id: int, channel_id: int,
                        root_message_id: int, member_id: int, created_at: str,

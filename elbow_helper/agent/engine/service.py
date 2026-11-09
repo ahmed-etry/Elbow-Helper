@@ -392,6 +392,7 @@ class AgentService:
         conversation_history: str = "",
     ) -> str:
         context.state.research_answer_completed = False
+        context.state.feedback_lookup_problem = False
         await request_scope(context, refresh=True)
         await require_evidence_access(context)
         if context.history:

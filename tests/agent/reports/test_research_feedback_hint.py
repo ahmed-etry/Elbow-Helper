@@ -1,11 +1,25 @@
 """Occasional feedback hints at the final Discord delivery boundary."""
 
+import asyncio
+from contextlib import closing
 from dataclasses import replace
+from pathlib import Path
+import sqlite3
+import threading
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
+from tests.temp_directory import TemporaryDirectory
+from elbow_helper.agent.conversation.transcripts import TranscriptArchive
+from elbow_helper.agent.persistence.schema import migrations
+from elbow_helper.agent.engine.capability_contract import CapabilityContract
+from elbow_helper.agent.engine.lookup_health import lookup_problem
+from elbow_helper.agent.engine.models import RegisteredAgentTool
+from elbow_helper.infrastructure.ai import AgentToolDefinition
+from tests.agent.engine.test_agent_plan_flow import _model_step, _plan, _step
+
+from elbow_helper.agent.actions.contracts import ActionRefused, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.preview import preview_text
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin, MAX_RESPONSE_CHARACTERS, RESEARCH_FEEDBACK_HINT_INTERVAL
 from elbow_helper.agent.engine.service import AgentService, AgentUnavailableError
@@ -20,6 +34,10 @@ from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession
 
 class ResearchFeedbackHintTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / 'agent.sqlite3'
+        self.archive = TranscriptArchive(self.path)
         self.context = _context()
         self.context = replace(self.context, bot=SimpleNamespace(user=SimpleNamespace(id=999)))
         message = self.context.source_message
@@ -32,6 +50,7 @@ class ResearchFeedbackHintTests(unittest.IsolatedAsyncioTestCase):
         message.channel.send = AsyncMock(return_value=SimpleNamespace(id=502))
         self.sender = AgentDeliveryMixin()
         self.sender.bot = self.context.bot
+        self.sender.transcript_archive = self.archive
 
     async def deliver(self, text, *, context=None, attachments=()):
         message = self.context.source_message
@@ -55,13 +74,18 @@ class ResearchFeedbackHintTests(unittest.IsolatedAsyncioTestCase):
 
     def next_hint_due(self):
         self.context.state.research_answer_completed = True
-        self.sender._research_feedback_answers = RESEARCH_FEEDBACK_HINT_INTERVAL - 1
+        with self.archive.connect() as connection:
+            connection.execute('UPDATE feedback_hint_counter SET answers=?',
+                               (RESEARCH_FEEDBACK_HINT_INTERVAL - 1,))
+            connection.commit()
 
-    async def test_every_fifth_completed_research_answer_gets_exact_final_line(self):
+    async def test_every_fifth_answer_including_plain_chat_gets_exact_final_line(self):
         self.assertEqual(RESEARCH_FEEDBACK_HINT, "-# React \U0001f44e if this answer was off")
         for number in range(1, 11):
-            answer = await self.answer()
-            self.assertTrue(self.context.state.research_answer_completed)
+            social = number % 2 == 1
+            answer = await self.answer(route='social' if social else 'research',
+                                       steps=[social_step('Synthetic finding.')] if social else None)
+            self.assertEqual(self.context.state.research_answer_completed, not social)
             self.assertNotIn(RESEARCH_FEEDBACK_HINT, answer)
             parts, _ = await self.deliver(answer)
             expected = "Synthetic finding."
@@ -69,13 +93,11 @@ class ResearchFeedbackHintTests(unittest.IsolatedAsyncioTestCase):
                 expected += "\n" + RESEARCH_FEEDBACK_HINT
             self.assertEqual(parts, [expected])
 
-    async def test_social_answer_never_gets_hint_or_advances_counter(self):
+    async def test_plain_chat_can_be_the_fifth_answer(self):
         self.next_hint_due()
-        answer = await self.answer(route="social", steps=[social_step("Synthetic banter.")])
+        answer = await self.answer(route='social', steps=[social_step('Synthetic banter.')])
         self.assertFalse(self.context.state.research_answer_completed)
-        self.assertEqual((await self.deliver(answer))[0], ["Synthetic banter."])
-        answer = await self.answer()
-        self.assertEqual((await self.deliver(answer))[0][-1].splitlines()[-1], RESEARCH_FEEDBACK_HINT)
+        self.assertEqual((await self.deliver(answer))[0], [answer + '\n' + RESEARCH_FEEDBACK_HINT])
 
     async def test_social_expansion_to_research_is_eligible(self):
         self.next_hint_due()
@@ -99,7 +121,8 @@ class ResearchFeedbackHintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.context.source_message.reply.call_args.args[0], FAILURE_MESSAGE)
 
 
-    def test_previews_private_results_and_followup_repairs_are_ineligible(self):
+    async def test_previews_private_results_and_followup_repairs_are_ineligible(self):
+        self.context.state.feedback_lookup_problem = True
         cases = (
             ("proposed_changes", [object()]), ("preview_reply", "Synthetic preview"),
             ("provider_failed", True), ("terminal_cause", "limit"),
@@ -113,10 +136,10 @@ class ResearchFeedbackHintTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(name=name):
                 self.next_hint_due()
                 context = replace(self.context, state=replace(self.context.state, **{name: value}))
-                self.assertFalse(self.sender._research_feedback_hint_due(context, "Synthetic answer", ["Synthetic answer"]))
+                self.assertFalse(await self.sender._research_feedback_hint_due(context, "Synthetic answer", ["Synthetic answer"]))
         for changes in ({"private_pass": True}, {"dm_delivery": True}, {"history": (object(),)}):
             with self.subTest(changes=changes):
-                self.assertFalse(self.sender._research_feedback_hint_due(
+                self.assertFalse(await self.sender._research_feedback_hint_due(
                     replace(self.context, **changes), "Synthetic answer", ["Synthetic answer"],
                 ))
 
@@ -143,7 +166,7 @@ class ResearchFeedbackHintTests(unittest.IsolatedAsyncioTestCase):
                     self.context.state.preview_first = preview_first
                     parts, _ = await self.deliver(text)
                     self.assertTrue(all(RESEARCH_FEEDBACK_HINT not in part for part in parts))
-                    self.assertEqual(self.sender._research_feedback_answers, RESEARCH_FEEDBACK_HINT_INTERVAL - 1)
+                    self.assertEqual(self.answer_count(), RESEARCH_FEEDBACK_HINT_INTERVAL - 1)
                     for call in self.context.source_message.reply.call_args_list:
                         if view := call.kwargs.get("view"):
                             view.stop()
@@ -174,3 +197,173 @@ class ResearchFeedbackHintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(delivery.text_parts, [text])
         file, = self.context.source_message.reply.call_args.kwargs["files"]
         self.assertEqual(file.fp.getvalue().decode("utf-8"), text)
+
+    def answer_count(self):
+        with self.archive.connect() as connection:
+            return connection.execute('SELECT answers FROM feedback_hint_counter').fetchone()[0]
+
+    async def test_restart_continues_count_and_sqlite_runs_off_event_loop(self):
+        for _ in range(4):
+            self.assertEqual((await self.deliver('Synthetic answer.'))[0], ['Synthetic answer.'])
+        self.sender = AgentDeliveryMixin()
+        self.sender.bot = self.context.bot
+        self.sender.transcript_archive = TranscriptArchive(self.path)
+        main_thread = threading.get_ident()
+        original = self.sender.transcript_archive.next_feedback_answer
+        def advance():
+            self.assertNotEqual(threading.get_ident(), main_thread)
+            return original()
+        with patch.object(self.sender.transcript_archive, 'next_feedback_answer', side_effect=advance):
+            self.assertEqual((await self.deliver('After restart.'))[0],
+                             ['After restart.\n' + RESEARCH_FEEDBACK_HINT])
+        self.assertEqual(self.answer_count(), 5)
+
+    async def test_migration_from_previous_version_preserves_agent_data(self):
+        old_path = Path(self.directory.name) / 'old.sqlite3'
+        with closing(sqlite3.connect(old_path)) as connection:
+            for migration in migrations()[:-1]:
+                migration.apply(connection)
+            connection.execute('PRAGMA user_version=8')
+            connection.execute("INSERT INTO requests VALUES (1, 2, 3, 1, 4, 'today', 'Synthetic question', NULL, '[]')")
+            connection.commit()
+        archive = TranscriptArchive(old_path)
+        self.assertEqual(await asyncio.to_thread(archive.next_feedback_answer), 1)
+        with archive.connect() as connection:
+            self.assertEqual(connection.execute('PRAGMA user_version').fetchone()[0], 9)
+            self.assertEqual(connection.execute('SELECT content FROM requests').fetchone()[0], 'Synthetic question')
+        self.assertEqual(TranscriptArchive(old_path).next_feedback_answer(), 2)
+
+    async def test_concurrent_answers_share_one_durable_count(self):
+        counts = await asyncio.gather(*(asyncio.to_thread(self.archive.next_feedback_answer) for _ in range(10)))
+        self.assertEqual(sorted(counts), list(range(1, 11)))
+
+    async def test_successful_plan_result_with_missing_data_forces_hint(self):
+        for payload in ({'missing_sources': [{'source': 'synthetic'}]},
+                        {'clan_totals': [{'season_complete': False}]}):
+            with self.subTest(payload=payload):
+                handler = AsyncMock(return_value=payload)
+                registry = {'read_value': RegisteredAgentTool(AgentToolDefinition('read_value', 'Synthetic lookup',
+                            {'type': 'object', 'properties': {}}), handler, contract=CapabilityContract(()))}
+                with patch('elbow_helper.agent.engine.service.build_agent_tools', return_value=registry):
+                    answer = await self.answer(steps=[_model_step(_plan([_step('first')])),
+                                                     AgentStep('Synthetic answer.', (), AgentUsage())])
+                handler.assert_awaited_once()
+                self.assertTrue(self.context.state.feedback_lookup_problem)
+                self.assertEqual((await self.deliver(answer))[0], [answer + '\n' + RESEARCH_FEEDBACK_HINT])
+
+    async def test_plain_answer_text_cannot_trigger_hint(self):
+        answer = 'Failed, refused, missing sources, incomplete season, unavailable clan.'
+        self.assertEqual((await self.deliver(answer))[0], [answer])
+        self.assertEqual(self.answer_count(), 1)
+
+    def test_pagination_alone_is_not_missing_source_data(self):
+        page = {'complete': False, 'next_offset': 25, 'flags': {'status': 'partial', 'truncated': False}}
+        self.assertFalse(lookup_problem(page))
+        self.assertTrue(lookup_problem({**page, 'missing_sources': [{'source': 'synthetic'}]}))
+        self.assertTrue(lookup_problem({**page, 'flags': {'status': 'partial', 'truncated': True}}))
+
+    async def test_post_reply_does_not_count_or_get_hint(self):
+        self.next_hint_due()
+        self.context.state.feedback_lookup_problem = True
+        self.context.state.reply_delivery.posts.append({})
+        await self.sender.send_post_reply(self.context.source_message, 'Synthetic posted answer.',
+                                          None, self.context, None)
+        self.assertEqual(self.context.source_message.reply.call_args.args[0], 'Synthetic posted answer.')
+        self.assertEqual(self.answer_count(), 4)
+
+    async def test_counter_failure_keeps_answer_and_forced_hint(self):
+        for problem in (False, True):
+            self.context.state.feedback_lookup_problem = problem
+            with (patch.object(self.archive, 'next_feedback_answer', side_effect=sqlite3.OperationalError('Synthetic failure')),
+                  self.assertLogs('elbow_helper.agent.conversation.delivery', level='ERROR')):
+                parts, _ = await self.deliver('Synthetic answer.')
+            self.assertEqual(parts, ['Synthetic answer.' + ('\n' + RESEARCH_FEEDBACK_HINT if problem else '')])
+
+    async def test_structured_lookup_problems_always_get_hint_and_advance_count(self):
+        payloads = (
+            {'error': 'Synthetic refusal'}, {'flags': {'status': 'refused'}},
+            {'flags': {'status': 'failed'}}, {'missing_sources': [{'source': 'synthetic'}]},
+            {'clan_totals': [{'season_complete': False}]},
+            {'items': [{'status': 'ok'}, {'status': 'unavailable'}]},
+            {'coverage': {'signals': [{'source_complete': False}]}},
+            {'history_coverage': {'status': 'partial'}},
+            {'history_coverage': {'status': 'empty'}},
+            {'coverage': {'gaps': [{'after': 1, 'before': 2}]}},
+        )
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                handler = AsyncMock(return_value=payload)
+                await AgentService.execute_tool(name='synthetic_lookup', handler=handler,
+                                                arguments={}, context=self.context)
+                self.assertTrue(self.context.state.feedback_lookup_problem)
+                self.assertEqual((await self.deliver('Synthetic answer.'))[0],
+                                 ['Synthetic answer.\n' + RESEARCH_FEEDBACK_HINT])
+                self.context.state.feedback_lookup_problem = False
+        self.assertEqual(self.answer_count(), len(payloads))
+        self.assertFalse(lookup_problem({'rows': [], 'flags': {'status': 'complete'}}))
+        self.assertFalse(lookup_problem({'message': 'failed refused missing unavailable', 'rows': []}))
+
+    async def test_tool_refusal_and_timeout_force_hint_after_state_rollback(self):
+        for error in (ActionRefused('Synthetic refusal'), TimeoutError('Synthetic timeout')):
+            with self.subTest(error=type(error).__name__):
+                self.context.state.feedback_lookup_problem = False
+                await AgentService.execute_tool(name='synthetic_lookup', handler=AsyncMock(side_effect=error),
+                                                arguments={}, context=self.context)
+                self.assertTrue(self.context.state.feedback_lookup_problem)
+                self.assertEqual((await self.deliver('Synthetic answer.'))[0],
+                                 ['Synthetic answer.\n' + RESEARCH_FEEDBACK_HINT])
+
+    async def test_malformed_revision_keeps_hint_after_successful_read(self):
+        handler = AsyncMock(return_value={'value': 7})
+        registry = {'read_value': RegisteredAgentTool(AgentToolDefinition('read_value', 'Synthetic lookup',
+                    {'type': 'object', 'properties': {}}), handler, contract=CapabilityContract(()))}
+        broken = AgentStep('', (AgentToolCall('broken', 'unsupported_tool', '{}'),), AgentUsage())
+        with patch('elbow_helper.agent.engine.service.build_agent_tools', return_value=registry):
+            answer = await self.answer(steps=[_model_step(_plan([_step('first')])), broken,
+                                             AgentStep('Synthetic recovered answer.', (), AgentUsage())])
+        handler.assert_awaited_once()
+        self.assertTrue(self.context.state.feedback_lookup_problem)
+        self.assertEqual((await self.deliver(answer))[0], [answer + '\n' + RESEARCH_FEEDBACK_HINT])
+
+    async def test_both_refused_plans_with_no_reads_still_get_hint(self):
+        handler = AsyncMock(return_value={'value': 7})
+        registry = {'read_value': RegisteredAgentTool(AgentToolDefinition('read_value', 'Synthetic lookup',
+                    {'type': 'object', 'properties': {}}), handler, contract=CapabilityContract(()))}
+        invalid = {**_plan([_step('first')]), 'output': 'invalid'}
+        with patch('elbow_helper.agent.engine.service.build_agent_tools', return_value=registry):
+            answer = await self.answer(steps=[_model_step(invalid), _model_step(invalid),
+                                             AgentStep('Synthetic answer anyway.', (), AgentUsage())])
+        handler.assert_not_awaited()
+        self.assertEqual(self.context.state.evidence, [])
+        self.assertTrue(self.context.state.feedback_lookup_problem)
+        self.assertEqual((await self.deliver(answer))[0], [answer + '\n' + RESEARCH_FEEDBACK_HINT])
+
+    async def test_failed_step_and_invalid_step_force_hint(self):
+        for failure in ('invalid', 'exception'):
+            with self.subTest(failure=failure):
+                self.context.state.feedback_lookup_problem = False
+                handler = AsyncMock(side_effect=OSError('Synthetic lookup failure'))
+                registry = {'read_value': RegisteredAgentTool(AgentToolDefinition('read_value', 'Synthetic lookup',
+                            {'type': 'object', 'properties': {'value': {'type': 'integer'}}}),
+                            handler, contract=CapabilityContract(()))}
+                plan = _plan([_step('first', {'value': 'invalid'} if failure == 'invalid' else {})])
+                with patch('elbow_helper.agent.engine.service.build_agent_tools', return_value=registry):
+                    answer = await self.answer(steps=[_model_step(plan), AgentStep('Synthetic answer.', (), AgentUsage())])
+                self.assertTrue(self.context.state.feedback_lookup_problem)
+                self.assertEqual((await self.deliver(answer))[0], [answer + '\n' + RESEARCH_FEEDBACK_HINT])
+
+    async def test_gif_only_reply_does_not_advance_count(self):
+        self.next_hint_due()
+        self.context.state.gif_url = 'https://example.com/synthetic.gif'
+        self.sender._send_gif = AsyncMock()
+        await self.sender.send_response(self.context.source_message, '', None, context=self.context)
+        self.sender._send_gif.assert_awaited_once()
+        self.assertEqual(self.answer_count(), 4)
+
+    async def test_ineligible_answer_still_excluded_when_lookup_failed(self):
+        self.next_hint_due()
+        self.context.state.feedback_lookup_problem = True
+        for text in (FAILURE_MESSAGE, '', '```python\nunfinished'):
+            parts, _ = await self.deliver(text)
+            self.assertTrue(all(RESEARCH_FEEDBACK_HINT not in (part or '') for part in parts))
+        self.assertEqual(self.answer_count(), 4)

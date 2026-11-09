@@ -7,23 +7,19 @@ import logging
 import discord
 from discord.ext import commands
 
-from elbow_helper.configuration import channels
-from elbow_helper.configuration.guild import GUILD_ID
+from elbow_helper.configuration.guild import GUILD_ID, OWNER_DISCORD_ID
 from elbow_helper.agent.safety.access import has_agent_entry_access
-from elbow_helper.agent.safety.disclosure import can_show, personal_source_allowed
 
 
 LOGGER = logging.getLogger(__name__)
 
 
-def report_card(report, *, disclose):
+def report_card(report):
     link = (f"https://discord.com/channels/{report['guild_id']}/"
             f"{report['channel_id']}/{report['reply_message_id']}")
-    card = discord.Embed(title="Agent reply report" if disclose else None)
+    card = discord.Embed(title="Agent reply report")
     card.add_field(name="Reply", value=link, inline=False)
     card.add_field(name="Request", value=str(report["request_message_id"]))
-    if not disclose:
-        return card
     card.add_field(name="Reporter", value=f"<@{report['reporter_id']}>")
     for label, key, limit in (("Question", "question", 700), ("Answer", "delivered_answer", 1_000)):
         value = report[key]
@@ -82,37 +78,16 @@ class AgentFeedbackMixin:
                 return
             LOGGER.info("Agent reply report stored: report=%s request=%s reply=%s reporter=%s",
                         report["report_id"], request_id, payload.message_id, member.id)
-            if channels.AGENT_REPORTS is not None:
-                await self._post_reply_report(guild, report)
+            await self._post_reply_report(report)
         except Exception:
             LOGGER.exception("Agent reply report failed: reply=%s reporter=%s", payload.message_id, member.id)
 
-    async def _report_channel(self, guild, channel_id):
-        channel = guild.get_channel_or_thread(channel_id)
-        if channel is None:
-            try:
-                channel = await self.bot.fetch_channel(channel_id)
-            except (discord.DiscordException, OSError):
-                return None
-        if getattr(getattr(channel, "guild", None), "id", None) != guild.id:
-            return None
-        return channel
-
-    async def _post_reply_report(self, guild, report):
-        destination = await self._report_channel(guild, channels.AGENT_REPORTS)
-        if destination is None or not callable(getattr(destination, "send", None)):
-            return
-        source = await self._report_channel(guild, report["channel_id"])
-        disclose = False
-        if source is not None:
-            try:
-                cache = {}
-                disclose = await can_show(destination, {source.id: source}, frozenset(), guild,
-                                          thread_members=cache, request_id=report["request_message_id"])
-                # Role classifications alone do not prove exact channel readership.
-                disclose = disclose and await personal_source_allowed(destination, source, guild,
-                                                                       thread_members=cache)
-            except Exception:
-                LOGGER.exception("Agent reply report disclosure check failed: report=%s", report["report_id"])
-        await destination.send(embed=report_card(report, disclose=disclose),
-                               allowed_mentions=discord.AllowedMentions.none())
+    async def _post_reply_report(self, report):
+        try:
+            owner = self.bot.get_user(OWNER_DISCORD_ID)
+            if owner is None:
+                owner = await self.bot.fetch_user(OWNER_DISCORD_ID)
+            await owner.send(embed=report_card(report),
+                             allowed_mentions=discord.AllowedMentions.none())
+        except Exception:
+            LOGGER.exception("Agent reply report owner DM failed: report=%s", report["report_id"])
