@@ -373,5 +373,30 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         owner._delete_tracking_message.assert_not_awaited()
         reminder_message.delete.assert_awaited_once_with()
 
+    async def test_expired_trial_ends_when_its_ticket_was_deleted(self) -> None:
+        owner = TrialMixin()
+        owner._trial_lock = asyncio.Lock()
+        owner._reminder_lock = asyncio.Lock()
+        owner.logger = MagicMock()
+        trial_info = {"start": "2020-01-01T00:00:00+00:00", "days": 7, "applicant_id": 42}
+        owner.recruitment_state = await self._state({"200": dict(trial_info), "201": dict(trial_info)})
+        owner._delete_tracking_message = AsyncMock(return_value=True)
+        reminder_channel = SimpleNamespace(id=800, send=AsyncMock())
+        owner.bot = MagicMock()
+        owner.bot.get_channel.side_effect = lambda channel_id: (
+            reminder_channel if channel_id == trials.REC_ROOM else None)
+        missing = discord.NotFound(SimpleNamespace(status=404, reason="Not Found"), "gone")
+        failing = discord.HTTPException(SimpleNamespace(status=503, reason="Unavailable"), "busy")
+
+        def fetch_channel(channel_id):
+            raise missing if channel_id == 200 else failing
+        owner.bot.fetch_channel = AsyncMock(side_effect=fetch_channel)
+
+        await TrialMixin.check_expired_trials.coro(owner)
+
+        # Deleted ticket: trial ends. Discord not answering: trial kept for next hour.
+        self.assertEqual(owner.recruitment_state.trials(), {"201": trial_info})
+        reminder_channel.send.assert_not_awaited()
+
 if __name__ == "__main__":
     unittest.main()
