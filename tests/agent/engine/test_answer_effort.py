@@ -5,16 +5,17 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.models import RegisteredAgentTool
+from elbow_helper.agent.plan.input_rules import RULES
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from tests.agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan, _step
 
 
 class AnswerEffortTests(unittest.IsolatedAsyncioTestCase):
-    async def answer(self, steps, question="Review #P0", payload=None):
+    async def answer(self, steps, question="Review #P0", payload=None, parameters=None):
         session = _Session(steps, [])
         registry = {"read_value": RegisteredAgentTool(AgentToolDefinition(
-            "read_value", "Read synthetic evidence.", {"type": "object", "properties": {}}),
+            "read_value", "Read synthetic evidence.", parameters or {"type": "object", "properties": {}}),
             AsyncMock(return_value=payload or {}))}
         with patch("elbow_helper.agent.engine.service.build_agent_tools", return_value=registry):
             answer = await AgentService(_Model(session)).answer(
@@ -47,3 +48,17 @@ class AnswerEffortTests(unittest.IsolatedAsyncioTestCase):
         ])
         self.assertEqual(answer, "Keep recruiting.")
         self.assertEqual(efforts, [AgentReasoningEffort.HIGH, AgentReasoningEffort.LOW, AgentReasoningEffort.LOW])
+
+
+    async def test_fixing_a_refused_lookup_keeps_planning_effort(self):
+        parameters = {"type": "object", "properties": {"side": {"type": "string"}},
+                      RULES: [{"needs": ["side"], "error": "Choose a side."}]}
+        refused = _step("read")
+        fixed = {**_step("read"), "arguments": {"side": "game"}}
+        answer, efforts = await self.answer([
+            _model_step(_plan([refused], effort="high")),
+            _model_step(_plan([fixed], effort="low")),
+            AgentStep("Keep recruiting.", (), AgentUsage()),
+        ], parameters=parameters)
+        self.assertEqual(answer, "Keep recruiting.")
+        self.assertEqual(efforts[:2], [AgentReasoningEffort.HIGH, AgentReasoningEffort.HIGH])
