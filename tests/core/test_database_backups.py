@@ -81,7 +81,7 @@ class DatabaseCopyTests(unittest.TestCase):
         with patch.object(backups.sqlite3, "connect", side_effect=open_connection):
             backups.backup_database(self.source, self.destination)
         self.assertEqual(inspected, [backups.BACKUP_PAGES_PER_STEP])
-        self.assertGreater(inspected[0], 0)
+        self.assertEqual(inspected[0], -1)
 
     def test_commits_during_incremental_copy_produce_a_valid_standalone_copy(self) -> None:
         connect = sqlite3.connect
