@@ -10,7 +10,9 @@ import sqlite3
 from typing import Literal
 
 from elbow_helper.configuration.clans import CLANS
+from elbow_helper.data.reads import core as read_core
 from elbow_helper.domain.cwl import SEASON_KEY
+from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.domain.war_attendance import aggregate_attendance
 from elbow_helper.domain.war_views import board_payload, record_fresh
 from . import record_wars
@@ -137,7 +139,126 @@ async def selected_wars(context, arguments, war_type, *, running=False):
         return {'error': 'Stored war evidence is unavailable.', 'cause': 'source_unavailable'}
 
 
-async def attendance(context, arguments, *, separate_seasons=False):
+# Each selected account's wars in every family clan, beside the clan-scoped figures.
+FAMILY_FIGURES = ('wars', 'attacks_used', 'attacks_expected', 'missed', 'unconfirmed_opportunities')
+STAY_BATCH = 200
+FAMILY_MEANINGS = {
+    'family_wars': 'One entry per account: its stored wars in every family clan over the same period, '
+                   'whichever clan it was in, and its family clan stays.',
+    'regular, cwl, combined': 'Regular wars, CWL wars, and the two added together.',
+    'by_clan': 'The regular and CWL figures in each family clan where a lineup listed the account.',
+    'wars': 'Distinct wars whose lineup listed the account. The other figures mean what they mean on the row.',
+    'current_clan_code, in_current_clan_since': 'The family clan it is in now, and the first family roster '
+                                                'that listed it there; null when it is in no family clan.',
+    'previous_family_clan_code, previous_family_clan_last_seen_at': 'The family clan it was in before that, '
+        'and the last time a roster listed it there; null when no earlier stay is stored.'}
+
+
+def family_periods(arguments):
+    """The selection's period as separate reads, or None for a chosen subset of wars."""
+    if arguments.get('war_ids') or arguments.get('latest_completed'):
+        return None
+    seasons = arguments.get('season_keys') or ([arguments['season']] if arguments.get('season') else [])
+    if seasons:
+        # A CWL season key names its month; regular wars are read over that month.
+        return [{'season': key} for key in sorted({key[:7] for key in seasons})]
+    return [{key: arguments[key] for key in ('after', 'before') if arguments.get(key)}]
+
+
+async def family_sources(context, periods):
+    """Regular and CWL wars of every family clan over each period; an error ends the reads."""
+    sources = []
+    for selection in periods:
+        for kind in ('REG', 'CWL'):
+            source = await selected_wars(context, {**selection, 'clan_codes': list(CLANS)}, kind, running=True)
+            if 'error' in source:
+                return source
+            sources.append((kind, source))
+    return sources
+
+
+def war_figures(rows):
+    """One account's totals over its lineup rows, counted as the row's own figures are."""
+    totals = aggregate_attendance(rows, {}, 'account')
+    if not totals:
+        return dict.fromkeys(FAMILY_FIGURES, 0)
+    (item,) = totals
+    return {'wars': len(item['war_ids']), **{key: item[key] for key in FAMILY_FIGURES[1:]}}
+
+
+def stay_facts(stays):
+    """The current family clan stay and the one before it, from stays oldest first."""
+    from .people import merged_stays, observed
+    merged = merged_stays(stays)
+    current = merged[-1] if merged and merged[-1]['to_at'] is None else None
+    earlier = merged[:-1] if current else merged
+    previous = earlier[-1] if earlier else None
+    return {'current_clan_code': current['clan_code'] if current else None,
+            'in_current_clan_since': observed(current['first_seen_at']) if current else None,
+            'previous_family_clan_code': previous['clan_code'] if previous else None,
+            'previous_family_clan_last_seen_at': observed(previous['last_seen_at']) if previous else None}
+
+
+async def clan_stays(context, tags):
+    """Each account's family clan stays up to now; None when the record cannot be read."""
+    from .people import record
+    # A tag that is not a Clash tag has no stays to read.
+    checked = {normalize_player_tag(tag): tag for tag in tags}
+    checked.pop(None, None)
+    selected, result = sorted(checked), {}
+    for start in range(0, len(selected), STAY_BATCH):
+        batch = await record(context, 'stay_reads', 'stays', selected[start:start + STAY_BATCH],
+                             after=0, before=read_core.now_us() + 1)
+        if batch is None:
+            return None
+        result.update((checked[row['player_tag']], row['stays']) for row in batch['rows'])
+    return result
+
+
+async def family_wars(context, arguments, rows, accounts):
+    """Attach each row's accounts' family-wide wars and clan stays; return the scope it covers."""
+    periods = family_periods(arguments)
+    if periods is None:
+        return {'status': 'not_read', 'reason': 'war_ids and latest_completed choose wars, not a period'}
+    sources = await family_sources(context, periods)
+    if isinstance(sources, dict):
+        return {'status': 'unavailable', 'cause': sources.get('cause', 'source_unavailable')}
+    tags = sorted({tag for row in rows for tag in accounts(row)})
+    stays = await clan_stays(context, tags)
+    own = defaultdict(list)
+    for _, source in sources:
+        for row in source['rows']:
+            own[row['player_tag']].append(row)
+    for row in rows:
+        entries = []
+        for tag in accounts(row):
+            def figures(kind, code=None):
+                return war_figures([item for item in own[tag] if item['war_type'] == kind
+                                    and (code is None or item['clan_code'] == code)])
+            regular, cwl = figures('REG'), figures('CWL')
+            entries.append({'player_tag': tag, 'regular': regular, 'cwl': cwl,
+                'combined': {key: regular[key] + cwl[key] for key in FAMILY_FIGURES},
+                'by_clan': [{'clan_code': code, 'regular': figures('REG', code), 'cwl': figures('CWL', code)}
+                            for code in sorted({item['clan_code'] for item in own[tag]})],
+                **(stay_facts(stays.get(tag, [])) if stays is not None else {})})
+        row['family_wars'] = entries
+    wars = {kind: {war for each, source in sources if each == kind for war in source.get('war_ids', ())}
+            for kind in ('REG', 'CWL')}
+    return {'status': 'read', 'clan_codes': sorted(CLANS),
+            'regular_wars': len(wars['REG']), 'cwl_wars': len(wars['CWL']),
+            # True when every checked war has a stored lineup, so a zero means the account was in none of them.
+            'lineups_complete': all('wars_without_rosters' in source and not source['wars_without_rosters']
+                                    for _, source in sources),
+            'clan_stays': 'read' if stays is not None else 'unavailable',
+            'meanings': FAMILY_MEANINGS}
+
+
+async def war_attendance(context, arguments):
+    """The attendance tool: chosen accounts or members also get their wars across the family."""
+    return await attendance(context, arguments, family=True)
+
+
+async def attendance(context, arguments, *, separate_seasons=False, family=False):
     if arguments.get('cohort_ref'):
         from .projections import cohort_selection
         selected = await cohort_selection(context,arguments['cohort_ref'],'account_tags')
@@ -219,6 +340,14 @@ async def attendance(context, arguments, *, separate_seasons=False):
     population = len(result)
     if arguments.get('top_n'):
         result = result[:arguments['top_n']]
+    family_scope = None
+    if family and (arguments.get('account_tags') or arguments.get('member_ids')):
+        def accounts(row):
+            if row.get('player_tag'):
+                return [row['player_tag']]
+            return sorted(set(row['account_tags'])
+                          | {tag for tag in selected_tags if owners.get(tag) == row['member_id']})
+        family_scope = await family_wars(context, arguments, result, accounts)
     clan_totals = []
     periods = [(season, code) for season in source.get('component_seasons', [arguments.get('season')])
                for code in arguments.get('clan_codes', sorted({r['clan_code'] for r in rows if r.get('clan_code')}))]
@@ -242,6 +371,7 @@ async def attendance(context, arguments, *, separate_seasons=False):
     member_profiles = account_owner_profiles(result) if unit == 'account' else None
     return {**source, 'rows': result, 'clan_totals': clan_totals,
             **({'members': member_profiles} if member_profiles is not None else {}),
+            **({'family_wars_scope': family_scope} if family_scope is not None else {}),
             'ranked_population': population, 'opportunity_unit': 'account-war',
             'clan_participation': clan_participation(rows, owners, context.guild,
                 arguments.get('clan_codes', sorted({r['clan_code'] for r in rows if r.get('clan_code')}))),

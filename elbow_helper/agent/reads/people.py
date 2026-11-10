@@ -262,17 +262,34 @@ TRANSFER_SECONDS = 2 * 3600
 SECOND = 1_000_000
 
 
+def continues(previous, stay):
+    """True when ``stay`` starts where ``previous`` ended, with no time outside the family between them."""
+    # A record stay ends at the roster that first missed the account; an hourly copied one at its last capture.
+    return previous is not None and (
+        (previous["to_at"] is not None and stay["from_at"] <= previous["to_at"])
+        or (previous["basis"] == "observed_hourly"
+            and stay["from_at"] - previous["last_seen_at"] <= TRANSFER_SECONDS * SECOND))
+
+
+def merged_stays(stays):
+    """Stays oldest first, with a stay carried from the old file's copy into the record joined into one."""
+    merged = []
+    for stay in stays:
+        previous = merged[-1] if merged else None
+        if continues(previous, stay) and previous["clan_code"] == stay["clan_code"]:
+            merged[-1] = {**stay, "from_at": previous["from_at"], "first_seen_at": previous["first_seen_at"]}
+        else:
+            merged.append(stay)
+    return merged
+
+
 def membership_events(accounts, after, clan_codes):
     """Arrivals in the window from each account's stays (oldest first) seen inside the history bounds."""
     events = []
     for account in accounts:
         previous = None
         for stay in account["stays"]:
-            # A record stay ends at the roster that first missed the account; an hourly copied one at its last capture.
-            continued = previous is not None and (
-                (previous["to_at"] is not None and stay["from_at"] <= previous["to_at"])
-                or (previous["basis"] == "observed_hourly"
-                    and stay["from_at"] - previous["last_seen_at"] <= TRANSFER_SECONDS * SECOND))
+            continued = continues(previous, stay)
             if continued and previous["clan_code"] == stay["clan_code"]:
                 # The same stay, carried from the old file's copy into the record.
                 previous = {**stay, "from_at": previous["from_at"], "first_seen_at": previous["first_seen_at"]}

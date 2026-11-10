@@ -176,3 +176,12 @@ RESULT_FIELDS['read_conversation_evidence']['rows'][0].update(
 
 for family in ('read_member_accounts', 'read_member_cohort'):
     RESULT_FIELDS[family]['configured_role_groups'] = ['']
+
+# Only the attendance tool adds family-wide wars; rows other reads share stay as they are.
+_FAMILY_FIGURES = names('wars,attacks_used,attacks_expected,missed,unconfirmed_opportunities')
+RESULT_FIELDS['read_war_attendance']['rows'] = [{**RESULT_FIELDS['read_war_attendance']['rows'][0], 'family_wars': [{
+    **names('player_tag,current_clan_code,in_current_clan_since,previous_family_clan_code,previous_family_clan_last_seen_at'),
+    'regular': _FAMILY_FIGURES, 'cwl': _FAMILY_FIGURES, 'combined': _FAMILY_FIGURES,
+    'by_clan': [{**names('clan_code'), 'regular': _FAMILY_FIGURES, 'cwl': _FAMILY_FIGURES}]}]}]
+RESULT_FIELDS['read_war_attendance']['family_wars_scope'] = names(
+    'status,reason,cause,clan_codes,regular_wars,cwl_wars,lineups_complete,clan_stays,meanings')
