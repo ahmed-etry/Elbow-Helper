@@ -75,7 +75,8 @@ class ResearchFeedbackHintTests(unittest.IsolatedAsyncioTestCase):
     def next_hint_due(self):
         self.context.state.research_answer_completed = True
         with self.archive.connect() as connection:
-            connection.execute('UPDATE feedback_hint_counter SET answers=?',
+            connection.execute('INSERT INTO feedback_hint_counter VALUES (1, ?) '
+                               'ON CONFLICT(id) DO UPDATE SET answers=excluded.answers',
                                (RESEARCH_FEEDBACK_HINT_INTERVAL - 1,))
             connection.commit()
 
@@ -227,11 +228,31 @@ class ResearchFeedbackHintTests(unittest.IsolatedAsyncioTestCase):
             connection.execute("INSERT INTO requests VALUES (1, 2, 3, 1, 4, 'today', 'Synthetic question', NULL, '[]')")
             connection.commit()
         archive = TranscriptArchive(old_path)
+        with archive.connect() as connection:
+            self.assertIsNone(connection.execute('SELECT answers FROM feedback_hint_counter').fetchone())
         self.assertEqual(await asyncio.to_thread(archive.next_feedback_answer), 1)
         with archive.connect() as connection:
             self.assertEqual(connection.execute('PRAGMA user_version').fetchone()[0], 9)
             self.assertEqual(connection.execute('SELECT content FROM requests').fetchone()[0], 'Synthetic question')
         self.assertEqual(TranscriptArchive(old_path).next_feedback_answer(), 2)
+
+    def test_existing_schema_nine_counter_preserves_its_count(self):
+        with self.archive.connect() as connection, connection:
+            connection.execute('INSERT INTO feedback_hint_counter VALUES (1, 14)')
+        archive = TranscriptArchive(self.path)
+        self.assertEqual(archive.next_feedback_answer(), 15)
+        self.assertEqual(TranscriptArchive(self.path).next_feedback_answer(), 16)
+
+    def test_failed_first_counter_write_can_retry_without_consuming_a_count(self):
+        with self.archive.connect() as connection:
+            connection.execute("CREATE TRIGGER fail_counter BEFORE INSERT ON feedback_hint_counter "
+                               "BEGIN SELECT RAISE(ABORT, 'Synthetic counter failure'); END")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'Synthetic counter failure'):
+            self.archive.next_feedback_answer()
+        with self.archive.connect() as connection:
+            self.assertIsNone(connection.execute('SELECT answers FROM feedback_hint_counter').fetchone())
+            connection.execute('DROP TRIGGER fail_counter')
+        self.assertEqual(self.archive.next_feedback_answer(), 1)
 
     async def test_concurrent_answers_share_one_durable_count(self):
         counts = await asyncio.gather(*(asyncio.to_thread(self.archive.next_feedback_answer) for _ in range(10)))
