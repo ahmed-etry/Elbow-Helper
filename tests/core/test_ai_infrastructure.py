@@ -37,6 +37,27 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
                     await session.advance(reasoning_effort=AgentReasoningEffort.MAX)
         self.assertEqual(len(attempts), 1)
 
+    async def test_round_timeout_reaches_transport_without_retries_or_changing_later_rounds(self):
+        timeouts = []
+
+        async def timeout(request):
+            timeouts.append(request.extensions["timeout"])
+            raise httpx.ReadTimeout("Synthetic provider timeout", request=request)
+
+        api = AsyncOpenAI(api_key="test-key",
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(timeout)))
+        with patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI", return_value=api):
+            async with DeepSeekTextClient("test-key") as client:
+                session = client.create_agent_session(system_prompt="Instructions",
+                    prompt="Request", tools=())
+                for seconds in (400.0, 75.0, None):
+                    with self.subTest(seconds=seconds), self.assertRaises(TextGenerationError):
+                        await session.advance(timeout_seconds=seconds)
+                self.assertEqual(session._client.max_retries, 0)
+                self.assertEqual(session._client.timeout, 300.0)
+        self.assertEqual(timeouts, [dict.fromkeys(("connect", "read", "write", "pool"), seconds)
+                                    for seconds in (400.0, 75.0, 300.0)])
+
     @staticmethod
     def _response(
         content: str,

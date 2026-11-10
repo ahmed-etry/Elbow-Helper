@@ -92,6 +92,7 @@ class AgentSession(Protocol):
         reasoning_effort: AgentReasoningEffort = AgentReasoningEffort.HIGH,
         max_output_tokens: int | None = None,
         continuation_instruction: str | None = None,
+        timeout_seconds: float | None = None,
     ) -> AgentStep: ...
 
 

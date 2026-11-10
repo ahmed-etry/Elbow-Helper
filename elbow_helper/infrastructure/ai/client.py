@@ -317,11 +317,13 @@ class _DeepSeekAgentSession:
         reasoning_effort: AgentReasoningEffort = AgentReasoningEffort.HIGH,
         max_output_tokens: int | None = None,
         continuation_instruction: str | None = None,
+        timeout_seconds: float | None = None,
     ) -> AgentStep:
         if self._replacement is not None:
             return await self._replacement.advance(tool_results, allow_tools=allow_tools,
                 reasoning_effort=reasoning_effort, max_output_tokens=max_output_tokens,
-                continuation_instruction=continuation_instruction)
+                continuation_instruction=continuation_instruction,
+                timeout_seconds=timeout_seconds)
         first_round = self._first_round
         self._first_round = False
         for result in tool_results:
@@ -354,6 +356,8 @@ class _DeepSeekAgentSession:
         output_limit = max_output_tokens if max_output_tokens is not None else self._max_output_tokens
         if output_limit is not None:
             options["max_tokens"] = output_limit
+        if timeout_seconds is not None:
+            options["timeout"] = timeout_seconds
 
         started_at = time.monotonic()
         try:
@@ -425,6 +429,7 @@ class _DeepSeekAgentSession:
                     allow_tools=allow_tools, reasoning_effort=reasoning_effort,
                     max_output_tokens=max_output_tokens,
                     continuation_instruction=continuation_instruction,
+                    timeout_seconds=timeout_seconds,
                 )
             raise TextGenerationError(
                 DeepSeekTextClient._format_provider_error(error)
