@@ -28,7 +28,7 @@ RECOMMENDED_ACTIONS_SCHEMA = {'type': 'array', 'maxItems': MAX_RECOMMENDED_ACTIO
     'required': ['capability', 'target', 'arguments'], 'additionalProperties': False}}
 
 RECOMMENDED_ACTIONS_INSTRUCTION = """Use recommended_actions only for concrete, unconditional changes
-in recommendation that serve the asker's requested decision or operational plan about those
+in reply that serve the asker's requested decision or operational plan about those
 people. Leave recommended_actions empty for factual/statistical answers, unrequested decisions,
 unresolved intent, open choices, conditional advice, unsupported targets or operations with no
 available capability.
@@ -128,8 +128,8 @@ def _resolved_target(context, item, tool, accounts):
 
 async def prepare_recommended_actions(flow, decision):
     """Offer optional changes without rewriting the finished assessment."""
-    if (decision['intent_source'] == 'unresolved' or decision['open_choices']
-            or not decision.get('recommendation', '').strip() or not decision.get('recommended_actions')):
+    if (not flow.advice_requested or decision['intent_source'] == 'unresolved'
+            or decision['open_choices'] or not decision.get('recommended_actions')):
         return ()
     context = flow.context
     original_count = len(context.state.proposed_changes)

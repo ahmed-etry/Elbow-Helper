@@ -33,8 +33,7 @@ def columns():
 def decision(**overrides):
     return json.dumps({'intent': 'Compare synthetic accounts', 'intent_source': 'request',
         'discussion_message_ids': [], 'settled_choices': [], 'open_choices': [],
-        'facts': 'Synthetic estimates.\n[[accounts:first]]', 'question': '',
-        'recommendation': '[[accounts:second]]',
+        'reply': 'Synthetic estimates.\n[[accounts:first]]\n\n[[accounts:second]]', 'question': '',
         'account_lists_spreadsheet': 'Synthetic workbook', 'account_lists': [
             {'id': 'first', 'title': 'Group A', 'current_clan': 'BEC', 'columns': columns(), 'accounts': [
                 {'account': '#S0', 'values': {'activity': '75%', 'note': 'Synthetic note'}},
@@ -120,7 +119,7 @@ class AssessmentSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
             context.state.attachments.append(feature)
             await prepare_spreadsheet(context, {'title': 'Synthetic draft', 'sheets': [
                 {'name': 'Draft', 'columns': ['Value'], 'rows': [['synthetic']]}]})
-            content = decision(account_lists=lists, facts='Synthetic basis.', recommendation='')
+            content = decision(account_lists=lists, reply='Synthetic basis.')
             answer = await deliver_decision_answer(context, content, set(), accounts=accounts)
             self.assertEqual(answer, 'Synthetic basis.')
             self.assertEqual(len(context.state.attachments), 2)
@@ -217,7 +216,7 @@ class AssessmentSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
         with TemporaryDirectory() as directory:
             context = _context(directory)
             with self.assertRaises(ValueError):
-                await deliver_decision_answer(context, decision(facts='[[accounts:missing]]'),
+                await deliver_decision_answer(context, decision(reply='[[accounts:missing]]'),
                                               set(), accounts=index())
             self.assertEqual(context.state.attachments, [])
 
@@ -230,7 +229,7 @@ class AssessmentSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
                             {'heading': 'Synthetic estimate', 'value': 'estimate'}]
         group['accounts'] = [{'account': '#S0', 'values': {'estimate': '75'}}]
         payload['account_lists'] = [group]
-        payload['recommendation'] = ''
+        payload['reply'] = 'Synthetic estimates.\n[[accounts:first]]'
         accounts = {'#S0': {'name': '01234', 'town_hall': 12, 'current_clan': group['current_clan']}}
         from elbow_helper.agent.engine import account_list_spreadsheets as sheets
         with TemporaryDirectory() as directory:
@@ -268,7 +267,7 @@ class AssessmentSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
         for private in (False, True):
             with self.subTest(private=private), TemporaryDirectory() as directory:
                 context = _context(directory)
-                content = decision(facts='[[accounts:first]]', recommendation='[[accounts:second]]',
+                content = decision(reply='[[accounts:first]]\n\n[[accounts:second]]',
                                    needs_private_evidence=private)
                 answer = await deliver_decision_answer(context, content, set(), accounts=index())
                 if private:
@@ -284,7 +283,7 @@ class AssessmentSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
              'profile_status': 'ok', 'clan': {'tag': CLANS['BEC'].tag, 'name': 'Synthetic clan'}}]},
             'history': {'family': 'read_cwl_results', 'rows': [
                 {'player_tag': '#LIVE', 'player_name': 'Synthetic old', 'townhall': 12, 'clan_code': 'BEE'}]}})
-        content = decision(facts='[[accounts:live]]', recommendation='', account_lists=[
+        content = decision(reply='[[accounts:live]]', account_lists=[
             {'id': 'live', 'title': 'Synthetic live accounts', 'current_clan': 'BEC', 'columns': [
                 {'heading': 'Synthetic name', 'fact': 'name'},
                 {'heading': 'Synthetic clan', 'fact': 'current_clan'},

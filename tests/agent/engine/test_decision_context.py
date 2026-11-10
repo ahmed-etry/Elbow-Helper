@@ -13,9 +13,10 @@ from elbow_helper.agent.reads.snapshots import family_tool
 
 def payload(**values):
     return json.dumps({'intent': 'A missing decision', 'intent_source': 'unresolved',
-        'discussion_message_ids': [], 'settled_choices': [], 'open_choices': [], 'facts': 'Verified value: 7.',
+        'discussion_message_ids': [], 'settled_choices': [], 'open_choices': [],
+        'reply': 'Verified value: 7.\n\nWhich objective should guide the decision?',
         'question': 'Which objective should guide the decision?',
-        'recommendation': 'This advice must not be delivered.', **values})
+        **values})
 
 
 class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
@@ -98,22 +99,22 @@ class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
             decision_answer(payload(intent_source='discussion', question=''), set())
         with self.assertRaises(ValueError):
             decision_answer(payload(intent_source='discussion', question='', discussion_message_ids=[91]), {92})
-        self.assertIn('advice', decision_answer(payload(intent_source='discussion', question='',
+        self.assertIn('Verified value: 7.', decision_answer(payload(intent_source='discussion', question='',
             discussion_message_ids=[91]), {91}))
 
 
     def test_an_explicit_goal_does_not_resolve_an_open_operational_choice(self):
         content = payload(intent='Open event signups', intent_source='unresolved',
             open_choices=['One session or two sessions'],
-            facts='Seven volunteers are confirmed.', recommendation='',
+            reply='Seven volunteers are confirmed.\n\nDo you want one session or two?',
             question='Do you want one session or two?')
         self.assertEqual(decision_answer(content, set()),
             'Seven volunteers are confirmed.\n\nDo you want one session or two?')
         with self.assertRaises(ValueError):
             decision_answer(payload(intent_source='unresolved', open_choices=['Session format'], question=''), set())
-        # A request whose intent is established carries neither choices nor a question.
+        # A resolved request clears the checking fields without rewriting its reply.
         self.assertEqual(decision_answer(payload(intent_source='request', open_choices=['Session format'],
-            facts='Seven volunteers are confirmed.', recommendation='',
+            reply='Seven volunteers are confirmed.',
             question='Do you want one session or two?'), set()), 'Seven volunteers are confirmed.')
 
     def test_only_actual_discussion_rows_can_establish_intent(self):

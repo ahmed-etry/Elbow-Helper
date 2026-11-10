@@ -15,8 +15,8 @@ from tests.agent.engine import test_request_cost as cost
 def decision(*, workbook=False):
     return json.dumps({'intent': 'Review synthetic accounts', 'intent_source': 'request',
         'discussion_message_ids': [], 'settled_choices': [], 'open_choices': [],
-        'facts': 'Synthetic finding about <@101>.\n[[accounts:roster]]',
-        'recommendation': '', 'question': '', 'account_lists': [
+        'reply': 'Synthetic finding about <@101>.\n[[accounts:roster]]',
+        'question': '', 'account_lists': [
             {'id': 'roster', 'title': 'Synthetic group', 'columns': [
                 {'heading': 'Synthetic account', 'fact': 'name'},
                 {'heading': 'Synthetic judgement', 'value': 'estimate'}], 'accounts': [

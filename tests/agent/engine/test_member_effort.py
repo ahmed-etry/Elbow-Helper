@@ -48,7 +48,7 @@ class MemberEffortTests(unittest.IsolatedAsyncioTestCase):
         content = json.dumps({
             "intent": "Established objective", "intent_source": "request",
             "discussion_message_ids": [], "settled_choices": [], "open_choices": [],
-            "facts": "Synthetic answer.", "question": "",
+            "reply": "Synthetic answer.", "question": "",
         }) if assessment_answer else "Synthetic answer."
         session = _Session([
             *(_model_step(plan) for plan in plans), AgentStep(content, (), AgentUsage()),

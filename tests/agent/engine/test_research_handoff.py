@@ -17,11 +17,10 @@ class ResearchHandoffTests(unittest.IsolatedAsyncioTestCase):
         flow, _, _, _ = cost.RequestCostTests().flow([])
         flow.assessment_requested = True
         flow.budget.request_limits = ASSESSMENT_LIMITS
-        draft = '{"intent":"Expand the casual group","settled_choices":["Keep the existing team together"],"facts":"'
+        draft = '{"intent":"Expand the casual group","settled_choices":["Keep the existing team together"],"reply":"'
         content = json.dumps({'intent': 'Expand the casual group', 'intent_source': 'request',
             'discussion_message_ids': [], 'settled_choices': ['Keep the existing team together'],
-            'open_choices': [], 'facts': 'Both selected accounts.', 'question': '',
-            'recommendation': 'Invite willing members.'})
+            'open_choices': [], 'reply': 'Both selected accounts.\n\nInvite willing members.', 'question': ''})
         rows = [{'player_tag': '#P0'}, {'player_tag': '#P1'}]
         flow.completed_results = {'accounts': {'rows': rows}}
         flow.result_views = dict(flow.completed_results)
@@ -66,7 +65,7 @@ class ResearchHandoffTests(unittest.IsolatedAsyncioTestCase):
                 input_size = None
                 content = json.dumps({'intent': 'Evaluate selected accounts', 'intent_source': 'request',
                     'discussion_message_ids': [], 'settled_choices': [], 'open_choices': [],
-                    'facts': 'Complete selected table.', 'question': '', 'recommendation': ''})
+                    'reply': 'Complete selected table.', 'question': ''})
                 test = self
 
                 class Session:
@@ -95,8 +94,8 @@ class ResearchHandoffTests(unittest.IsolatedAsyncioTestCase):
     async def test_reasoning_only_final_recovers_with_the_same_complete_evidence_in_a_fresh_session(self):
         content = json.dumps({'intent': 'Choose the supported next step',
             'intent_source': 'request', 'discussion_message_ids': [],
-            'settled_choices': [], 'open_choices': [], 'facts': 'Complete selected account table.',
-            'question': '', 'recommendation': ''})
+            'settled_choices': [], 'open_choices': [], 'reply': 'Complete selected account table.',
+            'question': ''})
         flow, _, _, _ = cost.RequestCostTests().flow([])
         flow.assessment_requested = True
         flow.budget.request_limits = ASSESSMENT_LIMITS
@@ -134,8 +133,8 @@ class ResearchHandoffTests(unittest.IsolatedAsyncioTestCase):
     async def test_unaffordable_prepared_review_selects_final_protocol_before_provider_call(self):
         content = json.dumps({'intent': 'Choose the supported next step',
             'intent_source': 'request', 'discussion_message_ids': [],
-            'settled_choices': [], 'open_choices': [], 'facts': 'Complete selected account table.',
-            'question': '', 'recommendation': ''})
+            'settled_choices': [], 'open_choices': [], 'reply': 'Complete selected account table.',
+            'question': ''})
         flow, session, _, _ = cost.RequestCostTests().flow([
             AgentStep(content, (), AgentUsage(160000, 1200))])
         flow.assessment_requested = True
