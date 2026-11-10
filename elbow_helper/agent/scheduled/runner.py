@@ -20,6 +20,7 @@ from elbow_helper.agent.conversation.wording import ACTION_STANDING_ACCESS_PAUSE
 from .config import POLL_SECONDS
 from .time_rules import next_occurrences, schedule_expired
 from .dm_controls import ReminderStopButton, reminder_stop_view
+from .reminders import channel_reminder_content
 from .requests import (
     ScheduledMessage,
     ContextFactory,
@@ -243,6 +244,9 @@ class ScheduledRunner:
         message = ScheduledMessage(
             member.guild, channel, member, rule["rule"].get("request", rule["rule"].get("text", ""))
         )
+        if kind == "reminder":
+            # These targets were checked and confirmed when the reminder was saved.
+            message.raw_mentions = tuple(rule["rule"].get("member_ids", ()))
         context = self.context_factory(message, member)
         result = None
         failure = None
@@ -286,6 +290,7 @@ class ScheduledRunner:
                         raise ValueError("No reminder recipient received the message")
                     result = ScheduledResult(completed=stopped)
                 else:
+                    content = channel_reminder_content(context.guild, rule["rule"])
                     mentions = post_mentions(context, rule["rule"], content)
                     for part in chunk_response(content):
                         await channel.send(part, allowed_mentions=mentions)

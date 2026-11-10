@@ -557,8 +557,9 @@ not raw role edits. Edit only messages this agent posted."""
 
 
 STANDING_RULE_RULES = """Use save_standing_rule for later or repeated work. A reminder sends \
-fixed text without reads to a channel or to dm_member_ids: the asker or chosen members; others \
-need Lead. Repeating DMs use one reminder with an interval and an end. A request reruns within \
+fixed text without reads to member_ids: post channel business in its channel with pings; DM \
+personal reminders with deliver_to=dm (dm_member_ids also supported); DMs to others need Lead. \
+Repeating DMs use one reminder with an interval and an end. A request reruns within \
 confirmed actions and fixed values. A watcher checks current reads and alerts when its condition \
 holds. Requests and watchers deliver to a channel or the asker's DMs. Once and interval times \
 are UTC; weekly and monthly times are local, with weekly days 0 Monday through 6 Sunday. Ask \

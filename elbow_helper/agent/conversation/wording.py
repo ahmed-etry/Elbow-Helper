@@ -11,6 +11,7 @@ AGENT_DAILY_LIMIT = "You've hit the daily limit. Try again in {n} h."
 ACTION_STANDING_SAVE = "{kind}: {request}"
 ACTION_STANDING_DESTINATION = "Send results to {channel}."
 ACTION_STANDING_POST_DESTINATION = "Post in {channel}."
+ACTION_STANDING_POST_PING = "Post in {channel} and ping {members}."
 ACTION_STANDING_DM_DESTINATION = "DM {members}."
 ACTION_STANDING_DM_SELF = "Send results to your DMs."
 ACTION_STANDING_DM_PAUSED = (

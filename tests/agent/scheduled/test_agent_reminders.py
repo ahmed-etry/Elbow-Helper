@@ -46,6 +46,7 @@ class ReminderTests(unittest.IsolatedAsyncioTestCase):
             guild=self.member.guild, source_message=SimpleNamespace(channel=self.channel),
             state=AgentTurnState(),
         )
+        context.state.member_self_target = True
         seen = set()
         for use_dm in (False, True):
             values = {"kind": "reminder", "text": "Time for war", "schedule": {
@@ -53,6 +54,8 @@ class ReminderTests(unittest.IsolatedAsyncioTestCase):
             }}
             if use_dm:
                 values["dm_member_ids"] = [2]
+            else:
+                values["member_ids"] = [2]
             with (
                 patch(
                     "elbow_helper.agent.scheduled.tools.resolve_channel",
@@ -63,7 +66,8 @@ class ReminderTests(unittest.IsolatedAsyncioTestCase):
                 await prepare_save(context, values, registry_factory=lambda: {})
                 action = context.state.proposed_changes[-1]
                 self.assertEqual(action.preview.summary, "Set reminder")
-                self.assertIn("DM <@2>." if use_dm else "Post in <#3>.", action.preview.lines)
+                self.assertIn("DM <@2>." if use_dm else "Post in <#3> and ping <@2>.",
+                              action.preview.lines)
                 self.assertTrue(await action.preview.recheck())
                 await action.run()
             rows = self.repository.list_standing(requester_id=2, kind="reminder")
@@ -91,7 +95,7 @@ class ReminderTests(unittest.IsolatedAsyncioTestCase):
                 self.repository.standing(kind="reminder", identifier=row["request_id"])["status"],
                 "active",
             )
-        self.channel.send.assert_awaited_with("Time for war", allowed_mentions=None)
+        self.channel.send.assert_awaited_with("<@2>\nTime for war", allowed_mentions=None)
         self.member.send.assert_awaited_once()
         self.run_request.assert_not_awaited()
 
