@@ -56,6 +56,8 @@ MISTAKES = {
         {'war_type': 'REG', 'after': NAIVE}],
     'read_cwl_results': [
         {'metric': 'ass'}, {'metric': 'bonus', 'clan_codes': [NON_CWL]},
+        {'metric': 'ass', 'clan_codes': [CWL_CLAN_CODES[0]], 'history_limit': 2},
+        {'metric': 'bonus', 'clan_codes': [CWL_CLAN_CODES[0]], 'history_limit': 3},
         {'metric': 'ass', 'clan_codes': [CWL_CLAN_CODES[0]], 'season': '2026-09', 'latest_completed': 3},
         {'metric': 'attendance', 'season': '2026-09', 'history_limit': 2},
         {'metric': 'signup_pool', 'season': '2026-09'}, {'metric': 'mega_ass', 'season_keys': ['2026-09']},
@@ -214,6 +216,26 @@ class InputRuleTests(unittest.TestCase):
 
     def check(self, name, arguments):
         return check_step(step(name, arguments), self.registry)
+
+    def test_cwl_history_counts_are_only_refused_for_ass_and_bonus(self):
+        for metric in ('ass', 'bonus'):
+            with self.subTest(metric=metric):
+                result = self.check('read_cwl_results', {
+                    'metric': metric, 'clan_codes': ['BEH'], 'history_limit': 2})
+                self.assertFalse(result.ok)
+                self.assertEqual(result.error,
+                    'ASS and bonus do not support history_limit. Use season (YYYY-MM) for one season, '
+                    'including the running one, season_keys for several seasons, or war_ids, '
+                    'latest_completed or after/before for part of a season.')
+                for period in ({'season': '2026-11'}, {'season_keys': ['2026-10', '2026-11']},
+                               {'war_ids': ['synthetic']}, {'latest_completed': 1},
+                               {'after': START, 'before': END}):
+                    self.assertTrue(self.check('read_cwl_results', {
+                        'metric': metric, 'clan_codes': ['BEH'], **period}).ok)
+        for metric in ('performance', 'mega_ass', 'attendance'):
+            with self.subTest(metric=metric):
+                self.assertTrue(self.check('read_cwl_results', {
+                    'metric': metric, 'clan_codes': ['BEH'], 'history_limit': 2}).ok)
 
     def test_a_report_continuation_skips_selection_rules(self):
         self.assertTrue(self.check('read_war_attendance', {'report_id': 'synthetic'}).ok)

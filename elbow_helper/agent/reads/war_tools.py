@@ -33,6 +33,8 @@ ATTENDANCE_RULES = (*WINDOW_RULES,
     {'only_one': WAR_SELECTORS, 'error': ONE_SELECTION},
     {'needs': WAR_SELECTORS, 'error': 'Which season, wars or date window do you want?'})
 CWL_RULES = (*WINDOW_RULES,
+    {'when': {'metric': ['ass', 'bonus']}, 'forbids': ['history_limit'],
+     'error': 'ASS and bonus do not support history_limit. Use season (YYYY-MM) for one season, including the running one, season_keys for several seasons, or war_ids, latest_completed or after/before for part of a season.'},
     {'when': {'metric': ['ass', 'bonus', 'attendance']}, 'only_one': [*WAR_SELECTORS, 'history_limit'],
      'error': ONE_SELECTION},
     {'when': {'metric': ['ass', 'bonus']}, 'needs': ['clan_codes'], 'error': 'Which clan should I score?'},

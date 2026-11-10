@@ -1,11 +1,13 @@
 """Use the real CWL facade over league weeks in the family record for mixed season completeness."""
 
 import asyncio
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from tests.temp_directory import TemporaryDirectory
 import unittest
+from unittest.mock import Mock
 
 from elbow_helper.agent.reads import war_tools as war_reads
+from elbow_helper.features.cwl.results import CwlResults, PERIOD_SETTINGS
 from tests.agent.engine.test_agent_plan_flow import _context
 from tests.features.cwl_record_stub import LeagueRecord, league_war, member
 
@@ -13,6 +15,33 @@ END = 1788000000
 
 
 class CwlCoverageRegressionTests(unittest.IsolatedAsyncioTestCase):
+    def test_all_period_settings_share_validation_selection_and_defaulting(self):
+        @dataclass
+        class Snapshot:
+            rows: tuple = ()
+            summaries: tuple = ()
+
+        periods = ({'season': '2026-11'}, {'season_keys': ['2026-11']},
+                   {'war_ids': ['synthetic']}, {'latest_completed': 2}, {'history_limit': 2},
+                   {'after': '2026-11-01T00:00:00+00:00', 'before': '2026-11-08T00:00:00+00:00'})
+        self.assertEqual(set(PERIOD_SETTINGS), {key for period in periods for key in period})
+        for metric in ('ass', 'bonus'):
+            for period in periods:
+                with self.subTest(metric=metric, period=period):
+                    queries = Mock()
+                    queries.latest_season.side_effect = AssertionError('An explicit period must not default.')
+                    queries.attendance.return_value = {'war_ids': [], 'rows': [], 'coverage': 'Synthetic period'}
+                    queries.ass_wars.return_value = queries.bonus_wars.return_value = Snapshot()
+                    results = CwlResults(queries)
+                    arguments = {'metric': metric, 'clan_codes': ['BEH'], **period}
+                    self.assertIsNone(results.validate_selection(arguments))
+                    self.assertNotIn('error', results.selection(arguments))
+                    self.assertNotIn('error', results.read(arguments))
+                    queries.latest_season.assert_not_called()
+                    conflicting = {'latest_completed': 1} if 'season' in period else {'season': '2026-10'}
+                    self.assertEqual(results.validate_selection({**arguments, **conflicting})['cause'],
+                                     'invalid_arguments')
+
     async def test_combined_read_retains_incomplete_clan_beside_complete_ranked_clan(self):
         with TemporaryDirectory() as directory:
             record = await LeagueRecord(directory).initialize()
