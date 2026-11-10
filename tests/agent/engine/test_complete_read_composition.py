@@ -20,9 +20,9 @@ class CaptureModel(_Model):
         return super().create_agent_session(**kwargs)
 
 
-def decision_payload(facts='Supported conclusion.'):
+def decision_payload(reply='Supported conclusion.'):
     return json.dumps({'intent': 'Established objective', 'intent_source': 'request',
-        'discussion_message_ids': [], 'settled_choices': [], 'open_choices': [], 'facts': facts, 'question': ''})
+        'discussion_message_ids': [], 'settled_choices': [], 'open_choices': [], 'reply': reply, 'question': ''})
 
 
 class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):

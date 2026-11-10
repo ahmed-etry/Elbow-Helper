@@ -149,16 +149,16 @@ class AnswerFlow:
             decision_content = answer
             try:
                 answer = await deliver_decision_answer(self.context, answer, self.discussion_message_ids,
-                                                       accounts=self.answer_accounts, advice=self.advice_requested)
+                                                       accounts=self.answer_accounts)
             except ValueError as error:
                 repaired = await self._repair_decision_format(answer, error)
                 decision_content = without_new_choices(answer, repaired.content)
                 try:
                     answer = await deliver_decision_answer(self.context, decision_content,
-                        self.discussion_message_ids, accounts=self.answer_accounts, advice=self.advice_requested)
+                        self.discussion_message_ids, accounts=self.answer_accounts)
                 except ValueError as invalid:
                     raise TextGenerationError('Decision response could not be validated.') from invalid
-            assessed_decision = parse_decision(decision_content, self.advice_requested)
+            assessed_decision = parse_decision(decision_content)
             assessed_answer = (json.loads(answer)['answer']
                                if assessed_decision.get('needs_private_evidence') else answer)
         self.decision_composed = self.assessment_requested
@@ -386,7 +386,7 @@ class AnswerFlow:
         """Repair the response shape without resending the full research context."""
         repair_rules = ('Preserve the draft facts and source links; add no facts or advice. '
               'An unavailable discussion does not establish a decision. '
-              'Keep readable facts. Keep the draft\'s open choices and question; add none.')
+              'Keep the reply readable. Keep the draft\'s open choices and question; add none.')
         error_instruction = 'Correct the invalid decision response: ' + str(error)
         instruction = error_instruction + '\n' + repair_rules
         if self.final_session_factory is not None:

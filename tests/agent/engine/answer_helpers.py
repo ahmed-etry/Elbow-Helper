@@ -8,7 +8,7 @@ def insert_account_lists(parts, declarations, index):
     return insert_resolved_lists(parts, resolve_account_lists(declarations, index), index)
 
 
-def decision_answer(content, discussion_message_ids, *, accounts=None, advice=True):
+def decision_answer(content, discussion_message_ids, *, accounts=None):
     accounts = accounts or {}
-    result, parts, lists = _decision_parts(content, discussion_message_ids, accounts, advice)
+    result, parts, lists = _decision_parts(content, discussion_message_ids, accounts)
     return _render_decision(result, parts, lists, accounts)

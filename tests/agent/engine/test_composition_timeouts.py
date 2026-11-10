@@ -71,7 +71,7 @@ class CompositionTimeoutTests(unittest.IsolatedAsyncioTestCase):
         def decision(facts):
             return json.dumps({"intent": "Review the supplied facts", "intent_source": "request",
                 "discussion_message_ids": [], "settled_choices": [], "open_choices": [],
-                "facts": facts, "question": ""})
+                "reply": facts, "question": ""})
 
         async def provider(**options):
             requests.append((clock.elapsed, options))

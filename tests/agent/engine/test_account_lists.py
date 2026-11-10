@@ -36,8 +36,8 @@ def columns():
 
 def decision(**overrides):
     value = {'intent': 'Move accounts', 'intent_source': 'request', 'discussion_message_ids': [],
-             'settled_choices': [], 'open_choices': [], 'facts': 'Roster:\n[[accounts:roster]]',
-             'question': '', 'recommendation': '', 'account_lists': [
+             'settled_choices': [], 'open_choices': [], 'reply': 'Roster:\n[[accounts:roster]]',
+             'question': '', 'account_lists': [
                  {'id': 'roster', 'title': 'Synthetic list', 'columns': columns(), 'accounts': [
                      {'account': 'Synthetic One', 'values': {'estimate': '~80%'}},
                      {'account': '#BBB222', 'values': {'estimate': '~40%', 'note': 'no stored wars'}}]}]}
@@ -174,6 +174,35 @@ class DecisionAnswerTests(unittest.TestCase):
         content = decision(account_lists=[{'id': 'roster', 'accounts': [{'player_tag': '#AAA111'}]}])
         with self.assertRaisesRegex(ValueError, 'Invalid decision answer'):
             decision_answer(content, set(), accounts=self.index)
+
+    def test_markers_inside_the_reply_resolve_from_authorized_data(self):
+        reply = '**Selected accounts**\n[[accounts:roster]]\n\n- Review these together.'
+        answer = decision_answer(decision(reply=reply), set(), accounts=self.index)
+        self.assertEqual(answer, '**Selected accounts**\n\n**Synthetic list (2)**\n'
+                         'Synthetic One — 15 — ~80% — owner unverified\n'
+                         'Synthetic Two — 14 — ~40% — no stored wars\n\n'
+                         '- Review these together.')
+
+    def test_plain_reply_preserves_whitespace_and_has_no_field_length_cap(self):
+        for reply in ('\n  - Synthetic finding\n\n    Supporting detail  \n', 'x' * 32001):
+            with self.subTest(length=len(reply)):
+                self.assertEqual(decision_answer(decision(reply=reply, account_lists=[]), set()), reply)
+
+    def test_private_evidence_envelope_keeps_the_whole_reply(self):
+        reply = '**Synthetic result**\n\n- First group\n- Second group\n\nWhich session?'
+        content = decision(reply=reply, account_lists=[], intent_source='unresolved',
+                           question='Which session?', needs_private_evidence=True)
+        self.assertEqual(json.loads(decision_answer(content, set())),
+                         {'answer': reply, 'needs_private_evidence': True})
+
+    def test_empty_or_missing_reply_is_rejected(self):
+        for reply in ('', '   \n'):
+            with self.subTest(reply=reply), self.assertRaises(ValueError):
+                decision_answer(decision(reply=reply, account_lists=[]), set())
+        payload = json.loads(decision(account_lists=[]))
+        del payload['reply']
+        with self.assertRaises(ValueError):
+            decision_answer(json.dumps(payload), set())
 
 
 class FinalAnswerFlowTests(unittest.IsolatedAsyncioTestCase):

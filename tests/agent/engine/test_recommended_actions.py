@@ -27,8 +27,8 @@ from tests.agent.engine import test_request_cost as cost
 def decision(items=(), **overrides):
     return json.dumps({'intent': 'Choose the next step for the selected people',
         'intent_source': 'request', 'discussion_message_ids': [],
-        'settled_choices': [], 'open_choices': [], 'facts': 'Synthetic observations.',
-        'question': '', 'recommendation': 'Synthetic recommendation.',
+        'settled_choices': [], 'open_choices': [], 'reply': 'Synthetic observations.\n\nSynthetic recommendation.',
+        'question': '',
         'recommended_actions': list(items), **overrides})
 
 
@@ -260,6 +260,23 @@ class RecommendedActionTests(unittest.IsolatedAsyncioTestCase):
         flow._repair_decision_format = AsyncMock(return_value=SimpleNamespace(content=decision([action()])))
         await flow.run()
         self.prepare.assert_awaited_once()
+
+    async def test_actions_require_requested_advice_and_declared_actions(self):
+        for advice, items, expected in ((False, [action()], 0), (True, [], 0), (True, [action()], 1)):
+            with self.subTest(advice=advice, items=items):
+                flow = self.flow(decision(items))
+                flow.advice_requested = advice
+                self.assertEqual(await flow.run(), 'Synthetic observations.\n\nSynthetic recommendation.')
+                self.assertEqual(self.prepare.await_count, expected)
+                self.assertEqual(len(flow.context.state.proposed_changes), expected)
+
+    async def test_unresolved_request_with_a_question_prepares_no_actions(self):
+        reply = 'Synthetic observations.\n\nUse the first session if it fits.\nWhich session?'
+        flow = self.flow(decision([action()], intent_source='unresolved',
+                                 open_choices=['Which session'], question='Which session?', reply=reply))
+        self.assertEqual(await flow.run(), reply)
+        self.prepare.assert_not_awaited()
+        self.assertFalse(flow.context.state.proposed_changes)
 
 
     async def test_changed_answer_does_not_offer_stale_recommendations(self):

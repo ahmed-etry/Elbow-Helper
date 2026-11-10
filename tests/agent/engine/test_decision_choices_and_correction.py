@@ -15,7 +15,7 @@ from tests.agent.engine import test_request_cost as cost
 def decision(**overrides):
     payload = {'intent': 'Count the active members', 'intent_source': 'request',
                'discussion_message_ids': [], 'settled_choices': [], 'open_choices': [],
-               'facts': 'Synthetic counts.', 'question': '', 'recommendation': ''}
+               'reply': 'Synthetic counts.', 'question': ''}
     return json.dumps({**payload, **overrides})
 
 
@@ -26,17 +26,28 @@ class DecisionChoiceTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(source=source):
                 payload = decision(intent_source=source, discussion_message_ids=[7] if source == 'discussion' else [],
                                    open_choices=['Which threshold counts'], question='Which threshold?')
-                parsed = parse_decision(payload, True)
+                parsed = parse_decision(payload)
                 self.assertEqual((parsed['open_choices'], parsed['question']), ([], ''))
-                self.assertEqual(decision_answer(payload, {7}, advice=True), 'Synthetic counts.')
-        self.assertEqual(decision_answer(content, set(), advice=True), 'Synthetic counts.')
+                self.assertEqual(decision_answer(payload, {7}), 'Synthetic counts.')
+        self.assertEqual(decision_answer(content, set()), 'Synthetic counts.')
 
     def test_an_unresolved_request_keeps_its_one_question(self):
-        content = decision(intent_source='unresolved', open_choices=['Which clan'], question='Which clan?')
-        self.assertEqual(parse_decision(content, True)['open_choices'], ['Which clan'])
-        self.assertEqual(decision_answer(content, set(), advice=True), 'Synthetic counts.\n\nWhich clan?')
+        content = decision(intent_source='unresolved', open_choices=['Which clan'], question='Which clan?',
+                           reply='Synthetic counts.\n\nWhich clan?')
+        self.assertEqual(parse_decision(content)['open_choices'], ['Which clan'])
+        self.assertEqual(decision_answer(content, set()), 'Synthetic counts.\n\nWhich clan?')
         with self.assertRaises(ValueError):
-            decision_answer(decision(intent_source='unresolved'), set(), advice=True)
+            decision_answer(decision(intent_source='unresolved'), set())
+
+    def test_an_unresolved_question_must_be_present_in_the_reply(self):
+        for question in ('', '   ', 'Which clan?'):
+            with self.subTest(question=question), self.assertRaises(ValueError):
+                decision_answer(decision(intent_source='unresolved', question=question,
+                                         reply='Synthetic counts.'), set())
+        missing = json.loads(decision(intent_source='unresolved', reply='Which clan?'))
+        del missing['question']
+        with self.assertRaises(ValueError):
+            decision_answer(json.dumps(missing), set())
 
 
     def test_a_repair_cannot_add_open_choices_the_draft_lacked(self):
