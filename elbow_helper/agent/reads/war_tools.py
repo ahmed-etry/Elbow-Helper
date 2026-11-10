@@ -7,6 +7,7 @@ from elbow_helper.agent.reads.snapshots import family_tool, IDS, TAGS, DATE
 from elbow_helper.agent.reads.clash import read_clash
 from elbow_helper.agent.reads.cache import stored_read
 from .wars import attendance, current_war, period, selected_wars, single_selection, war_attendance
+from .war_attacks import war_attacks
 from .war_measures import clan_participation, participation_status
 
 __all__ = ['TOOLS', 'attendance', 'current_war', 'period', 'selected_wars', 'single_selection',
@@ -32,6 +33,8 @@ HISTORICAL = ['season', 'season_keys', 'after', 'before', 'war_ids', 'latest_com
 ATTENDANCE_RULES = (*WINDOW_RULES,
     {'only_one': WAR_SELECTORS, 'error': ONE_SELECTION},
     {'needs': WAR_SELECTORS, 'error': 'Which season, wars or date window do you want?'})
+ATTACK_RULES = (*ATTENDANCE_RULES,
+    {'only_one': ['account_tags', 'member_ids', 'cohort_ref'], 'error': 'Choose accounts, members or a cohort, not several.'})
 CWL_RULES = (*WINDOW_RULES,
     {'when': {'metric': ['ass', 'bonus']}, 'forbids': ['history_limit'],
      'error': 'ASS and bonus do not support history_limit. Use season (YYYY-MM) for one season, including the running one, season_keys for several seasons, or war_ids, latest_completed or after/before for part of a season.'},
@@ -123,6 +126,12 @@ TOOLS = (
       'cohort_ref':{'type':'string','minLength':1,'maxLength':32}}, war_attendance, required=('war_type',),
      rules=ATTENDANCE_RULES,
      usage_note='Select season/season_keys, war_ids, latest_completed or dates first. Resolve relative periods from season evidence; account filters do not select a period.'),
+ family_tool('read_war_attacks', 'Read individual stored war attacks: map positions and Town Halls, stars, destruction and order.',
+     {**SELECTION, 'war_type': {'type': 'string', 'enum': ['REG', 'CWL', 'both']},
+      'member_ids': IDS, 'account_tags': TAGS,
+      'cohort_ref': {'type': 'string', 'minLength': 1, 'maxLength': 32}}, war_attacks, required=('war_type',),
+     rules=ATTACK_RULES,
+     usage_note='Select the period as for read_war_attendance. Follow next_cursor to completion.'),
  family_tool('read_cwl_results', 'Read current CWL signup/assigned rosters, season results, ASS, bonus and clan leagues.',
      {**SELECTION, 'metric': {'type': 'string', 'enum': ['signup_pool', 'assigned_rosters', 'performance', 'attendance', 'ass', 'mega_ass', 'bonus', 'league'],
                            'description': 'Use league without a historical selector for current clan CWL league labels. The attendance metric is CWL participation and defaults to the latest completed season; performance defaults to three seasons.'},

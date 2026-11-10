@@ -177,6 +177,105 @@ def first_gap(connection, war_id, attacks):
     return min(gaps, default=sum(reported) + 1)
 
 
+def facing_attacks(connection, war, clan, coverage, direction, selected, head):
+    """One clan-facing war's attacks (or defenses), each starting with ``head``, and the bases' lineup.
+
+    An attack copied from old clan health, whose defender the record cannot
+    place, shows the defender and first hit as the old capture saw them.
+    """
+    rows = []
+    own = side_of(connection, war["id"], clan)
+    complete = {own: coverage["own"], 1 - own: coverage["opponent"]}
+    side_lineups = {side: [dict(row) for row in connection.execute(
+        "SELECT player_tag,source_map_position AS map_position FROM war_members WHERE war_id=? AND side=? "
+        "ORDER BY source_map_position IS NULL,source_map_position,player_tag", (war["id"], side))]
+        for side in (0, 1)}
+    places = {side: {m["player_tag"]: m["map_position"] for m in side_lineups[side]}
+              if complete[side]["lineup_complete"] else {} for side in (0, 1)}
+    attacks = connection.execute(
+        "SELECT a.*,x.player_tag AS attacker_tag,x.name AS attacker_name,x.townhall AS attacker_townhall,"
+        "x.source_map_position AS attacker_map_position,x.side AS attacker_side,d.player_tag AS defender_tag,"
+        "d.name AS defender_name,d.townhall AS defender_townhall,d.source_map_position AS defender_map_position,"
+        "d.side AS defender_side,d.extra_json AS defender_extra FROM war_attacks a "
+        "LEFT JOIN war_members x ON x.id=a.attacker_member_id "
+        "LEFT JOIN war_members d ON d.id=a.defender_member_id WHERE a.war_id=? ORDER BY a.attack_order",
+        (war["id"],)).fetchall()
+    first = {}
+    for attack in attacks:
+        extra = json.loads(attack["extra_json"])
+        defender = attack["defender_tag"] or extra.get("defender_tag")
+        first.setdefault(defender, attack["attack_order"])
+    gap = first_gap(connection, war["id"], attacks)
+    for attack in attacks:
+        extra = json.loads(attack["extra_json"])
+        # A known defender places an unattributed attacker on the other side.
+        side = (attack["attacker_side"] if attack["attacker_side"] is not None else
+                1 - attack["defender_side"] if attack["defender_side"] is not None else None)
+        if extra.get("stub") or side is None or (side == own) != (direction == "attacks"):
+            continue
+        attacker = attack["attacker_tag"] or extra.get("attacker_tag")
+        defender = attack["defender_tag"] or extra.get("defender_tag")
+        if selected is not None and (attacker if direction == "attacks" else defender) not in selected:
+            continue
+        # Freshness needs every earlier attack on that defender: all the side's attacks,
+        # or every attack before this one by Clash's order.
+        fresh = (False if first[defender] < attack["attack_order"] else
+                 True if complete[side]["attacks_complete"] or attack["attack_order"] < gap else None)
+        # Old clan health kept only its own lineup, so a copied attack's defender may be
+        # missing or incomplete in the record; the old capture's view of the defender and
+        # of a first hit is kept with the attack and fills what the record does not know.
+        legacy = extra.get("legacy") if isinstance(extra.get("legacy"), dict) else {}
+        known = {"defender_name": attack["defender_name"], "defender_townhall": attack["defender_townhall"],
+                 "defender_position": places[1 - side].get(defender)}
+        # A league base copied from old clan health is known only from the attacks on it: its
+        # place among the bases that were hit means nothing, so it keeps the old capture's position.
+        base = json.loads(attack["defender_extra"]).get("legacy") if attack["defender_extra"] else None
+        copied = isinstance(base, dict) and bool(base.get("from_attacks"))
+        if copied:
+            known["defender_position"] = None
+        filled = {key: legacy.get(key) for key, value in known.items() if value is None and legacy.get(key)}
+        if copied and attack["defender_map_position"] is not None:
+            filled["defender_position"] = attack["defender_map_position"]
+        rows.append({**head, "attack_order": attack["attack_order"],
+                     "attacker_tag": attacker, "attacker_name": attack["attacker_name"],
+                     "attacker_townhall": attack["attacker_townhall"],
+                     "attacker_map_position": attack["attacker_map_position"],
+                     "defender_tag": defender, **known, **filled,
+                     "defender_map_position": attack["defender_map_position"],
+                     "defender_basis": "old_capture" if filled else "lineup",
+                     "stars": attack["stars"], "destruction": attack["destruction"],
+                     "duration": attack["duration"],
+                     "fresh": fresh if fresh is not None else legacy.get("fresh_attack"),
+                     "fresh_basis": "old_capture" if fresh is None and "fresh_attack" in legacy else "attacks"})
+    return rows, side_lineups[1 - own if direction == "attacks" else own]
+
+
+def selected_war(connection, clan, key, at):
+    """The record war a selection ID names, facing ``clan``; None when the record has none.
+
+    League IDs are ``CWL:<war tag>``. Regular IDs are ``REG:<clan>:<end>:<clan>``,
+    the end to the millisecond, as the regular selection builds them.
+    """
+    if key.startswith("CWL:"):
+        return connection.execute(
+            "SELECT w.* FROM wars w JOIN war_sides s ON s.war_id=w.id AND s.clan_tag=? "
+            "WHERE w.type='CWL' AND w.war_tag=? AND w.first_seen_at<=?", (clan, key[4:], at)).fetchone()
+    parts = key.split(":")
+    if len(parts) != 4 or parts[0] != "REG" or clan not in (parts[1], parts[3]):
+        return None
+    try:
+        end = datetime.strptime(parts[2], "%Y%m%dT%H%M%S.%fZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    end = round(end.timestamp() * 1000) * 1000
+    other = parts[3] if clan == parts[1] else parts[1]
+    return connection.execute(
+        "SELECT w.* FROM wars w JOIN war_sides s ON s.war_id=w.id AND s.clan_tag=? "
+        "JOIN war_sides o ON o.war_id=w.id AND o.side!=s.side AND o.clan_tag=? "
+        "WHERE w.type='REG' AND w.end_at BETWEEN ? AND ? AND w.first_seen_at<=? ORDER BY w.id LIMIT 1",
+        (clan, other, end, end + 999, at)).fetchone()
+
+
 def selection(time_field, states):
     if isinstance(time_field, (tuple, list)):
         if states is not None or not 1 <= len(time_field) <= 6:
@@ -477,78 +576,57 @@ class WarReads(RecordReads):
         for war, clan, time, basis in select_wars(connection, clans, after, before, types, at, time_field, states):
             coverage = war_side_coverage(connection, war["id"], clan)
             checked.append((war, clan, coverage))
-            own = side_of(connection, war["id"], clan)
-            complete = {own: coverage["own"], 1 - own: coverage["opponent"]}
-            side_lineups = {side: [dict(row) for row in connection.execute(
-                "SELECT player_tag,source_map_position AS map_position FROM war_members WHERE war_id=? AND side=? "
-                "ORDER BY source_map_position IS NULL,source_map_position,player_tag", (war["id"], side))]
-                for side in (0, 1)}
-            lineups.append({"war_id": war["id"], "clan_tag": clan, "coverage": coverage,
-                            "members": side_lineups[1 - own if direction == "attacks" else own]})
-            places = {side: {m["player_tag"]: m["map_position"] for m in side_lineups[side]}
-                      if complete[side]["lineup_complete"] else {} for side in (0, 1)}
-            attacks = connection.execute(
-                "SELECT a.*,x.player_tag AS attacker_tag,x.name AS attacker_name,x.townhall AS attacker_townhall,"
-                "x.source_map_position AS attacker_map_position,x.side AS attacker_side,d.player_tag AS defender_tag,"
-                "d.name AS defender_name,d.townhall AS defender_townhall,d.source_map_position AS defender_map_position,"
-                "d.side AS defender_side,d.extra_json AS defender_extra FROM war_attacks a "
-                "LEFT JOIN war_members x ON x.id=a.attacker_member_id "
-                "LEFT JOIN war_members d ON d.id=a.defender_member_id WHERE a.war_id=? ORDER BY a.attack_order",
-                (war["id"],)).fetchall()
-            first = {}
-            for attack in attacks:
-                extra = json.loads(attack["extra_json"])
-                defender = attack["defender_tag"] or extra.get("defender_tag")
-                first.setdefault(defender, attack["attack_order"])
-            gap = first_gap(connection, war["id"], attacks)
-            for attack in attacks:
-                extra = json.loads(attack["extra_json"])
-                # A known defender places an unattributed attacker on the other side.
-                side = (attack["attacker_side"] if attack["attacker_side"] is not None else
-                        1 - attack["defender_side"] if attack["defender_side"] is not None else None)
-                if extra.get("stub") or side is None or (side == own) != (direction == "attacks"):
-                    continue
-                attacker = attack["attacker_tag"] or extra.get("attacker_tag")
-                defender = attack["defender_tag"] or extra.get("defender_tag")
-                if selected is not None and (attacker if direction == "attacks" else defender) not in selected:
-                    continue
-                # Freshness needs every earlier attack on that defender: all the side's attacks,
-                # or every attack before this one by Clash's order.
-                fresh = (False if first[defender] < attack["attack_order"] else
-                         True if complete[side]["attacks_complete"] or attack["attack_order"] < gap else None)
-                # Old clan health kept only its own lineup, so a copied attack's defender may be
-                # missing or incomplete in the record; the old capture's view of the defender and
-                # of a first hit is kept with the attack and fills what the record does not know.
-                legacy = extra.get("legacy") if isinstance(extra.get("legacy"), dict) else {}
-                known = {"defender_name": attack["defender_name"], "defender_townhall": attack["defender_townhall"],
-                         "defender_position": places[1 - side].get(defender)}
-                # A league base copied from old clan health is known only from the attacks on it: its
-                # place among the bases that were hit means nothing, so it keeps the old capture's position.
-                base = json.loads(attack["defender_extra"]).get("legacy") if attack["defender_extra"] else None
-                copied = isinstance(base, dict) and bool(base.get("from_attacks"))
-                if copied:
-                    known["defender_position"] = None
-                filled = {key: legacy.get(key) for key, value in known.items() if value is None and legacy.get(key)}
-                if copied and attack["defender_map_position"] is not None:
-                    filled["defender_position"] = attack["defender_map_position"]
-                rows.append({"war_id": war["id"], "clan_tag": clan, "type": war["type"], "state": war["state"],
-                             "time": time, "time_basis": basis, "attack_order": attack["attack_order"],
-                             "attacker_tag": attacker, "attacker_name": attack["attacker_name"],
-                             "attacker_townhall": attack["attacker_townhall"],
-                             "attacker_map_position": attack["attacker_map_position"],
-                             "defender_tag": defender, **known, **filled,
-                             "defender_map_position": attack["defender_map_position"],
-                             "defender_basis": "old_capture" if filled else "lineup",
-                             "stars": attack["stars"], "destruction": attack["destruction"],
-                             "duration": attack["duration"],
-                             "fresh": fresh if fresh is not None else legacy.get("fresh_attack"),
-                             "fresh_basis": "old_capture" if fresh is None and "fresh_attack" in legacy else "attacks"})
+            found, members = facing_attacks(connection, war, clan, coverage, direction, selected, {
+                "war_id": war["id"], "clan_tag": clan, "type": war["type"], "state": war["state"],
+                "time": time, "time_basis": basis})
+            lineups.append({"war_id": war["id"], "clan_tag": clan, "coverage": coverage, "members": members})
+            rows.extend(found)
         result = page(rows[offset:offset + limit + 1], limit, offset)
         facing = {(row["war_id"], row["clan_tag"]) for row in result["rows"]}
         result.update(direction=direction, time_field=time_field,
                       lineups=[war for war in lineups if (war["war_id"], war["clan_tag"]) in facing],
                       coverage=window_coverage(connection, clans, types, after, before, at, checked, result["truncated"]))
         return result
+
+    async def selected_attacks(self, wars, *, player_tags=None, as_of=None):
+        """The attacks a family clan made in each chosen war, in war and attack order.
+
+        ``wars`` holds (clan tag, selection ID) pairs, as the war selections return
+        them. Each row adds the opponent clan; a war the record cannot find is listed
+        apart, and a war whose lineup or attacks are not all stored is named.
+        """
+        wars = tuple(dict.fromkeys((clan_tags([clan])[0], key) for clan, key in wars))
+        if len(wars) > MAX_WARS or any(not isinstance(key, str) or len(key) > 100 for _, key in wars):
+            raise ValueError(f"Expected at most {MAX_WARS} war IDs")
+        selected = None if player_tags is None else tags(player_tags)
+        return await self._read(self._selected_attacks, wars, selected, timestamp(as_of))
+
+    @staticmethod
+    def _selected_attacks(connection, wars, selected, at):
+        rows, missing, incomplete = [], [], []
+        for clan, key in wars:
+            war = selected_war(connection, clan, key, at)
+            if war is None:
+                missing.append({"war_id": key, "clan_tag": clan})
+                continue
+            coverage = war_side_coverage(connection, war["id"], clan)
+            causes = [cause for cause, absent in (
+                ("not_final", war["state"] != "warEnded"), ("lineup_incomplete", not coverage["own"]["lineup_complete"]),
+                ("attacks_incomplete", not coverage["own"]["attacks_complete"])) if absent]
+            if causes:
+                incomplete.append({"war_id": key, "clan_tag": clan, "causes": causes})
+            opponent = connection.execute("SELECT clan_tag,name FROM war_sides WHERE war_id=? AND clan_tag!=?",
+                                          (war["id"], clan)).fetchone()
+            found, _ = facing_attacks(connection, war, clan, coverage, "attacks", selected, {
+                "war_id": key, "clan_tag": clan, "type": war["type"], "state": war["state"],
+                "start_at": war["start_at"], "end_at": war["end_at"],
+                "opponent_tag": opponent["clan_tag"] if opponent else None,
+                "opponent_name": opponent["name"] if opponent else None})
+            rows.extend(found)
+        rows.sort(key=lambda row: (-row["end_at"], row["clan_tag"], row["war_id"], row["attack_order"]))
+        return {"rows": rows, "wars_checked": len(wars) - len(missing), "wars_not_found": missing[:200],
+                "incomplete_wars": incomplete[:200], "as_of": at,
+                "truncated": len(missing) > 200 or len(incomplete) > 200}
 
     async def log_entries(self, clan, *, as_of=None, limit=200, offset=0):
         """Stored war-log entries, newest first; a league summary is a single entry."""

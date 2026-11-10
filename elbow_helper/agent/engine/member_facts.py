@@ -8,6 +8,7 @@ from elbow_helper.configuration.roles import CO_APPLICANT_ROLE_ID, ELDER_ROLE_ID
 
 READ_TOPICS = {
     'read_war_attendance': 'War participation and missed attacks',
+    'read_war_attacks': 'Individual war attacks and the bases they hit',
     'read_cwl_results': 'CWL results, leagues and ASS scores',
     'read_current_war': 'Current war lineups and attacks',
     'read_member_accounts': 'Members, linked accounts and home clans',

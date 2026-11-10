@@ -24,10 +24,10 @@ FINDINGS_INSTRUCTION = (
 def family_revisions(context, family):
     observed = getattr(context, 'read_cache', None) is not None
     sources = {}
-    if family in ('read_war_attendance', 'read_cwl_results', 'read_member_accounts',
+    if family in ('read_war_attendance', 'read_war_attacks', 'read_cwl_results', 'read_member_accounts',
                   'read_member_cohort', 'read_clan_rosters'):
         sources['cwl_queries'] = source_revision(getattr(context, 'cwl_queries', None)) if observed else None
-    if family in ('read_war_attendance', 'read_member_accounts', 'read_member_cohort'):
+    if family in ('read_war_attendance', 'read_war_attacks', 'read_member_accounts', 'read_member_cohort'):
         sources['war_reads'] = source_revision(named_source(context, 'war_reads')) if observed else None
     if family in ('read_ranked_activity', 'read_member_accounts', 'read_member_cohort'):
         sources['ranked_reads'] = source_revision(named_source(context, 'ranked_reads')) if observed else None
