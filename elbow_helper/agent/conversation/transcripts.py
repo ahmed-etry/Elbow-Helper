@@ -17,10 +17,10 @@ DEBUG_RETENTION_DAYS = 30
 
 
 def _feedback_hint_schema(connection):
+    # Leave the singleton absent until use so upgrades can merge old agent stores.
     connection.execute("""CREATE TABLE feedback_hint_counter (
         id INTEGER PRIMARY KEY CHECK (id = 1), answers INTEGER NOT NULL
     )""")
-    connection.execute("INSERT INTO feedback_hint_counter VALUES (1, 0)")
 
 
 def _debug_schema(connection: sqlite3.Connection) -> None:
@@ -122,7 +122,8 @@ class TranscriptArchive(ReplyReportArchiveMixin):
     def next_feedback_answer(self):
         """Atomically advance the shared cadence across concurrent replies and restarts."""
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
-            connection.execute("UPDATE feedback_hint_counter SET answers=answers+1 WHERE id=1")
+            connection.execute("""INSERT INTO feedback_hint_counter (id, answers) VALUES (1, 1)
+                ON CONFLICT(id) DO UPDATE SET answers=answers+1""")
             return connection.execute("SELECT answers FROM feedback_hint_counter WHERE id=1").fetchone()[0]
 
     def record_request(self, *, message_id: int, guild_id: int, channel_id: int,

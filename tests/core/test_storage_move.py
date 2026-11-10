@@ -39,6 +39,64 @@ class StorageMoveTests(unittest.TestCase):
             run_sqlite_migrations(connection, local, target_version=len(local))
         return path
 
+    def old_agent_layout(self):
+        from elbow_helper.agent.persistence.schema import migrations
+        steps = migrations()
+        sources = {}
+        for name, selected, statement in (
+            ("agent.sqlite3", steps[:1],
+             "INSERT INTO conversations VALUES (1,2,3,1,10,20,'{}')"),
+            ("transcripts.sqlite3", steps[1:4],
+             "INSERT INTO requests VALUES (1,2,3,1,4,'today','Synthetic question',NULL,'[]')"),
+            ("research_jobs.sqlite3", steps[4:6],
+             "INSERT INTO research_jobs VALUES ('job',1,2,3,4,'Synthetic query',NULL,NULL,NULL,"
+             "10,NULL,'pending','[]',0,NULL,NULL,0,0,NULL,10,10,20,1,NULL,NULL,'search')"),
+            ("actions.sqlite3", steps[6:8],
+             "INSERT INTO member_timezones VALUES (4,'UTC',10)"),
+        ):
+            path = self.old_agent(name, selected)
+            with closing(sqlite3.connect(path)) as connection, connection:
+                connection.execute(statement)
+            sources[path] = path.read_bytes()
+        return sources
+
+    def test_four_old_agent_databases_move_and_share_one_counter_across_restarts(self):
+        from elbow_helper.agent.conversation.transcripts import TranscriptArchive
+        sources = self.old_agent_layout()
+        self.assertTrue(move.prepare_storage(self.root))
+        destination = self.root / "agent.sqlite3"
+        with closing(sqlite3.connect(destination)) as merged:
+            self.assertEqual(merged.execute("SELECT * FROM feedback_hint_counter").fetchall(), [])
+            for path, original in sources.items():
+                self.assertEqual(path.read_bytes(), original)
+                with closing(sqlite3.connect(path)) as source:
+                    for table in move._tables(source):
+                        self.assertEqual(move._rows_digest(source, table), move._rows_digest(merged, table))
+        self.assertEqual(TranscriptArchive(destination).next_feedback_answer(), 1)
+        before_restart = {path: path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
+        self.assertFalse(move.prepare_storage(self.root))
+        self.assertEqual({path: path.read_bytes() for path in self.root.rglob("*") if path.is_file()},
+                         before_restart)
+        self.assertEqual(TranscriptArchive(destination).next_feedback_answer(), 2)
+
+    def test_failed_agent_counter_copy_leaves_sources_unchanged_and_can_retry(self):
+        sources = self.old_agent_layout()
+        copy_tables = move._copy_tables
+
+        def fail_counter_copy(source, destination, tables):
+            if "feedback_hint_counter" in tables:
+                raise sqlite3.OperationalError("Synthetic counter copy failure")
+            return copy_tables(source, destination, tables)
+
+        with patch.object(move, "_copy_tables", side_effect=fail_counter_copy):
+            with self.assertRaisesRegex(sqlite3.OperationalError, "Synthetic counter copy failure"):
+                move.prepare_storage(self.root)
+        self.assertFalse((self.root / ".store-move-stage").exists())
+        self.assertTrue(all(not (self.root / name).exists() for name in move.SQLITE_DATABASES))
+        for path, original in sources.items():
+            self.assertEqual(path.read_bytes(), original)
+        self.assertTrue(move.prepare_storage(self.root))
+
     def old_links(self, with_links_table=True, version=1):
         path = self.root / "clan_links" / "links.sqlite3"
         path.parent.mkdir()
