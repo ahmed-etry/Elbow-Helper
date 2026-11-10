@@ -35,6 +35,7 @@ RECENT = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
 # generated values for their schema's required fields.
 COMPLETE = {
     'read_war_attendance': {'war_type': 'REG', 'latest_completed': 1},
+    'read_war_attacks': {'war_type': 'both', 'latest_completed': 1},
     'read_member_cohort': {'basis': 'joined_discord'},
     'read_ranked_activity': {'after': START, 'member_ids': [41]},
     'read_member_accounts': {'member_ids': [41]},
@@ -54,6 +55,10 @@ MISTAKES = {
         {'war_type': 'REG'}, {'war_type': 'REG', 'season': '2026-09', 'latest_completed': 2},
         {'war_type': 'REG', 'before': END}, {'war_type': 'REG', 'season': 'September'},
         {'war_type': 'REG', 'after': NAIVE}],
+    'read_war_attacks': [
+        {'war_type': 'CWL'}, {'war_type': 'REG', 'season': '2026-09', 'latest_completed': 2},
+        {'war_type': 'REG', 'before': END}, {'war_type': 'both', 'after': NAIVE},
+        {'war_type': 'REG', 'season': '2026-09', 'account_tags': ['#P0'], 'member_ids': [41]}],
     'read_cwl_results': [
         {'metric': 'ass'}, {'metric': 'bonus', 'clan_codes': [NON_CWL]},
         {'metric': 'ass', 'clan_codes': [CWL_CLAN_CODES[0]], 'history_limit': 2},

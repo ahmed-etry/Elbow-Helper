@@ -125,6 +125,7 @@ holds a missing record or explain incomplete text evidence by blaming unseen ima
 # loading the much larger API and report contracts into every request.
 REFERENCE_RETURNS = {
     "read_war_attendance": "report_id,total_rows,rows:[{member_id,player_tag,attacks_used,missed}]",
+    "read_war_attacks": "report_id,total_rows,rows:[{war_id,clan_code,member_id,player_tag,map_position,defender_map_position,stars}]",
     "read_cwl_results": "report_id,total_rows,rows:[{member_id,player_tag,clan_code,season,rank,ass_score}]",
     "read_current_war": "report_id,rows:[{clan_code,members:[{player_tag}]}]",
     "read_member_accounts": "report_id,total_rows,name_resolutions:[{query,status,look_in,found_in,matching_members:[{member_id,member_name,account_links_status,accounts:[{player_tag,player_name}]}],candidates:[{player_tag,player_name,member_id,member_name,membership_status}],selected_accounts:[{player_tag,member_id}]}],members:[{member_id,member_name,account_tags,home_clans,roles,leadership,home_role_checks}],history_reads,rows:[{member_id,player_tag,activity:{regular_war,cwl,ranked}}]",

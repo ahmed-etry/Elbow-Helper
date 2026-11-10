@@ -185,3 +185,7 @@ RESULT_FIELDS['read_war_attendance']['rows'] = [{**RESULT_FIELDS['read_war_atten
     'by_clan': [{**names('clan_code'), 'regular': _FAMILY_FIGURES, 'cwl': _FAMILY_FIGURES}]}]}]
 RESULT_FIELDS['read_war_attendance']['family_wars_scope'] = names(
     'status,reason,cause,clan_codes,regular_wars,cwl_wars,lineups_complete,clan_stays,meanings')
+RESULT_FIELDS['read_war_attacks'] = {**COMMON, 'rows': [names(
+    'war_id,war_type,war_state,war_end_at,clan_code,opponent_tag,opponent_name,player_tag,player_name,member_id,'
+    'map_position,townhall,defender_map_position,defender_townhall,defender_basis,stars,destruction,attack_order,'
+    'duration_seconds')], **names('war_type,accounts_without_attacks,members_without_links,ownership_basis,meanings')}
