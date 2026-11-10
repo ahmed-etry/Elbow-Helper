@@ -162,7 +162,8 @@ class WarAttackTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         result = await war_attacks.war_attacks(self.context, {"war_type": "CWL", "season": "2026-10"})
         self.assertEqual([(row["war_id"], row["player_tag"]) for row in result["rows"]], [("CWL:#R0", "#P0")])
         self.assertEqual(result["coverage"]["incomplete_wars"],
-                         [{"war_id": "CWL:#R0", "clan_code": "BEH", "causes": ["attacks_incomplete"]}])
+                         [{"war_id": "CWL:#R0", "clan_name": "Clan #PY", "opponent_name": "Clan #CU",
+                           "end_date": "2026-10-10", "clan_code": "BEH", "causes": ["attacks_incomplete"]}])
 
     async def test_access_is_refused_as_for_attendance(self):
         lost = AsyncMock(side_effect=AgentAccessLost("no access"))

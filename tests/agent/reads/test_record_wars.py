@@ -142,7 +142,9 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         partial["clan"].pop("members")
         await self.record(partial, at=END + 3 * DAY)
         result = await self.attendance(arguments)
-        self.assertEqual(result["wars_without_rosters"], [old_id(partial)])
+        # Each listed war carries both clan names and its end date, so an answer can name it.
+        self.assertEqual(result["wars_without_rosters"], [{"war_id": old_id(partial), "clan_name": "Clan #PY",
+                                                           "opponent_name": "Clan #LQ", "end_date": "2026-10-20"}])
         self.assertIsNone(result["rows"][0]["attacks_used"])
         self.assertFalse(result["coverage"]["exact_ranking"])
 
@@ -319,7 +321,10 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.execute("DELETE FROM war_attacks WHERE war_id=(SELECT id FROM wars WHERE war_tag='#R8')")
         await self.execute("DELETE FROM war_members WHERE war_id=(SELECT id FROM wars WHERE war_tag='#R8')")
         result = await self.attendance({"war_type": "CWL", "season": "2026-11", "account_tags": ["#Y0"]})
-        self.assertEqual(result["wars_without_rosters"], ["CWL:#R8"])
+        (empty,) = result["wars_without_rosters"]
+        self.assertEqual(empty["war_id"], "CWL:#R8")
+        # A league war is named by both stored clan names and its end date too.
+        self.assertTrue(empty["clan_name"] and empty["opponent_name"] and empty["end_date"])
         self.assertEqual((result["rows"][0]["attacks_used"], result["rows"][0]["observation_status"]),
                          (None, "no_stored_participation"))
 

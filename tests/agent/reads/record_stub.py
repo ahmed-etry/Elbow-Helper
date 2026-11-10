@@ -32,7 +32,8 @@ def regular_war(clan_code, end_ts, lineup, *, opponent="#Q2", start_ts=None, att
     tag = CLANS[clan_code].tag
     view = {"war_id": next(WAR_IDS), "clan_tag": tag, "state": "warEnded",
             "type": "REG", "type_basis": type_basis, "start_at": None if start_ts is None else start_ts * SECOND,
-            "end_at": end_ts * SECOND, "legacy_ids": [], "opponent": {"clan_tag": opponent},
+            "end_at": end_ts * SECOND, "legacy_ids": [], "clan": {"clan_tag": tag, "name": CLANS[clan_code].name},
+            "opponent": {"clan_tag": opponent, "name": f"Clan {opponent}"},
             "coverage": {"own": {"members": len(lineup), "team_size": len(lineup), "lineup_complete": True,
                                  "attacks_complete": True}}}
     rows = [{"player_tag": player, "player_name": player, "attacks_expected": attacks_per_member,

@@ -144,7 +144,7 @@ class KnownZeroTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_war_without_a_lineup_leaves_the_account_unknown(self):
         result = await self.read(await self.database({'#C0'}), latest_completed=2, account_tags=['#P0', '#Y0'])
-        self.assertEqual(result['wars_without_rosters'], ['CWL:#C2'])
+        self.assertEqual([war['war_id'] for war in result['wars_without_rosters']], ['CWL:#C2'])
         row = self.absent(result)
         self.assertIsNone(row['attacks_used'])
         self.assertIsNone(row['missed'])

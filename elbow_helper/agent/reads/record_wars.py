@@ -11,6 +11,7 @@ import sqlite3
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.data.reads import core as read_core
 from elbow_helper.data.reads.war_selection import regular_id as war_id
+from elbow_helper.domain.war_views import war_entry
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationError
 
 SECOND = 1_000_000
@@ -54,12 +55,13 @@ def snapshot(source):
     for entry in entries:
         view = entry['view']
         own = view['coverage']['own']
+        named = war_entry(entry['war_id'], view['clan']['name'], view['opponent']['name'], seconds(view['end_at']))
         # Early wars copied from old participation rows have no team size; their final list is the lineup.
         if not own['members'] or own['team_size'] is not None and own['members'] < own['team_size']:
-            empty.append(entry['war_id'])
+            empty.append(named)
         if entry['key'][0] in conflicted:
-            conflicts.append({'war_id': entry['war_id'], 'reasons': ['shared_clan_pair_and_end']})
-        sources.append({'war_id': entry['war_id'], 'clan_code': entry['clan_code'], 'season': '',
+            conflicts.append({**named, 'reasons': ['shared_clan_pair_and_end']})
+        sources.append({**named, 'clan_code': entry['clan_code'], 'season': '',
                         'aliases': entry['aliases'], 'type_basis': view['type_basis'],
                         'end_ts': seconds(view['end_at']),
                         'sources': sorted({'family_record', *(row['source'] for row in view['legacy_ids'])})})
@@ -71,7 +73,7 @@ def snapshot(source):
                     for row in lineups[entry['key']])
     signals = {(signal['signal'], signal['scope']): signal for signal in source['coverage']['signals']}
     return {'rows': rows, 'war_ids': sorted({entry['war_id'] for entry in entries}),
-            'war_aliases': sources, 'wars_without_rosters': sorted(empty),
+            'war_aliases': sources, 'wars_without_rosters': sorted(empty, key=lambda war: war['war_id']),
             'identity_conflicts': conflicts, 'unproven_war_ids': [],
             'duplicate_identities_removed': sum(len(entry['aliases']) - 1 for entry in entries),
             'coverage': {
@@ -123,10 +125,11 @@ def combine(regular, league, latest=None):
     return {'rows': chosen(regular, 'rows') + chosen(league, 'rows'),
             'war_ids': sorted(kept),
             'war_aliases': chosen(regular, 'war_aliases') + chosen(league, 'war_aliases'),
-            'wars_without_rosters': sorted(war for source in (regular, league)
-                                           for war in source.get('wars_without_rosters', []) if war in kept),
+            'wars_without_rosters': sorted((war for source in (regular, league)
+                                            for war in source.get('wars_without_rosters', []) if war['war_id'] in kept),
+                                           key=lambda war: war['war_id']),
             'identity_conflicts': chosen(regular, 'identity_conflicts') + chosen(league, 'identity_conflicts'),
-            'unproven_war_ids': sorted(war for war in league.get('unproven_war_ids', []) if war in kept),
+            'unproven_war_ids': [war for war in league.get('unproven_war_ids', []) if war['war_id'] in kept],
             'duplicate_identities_removed': (regular['duplicate_identities_removed']
                                              + league.get('duplicate_identities_removed', 0)),
             'coverage': {

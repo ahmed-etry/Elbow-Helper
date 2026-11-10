@@ -613,10 +613,14 @@ class WarReads(RecordReads):
             causes = [cause for cause, absent in (
                 ("not_final", war["state"] != "warEnded"), ("lineup_incomplete", not coverage["own"]["lineup_complete"]),
                 ("attacks_incomplete", not coverage["own"]["attacks_complete"])) if absent]
-            if causes:
-                incomplete.append({"war_id": key, "clan_tag": clan, "causes": causes})
             opponent = connection.execute("SELECT clan_tag,name FROM war_sides WHERE war_id=? AND clan_tag!=?",
                                           (war["id"], clan)).fetchone()
+            if causes:
+                own = connection.execute("SELECT name FROM war_sides WHERE war_id=? AND clan_tag=?",
+                                         (war["id"], clan)).fetchone()
+                incomplete.append({"war_id": key, "clan_tag": clan, "causes": causes, "end_at": war["end_at"],
+                                   "clan_name": own["name"] if own else None,
+                                   "opponent_name": opponent["name"] if opponent else None})
             found, _ = facing_attacks(connection, war, clan, coverage, "attacks", selected, {
                 "war_id": key, "clan_tag": clan, "type": war["type"], "state": war["state"],
                 "start_at": war["start_at"], "end_at": war["end_at"],

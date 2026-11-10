@@ -232,7 +232,8 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(rows["#P8"]["attacks_expected"])
         self.assertFalse(rows["#P8"]["final_capture"])
         self.assertEqual(rows["#P8"]["uncertainty_reasons"], ["attacks_incomplete"])
-        self.assertEqual(result["unproven_war_ids"], ["CWL:#R0"])
+        self.assertEqual(result["unproven_war_ids"], [{"war_id": "CWL:#R0", "clan_name": "Clan #PY",
+                                                       "opponent_name": "Clan #GR", "end_date": "2026-11-03"}])
         self.assertFalse(result["coverage"]["exact_ranking"])
         (coverage,) = result["coverage"]["wars"]
         self.assertEqual((coverage["war_id"], coverage["own"]["attacks_stored"],
@@ -276,7 +277,7 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
                           running["observed_attack_performance"]["attacks"]), (1, None, False, 1))
         self.assertIn("not_final", running["uncertainty_reasons"])
         self.assertEqual((rows["CWL:#RC", "#P0"]["attacks_used"], rows["CWL:#RC", "#P0"]["missed"]), (0, None))
-        self.assertIn("CWL:#R8", result["unproven_war_ids"])
+        self.assertIn("CWL:#R8", [war["war_id"] for war in result["unproven_war_ids"]])
         self.assertFalse(result["coverage"]["exact_ranking"])
         # A window holds a running war once it started, whenever it will end.
         window = await self.call(self.history.attendance, **chosen, after_ts=(NOV - 2 * DAY) // SECOND,

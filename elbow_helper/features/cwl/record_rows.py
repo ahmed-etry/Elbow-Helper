@@ -30,6 +30,7 @@ def _war(row, code, clan, key, label, league):
     extra = json.loads(row["own_extra"])
     legacy = extra.get("legacy") if isinstance(extra.get("legacy"), dict) else {}
     return {"war_id": old_id(row["war_tag"]), "war_type": "CWL", "clan_code": code, "clan_tag": clan,
+            "clan_name": row.get("own_name") or "",
             "opponent_tag": row["opponent_tag"], "opponent_name": row["opponent_name"] or "",
             "cwl_season": key, "cwl_season_label": label, "cwl_league": league or "", "cwl_round": row["round_no"],
             "team_size": row["team_size"], "attacks_per_member": row["attacks_per_member"], "state": row["state"],

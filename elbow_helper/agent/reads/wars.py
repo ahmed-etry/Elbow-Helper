@@ -356,7 +356,7 @@ async def attendance(context, arguments, *, separate_seasons=False, family=False
                         and (season is None or row.get('season') == season)]
         selected = [war for war in source.get('war_aliases', []) if war['clan_code'] == code
                     and (season is None or war.get('season') == season)]
-        empty = set(source.get('wars_without_rosters', []))
+        empty = {war['war_id'] for war in source.get('wars_without_rosters', [])}
         confirmed = (bool(observations) and all(row.get('missed') is not None for row in observations)
                      and not any(war['war_id'] in empty for war in selected))
         war_count = len(selected) if 'war_aliases' in source else len({row['war_id'] for row in observations})

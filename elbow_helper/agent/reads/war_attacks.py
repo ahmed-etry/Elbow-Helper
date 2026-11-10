@@ -4,6 +4,7 @@ import asyncio
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.data.reads import core as read_core
+from elbow_helper.domain.war_views import war_entry
 from . import record_wars
 from .cache import source_revision
 from .wars import selected_wars
@@ -104,8 +105,10 @@ async def war_attacks(context, arguments):
             'coverage': {'wars_checked': checked,
                          'wars_not_found': [{'war_id': war['war_id'], 'clan_code': codes.get(war['clan_tag'])}
                                             for war in missing],
-                         'incomplete_wars': [{'war_id': war['war_id'], 'clan_code': codes.get(war['clan_tag']),
-                                              'causes': war['causes']} for war in incomplete],
+                         'incomplete_wars': [{**war_entry(war['war_id'], war.get('clan_name'), war.get('opponent_name'),
+                                                        record_wars.seconds(war.get('end_at'))),
+                                              'clan_code': codes.get(war['clan_tag']), 'causes': war['causes']}
+                                             for war in incomplete],
                          'wars_without_rosters': source.get('wars_without_rosters', []),
                          'as_of': record_wars.iso(now),
                          'basis': 'Stored attacks by family accounts in the selected wars; '

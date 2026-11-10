@@ -16,6 +16,13 @@ def clash_time(value: int | None) -> str | None:
     return f"{moment:%Y%m%dT%H%M%S}.{value % SECOND // 1000:03d}Z"
 
 
+def war_entry(war_id: str, clan_name: str | None, opponent_name: str | None,
+              end_ts: int | None) -> dict[str, Any]:
+    """A war's ID with both clan names and its UTC end date, so an answer can name the war."""
+    return {"war_id": war_id, "clan_name": clan_name or None, "opponent_name": opponent_name or None,
+            "end_date": datetime.fromtimestamp(end_ts, timezone.utc).date().isoformat() if end_ts else None}
+
+
 def _present(values: dict[str, Any]) -> dict[str, Any]:
     # Clash leaves out what it does not send; the consumers' defaults apply.
     return {key: value for key, value in values.items() if value is not None}
