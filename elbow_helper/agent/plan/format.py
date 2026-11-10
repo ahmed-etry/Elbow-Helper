@@ -348,11 +348,13 @@ def _catalogue_returns(tool, registry):
 def plan_definition(registry: Mapping[str, RegisteredAgentTool]) -> AgentToolDefinition:
     return AgentToolDefinition(
         name=PLAN_TOOL_NAME,
-        description="Submit the goal, scope and ordered capability steps needed to answer.",
+        description="Submit the goal of the asker's whole request, scope and ordered capability steps needed to answer.",
         parameters={
             "type": "object",
             "properties": {
-                "goal": {"type": "string", "minLength": 1, "maxLength": 240},
+                "goal": {"type": "string", "minLength": 1, "maxLength": 240,
+                         "description": "The outcome the asker wants from the whole request, not the current step. "
+                         "State it the same way in every plan for this request."},
                 "effort": {"type": "string", "enum": ["low", "high", "max"]},
                 "assessment": {"type": "boolean", "description":
                     "True for a planning, decision or member judgment request. "

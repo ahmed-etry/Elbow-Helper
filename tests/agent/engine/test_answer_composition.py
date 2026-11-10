@@ -211,11 +211,11 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
             await model.close()
 
 
-    async def test_real_writer_can_read_a_remaining_gap_without_a_draft_round(self):
+    async def test_whole_request_goal_keeps_research_going_after_identity_lookup(self):
         requests, writers = [], []
-        goals = ["Find the member's linked account", "Read the missing linked account details"]
+        goal = "Show Lyra's regular war history."
         source = AsyncMock(side_effect=[{"rows": [{"member_id": 52}], "report_id": "sample:one", "next_offset": 1},
-                                        {"rows": [{"member_id": 52, "player_name": "Vega"}]}])
+                                        {"rows": [{"member_id": 52, "war_type": "REG", "wars": 3, "wins": 2}]}])
         registry = {"read_sample": RegisteredAgentTool(AgentToolDefinition(
             "read_sample", "Read sample facts.", {"type": "object", "properties": {
                 "member_id": {"type": "integer"}, "report_id": {"type": "string"},
@@ -226,38 +226,54 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
             system = options["messages"][0]["content"]
             if system == ROUTE_INSTRUCTION:
                 return provider_response("research")
+            plan_tool = next(tool["function"] for tool in options["tools"]
+                             if tool["function"]["name"] == "submit_request_plan")
+            self.assertEqual(plan_tool["description"],
+                "Submit the goal of the asker's whole request, scope and ordered capability steps needed to answer.")
+            self.assertEqual(plan_tool["parameters"]["properties"]["goal"], {
+                "type": "string", "minLength": 1, "maxLength": 240,
+                "description": "The outcome the asker wants from the whole request, not the current step. "
+                               "State it the same way in every plan for this request.",
+            })
             if system != answer_instructions(registry):
+                source.assert_not_awaited()
                 return provider_response(calls=[call("submit_request_plan", {**_plan([
                     {"id": "identity", "capability": "read_sample", "arguments": {}, "depends_on": []}]),
-                    "goal": goals[0]})])
+                    "goal": goal})])
             writers.append(options)
             prompt, _, evidence = writer_payload(options)
-            self.assertEqual(prompt["asker_wants"], goals[:len(writers)])
-            for goal in goals:
-                self.assertNotIn(goal, system)
+            self.assertEqual(prompt["request"], goal)
+            self.assertEqual(prompt["asker_wants"], [goal] * len(writers))
+            self.assertNotIn(goal, system)
             self.assertEqual(evidence["identity"]["rows"], [{"member_id": 52}])
             self.assertNotIn("report_id", evidence["identity"])
             self.assertNotIn("next_offset", evidence["identity"])
             self.assertEqual(prompt["read_handles"]["identity"], {"report_id": "sample:one", "next_offset": 1})
             self.assertFalse(any(message["role"] == "tool" for message in options["messages"]))
             if len(writers) == 1:
+                source.assert_awaited_once()
+                self.assertNotIn("war_history", evidence)
                 return provider_response(calls=[call("submit_request_plan", {**_plan([
-                    {"id": "account", "capability": "read_sample", "arguments": {
-                        "member_id": 52, "report_id": "sample:one", "offset": 1},
-                     "depends_on": []}]), "goal": goals[1]})])
-            self.assertEqual(evidence["account"]["rows"], [{"member_id": 52, "player_name": "Vega"}])
-            return provider_response("Vega is linked to that member.")
+                    {"id": "war_history", "capability": "read_sample", "arguments": {
+                        "member_id": evidence["identity"]["rows"][0]["member_id"],
+                        "report_id": "sample:one", "offset": 1},
+                     "depends_on": ["identity"]}]), "goal": goal})])
+            self.assertEqual(evidence["war_history"]["rows"],
+                             [{"member_id": 52, "war_type": "REG", "wars": 3, "wins": 2}])
+            return provider_response("Lyra joined three regular wars and won two.")
 
         model = client(provider)
         try:
             with patch("elbow_helper.agent.engine.service.build_agent_tools", return_value=registry):
-                answer = await AgentService(model).answer(question="Find the linked player.",
+                answer = await AgentService(model).answer(question=goal,
                     local_context="", context=_context())
-            self.assertEqual(answer, "Vega is linked to that member.")
+            self.assertEqual(answer, "Lyra joined three regular wars and won two.")
             self.assertEqual(len(requests), 4)
             self.assertEqual(len(writers), 2)
             self.assertEqual(writers[0]["messages"][0], writers[1]["messages"][0])
             self.assertEqual(source.await_count, 2)
+            self.assertEqual(source.await_args_list[1].args[1],
+                             {"member_id": 52, "report_id": "sample:one", "offset": 1})
         finally:
             await model.close()
 
