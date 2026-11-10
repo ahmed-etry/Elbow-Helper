@@ -128,18 +128,21 @@ class ImageTests(unittest.IsolatedAsyncioTestCase):
             response=httpx.Response(400, request=httpx.Request("POST", "https://example.invalid")),
             body=None,
         )
-        create = AsyncMock(side_effect=[error, response, response])
+        create = AsyncMock(side_effect=[error, response, response, response])
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
         session = _DeepSeekAgentSession(
             client=client, system_prompt="Synthetic", prompt="Request", tools=(),
             max_output_tokens=100, images=[AgentImage("image/png", b"png", "Image 1")],
         )
-        self.assertEqual((await session.advance()).content, "Synthetic answer")
+        self.assertEqual((await session.advance(timeout_seconds=400)).content, "Synthetic answer")
         parts = create.await_args_list[0].kwargs["messages"][1]["content"]
         self.assertEqual(parts[0], {"type": "text", "text": "Request"})
         self.assertTrue(parts[2]["image_url"]["url"].startswith("data:image/png;base64,"))
         self.assertIn(
             "could not be viewed", create.await_args_list[1].kwargs["messages"][1]["content"],
         )
+        await session.advance(timeout_seconds=75)
         await session.advance()
+        self.assertEqual([item.kwargs.get("timeout") for item in create.await_args_list],
+                         [400, 400, 75, None])
         self.assertIsInstance(create.await_args_list[-1].kwargs["messages"][1]["content"], str)

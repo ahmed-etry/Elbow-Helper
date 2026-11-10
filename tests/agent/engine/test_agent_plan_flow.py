@@ -484,7 +484,9 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         plan = _plan([_step("first")])
         session = _Session([_model_step(plan), AgentStep("No read.", (), AgentUsage())],
                            self.events)
-        context = replace(_context(), deadline_monotonic=time.monotonic() + 0.01)
+        # Enough time to plan and answer, but not to admit another lookup
+        # together with the answer and delivery reserves.
+        context = replace(_context(), deadline_monotonic=time.monotonic() + 80)
         answer, _ = await self._answer(session, context)
         self.assertEqual(answer, "No read.")
         self.assertNotIn("read", self.events)

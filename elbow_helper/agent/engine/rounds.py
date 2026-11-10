@@ -225,16 +225,29 @@ class ModelRounds:
         try:
             self.pending_results = self.pending_calls = ()
             deadline = self.context.deadline_monotonic
+            policy = self.budget.request_limits
+            long_composition = (final and not allow_tools and policy is not None
+                                and policy.final_output_tokens is not None)
+            timeout_options = {}
             if deadline is not None:
                 deadline -= limits.DELIVERY_TIME_RESERVE_SECONDS
-                if allow_tools:
+                if allow_tools or long_composition:
                     deadline -= limits.FINAL_ANSWER_TIME_RESERVE_SECONDS
+                timeout_seconds = deadline - time.monotonic()
+                if timeout_seconds <= 0:
+                    raise TimeoutError
+                if long_composition:
+                    # The large assessment allowance can take longer than the
+                    # provider's default call timeout. Spend only the request
+                    # time left after reserving a fallback answer and delivery.
+                    timeout_options["timeout_seconds"] = timeout_seconds
             async with asyncio.timeout_at(deadline):
                 model_step = await self.session.advance(
                     results,
                     allow_tools=allow_tools,
                     reasoning_effort=reasoning_effort,
                     max_output_tokens=remaining,
+                    **timeout_options,
                     **(
                         {"continuation_instruction": continuation_instruction}
                         if continuation_instruction
