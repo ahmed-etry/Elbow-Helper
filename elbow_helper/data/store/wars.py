@@ -15,6 +15,12 @@ SECOND = 1_000_000
 # The war log reports a war's end a second or two after the current war did.
 # A clan pair cannot fight twice within this margin.
 END_DRIFT = 60 * SECOND
+# Clash has also given the log an end minutes after the live capture's. Two
+# clans fight one war at a time, and a regular war runs about two days with
+# preparation, so a war-log copy and a live capture of the same pair whose
+# ends are this close are one war when the live war was prepared before the
+# log's end.
+LOG_MATCH_WINDOW = 6 * 3600 * SECOND
 # Stronger evidence of a war's type is never replaced by weaker evidence.
 BASIS_RANK = {"times": 0, "war_log_absent": 1, "war_log": 2, "war_tag": 3}
 
@@ -74,6 +80,29 @@ def left_lineup(connection, war_id, war):
         if (row["side"], row["player_tag"]) not in lineup]
 
 
+def same_war(connection, war, tags):
+    """IDs of stored wars of this clan pair that this capture can be, by end.
+
+    Any capture matches a war ending within END_DRIFT. A war-log entry, which
+    has no preparation time, also matches a non-league war prepared before the
+    entry's end within LOG_MATCH_WINDOW; a live capture matches a stored log
+    copy the same way.
+    """
+    end, preparation = war["end_at"], war["preparation_at"]
+    found = set()
+    for row in connection.execute(
+            "SELECT w.id,w.end_at,w.preparation_at,w.war_tag FROM wars w JOIN war_sides a ON a.war_id=w.id AND a.side=0 "
+            "JOIN war_sides b ON b.war_id=w.id AND b.side=1 WHERE w.end_at BETWEEN ? AND ? AND a.clan_tag=? AND b.clan_tag=?",
+            (end - LOG_MATCH_WINDOW, end + LOG_MATCH_WINDOW, *tags)):
+        if abs(row["end_at"] - end) <= END_DRIFT:
+            found.add(row["id"])
+        elif war["war_tag"] is None and row["war_tag"] is None and (
+                preparation is None and (row["preparation_at"] is None or row["preparation_at"] < end)
+                or preparation is not None and row["preparation_at"] is None and preparation < row["end_at"]):
+            found.add(row["id"])
+    return found
+
+
 def save_war(connection, war, run, at):
     tags = [s["clan_tag"] for s in war["sides"]]
     pair = ":".join(tags)
@@ -96,11 +125,8 @@ def save_war(connection, war, run, at):
                 continue
             war_id = row[0]
             break
-    # Match an aggregate backfill only when the clan pair and end are unique.
-    matches = {r[0] for r in connection.execute(
-            "SELECT w.id FROM wars w JOIN war_sides a ON a.war_id=w.id AND a.side=0 "
-            "JOIN war_sides b ON b.war_id=w.id AND b.side=1 WHERE w.end_at BETWEEN ? AND ? AND a.clan_tag=? AND b.clan_tag=?",
-            (war["end_at"] - END_DRIFT, war["end_at"] + END_DRIFT, *tags))}
+    # Match an aggregate backfill only when one stored war of the clan pair fits.
+    matches = same_war(connection, war, tags)
     if war_id is None and len(matches) == 1:
         war_id = next(iter(matches))
     elif war_id is None and war["aggregate"]:

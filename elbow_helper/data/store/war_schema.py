@@ -152,6 +152,68 @@ def merge_log_doubles(connection):
     return merged
 
 
+LOG_COPY_SIDE_FACTS = ("name", "level", "badge_json", "stars", "destruction", "attacks", "xp_earned", "result")
+LOG_COPY_WAR_FACTS = ("start_at", "war_start_at", "team_size", "attacks_per_member", "battle_modifier_json")
+
+
+def merge_drifted_log_copies(connection):
+    """Fold each war-log copy saved beside its live war into that war; return how many merged.
+
+    Clash gave some log entries an end minutes after the live capture's, past
+    END_DRIFT, so the entry became a second war with no lineup. A copy holds no
+    preparation time, league tag, lineup or attacks; it merges only into the one
+    non-league war of its clan pair prepared before the copy's end and ending
+    within LOG_MATCH_WINDOW of it. The kept war keeps its lineup, attacks, end
+    and facts; the copy adds its keys and only the facts the kept war lacks.
+    """
+    from .wars import BASIS_RANK, LOG_MATCH_WINDOW
+    merged = 0
+    for log in connection.execute(
+            "SELECT * FROM wars w WHERE preparation_at IS NULL AND war_tag IS NULL "
+            "AND EXISTS (SELECT 1 FROM war_source_keys k WHERE k.war_id=w.id AND k.source_kind='war_log') "
+            "AND NOT EXISTS (SELECT 1 FROM war_members m WHERE m.war_id=w.id) "
+            "AND NOT EXISTS (SELECT 1 FROM war_attacks a WHERE a.war_id=w.id) ORDER BY id").fetchall():
+        log_id, end = log["id"], log["end_at"]
+        sides = connection.execute("SELECT clan_tag FROM war_sides WHERE war_id=? ORDER BY side", (log_id,)).fetchall()
+        if len(sides) != 2:
+            continue
+        partners = connection.execute(
+            "SELECT w.* FROM wars w JOIN war_sides a ON a.war_id=w.id AND a.side=0 AND a.clan_tag=? "
+            "JOIN war_sides b ON b.war_id=w.id AND b.side=1 AND b.clan_tag=? "
+            "WHERE w.war_tag IS NULL AND w.preparation_at IS NOT NULL AND w.preparation_at<? AND w.end_at BETWEEN ? AND ?",
+            (sides[0][0], sides[1][0], end, end - LOG_MATCH_WINDOW, end + LOG_MATCH_WINDOW)).fetchall()
+        if len(partners) != 1:
+            continue
+        kept = partners[0]
+        war_id = kept["id"]
+        # A final log score stands in for a live score that never became final;
+        # Clash's log result always wins, as saving a log entry does.
+        scores = not kept["result_complete"] and log["result_complete"]
+        for column in LOG_COPY_SIDE_FACTS:
+            replace = column == "result" or scores and column in ("stars", "destruction", "attacks", "xp_earned")
+            only_missing = "" if replace else f" AND {column} IS NULL"
+            value = f"(SELECT l.{column} FROM war_sides l WHERE l.war_id=? AND l.side=war_sides.side)"
+            connection.execute(f"UPDATE war_sides SET {column}={value} WHERE war_id=?{only_missing} AND {value} IS NOT NULL",
+                               (log_id, war_id, log_id))
+        values = {column: log[column] for column in LOG_COPY_WAR_FACTS
+                  if kept[column] is None and log[column] is not None}
+        if BASIS_RANK.get(log["type_basis"], -1) > BASIS_RANK.get(kept["type_basis"], -1):
+            values.update(type=log["type"], type_basis=log["type_basis"])
+        if scores:
+            # As saving a log entry over an unfinished capture does: ended, final, attacks unproven.
+            values.update(state="warEnded", result_complete=1, attacks_complete=0,
+                          final_at=kept["final_at"] if kept["final_at"] is not None else log["final_at"])
+        if values:
+            connection.execute(f"UPDATE wars SET {','.join(f'{key}=?' for key in values)} WHERE id=?",
+                               (*values.values(), war_id))
+        for table in ("war_source_keys", "war_collection_state", "war_legacy_ids", "cwl_rounds"):
+            connection.execute(f"UPDATE {table} SET war_id=? WHERE war_id=?", (war_id, log_id))
+        connection.execute("DELETE FROM war_sides WHERE war_id=?", (log_id,))
+        connection.execute("DELETE FROM wars WHERE id=?", (log_id,))
+        merged += 1
+    return merged
+
+
 def extend_war_schema(connection):
     for statement in EVIDENCE_STATEMENTS:
         connection.execute(statement)

@@ -4,7 +4,7 @@ import json
 import sqlite3
 
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration
-from .war_schema import create_war_schema, extend_war_schema
+from .war_schema import create_war_schema, extend_war_schema, merge_drifted_log_copies
 from .api_fields import create_api_field_schema, rebuild_field_changes
 from .source_schema import create_source_schema
 from .link_reviews import create_schema as create_review_schema
@@ -18,7 +18,7 @@ from .war_completeness import fill_cwl_allowance, upgrade_cwl_completeness
 
 
 # Later subjects add migrations; they must not rewrite this baseline.
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 STATEMENTS = (
     """CREATE TABLE collection_runs (
         id INTEGER PRIMARY KEY, collector TEXT NOT NULL, scope_kind TEXT NOT NULL,
@@ -284,6 +284,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
     fill_cwl_allowance(connection)
     create_review_schema(connection)
     create_saved_payload_schema(connection)
+    merge_drifted_log_copies(connection)
 
 
 MIGRATIONS = (
@@ -307,4 +308,5 @@ MIGRATIONS = (
     SQLiteMigration(18, "CWL attack allowance", fill_cwl_allowance),
     SQLiteMigration(19, "account review state", create_review_schema),
     SQLiteMigration(20, "saved board evidence", create_saved_payload_schema),
+    SQLiteMigration(21, "war-log copies merged into their war", merge_drifted_log_copies),
 )
