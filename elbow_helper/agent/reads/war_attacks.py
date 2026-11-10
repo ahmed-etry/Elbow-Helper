@@ -7,6 +7,7 @@ from elbow_helper.data.reads import core as read_core
 from elbow_helper.domain.war_views import war_entry
 from . import record_wars
 from .cache import source_revision
+from .war_span import record_span
 from .wars import selected_wars
 
 # Wars per record read, and the most tags one read filters on.
@@ -98,6 +99,7 @@ async def war_attacks(context, arguments):
     rows.sort(key=lambda row: (-row['end_at'], row['clan_tag'], row['war_id'], row['attack_order']))
     result = [attack_row(row, codes, owners) for row in rows]
     attacked = {row['player_tag'] for row in result}
+    span = await record_span(context, arguments, source, sorted(tags) if tags is not None else None)
     return {'rows': result, 'war_type': war_type,
             **({'accounts_without_attacks': sorted(tags - attacked)} if tags is not None else {}),
             **({'members_without_links': accounts['members_without_links']}
@@ -113,6 +115,7 @@ async def war_attacks(context, arguments):
                          'as_of': record_wars.iso(now),
                          'basis': 'Stored attacks by family accounts in the selected wars; '
                                   'an incomplete war may be missing attacks.'},
+            'record_span': span,
             'ownership_basis': 'current bot links; historical ownership unknown',
             'ordering': 'war end descending, then clan, war and attack order',
             'meanings': MEANINGS}

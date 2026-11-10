@@ -21,6 +21,8 @@ TIME_FIELDS = ("end_at", "observed_at")
 STATES = ("preparation", "inWar", "warEnded")
 # A window may select at most this many clan-facing wars.
 MAX_WARS = 1000
+# A record span counts wars outside at most this many windows.
+MAX_SPAN_WINDOWS = 24
 
 
 def war_types(values, allowed=TYPES):
@@ -631,6 +633,41 @@ class WarReads(RecordReads):
         return {"rows": rows, "wars_checked": len(wars) - len(missing), "wars_not_found": missing[:200],
                 "incomplete_wars": incomplete[:200], "as_of": at,
                 "truncated": len(missing) > 200 or len(incomplete) > 200}
+
+    async def record_span(self, clans, *, types=REGULAR, player_tags=(), family=(), windows=(), as_of=None):
+        """How far back the stored wars go, by war end.
+
+        For the clans: each type's first and last war end and its wars. With
+        accounts: each account's in any ``family`` clan lineup, and how many of
+        those wars ended outside every half-open [after, before) window.
+        """
+        selected = tags(player_tags)
+        if len(windows) > MAX_SPAN_WINDOWS:
+            raise ValueError(f"Expected at most {MAX_SPAN_WINDOWS} windows")
+        return await self._read(self._record_span, clan_tags(clans), war_types(types), selected,
+                                clan_tags(family) if selected else (),
+                                tuple(window(after, before) for after, before in windows), timestamp(as_of))
+
+    @staticmethod
+    def _record_span(connection, clans, types, selected, family, windows, at):
+        recorded = [dict(row) for row in connection.execute(
+            "SELECT w.type,MIN(w.end_at) AS first_end_at,MAX(w.end_at) AS last_end_at,COUNT(DISTINCT w.id) AS wars "
+            f"FROM war_sides s JOIN wars w ON w.id=s.war_id WHERE s.clan_tag IN ({placeholders(clans)}) "
+            f"AND w.type IN ({placeholders(types)}) AND w.first_seen_at<=? GROUP BY w.type ORDER BY w.type",
+            (*clans, *types, at))]
+        accounts = []
+        if selected:
+            inside = " OR ".join("(w.end_at>=? AND w.end_at<?)" for _ in windows) or "0"
+            accounts = [dict(row) for row in connection.execute(
+                "SELECT m.player_tag,w.type,MIN(w.end_at) AS first_end_at,MAX(w.end_at) AS last_end_at,"
+                f"COUNT(DISTINCT w.id) AS wars,COUNT(DISTINCT CASE WHEN NOT ({inside}) THEN w.id END) AS outside "
+                "FROM war_sides s JOIN wars w ON w.id=s.war_id "
+                "JOIN war_members m ON m.war_id=s.war_id AND m.side=s.side "
+                f"WHERE s.clan_tag IN ({placeholders(family)}) AND w.type IN ({placeholders(types)}) "
+                f"AND w.first_seen_at<=? AND m.player_tag IN ({placeholders(selected)}) "
+                "GROUP BY m.player_tag,w.type ORDER BY m.player_tag,w.type",
+                (*(value for pair in windows for value in pair), *family, *types, at, *selected))]
+        return {"recorded": recorded, "accounts": accounts, "as_of": at}
 
     async def log_entries(self, clan, *, as_of=None, limit=200, offset=0):
         """Stored war-log entries, newest first; a league summary is a single entry."""

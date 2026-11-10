@@ -8,11 +8,12 @@ from elbow_helper.agent.reads import record_wars, war_tools as war_reads
 from elbow_helper.configuration.clans import CLANS
 from tests.agent.features.cwl.cwl_helpers import ResultQueries
 from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.reads.record_stub import empty_reads
 
 
 def recorded(context=None):
     """A context whose bot has the family record's war reads."""
-    return replace(context or _context(), bot=SimpleNamespace(war_reads=SimpleNamespace()))
+    return replace(context or _context(), bot=SimpleNamespace(war_reads=empty_reads()))
 
 
 def current_checks(response):

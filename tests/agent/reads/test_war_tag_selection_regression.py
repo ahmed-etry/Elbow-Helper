@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.reads.war_tools import TOOLS
 from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.reads.record_stub import empty_reads
 from tests.features.cwl_record_stub import LeagueRecord, league_war, member
 
 
@@ -28,7 +29,7 @@ class WarTagSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.current = self.enterContext(patch('elbow_helper.agent.reads.wars.current_wars', AsyncMock(
             return_value={'items': [{'tag': CLANS['BEH'].tag, 'status': 'ok', 'data': payload}]})))
         self.context = replace(_context(), cwl_queries=record.queries(),
-            bot=SimpleNamespace(war_reads=SimpleNamespace()),
+            bot=SimpleNamespace(war_reads=empty_reads()),
             account_links=SimpleNamespace(get_links_by_tags=lambda tags: {
                 tag: {'discord_user_id': 41} for tag in tags}))
         self.tools = {tool.definition.name: tool for tool in TOOLS}

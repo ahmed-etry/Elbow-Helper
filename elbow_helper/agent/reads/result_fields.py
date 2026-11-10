@@ -189,3 +189,10 @@ RESULT_FIELDS['read_war_attacks'] = {**COMMON, 'rows': [names(
     'war_id,war_type,war_state,war_end_at,clan_code,opponent_tag,opponent_name,player_tag,player_name,member_id,'
     'map_position,townhall,defender_map_position,defender_townhall,defender_basis,stars,destruction,attack_order,'
     'duration_seconds')], **names('war_type,accounts_without_attacks,members_without_links,ownership_basis,meanings')}
+# How far back the stored wars go, beside the wars each read checked.
+_SPAN = names('first_war_end,last_war_end,wars')
+for _family in ('read_war_attendance', 'read_war_attacks'):
+    RESULT_FIELDS[_family]['record_span'] = {
+        **names('status,cause,accounts_not_listed,meanings'), 'checked': {**_SPAN, **names('period')},
+        'recorded': [{**names('war_type'), **_SPAN}],
+        'accounts': [{**names('player_tag,war_type,wars_outside_checked'), **_SPAN}]}

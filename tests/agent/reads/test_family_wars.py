@@ -161,7 +161,8 @@ class FamilyWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         family = await wars.war_attendance(self.context, arguments)
         self.assertEqual([{key: value for key, value in row.items() if key != "family_wars"} for row in family["rows"]],
                          plain["rows"])
-        self.assertEqual({key: value for key, value in family.items() if key not in ("rows", "family_wars_scope")},
+        self.assertEqual({key: value for key, value in family.items()
+                          if key not in ("rows", "family_wars_scope", "record_span")},
                          {key: value for key, value in plain.items() if key != "rows"})
 
     async def test_a_season_reads_that_month_and_its_league(self):

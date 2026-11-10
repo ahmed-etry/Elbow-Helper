@@ -348,6 +348,11 @@ async def attendance(context, arguments, *, separate_seasons=False, family=False
             return sorted(set(row['account_tags'])
                           | {tag for tag in selected_tags if owners.get(tag) == row['member_id']})
         family_scope = await family_wars(context, arguments, result, accounts)
+    span = None
+    if family:
+        from .war_span import record_span
+        named = arguments.get('account_tags') or arguments.get('member_ids')
+        span = await record_span(context, arguments, source, sorted(selected_tags) if named else None)
     clan_totals = []
     periods = [(season, code) for season in source.get('component_seasons', [arguments.get('season')])
                for code in arguments.get('clan_codes', sorted({r['clan_code'] for r in rows if r.get('clan_code')}))]
@@ -372,6 +377,7 @@ async def attendance(context, arguments, *, separate_seasons=False, family=False
     return {**source, 'rows': result, 'clan_totals': clan_totals,
             **({'members': member_profiles} if member_profiles is not None else {}),
             **({'family_wars_scope': family_scope} if family_scope is not None else {}),
+            **({'record_span': span} if span is not None else {}),
             'ranked_population': population, 'opportunity_unit': 'account-war',
             'clan_participation': clan_participation(rows, owners, context.guild,
                 arguments.get('clan_codes', sorted({r['clan_code'] for r in rows if r.get('clan_code')}))),

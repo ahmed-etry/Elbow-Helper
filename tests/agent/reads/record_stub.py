@@ -18,9 +18,16 @@ SECOND = 1_000_000
 WAR_IDS = count(1)
 
 
+def empty_reads():
+    """Record war reads that hold no wars beyond those a test serves."""
+    async def record_span(*_, **__):
+        return {'recorded': [], 'accounts': [], 'as_of': 0}
+    return SimpleNamespace(record_span=record_span)
+
+
 def with_record(context, reads=None):
     """The context with the bot's family record war reads."""
-    return replace(context, bot=SimpleNamespace(war_reads=reads if reads is not None else SimpleNamespace()))
+    return replace(context, bot=SimpleNamespace(war_reads=reads if reads is not None else empty_reads()))
 
 
 def regular_war(clan_code, end_ts, lineup, *, opponent="#Q2", start_ts=None, attacks_per_member=2,
