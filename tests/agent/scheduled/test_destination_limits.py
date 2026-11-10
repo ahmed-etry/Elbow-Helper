@@ -160,13 +160,16 @@ class DestinationPreviewTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(directory.cleanup)
         self.repository = AgentActionRepository(Path(directory.name) / "actions.sqlite3")
         self.context, self.channel, _, _ = fixture()
+        self.context.member.mention = "<@10>"
         self.context.action_repository = self.repository
         handle = patch("elbow_helper.agent.scheduled.tools.check_post_access")
         handle.start()
         self.addCleanup(handle.stop)
 
     async def prepare(self, offset, **changes):
-        values = {"kind": "reminder", "text": "Synthetic reminder", **once(offset), **changes}
+        self.context.state.member_self_target = True
+        values = {"kind": "reminder", "text": "Synthetic reminder", "member_ids": [10],
+                  **once(offset), **changes}
         return await prepare_save(self.context, values, registry_factory=lambda: {})
 
 

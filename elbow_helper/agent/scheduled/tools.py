@@ -18,6 +18,7 @@ from ..actions.outcomes import ActionOutcome
 from elbow_helper.agent.safety.access import accessible_message_channel
 from elbow_helper.agent.safety.disclosure import can_show, request_scope
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.conversation.wording import ACTION_STANDING_POST_PING
 from elbow_helper.agent.conversation.wording import ACTION_STANDING_DESTINATION, ACTION_STANDING_MANAGE, ACTION_STANDING_ONCE, ACTION_STANDING_REPEAT, ACTION_STANDING_SAVE, ACTION_STANDING_SCOPE, ACTION_STANDING_NO_CHANGES, ACTION_STANDING_FIXED, ACTION_STANDING_ACTION, ACTION_STANDING_TIME, ACTION_STANDING_WATCHER, ACTION_STANDING_REQUEST_NAME, ACTION_STANDING_WATCHER_NAME, ACTION_STANDING_REQUEST_NOUN, ACTION_STANDING_WATCHER_NOUN, ACTION_STANDING_SAVE_LABELS, ACTION_STANDING_MANAGE_LABELS, ACTION_STANDING_OPERATIONS, ACTION_STANDING_TARGET_ONE, ACTION_STANDING_TARGET_MANY, ACTION_VALUE_YES, ACTION_VALUE_NO, ACTION_STANDING_REMINDER_NAME, ACTION_STANDING_REMINDER_NOUN, ACTION_STANDING_POST_DESTINATION, ACTION_STANDING_DM_DESTINATION, ACTION_STANDING_DM_SELF, ACTION_UNAVAILABLE, ACTION_SCHEDULE_END, ACTION_SCHEDULE_RUNS_ONE, ACTION_SCHEDULE_RUNS_MANY
 from ..discord_actions.safety import check_post_access, resolve_channel
 from ..discord_actions.messages import content_options, post_mentions
@@ -29,11 +30,13 @@ from ..plan.checker import valid_arguments
 from .scope import has_raw_id, validate_scope
 from .time_rules import schedule_preview, remaining_runs, timezone_name
 from .destination_limits import require_destination_spacing
+from .reminders import channel_reminder_content, reminder_members
 
 
 TOOL_CONTRACTS = {
     "save_standing_rule": CapabilityContract(
         entity_fields=(("destination_channel_id", "discord_channel"),
+                       ("member_ids", "discord_member_set"),
                        ("dm_member_ids", "discord_member_set")),
         source_scope="request_context",
         filter_fields=(
@@ -261,6 +264,10 @@ def _preview_lines(values: Mapping[str, Any], *, kind: str, request: str,
         (ACTION_STANDING_DM_DESTINATION.format(members=", ".join(
             member.mention for member in dm_recipients(context, values["dm_member_ids"])
         )) if kind == "reminder" and values.get("dm_member_ids")
+         else ACTION_STANDING_POST_PING.format(
+             channel=channel.mention, members=", ".join(
+                 member.mention for member in reminder_members(context.guild, values["member_ids"])
+             )) if kind == "reminder" and values.get("member_ids")
          else ACTION_STANDING_POST_DESTINATION.format(channel=channel.mention) if kind == "reminder"
          else ACTION_STANDING_DM_SELF if values.get("deliver_to") == "dm"
          else ACTION_STANDING_DESTINATION.format(channel=channel.mention)),
@@ -312,9 +319,18 @@ async def prepare_save(
         raise ActionRefused(ACTION_UNAVAILABLE)
     if values.get("deliver_to", "channel") not in ("channel", "dm"):
         raise ActionRefused(ACTION_UNAVAILABLE)
+    if kind == "reminder" and values.get("deliver_to") == "dm" and "member_ids" in values:
+        if "dm_member_ids" in values and values["dm_member_ids"] != values["member_ids"]:
+            raise ActionRefused(ACTION_UNAVAILABLE)
+        values = {**values, "dm_member_ids": values["member_ids"]}
     if kind == "reminder" and values.get("dm_member_ids"):
+        if "member_ids" in values and values["member_ids"] != values["dm_member_ids"]:
+            raise ActionRefused(ACTION_UNAVAILABLE)
         dm_recipients(context, values["dm_member_ids"])
+        values = {key: value for key, value in values.items() if key != "member_ids"}
         values = {**values, "deliver_to": "dm"}
+    elif kind == "reminder" and values.get("deliver_to", "channel") == "channel" and "member_ids" in values:
+        reminder_members(context.guild, values["member_ids"])
     request = str(values["request"]).strip()
     maximum = (
         50000 if kind == "reminder" and values.get("deliver_to", "channel") == "channel"
@@ -339,7 +355,7 @@ async def prepare_save(
     if values.get("deliver_to", "channel") == "channel":
         check_post_access(channel, context.member, context.guild.me)
         if kind == "reminder":
-            post_mentions(context, values, request)
+            post_mentions(context, values, channel_reminder_content(context.guild, values))
     elif kind == "reminder" and not values.get("dm_member_ids"):
         raise ActionRefused(ACTION_UNAVAILABLE)
     actions = values.get("allowed_actions", [])
@@ -381,6 +397,8 @@ async def prepare_save(
             refreshed = await resolve_channel(context, values["destination_channel_id"])
             if values.get("deliver_to", "channel") == "channel":
                 check_post_access(refreshed, context.member, context.guild.me)
+                if kind == "reminder":
+                    post_mentions(context, values, channel_reminder_content(context.guild, values))
             elif kind == "reminder":
                 dm_recipients(context, values["dm_member_ids"])
             if kind == "watcher":
@@ -444,6 +462,7 @@ async def list_standing(context: AgentRequestContext,
         "end_utc": item["rule"].get("schedule", {}).get("end_utc"),
         "runs": item["rule"].get("schedule", {}).get("runs"),
         "dm_member_ids": item["rule"].get("dm_member_ids", []),
+        "member_ids": item["rule"].get("member_ids", item["rule"].get("dm_member_ids", [])),
         "runs_left": 0 if item["status"] == "completed" else remaining_runs(
             item["rule"].get("schedule", {}),
             next_at=item.get("next_run_at") or item.get("next_check_at"),
@@ -509,6 +528,10 @@ def standing_tools(
         {"type": "object", "properties": {
             "kind": {"type": "string", "enum": ["request", "watcher", "reminder"]},
             **content_options(),
+            "member_ids": {
+                "type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": True,
+                "items": {"type": "integer", "minimum": 1},
+            },
             "dm_member_ids": {
                 "type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": True,
                 "items": {"type": "integer", "minimum": 1},

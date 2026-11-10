@@ -301,7 +301,7 @@ RESULT_FIELDS = {
                                              "target_links,outcome,executed_at")],
     },
     "list_standing_rules": {
-        "rules": [names("id,kind,request,status,next_at,end_utc,runs,runs_left,dm_member_ids")],
+        "rules": [names("id,kind,request,status,next_at,end_utc,runs,runs_left,dm_member_ids,member_ids")],
     },
     "read_clan_health_settings": {
         "clan_code": "", "sections": [{"name": "", "fields": [

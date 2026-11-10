@@ -259,7 +259,7 @@ def fixed_results(seed):
         "list_standing_rules": {"rules": [{"id": 1, "kind": "reminder", "request": "Synthetic",
                                            "status": "active", "next_at": seed,
                                            "end_utc": None, "runs": 2, "runs_left": 2,
-                                           "dm_member_ids": [seed]}]},
+                                           "dm_member_ids": [seed], "member_ids": [seed]}]},
         "read_clan_health_settings": {"clan_code": "BEH", "sections": [{"name": "Synthetic",
             "fields": [{"name": "Synthetic", "key": "synthetic", "description": "Synthetic",
                         "value": seed, "unit": "days"}]}]},
