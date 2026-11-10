@@ -27,8 +27,8 @@ class AnswerGoalTests(unittest.IsolatedAsyncioTestCase):
         return flow, source
 
     async def test_initial_and_revised_corrections_preserve_only_executed_goals(self):
-        goals = ["Rejected initial goal", "Find the member's server activity",
-                 "Rejected revision goal", "Read their most recent messages"]
+        goal = "Find a member's activity in the server."
+        goals = ["Rejected initial goal", goal, "Rejected revision goal", goal]
         plans = []
         for index, goal in enumerate(goals):
             step = _step("identity" if index < 2 else "messages", {"value": index // 2})
