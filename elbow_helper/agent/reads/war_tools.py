@@ -6,7 +6,7 @@ from elbow_helper.features.cwl.results import CwlResults
 from elbow_helper.agent.reads.snapshots import family_tool, IDS, TAGS, DATE
 from elbow_helper.agent.reads.clash import read_clash
 from elbow_helper.agent.reads.cache import stored_read
-from .wars import attendance, current_war, period, selected_wars, single_selection
+from .wars import attendance, current_war, period, selected_wars, single_selection, war_attendance
 from .war_measures import clan_participation, participation_status
 
 __all__ = ['TOOLS', 'attendance', 'current_war', 'period', 'selected_wars', 'single_selection',
@@ -120,7 +120,7 @@ TOOLS = (
       'sort': {'type': 'string', 'enum': ['missed', 'miss_rate', 'attacks_used', 'attacks_expected']},
       'unit': {'type': 'string', 'enum': ['account', 'member']},
       'member_ids': IDS, 'account_tags': TAGS,
-      'cohort_ref':{'type':'string','minLength':1,'maxLength':32}}, attendance, required=('war_type',),
+      'cohort_ref':{'type':'string','minLength':1,'maxLength':32}}, war_attendance, required=('war_type',),
      rules=ATTENDANCE_RULES,
      usage_note='Select season/season_keys, war_ids, latest_completed or dates first. Resolve relative periods from season evidence; account filters do not select a period.'),
  family_tool('read_cwl_results', 'Read current CWL signup/assigned rosters, season results, ASS, bonus and clan leagues.',
