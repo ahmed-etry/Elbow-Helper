@@ -338,7 +338,10 @@ class AgentService:
                 )) - sum(estimate_tokens(json.dumps(item.parameters, ensure_ascii=False))
                          for item in definitions))
                 context.state.family_catalogue = family_catalogue
-                budget.request_limits = limits.FAMILY_LIMITS if family_catalogue else limits.RESEARCH_LIMITS
+                # Social rounds have already spent part of this request. Keep
+                # the research allowance so the plan can still correct a
+                # refused read and leave the final output reserve intact.
+                budget.request_limits = limits.RESEARCH_LIMITS
                 rounder.social_route = False
                 if context.operator_debug is not None:
                     context.operator_debug.route = "research"

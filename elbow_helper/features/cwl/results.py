@@ -12,6 +12,9 @@ from .config import CWL_CLAN_CODES
 from .results_summary import cwl_analysis
 
 
+PERIOD_SETTINGS = ('season', 'season_keys', 'war_ids', 'latest_completed', 'history_limit', 'after', 'before')
+
+
 def cwl_clan_error(codes):
     unknown = [code for code in codes if code not in CWL_CLAN_CODES]
     if unknown:
@@ -51,8 +54,8 @@ class CwlResults:
                 raise ValueError('Choose timezone-aware dates.')
             if (after is None) != (before is None) or after is not None and before <= after:
                 raise ValueError('Choose a complete date window with its end after its start.')
-            selectors = ('season', 'season_keys', 'war_ids', 'latest_completed', 'history_limit')
-            if sum(bool(arguments.get(key)) for key in selectors) + (after is not None) > 1:
+            if sum(bool(arguments.get(key)) for key in PERIOD_SETTINGS
+                   if key not in ('after', 'before')) + (after is not None) > 1:
                 raise ValueError('Choose one season selection, war selection or date window.')
             for season in arguments.get('season_keys', []) or ([arguments['season']] if arguments.get('season') else []):
                 if not isinstance(season, str) or re.fullmatch(SEASON_KEY, season) is None:
@@ -68,10 +71,9 @@ class CwlResults:
         try:
             after, before = [datetime.fromisoformat(arguments[key]) if arguments.get(key) else None
                              for key in ('after', 'before')]
-            selectors = ('season', 'season_keys', 'war_ids', 'latest_completed', 'history_limit')
-            if not (after is not None or any(arguments.get(key) for key in selectors)):
+            if not any(arguments.get(key) for key in PERIOD_SETTINGS):
                 return {'error': 'Which season, wars or date window do you want?', 'cause': 'invalid_arguments',
-                        'missing_fields': ['season', 'season_keys', 'after', 'war_ids', 'latest_completed', 'history_limit']}
+                        'missing_fields': [key for key in PERIOD_SETTINGS if key != 'before']}
             return self.queries.attendance(
                 clan_codes=arguments.get('clan_codes', list(CLANS)), war_type='CWL',
                 after_ts=int(after.timestamp()) if after else None,
@@ -143,8 +145,7 @@ class CwlResults:
             if metric in ('ass', 'bonus'):
                 if len(clan) != 1:
                     return {'error': 'Which clan should I score?', 'cause': 'invalid_arguments', 'invalid_fields': ['clan_codes']}
-                if not any(arguments.get(key) for key in (
-                        'season', 'after', 'before', 'war_ids', 'latest_completed')):
+                if not any(arguments.get(key) for key in PERIOD_SETTINGS):
                     season = self.queries.latest_season(clan_code=clan[0])
                     if season is None:
                         return {'rows': [], 'metric': metric, 'seasons': [],

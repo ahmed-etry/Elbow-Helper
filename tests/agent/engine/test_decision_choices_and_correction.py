@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock
 
 from elbow_helper.agent.engine.assessment import parse_decision, without_new_choices
 from tests.agent.engine.answer_helpers import decision_answer
-from elbow_helper.agent.engine.budgets import ASSESSMENT_LIMITS
+from elbow_helper.agent.engine.budgets import ASSESSMENT_LIMITS, ContextBudget, SOCIAL_LIMITS
+from elbow_helper.agent.engine.routing import ROUTE_OUTPUT_TOKENS
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from tests.agent.engine import test_request_cost as cost
 
@@ -96,6 +97,21 @@ class CorrectionRoundTests(unittest.IsolatedAsyncioTestCase):
 
 
 class CorrectionBudgetTests(unittest.TestCase):
+    def test_social_route_and_a_full_plan_leave_a_correction_and_final_answer(self):
+        budget = ContextBudget(128_000, SOCIAL_LIMITS.round_output_tokens, 25_000,
+                               final_answer_reserve=4096, request_limits=SOCIAL_LIMITS)
+        budget.observe(AgentUsage(1000, ROUTE_OUTPUT_TOKENS), projected_input=1000)
+        budget.observe(AgentUsage(25_000, SOCIAL_LIMITS.round_output_tokens), projected_input=25_000)
+        self.assertEqual(budget.request_final_reserve, 4096)
+        self.assertTrue(budget.request_can_research(30_000, correction=True))
+        self.assertTrue(budget.can_continue_tools(30_000, result_reserve=8192))
+        correction_output = budget.request_output_limit(30_000, allow_tools=True)
+        self.assertGreaterEqual(correction_output, 1024)
+        budget.observe(AgentUsage(30_000, correction_output), projected_input=30_000)
+        self.assertGreaterEqual(budget.request_output_limit(30_000, allow_tools=False),
+                                budget.request_final_reserve)
+        self.assertFalse(budget.request_can_research(30_000, correction=True))
+
     def test_a_correction_ignores_the_writer_estimate_but_not_the_request_allowance(self):
         flow, _, _, _ = cost.RequestCostTests().flow([])
         budget = flow.budget
