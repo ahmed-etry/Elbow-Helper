@@ -65,7 +65,8 @@ MISTAKES = {
         {'metric': 'bonus', 'clan_codes': [CWL_CLAN_CODES[0]], 'history_limit': 3},
         {'metric': 'ass', 'clan_codes': [CWL_CLAN_CODES[0]], 'season': '2026-09', 'latest_completed': 3},
         {'metric': 'attendance', 'season': '2026-09', 'history_limit': 2},
-        {'metric': 'signup_pool', 'season': '2026-09'}, {'metric': 'mega_ass', 'season_keys': ['2026-09']},
+        {'metric': 'signup_pool', 'season_keys': ['2026-09']}, {'metric': 'assigned_rosters', 'season': '2026-09', 'after': START},
+        {'metric': 'mega_ass', 'season_keys': ['2026-09']},
         {'metric': 'league', 'latest_completed': 1}, {'before': END}],
     'read_member_accounts': [
         {'name': 'Synthetic'}, {'account_names': ['Synthetic']},

@@ -6,10 +6,12 @@ from elbow_helper.agent.safety.access import accessible_message_channel
 
 async def cwl_rosters(context, arguments):
     unsupported = sorted(set(arguments).intersection(
-        ('season', 'season_keys', 'after', 'before', 'war_ids', 'latest_completed', 'history_limit')))
+        ('season_keys', 'after', 'before', 'war_ids', 'latest_completed', 'history_limit')))
+    refusal = {'error': 'Current roster cycles do not support historical selectors.',
+               'cause': 'invalid_arguments'}
     if unsupported:
-        return {'error': 'Current roster cycles do not support historical selectors.',
-                'cause': 'invalid_arguments', 'unsupported_selectors': unsupported}
+        return {**refusal, 'unsupported_selectors': unsupported}
+    season = arguments.get('season')
     if context.roster_queries is None:
         return {'error': 'CWL rosters are not available.', 'cause': 'missing_setup'}
     pool = arguments['metric'] == 'signup_pool'
@@ -18,11 +20,15 @@ async def cwl_rosters(context, arguments):
         (roster.id == CWL_SIGNUP_ROSTER_ID if pool else roster.clan_code in CLANS
          and roster.role_id == CLANS[roster.clan_code].cwl_role_id)
         and (pool or not arguments.get('clan_codes') or roster.clan_code in arguments['clan_codes'])]
-    rows, rosters, missing = [], [], []
+    rows, rosters, missing, other_seasons = [], [], [], 0
     for roster in selected:
         snapshot = await context.roster_queries.snapshot(context.guild.id, roster.id)
         if snapshot is None:
             missing.append({'roster_id': roster.id, 'cause': 'source_unavailable'})
+            continue
+        # A season is not historical when it names the cycle that is open now.
+        if season and (snapshot.cycle is None or snapshot.cycle.cycle_key != season):
+            other_seasons += 1
             continue
         posts = []
         for post in snapshot.posts:
@@ -41,6 +47,8 @@ async def cwl_rosters(context, arguments):
             'player_name': member.player_name, 'townHallLevel': member.townhall,
             'clan_code': member.clan_code, 'signed_up_ts': member.signed_up_ts}
             for member in snapshot.members)
+    if not rosters and other_seasons:
+        return {**refusal, 'unsupported_selectors': ['season']}
     if not rosters:
         return {'error': 'No selected CWL roster is accessible here.', 'cause': 'scope_refused',
                 'missing_sources': missing}

@@ -29,7 +29,10 @@ WINDOW_RULES = (
     {'aware': ['after', 'before'], 'error': 'Choose timezone-aware dates.'})
 WAR_SELECTORS = ['season', 'season_keys', 'war_ids', 'latest_completed', 'after']
 ONE_SELECTION = 'Choose one season selection, war selection or date window.'
-HISTORICAL = ['season', 'season_keys', 'after', 'before', 'war_ids', 'latest_completed', 'history_limit']
+# A single season is allowed through the plan check; cwl_rosters accepts it only
+# when it is the season of the current roster cycle.
+HISTORICAL = ['season_keys', 'after', 'before', 'war_ids', 'latest_completed', 'history_limit']
+ATTENDANCE_PERIOD_NOTE = 'A period is required, with no default: give season, season_keys, latest_completed, after/before or war_ids. Account filters are not a period.'
 ATTENDANCE_RULES = (*WINDOW_RULES,
     {'only_one': WAR_SELECTORS, 'error': ONE_SELECTION},
     {'needs': WAR_SELECTORS, 'error': 'Which season, wars or date window do you want?'})
@@ -125,7 +128,7 @@ TOOLS = (
       'member_ids': IDS, 'account_tags': TAGS,
       'cohort_ref':{'type':'string','minLength':1,'maxLength':32}}, war_attendance, required=('war_type',),
      rules=ATTENDANCE_RULES,
-     usage_note='Select season/season_keys, war_ids, latest_completed or dates first. Resolve relative periods from season evidence; account filters do not select a period.'),
+     usage_note=ATTENDANCE_PERIOD_NOTE),
  family_tool('read_war_attacks', 'Read individual stored war attacks: map positions and Town Halls, stars, destruction and order.',
      {**SELECTION, 'war_type': {'type': 'string', 'enum': ['REG', 'CWL', 'both']},
       'member_ids': IDS, 'account_tags': TAGS,

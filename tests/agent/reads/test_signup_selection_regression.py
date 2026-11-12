@@ -42,7 +42,7 @@ class SignupSelectionTests(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_historical_selectors_are_rejected_before_current_rosters_are_queried(self):
-        selectors = {'season': '2000-01', 'season_keys': ['2000-01'],
+        selectors = {'season_keys': ['2000-01'],
             'after': '2000-01-01T00:00:00+00:00', 'before': '2000-02-01T00:00:00+00:00',
             'war_ids': ['W1'], 'latest_completed': 1, 'history_limit': 1}
         with patch.object(self.context.roster_queries, 'list_for_guild', AsyncMock()) as query:
@@ -51,3 +51,26 @@ class SignupSelectionTests(unittest.IsolatedAsyncioTestCase):
                     result = await self.tool.handler(self.context, {'metric': metric, key: value})
                     self.assertEqual(result['cause'], 'invalid_arguments')
             query.assert_not_awaited()
+
+    async def test_season_of_the_current_cycle_is_not_historical(self):
+        for metric in ('signup_pool', 'assigned_rosters'):
+            with self.subTest(metric=metric):
+                result = await self.tool.handler(self.context, {'metric': metric, 'season': '2026-09'})
+                self.assertNotIn('error', result)
+                self.assertEqual(len(result['rows']), 3)
+                self.assertEqual(result['rosters'][0]['cycle_key'], '2026-09')
+
+    async def test_any_other_season_is_still_refused(self):
+        for metric in ('signup_pool', 'assigned_rosters'):
+            for season in ('2026-08', '2026-10', '2000-01'):
+                with self.subTest(metric=metric, season=season):
+                    result = await self.tool.handler(self.context, {'metric': metric, 'season': season})
+                    self.assertEqual(result['cause'], 'invalid_arguments')
+                    self.assertEqual(result['unsupported_selectors'], ['season'])
+                    self.assertNotIn('rows', result)
+
+    async def test_current_season_with_another_historical_selector_is_still_refused(self):
+        result = await self.tool.handler(self.context, {'metric': 'assigned_rosters',
+            'season': '2026-09', 'latest_completed': 1})
+        self.assertEqual(result['cause'], 'invalid_arguments')
+        self.assertEqual(result['unsupported_selectors'], ['latest_completed'])
