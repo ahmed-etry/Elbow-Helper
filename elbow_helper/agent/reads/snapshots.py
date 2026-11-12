@@ -184,6 +184,52 @@ def export_report(report, kind):
                            sheet_rows=tuple(sheet_rows))
 
 
+# Selection fields a retained report can narrow by filtering rows, and the row column each one names.
+SLICE_COLUMNS = {'clan_codes': 'clan_code', 'member_ids': 'member_id', 'account_tags': 'player_tag'}
+# Summary fields that describe the report itself, not the selected rows, so they survive a slice.
+SLICE_KEPT = ('schema_version', 'requester_id', 'observed_at', 'source_versions', 'provenance', 'metric', 'coverage')
+
+
+def saved_slice(data, requested):
+    """The narrowed fields when the saved rows already hold the request, else None.
+
+    An empty result means the request repeats the saved selection."""
+    saved = data['summary'].get('selection', {})
+    wanted = {}
+    for key, value in requested.items():
+        if key == 'account_tags' and isinstance(value, list):
+            tags = [normalize_player_tag(tag) for tag in value]
+            if not tags or any(tag is None for tag in tags):
+                return None
+            value = sorted(set(tags))
+        held, column = saved.get(key), SLICE_COLUMNS.get(key)
+        if held == value:
+            continue
+        if (column is None or not isinstance(value, list) or not value or not isinstance(held, list)
+                or not set(value) <= set(held) or any(column not in row for row in data['rows'])):
+            return None
+        wanted[key] = value
+    return wanted
+
+
+def sliced_payload(identifier, data, wanted):
+    rows = [row for row in data['rows'] if all(row[SLICE_COLUMNS[key]] in values
+                                               for key, values in wanted.items())]
+    old = data['summary']
+    summary = {key: old[key] for key in SLICE_KEPT if key in old}
+    if 'clan_codes' in wanted:
+        # Per-clan notes follow their clan; totals across clans no longer describe these rows.
+        for key, value in old.items():
+            if (key not in summary and isinstance(value, list) and value
+                    and all(isinstance(item, dict) and 'clan_code' in item for item in value)):
+                summary[key] = [item for item in value if item['clan_code'] in wanted['clan_codes']]
+    selection = {**old.get('selection', {}), **wanted}
+    summary.update(selection=selection, resolved_inputs=selection, slice_of=identifier)
+    if 'count' in old:
+        summary['count'] = len(rows)
+    return json.dumps({'rows': rows, 'summary': summary}, ensure_ascii=False, allow_nan=False)
+
+
 UNKEPT_REPORT = {'error': 'That report was too large to keep while later reads ran. '
                           'Narrow its members, clans or period.', 'cause': 'capacity'}
 
@@ -206,16 +252,37 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
             if (not isinstance(report, FamilyReport) or report.guild_id != context.guild.id
                     or not await authorize_report(context, identifier)):
                 return {'error': 'That report is no longer available here.', 'cause': 'report_unavailable'}
-            if arguments.get('fresh') or set(arguments) - set(COMMON):
+            requested = {key: value for key, value in arguments.items() if key not in COMMON}
+            if arguments.get('fresh') or requested and (arguments.get('cursor') or offset):
                 return {'error': 'Read a new snapshot to change its selection.', 'cause': 'invalid_arguments'}
-            if json.loads(report.payload)['summary'].get('requester_id', context.member.id) != context.member.id:
+            saved = json.loads(report.payload)
+            if saved['summary'].get('requester_id', context.member.id) != context.member.id:
                 return {'error': 'Read a new snapshot for this request.', 'cause': 'report_unavailable'}
-            if arguments.get('cursor'):
+            if requested:
+                wanted = saved_slice(saved, requested)
+                if wanted:
+                    # The saved rows already hold this slice: keep it as its own report.
+                    try:
+                        report = FamilyReport(uuid4().hex, report.guild_id, name,
+                                              sliced_payload(identifier, saved, wanted))
+                        retain_report(context.state.reports, report)
+                    except ArtifactCapacityError:
+                        return {'error': 'That complete report is too large. Choose a smaller period or cohort.',
+                                'cause': 'capacity'}
+                    context.state.report_sources[report.report_id] = context.state.report_sources[identifier]
+                    context.state.report_access_requirements[report.report_id] = (
+                        context.state.report_access_requirements[identifier])
+                elif wanted is None:
+                    # It needs data the saved rows lack: read again with the saved selection changed.
+                    arguments = {**{key: value for key, value in arguments.items() if key != 'report_id'},
+                                 **saved['summary'].get('selection', {}), **requested}
+                    identifier = None
+            if identifier and arguments.get('cursor'):
                 try:
                     offset = report.cursor_offset(arguments['cursor'])
                 except ValueError:
                     return {'error': 'Use the cursor returned for this report.', 'cause': 'invalid_arguments'}
-        else:
+        if not identifier:
             if offset or arguments.get('cursor'):
                 return {'error': 'Continue with the report ID to keep the same snapshot.',
                         'cause': 'missing_report'}
