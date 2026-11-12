@@ -42,6 +42,24 @@ def _walk(source: Any, path: list[Any]) -> Any:
     return source
 
 
+def _scalar_list(detail: Mapping[str, Any]) -> bool:
+    kind, items = detail.get("type"), detail.get("items")
+    return (kind == "array" or isinstance(kind, list) and "array" in kind) and isinstance(items, Mapping) \
+        and items.get("type") in ("string", "integer", "number", "boolean")
+
+
+def _flatten_scalar_list(values: Any, detail: Mapping[str, Any]) -> Any:
+    """A reference through a list-valued field yields one list per record; an
+    array-of-scalars argument takes them as one list."""
+    if (not isinstance(values, list) or not _scalar_list(detail)
+            or not any(isinstance(item, list) for item in values)):
+        return values
+    flat = [value for item in values for value in (item if isinstance(item, list) else [item])]
+    if detail.get("uniqueItems"):
+        flat = [value for index, value in enumerate(flat) if value not in flat[:index]]
+    return flat
+
+
 def resolve_arguments(
     arguments: Mapping[str, Any], results: Mapping[str, Mapping[str, Any]],
     *, schema: Mapping[str, Any] | None = None,
@@ -71,7 +89,7 @@ def resolve_arguments(
                         "Choose one value or ask for clarification."
                     )
                 return collected[0]
-            return collected
+            return _flatten_scalar_list(collected, detail)
         if isinstance(value, dict):
             properties = detail.get("properties", {})
             additional = detail.get("additionalProperties", {})
@@ -96,6 +114,8 @@ def resolve_arguments(
                 expanded = (isinstance(item, dict) and set(item) == {"step", "path"}
                             and "*" in item["path"] and isinstance(resolved, list))
                 items.extend(resolved) if expanded else items.append(resolved)
+            if any(isinstance(item, dict) and set(item) == {"step", "path"} for item in value):
+                return _flatten_scalar_list(items, detail)
             return items
         return value
     return resolve(dict(arguments), schema or {})

@@ -66,6 +66,28 @@ class ScalarResultReferenceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(arguments, {"author_id": expected})
                 self.assertTrue(valid_arguments(arguments, schema))
 
+    def test_list_of_lists_from_a_reference_flattens_one_level_for_scalar_arrays(self):
+        tags = {"type": "array", "uniqueItems": True, "items": {"type": "string", "maxLength": 20}}
+        base = {"type": "object", "additionalProperties": False}
+        schema = {**base, "properties": {"account_tags": tags}}
+        source = {"members": {"rows": [{"account_tags": ["#A", "#B"]}, {"account_tags": ["#B"]},
+                                       {"account_tags": []}, {"account_tags": ["#C"]}]}}
+        reference = {"step": "members", "path": ["rows", "*", "account_tags"]}
+        for value, expected in ((reference, ["#A", "#B", "#C"]), ([reference], ["#A", "#B", "#C"]),
+                                (["#Z", reference], ["#Z", "#A", "#B", "#C"])):
+            with self.subTest(value=value):
+                arguments = resolve_arguments({"account_tags": value}, source, schema=schema)
+                self.assertEqual(arguments, {"account_tags": expected})
+                self.assertTrue(valid_arguments(arguments, schema))
+        # Without uniqueItems the order and repeats are kept.
+        loose = {**base, "properties": {"account_tags": {"type": "array", "items": {"type": "string"}}}}
+        self.assertEqual(resolve_arguments({"account_tags": reference}, source, schema=loose),
+                         {"account_tags": ["#A", "#B", "#B", "#C"]})
+        # A schema that wants lists of lists is left alone.
+        nested = {**base, "properties": {"account_tags": {"type": "array", "items": {"type": "array"}}}}
+        self.assertEqual(resolve_arguments({"account_tags": reference}, source, schema=nested),
+                         {"account_tags": [["#A", "#B"], ["#B"], [], ["#C"]]})
+
     def test_union_schemas_keep_list_alternatives_and_collapse_scalar_alternatives(self):
         for detail, expected in (
             ({"type": ["integer", "null"]}, 7),
