@@ -74,7 +74,7 @@ class CwlCoverageRegressionTests(unittest.IsolatedAsyncioTestCase):
             coverage = next(item for item in combined['clan_seasons'] if item['clan_code'] == 'BES')
             self.assertEqual(coverage['wars'], 2)
             self.assertFalse(coverage['complete'])
-            self.assertTrue(coverage['coverage']['query_complete'])
+            self.assertTrue(combined['attendance_coverage']['query_complete'])
             seasons = await tool.handler(context, {'metric': 'performance', 'season_keys': ['2026-09'],
                                                   'clan_codes': ['BEH', 'BES']})
             self.assertEqual(seasons['rows'], combined['rows'])

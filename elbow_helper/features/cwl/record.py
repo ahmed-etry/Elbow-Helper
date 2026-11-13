@@ -343,7 +343,6 @@ class CwlHistory:
             war = details.get((summary["war_id"], summary["clan_code"]), {**summary, "roster": [], "attacks": []})
             entry = war_entry(war["war_id"], war.get("clan_name"), war.get("opponent_name"), war["end_ts"])
             named.setdefault(war["war_id"], entry)
-            coverage.append({**war["coverage"], **entry, "clan_code": war["clan_code"]})
             if not war["roster"]:
                 empty.append(entry)
                 unproven.add(war["war_id"])
@@ -351,6 +350,10 @@ class CwlHistory:
             causes = [cause for cause, missing in (
                 ("not_final", war["state"] != "warEnded"), ("lineup_incomplete", not own["lineup_complete"]),
                 ("attacks_incomplete", not own["attacks_complete"])) if missing]
+            if causes:
+                # A complete war adds nothing here; listing each one grew with the league
+                # until no row fitted beside it.
+                coverage.append({**entry, "clan_code": war["clan_code"], "uncertainty_reasons": causes})
             sources.append({**entry, "clan_code": war["clan_code"], "season": war["cwl_season"],
                             "aliases": [war["war_id"]], "sources": [war["source"]]})
             attacks = defaultdict(list)
@@ -388,7 +391,8 @@ class CwlHistory:
                 "identity_conflicts": [], "unproven_war_ids": [named[war] for war in sorted(unproven)],
                 "duplicate_identities_removed": 0,
                 "coverage": {"query_complete": True, "historical_collection_complete": False,
-                             "exact_ranking": not (empty or unproven), "wars": coverage,
+                             "exact_ranking": not (empty or unproven),
+                             "wars_checked": len(selected), "wars_with_gaps": coverage,
                              "wars_not_final": sum(war["state"] != "warEnded" for war in selected),
                              "basis": "family record league wars in the selection; ended wars from final lineups, "
                                       "wars_not_final with attacks so far and no misses"}}

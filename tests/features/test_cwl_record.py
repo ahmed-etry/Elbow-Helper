@@ -235,12 +235,12 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["unproven_war_ids"], [{"war_id": "CWL:#R0", "clan_name": "Clan #PY",
                                                        "opponent_name": "Clan #GR", "end_date": "2026-11-03"}])
         self.assertFalse(result["coverage"]["exact_ranking"])
-        (coverage,) = result["coverage"]["wars"]
-        self.assertEqual((coverage["war_id"], coverage["own"]["attacks_stored"],
-                          coverage["own"]["attacks_reported"]), ("CWL:#R0", 1, 2))
-        self.assertFalse(coverage["own"]["attacks_complete"])
+        (gap,) = result["coverage"]["wars_with_gaps"]
+        self.assertEqual((gap["war_id"], gap["uncertainty_reasons"]), ("CWL:#R0", ["attacks_incomplete"]))
         (bonus,) = await self.call(self.history.bonus_wars, "ONE", "2026-11")
-        self.assertEqual(bonus["coverage"]["own"], coverage["own"])
+        coverage = bonus["coverage"]
+        self.assertEqual((coverage["own"]["attacks_stored"], coverage["own"]["attacks_reported"],
+                          coverage["own"]["attacks_complete"]), (1, 2, False))
         with patch("elbow_helper.features.cwl.record.SEASON_WARS", 1):
             history = await self.call(self.history.roster_history, None)
         self.assertEqual(history["wars"][0]["coverage"]["own"], coverage["own"])
@@ -271,6 +271,10 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         result = await self.call(self.history.attendance, **chosen, season="2026-11")
         self.assertEqual(result["war_ids"], ["CWL:#R0", "CWL:#R8", "CWL:#RC"])
         self.assertEqual(result["coverage"]["wars_not_final"], 2)
+        # Only wars with something missing are listed; the finished one is just counted.
+        self.assertEqual((result["coverage"]["wars_checked"],
+                          sorted(war["war_id"] for war in result["coverage"]["wars_with_gaps"])),
+                         (3, ["CWL:#R8", "CWL:#RC"]))
         rows = {(row["war_id"], row["player_tag"]): row for row in result["rows"]}
         running = rows["CWL:#R8", "#P0"]
         self.assertEqual((running["attacks_used"], running["missed"], running["final_capture"],

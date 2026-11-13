@@ -208,7 +208,6 @@ class CwlResults:
                         rows.extend(season_rows)
                         data['clan_seasons'].append({'clan_code': code, 'season': season, 'wars': len(war_ids),
                             'accounts': len(attendance_rows), 'complete': False, 'league': None,
-                            'coverage': partial['coverage'],
                             **({'scoring_status': scoring_status} if scoring_status == 'finished_wars_so_far' else {})})
                         if not season_rows or any(row['score'] is None for row in season_rows):
                             data['missing_sources'].append({'source': 'CWL performance', 'clan_code': code,
