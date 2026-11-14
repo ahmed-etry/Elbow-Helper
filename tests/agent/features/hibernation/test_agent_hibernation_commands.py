@@ -4,16 +4,51 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
 from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.features.hibernation.commands import hibernation_adapters, prepare_hibernate, prepare_reactivate
+from elbow_helper.agent.features.hibernation.tickets import prepare_reactivation_close
 from tests.agent.discord_actions.helpers import register_requester
 
 
 class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_locked_ticket_can_finish_a_close_without_a_transcript(self):
+        owner = SimpleNamespace(id=3, mention="<@3>")
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id, channel.mention, channel.last_message_id = 4, "<#4>", 10
+        channel.overwrites_for.return_value.send_messages = False
+        workflow = SimpleNamespace(
+            can_manage_reactivation_ticket=lambda _: True,
+            reactivation_reopen_state=AsyncMock(return_value=owner),
+            close_reactivation_ticket=AsyncMock(return_value=(True, None)),
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(get_cog=lambda _: workflow),
+            guild=SimpleNamespace(me=SimpleNamespace(id=1)), member=SimpleNamespace(id=2),
+            source_message=SimpleNamespace(channel=channel),
+            state=SimpleNamespace(proposed_changes=[]),
+        )
+        with (
+            patch("elbow_helper.agent.features.hibernation.tickets.require_evidence_access", AsyncMock()),
+            patch("elbow_helper.agent.features.hibernation.tickets.resolve_channel", AsyncMock(return_value=channel)),
+            patch("elbow_helper.agent.features.hibernation.tickets.check_post_access"),
+            patch("elbow_helper.agent.features.hibernation.tickets.check_member"),
+        ):
+            result = await prepare_reactivation_close(context, {})
+            self.assertEqual(result["status"], "confirmation_required")
+            self.assertTrue(await context.state.proposed_changes[0].preview.recheck())
+            self.assertEqual((await context.state.proposed_changes[0].run()).status, "complete")
+            # The close already locked the owner and posted its notice before the transcript
+            # failed, so the run must not read as a refusal that changed nothing.
+            workflow.close_reactivation_ticket.return_value = (
+                False, "I couldn't generate the transcript. Try again in a moment.")
+            with self.assertRaises(OSError):
+                await context.state.proposed_changes[0].run()
+        self.assertEqual(workflow.close_reactivation_ticket.await_count, 2)
+
     async def test_reactivate_previews_restored_roles_and_ticket(self):
         role = SimpleNamespace(
             id=20, mention="<@&20>", position=1, managed=False,

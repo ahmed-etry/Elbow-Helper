@@ -602,9 +602,6 @@ class HibernationTicketMixin:
                     send_messages=False,
                     reason=f"Hibernation ticket closed by {actor}",
                 )
-                await self.bot.get_cog("SupportActions").ticket_state.transition(
-                    channel.id, "closed", actor_id=actor.id, via=via,
-                )
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 LOGGER.warning("Could not lock ticket %s for owner %s", channel_id, owner_member.id)
         else:

@@ -4,7 +4,12 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
+
+from elbow_helper.data.events.testing import MemoryEventsStore
+from elbow_helper.features.hibernation.tickets import HibernationTicketMixin
 from elbow_helper.features.support_tickets.commands import SupportCommandMixin
+from elbow_helper.features.support_tickets.state import TicketState
 
 
 class _FakeTextChannel:
@@ -35,6 +40,56 @@ class _FakeTextChannel:
 
 
 class SupportTicketCloseTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failed_transcripts_keep_both_ticket_types_open_until_another_close(self):
+        for reactivation in (False, True):
+            with self.subTest(reactivation=reactivation):
+                events = MemoryEventsStore()
+                self.addCleanup(events.close)
+                state = TicketState(events)
+                await state.startup()
+                await state.register(123, {"owner": 42, "source": "reactivation" if reactivation else "open"}, actor_id=7)
+                member = SimpleNamespace(id=42, name="Member", display_name="Member",
+                                         display_avatar=SimpleNamespace(url="https://example.com/avatar.png"))
+                channel = MagicMock(spec=discord.TextChannel)
+                channel.id, channel.name, channel.topic = 123, "ticket-member", "<@42>"
+                channel.send = AsyncMock(return_value=SimpleNamespace(edit=AsyncMock()))
+                channel.set_permissions = AsyncMock()
+
+                async def history(**kwargs):
+                    if False:
+                        yield None
+                channel.history = history
+                log = SimpleNamespace(send=AsyncMock(return_value=SimpleNamespace(id=456)))
+                guild = SimpleNamespace(filesize_limit=8 * 1024 * 1024,
+                                        get_channel=lambda _: log, get_member=lambda _: member)
+                actor = SimpleNamespace(id=7, mention="<@7>")
+                workflow = HibernationTicketMixin() if reactivation else SupportCommandMixin()
+                workflow.ticket_state = state
+                workflow.bot = SimpleNamespace(get_cog=lambda _: workflow)
+                workflow._build_close_ticket_confirm_view = MagicMock(return_value=None)
+                workflow.build_confirm_view = MagicMock(return_value=None)
+                workflow._build_transcript_link_view = MagicMock(return_value=None)
+                report = AsyncMock()
+                module = "elbow_helper.features.hibernation.tickets" if reactivation else "elbow_helper.features.support_tickets.commands"
+
+                async def close():
+                    if reactivation:
+                        return await workflow.close_reactivation_ticket(guild, channel, actor, report=report)
+                    return await workflow.close_support_ticket(workflow.prepare_support_close(guild, channel, actor), report)
+
+                with patch(module + ".chat_exporter.export", AsyncMock(return_value=None)):
+                    result = await close()
+                self.assertFalse(result[0] if reactivation else result["status"] == "complete")
+                self.assertEqual(state.registration(123).get("_status", "open"), "open")
+                self.assertEqual(await events.read(kind="ticket_closed"), [])
+                log.send.assert_not_awaited()
+                with patch(module + ".chat_exporter.export", AsyncMock(return_value="<html>transcript</html>")):
+                    result = await close()
+                self.assertTrue(result[0] if reactivation else result["status"] == "complete")
+                self.assertEqual(state.registration(123)["_status"], "closed")
+                self.assertEqual(len(await events.read(kind="ticket_closed")), 1)
+                log.send.assert_awaited_once()
+
     @staticmethod
     def _interaction(channel: _FakeTextChannel, guild: object) -> SimpleNamespace:
         return SimpleNamespace(

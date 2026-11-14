@@ -169,13 +169,13 @@ async def prepare_support_close(context: Any,
             reports.append(message)
 
         result = await workflow.close_support_ticket(prepared, report)
-        text = "\n".join(reports) if reports else (
-            ACTION_SUPPORT_CLOSE_DONE.format(channel=log_channel.mention)
-            if result["status"] == "complete" else result["issue"]
-        )
-        if result["status"] == "complete" and not isinstance(
-            result["log_message_id"], int,
-        ):
+        if result["status"] != "complete":
+            # The owner was already locked and the close notice posted before the
+            # transcript failed, so this is a half-finished close, not "nothing changed".
+            raise OSError(result["issue"])
+        text = "\n".join(reports) if reports else ACTION_SUPPORT_CLOSE_DONE.format(
+            channel=log_channel.mention)
+        if not isinstance(result["log_message_id"], int):
             raise OSError("Support ticket close could not be verified")
         return ActionOutcome(
             "complete", "private", text=text,

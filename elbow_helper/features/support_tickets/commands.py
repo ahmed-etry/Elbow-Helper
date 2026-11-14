@@ -273,9 +273,6 @@ class SupportCommandMixin:
                         send_messages=False,
                         reason=f"Support ticket closed by {actor}",
                     )
-                    await self.ticket_state.transition(
-                        channel.id, "closed", actor_id=actor.id, via=prepared.get("via", "command"),
-                    )
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     LOGGER.warning("Could not lock support ticket %s for owner %s", channel.id, owner_member.id)
             else:

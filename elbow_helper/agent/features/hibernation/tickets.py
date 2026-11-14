@@ -139,7 +139,9 @@ async def prepare_reactivation_close(context: AgentRequestContext,
         ok, issue = await workflow.close_reactivation_ticket(
             context.guild, channel, context.member, via="agent")
         if not ok:
-            raise ActionRefused(issue or "That reactivation ticket couldn't be closed.")
+            # The close posts its notice and locks the owner before the transcript is saved,
+            # so a failure here is a half-finished close, not a refusal that changed nothing.
+            raise OSError(issue or "That reactivation ticket couldn't be closed.")
         return ActionOutcome("complete", "private", text=ACTION_TICKET_CLOSE_LABEL)
 
     context.state.proposed_changes.append(PreparedAction(

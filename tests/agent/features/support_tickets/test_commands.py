@@ -74,6 +74,12 @@ class SupportCloseCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(next(adapter for adapter in support_ticket_adapters()
                            if adapter.path == "/close").classification,
                       ActionClass.CHANGE)
+        workflow.close_support_ticket.return_value = {
+            "status": "partial", "issue": "I couldn't generate the transcript for this ticket. Try again in a moment.",
+        }
+        # The owner was already locked and the close notice posted, so this is not "nothing changed".
+        with self.assertRaises(OSError):
+            await change.run()
 
 
 class SupportOpenCommandTests(unittest.IsolatedAsyncioTestCase):
