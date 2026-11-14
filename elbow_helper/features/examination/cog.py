@@ -385,7 +385,7 @@ class Examination(
     @commands.Cog.listener()
     async def on_ready(self) -> None:
         if self._followup_task is None:
-            self._followup_task = asyncio.create_task(self._followup_loop())
+            self._followup_task = start_resilient_loop(self._followup_loop)
         if not self._availability_view_registered:
             self.bot.add_view(AvailabilityPromptView(self))
             self._availability_view_registered = True

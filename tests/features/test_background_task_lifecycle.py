@@ -12,8 +12,10 @@ from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.clan_reporting.cog import ClanReporting
 from elbow_helper.features.examination.cog import Examination
+from elbow_helper.features.event_stats.cog import EventStatsCog
 from elbow_helper.features.member_lifecycle.cog import MemberLifecycle
 from elbow_helper.features.recruitment.cog import Recruitment
+from elbow_helper.features.wars.cog import WarManager
 
 
 def _loop(*, running: bool = True) -> SimpleNamespace:
@@ -29,6 +31,70 @@ async def _blocked(started: asyncio.Event) -> None:
 
 
 class BackgroundTaskLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_feature_loops_continue_after_unlisted_errors(self) -> None:
+        real_sleep = asyncio.sleep
+
+        async def yield_sleep(*args, **kwargs):
+            await real_sleep(0)
+
+        for feature in ("examination", "events", "wars"):
+            with self.subTest(feature=feature):
+                reached = asyncio.Event()
+                attempts = 0
+
+                def attempt(*args, **kwargs):
+                    nonlocal attempts
+                    attempts += 1
+                    if attempts == 1:
+                        raise LookupError("background pass failed")
+                    reached.set()
+                    return {}
+
+                bot = MagicMock()
+                bot.wait_until_ready = AsyncMock()
+                bot.boot_complete = None
+                with (
+                    patch("asyncio.sleep", side_effect=yield_sleep),
+                    patch("discord.ext.tasks.ExponentialBackoff.delay", return_value=0),
+                    patch("discord.ext.tasks._log.exception") as logged,
+                ):
+                    if feature == "examination":
+                        cog = object.__new__(Examination)
+                        cog.bot = bot
+                        cog._followup_task = None
+                        cog._availability_view_registered = True
+                        cog._promo_intake_view_registered = True
+                        cog._reconcile_promo_route_controls = AsyncMock()
+                        cog._post_panel = AsyncMock()
+                        cog._get_cases = MagicMock(side_effect=attempt)
+                        await cog.on_ready()
+                        task = cog._followup_task
+                    elif feature == "events":
+                        cog = EventStatsCog(bot, initial_state={"events": []})
+                        cog._get_guild = MagicMock(return_value=object())
+                        cog.force_refresh = AsyncMock(side_effect=attempt)
+                        task = cog._startup_task
+                    else:
+                        cog = object.__new__(WarManager)
+                        cog.bot = bot
+                        cog._startup_sync_task = asyncio.create_task(real_sleep(0))
+                        cog._startup_sync_done = asyncio.Event()
+                        cog._startup_sync_done.set()
+                        cog._summary_cleanup_task = None
+                        cog._cleanup_summary_messages = AsyncMock(side_effect=attempt)
+                        await cog.on_ready()
+                        task = cog._summary_cleanup_task
+                    completed = asyncio.create_task(reached.wait())
+                    try:
+                        await asyncio.wait({task, completed}, timeout=1,
+                                           return_when=asyncio.FIRST_COMPLETED)
+                        self.assertTrue(reached.is_set(), "loop ended after one unexpected error")
+                        logged.assert_called()
+                    finally:
+                        task.cancel()
+                        completed.cancel()
+                        await asyncio.gather(task, completed, return_exceptions=True)
+
     async def test_recurring_loop_retries_an_unexpected_failure(self) -> None:
         attempts = 0
         completed = asyncio.Event()

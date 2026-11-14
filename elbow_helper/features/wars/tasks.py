@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Dict
 
 import discord
+from discord.ext import tasks
 
 from .config import NOTICE_TTL
 
@@ -16,19 +17,20 @@ LOGGER = logging.getLogger(__name__)
 
 class TaskMixin:
 
+    @tasks.loop(seconds=0)
     async def _periodic_summary_cleanup(self):
         # Sweep leadership channels hourly and delete final summaries after 48h.
+        try:
+            await self._cleanup_summary_messages()
+            await asyncio.sleep(3600)
+        except (discord.Forbidden, discord.HTTPException, OSError, RuntimeError, TypeError, ValueError) as e:
+            LOGGER.exception("Error in periodic summary cleanup: %s", e)
+            await asyncio.sleep(60)
+
+    @_periodic_summary_cleanup.before_loop
+    async def _before_summary_cleanup(self):
         await self.bot.wait_until_ready()
         await self._startup_sync_done.wait()
-        while True:
-            try:
-                await self._cleanup_summary_messages()
-                await asyncio.sleep(3600)
-            except asyncio.CancelledError:
-                break
-            except (discord.Forbidden, discord.HTTPException, OSError, RuntimeError, TypeError, ValueError) as e:
-                LOGGER.exception("Error in periodic summary cleanup: %s", e)
-                await asyncio.sleep(60)
 
     async def _cleanup_summary_messages(self):
         # Remove stale war summary embeds from leadership channels

@@ -14,7 +14,9 @@ from uuid import uuid4
 
 import discord
 from elbow_helper.infrastructure.discord.pagination import format_page_footer
-from discord.ext import commands
+from discord.ext import commands, tasks
+
+from elbow_helper.core.background import start_resilient_loop
 
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import LEAD
@@ -66,7 +68,7 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
             recurring_range=self._recurring_range,
             recurring_point=self._recurring_point,
         )
-        self._startup_task = asyncio.create_task(self._startup())
+        self._startup_task = start_resilient_loop(self._startup)
 
     def cog_unload(self) -> None:
         if self._startup_task and not self._startup_task.done():
@@ -521,31 +523,29 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
         embed.add_field(name="Schedule", value="\n".join(self._schedule_lines(event)), inline=False)
         return embed
 
+    @tasks.loop(seconds=0)
     async def _startup(self) -> None:
+        guild = self._get_guild()
+        if guild is None:
+            LOGGER.warning("No guild available.")
+            self._startup.stop()
+            return
+
+        await self.force_refresh(guild)
+        now = utc_now()
+        refresh_interval = (
+            HIGH_PRECISION_REFRESH_INTERVAL_SECONDS
+            if self._requires_high_precision_refresh(now)
+            else REFRESH_INTERVAL_SECONDS
+        )
+        await asyncio.sleep(self._seconds_until_next_refresh(now, refresh_interval))
+
+    @_startup.before_loop
+    async def _before_refresh(self) -> None:
         await self.bot.wait_until_ready()
         boot_event = getattr(self.bot, "boot_complete", None)
         if isinstance(boot_event, asyncio.Event):
             await boot_event.wait()
-
-        guild = self._get_guild()
-        if guild is None:
-            LOGGER.warning("No guild available.")
-            return
-
-        await self.force_refresh(guild)
-
-        while True:
-            now = utc_now()
-            refresh_interval = (
-                HIGH_PRECISION_REFRESH_INTERVAL_SECONDS
-                if self._requires_high_precision_refresh(now)
-                else REFRESH_INTERVAL_SECONDS
-            )
-            await asyncio.sleep(self._seconds_until_next_refresh(now, refresh_interval))
-            try:
-                await self.force_refresh(guild)
-            except (discord.Forbidden, discord.HTTPException, RuntimeError):
-                LOGGER.exception("Event refresh failed")
 
     def _get_guild(self) -> Optional[discord.Guild]:
         return self.bot.get_guild(GUILD_ID) if GUILD_ID else (self.bot.guilds[0] if self.bot.guilds else None)

@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from elbow_helper.configuration.channels import EXAMINATION_ROOM, EXAMINATION_TICKET_CATEGORY
 
 from .config import FALLBACK_DELAY
 from .config import RESPONSE_DELAY
 
+
+LOGGER = logging.getLogger(__name__)
 
 
 class ExaminationFollowupMixin:
@@ -131,19 +134,19 @@ class ExaminationFollowupMixin:
         if updated:
             self._save()
 
+    @tasks.loop(seconds=0)
     async def _followup_loop(self):
         # Re-ping after 18h, then widen to +2 TH after 24h.
-        await self.bot.wait_until_ready()
-        while True:
-            await asyncio.sleep(600)
-            cases = self._get_cases()
-            if not cases:
-                continue
-            routing_channel = await self._get_routing_channel()
-            if not routing_channel:
-                continue
-            now = datetime.now(timezone.utc)
-            for case_id, case in list(cases.items()):
+        await asyncio.sleep(600)
+        cases = self._get_cases()
+        if not cases:
+            return
+        routing_channel = await self._get_routing_channel()
+        if not routing_channel:
+            return
+        now = datetime.now(timezone.utc)
+        for case_id, case in list(cases.items()):
+            try:
                 ticket_channel_id = case.get("ticket_channel_id")
                 ticket_channel = None
                 ticket_deleted = False
@@ -206,6 +209,12 @@ class ExaminationFollowupMixin:
                 case["stage"] = next_stage
                 case["last_ping_at"] = now.isoformat()
                 self._save()
+            except Exception:
+                LOGGER.exception("Examination follow-up failed: case=%s", case_id)
+
+    @_followup_loop.before_loop
+    async def _before_followups(self):
+        await self.bot.wait_until_ready()
 
     async def _send_followup(
         self,

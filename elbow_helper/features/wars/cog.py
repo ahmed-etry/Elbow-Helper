@@ -7,6 +7,8 @@ from typing import Any, Dict
 
 from discord.ext import commands
 
+from elbow_helper.core.background import start_resilient_loop
+
 from .board import WarBoardMixin
 from .config import CLAN_CHANNELS
 from elbow_helper.infrastructure.discord.war_emojis import WarEmojiProvider
@@ -94,7 +96,7 @@ class WarManager(
             self._startup_sync_done.clear()
             self._startup_sync_task = asyncio.create_task(self._sync_war_state_from_record())
         if self._summary_cleanup_task is None or self._summary_cleanup_task.done():
-            self._summary_cleanup_task = asyncio.create_task(self._periodic_summary_cleanup())
+            self._summary_cleanup_task = start_resilient_loop(self._periodic_summary_cleanup)
 
     @commands.Cog.listener()
     async def on_family_wars_collected(self):
