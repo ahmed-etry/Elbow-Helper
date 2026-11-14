@@ -451,26 +451,20 @@ class CwlAnnouncementMixin:
         # Delete prior CWL reminder posts so the channel resets each month.
         channel = self.bot.get_channel(CWL_SIGNUP)
         if not channel:
-            try:
-                channel = await self.bot.fetch_channel(CWL_SIGNUP)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                return
+            channel = await self.bot.fetch_channel(CWL_SIGNUP)
         roster_message_ids = await self.roster_queries.post_message_ids_for_channel(
             CWL_SIGNUP
         )
-        try:
-            async for msg in channel.history(limit=200, oldest_first=False):
-                if (
-                    msg.author
-                    and msg.author.id == self.bot.user.id
-                    and msg.id not in roster_message_ids
-                ):
-                    try:
-                        await msg.delete()
-                    except (discord.Forbidden, discord.HTTPException):
-                        continue
-        except (discord.Forbidden, discord.HTTPException):
-            return
+        async for msg in channel.history(limit=200, oldest_first=False):
+            if (
+                msg.author
+                and msg.author.id == self.bot.user.id
+                and msg.id not in roster_message_ids
+            ):
+                try:
+                    await msg.delete()
+                except discord.NotFound:
+                    pass
 
 
     @app_commands.choices(deadline_mode=ROSTER_DEADLINE_MODES)

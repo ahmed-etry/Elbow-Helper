@@ -3,12 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
+from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from discord import app_commands
+import discord
 
 from elbow_helper.features.cwl.announcements import CwlAnnouncementMixin
 from elbow_helper.features.cwl.announcements import _signup_reminder_times
@@ -16,6 +18,31 @@ from elbow_helper.configuration.channels import CWL_SIGNUP
 
 
 class CwlSignupAnnouncementTests(unittest.IsolatedAsyncioTestCase):
+
+    async def test_failed_monthly_cleanup_stays_due_until_deletions_succeed(self) -> None:
+        reminder = SimpleNamespace(id=101, author=SimpleNamespace(id=10), delete=AsyncMock())
+        async def history(**kwargs):
+            yield reminder
+        channel = MagicMock()
+        channel.history.side_effect = history
+        cog = object.__new__(CwlAnnouncementMixin)
+        cog.bot = SimpleNamespace(user=SimpleNamespace(id=10), get_channel=lambda _: channel,
+                                  wait_until_ready=AsyncMock())
+        cog.roster_queries = SimpleNamespace(post_message_ids_for_channel=AsyncMock(return_value=set()))
+        cog.roster_automation = SimpleNamespace(cwl_signup_window=AsyncMock(return_value=None))
+        cog._cleanup_expired_transfer_reminders = AsyncMock()
+        cog._sent_keys = set()
+        cog._save_scheduler_state = MagicMock()
+        reminder.delete.side_effect = discord.HTTPException(SimpleNamespace(status=503, reason="Synthetic"), "Synthetic")
+        with patch("elbow_helper.features.cwl.announcements.datetime") as clock:
+            clock.now.return_value = datetime(2026, 7, 1, 8, tzinfo=timezone.utc)
+            clock.side_effect = datetime
+            await cog.reminder_loop()
+            self.assertNotIn("cleanup-2026-7", cog._sent_keys)
+            reminder.delete.side_effect = None
+            await cog.reminder_loop()
+        self.assertIn("cleanup-2026-7", cog._sent_keys)
+        self.assertEqual(reminder.delete.await_count, 2)
 
     def test_reminders_follow_the_roster_closing_time_without_colliding(self) -> None:
         opens_at = datetime(2026, 7, 18, 10, 0, tzinfo=timezone.utc)
