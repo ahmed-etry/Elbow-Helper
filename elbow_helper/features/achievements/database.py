@@ -11,6 +11,7 @@ from datetime import timezone
 from typing import Optional
 
 import discord
+from elbow_helper.data.events import finish_on_cancel
 
 from .config import RUNTIME_CACHE_PRUNE_INTERVAL_SECONDS
 from .config import RUNTIME_CACHE_RETENTION_DAYS
@@ -181,23 +182,18 @@ class AchievementsDatabaseMixin:
 
     async def _retry_db_operation(self, func, *args, **kwargs):
         """Retry DB work on lock contention and run queued side-effects only after commit."""
+        return await finish_on_cancel(self._run_db_operation(func, *args, **kwargs))
+
+    async def _run_db_operation(self, func, *args, **kwargs):
         result = None
         post_commit_actions = []
         async with self._db_lock:
             retries = 6
             for i in range(retries):
-                conn = None
-                queued_actions = []
-                token = self._post_commit_actions_var.set(queued_actions)
                 try:
-                    conn = DATABASE.connect(self.db_path, timeout=0.0, check_same_thread=False)
-                    cursor = conn.cursor()
-                    cursor.execute("PRAGMA busy_timeout = 0")
-                    cursor.execute("PRAGMA synchronous = NORMAL")
-                    result = await func(cursor, *args, **kwargs)
-                    await asyncio.to_thread(conn.commit)
-                    # Defer Discord/network side-effects until the DB commit is durable.
-                    post_commit_actions = queued_actions
+                    result, post_commit_actions = await asyncio.to_thread(
+                        self._db_transaction, func, args, kwargs,
+                    )
                     break
                 except sqlite3.OperationalError as e:
                     err = str(e).lower()
@@ -207,10 +203,6 @@ class AchievementsDatabaseMixin:
                         continue
                     self.logger.error("DB operation failed (attempt %s/%s): %s", i + 1, retries, e)
                     raise
-                finally:
-                    self._post_commit_actions_var.reset(token)
-                    if conn:
-                        conn.close()
 
         # Run side-effects outside the DB lock to keep lock hold time minimal.
         for coro, action_args, action_kwargs in post_commit_actions:
@@ -222,6 +214,20 @@ class AchievementsDatabaseMixin:
                     getattr(coro, "__name__", repr(coro)),
                 )
         return result
+
+    def _db_transaction(self, func, args, kwargs):
+        queued_actions = []
+        token = self._post_commit_actions_var.set(queued_actions)
+        try:
+            with closing(DATABASE.connect(self.db_path, timeout=0.0)) as conn:
+                cursor = conn.cursor()
+                cursor.execute("PRAGMA busy_timeout = 0")
+                cursor.execute("PRAGMA synchronous = NORMAL")
+                result = asyncio.run(func(cursor, *args, **kwargs))
+                conn.commit()
+                return result, queued_actions
+        finally:
+            self._post_commit_actions_var.reset(token)
 
     def get_achievement_details(self, achievement_id: str):
         """Retrieve achievement details from the database."""

@@ -15,7 +15,6 @@ from .definitions import COIN_REWARDS
 from .queries import (
     achievement_leaderboard_eligible, achievement_progress_value,
 )
-from .views import AchievementOverviewView
 
 class AchievementProgressMixin:
     async def _achievements_overview_internal(self, cursor, member: discord.Member):
@@ -146,13 +145,13 @@ class AchievementProgressMixin:
             in_progress_pages = build_pages(in_progress_entries, "")
             completed_pages = build_pages(completed_entries, "")
 
-            view = AchievementOverviewView(in_progress_pages, completed_pages) if (len(in_progress_pages) + len(completed_pages)) > 1 else None
             first_embed = (in_progress_pages or completed_pages)[0]
             initial_section = "In Progress" if in_progress_pages else "Completed"
             initial_total = len(in_progress_pages) if in_progress_pages else len(completed_pages)
             first_embed.set_footer(text=format_page_footer(1, initial_total, section=initial_section))
 
-            return {"error": None, "embed": first_embed, "view": view}
+            return {"error": None, "embed": first_embed,
+                    "in_progress_pages": in_progress_pages, "completed_pages": completed_pages}
 
         except sqlite3.Error as e:
             self.logger.error("Failed to load achievements overview: %s", e, exc_info=True)

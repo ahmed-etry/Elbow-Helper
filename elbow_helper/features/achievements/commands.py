@@ -32,6 +32,7 @@ from .config import TICKET_LIMIT_PER_MONTH
 from .definitions import COIN_REWARDS
 from .schema import DATABASE
 from .views import CoinLogView
+from .views import AchievementOverviewView
 
 class AchievementCommandMixin:
     raffle_group = app_commands.Group(name="raffle", description="Manage raffles")
@@ -91,14 +92,17 @@ class AchievementCommandMixin:
         if payload.get("error"):
             await fail(interaction)
             return
+        in_progress_pages = payload["in_progress_pages"]
+        completed_pages = payload["completed_pages"]
+        view = AchievementOverviewView(in_progress_pages, completed_pages) if (len(in_progress_pages) + len(completed_pages)) > 1 else None
         message = await interaction.followup.send(
             embed=payload["embed"],
-            view=payload["view"],
+            view=view,
             ephemeral=True,
             wait=True,
         )
-        if payload["view"] is not None:
-            payload["view"].bind_message(message)
+        if view is not None:
+            view.bind_message(message)
 
     @achievement_group.command(name="leaderboard", description="See which members have earned the most achievements.")
     async def leaderboard(self, interaction: discord.Interaction):
