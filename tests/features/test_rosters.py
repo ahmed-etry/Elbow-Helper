@@ -935,9 +935,19 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             [{"player_tag": "#B", "player_name": "B", "townhall": 17}],
             second.max_members,
         )
+        kept_member = SimpleNamespace(id=99, roles=[])
+        kept_role = SimpleNamespace(id=123)
+        kept_member.add_roles = AsyncMock(side_effect=lambda role, **kwargs: kept_member.roles.append(role))
+        guild = SimpleNamespace(get_member=lambda member_id: kept_member if member_id == 99 else None,
+                                get_role=lambda role_id: kept_role if role_id == 123 else None)
+        synchronizer = RosterRoleSynchronizer(
+            SimpleNamespace(get_guild=lambda _: guild), repository, MagicMock(return_value=False),
+        )
+        roles = SimpleNamespace(sync=AsyncMock(wraps=synchronizer.sync))
         service, roles, refresh_posts = _membership_service(
             repository,
             MagicMock(),
+            roles=roles,
         )
 
         removed = await service.reconcile_eligible_members(1, {99})
@@ -958,7 +968,9 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             [member.player_tag for member in repository.list_members(first.id, old_cycle_id)],
             ["#OLD"],
         )
-        self.assertEqual(roles.sync.await_count, 2)
+        self.assertEqual(roles.sync.await_count, 3)
+        roles.sync.assert_any_await(first, 99, should_have=True)
+        self.assertEqual(kept_member.roles, [kept_role])
         self.assertEqual(refresh_posts.await_count, 2)
 
 
@@ -1710,6 +1722,92 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         opened_roster = repository.get_roster(roster.id)
         bot.dispatch.assert_called_once_with("roster_cycle_opened", opened_roster)
         posts.refresh.assert_awaited_once()
+
+    async def test_carry_failure_rolls_back_cycle_and_can_open_on_next_pass(self) -> None:
+        path = Path(self.enterContext(TemporaryDirectory())) / "rosters.sqlite3"
+        repository = RosterRepository(path)
+        roster = repository.create_roster(
+            guild_id=1, name="Signup", clan_code="FAMILY", role_id=None, max_members=10,
+        )
+        roster = repository.update_roster(roster.id, reset_on_open=False)
+        roster, _ = repository.start_cycle(roster.id, "previous")
+        repository.add_members(roster.id, roster.active_cycle_id, 10,
+                               [{"player_tag": "#A", "player_name": "One"}], 10)
+        repository.add_members(roster.id, roster.active_cycle_id, 20,
+                               [{"player_tag": "#B", "player_name": "Two"}], 10)
+        _, automation, _, roles = _wire_roster_service(object.__new__(Rosters), repository)
+        with repository.connect() as conn:
+            conn.execute(f"""CREATE TRIGGER fail_carry BEFORE INSERT ON roster_members
+                WHEN NEW.cycle_id != {roster.active_cycle_id} AND NEW.player_tag = '#B'
+                BEGIN SELECT RAISE(ABORT, 'carry failed'); END""")
+            conn.commit()
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            await automation.open_scheduled(roster, "next")
+
+        stored = RosterRepository(path).get_roster(roster.id)
+        self.assertEqual(stored.active_cycle_id, roster.active_cycle_id)
+        self.assertEqual(stored.last_open_cycle_key, "previous")
+        with repository.connect() as conn:
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM roster_cycles WHERE cycle_key = 'next'",
+            ).fetchone()[0], 0)
+            conn.execute("DROP TRIGGER fail_carry")
+            conn.commit()
+        roles.sync.assert_not_awaited()
+        await automation.open_scheduled(stored, "next")
+        opened = repository.get_roster(roster.id)
+        self.assertEqual(len(repository.list_members(opened.id, opened.active_cycle_id)), 2)
+
+    async def test_role_failure_happens_after_all_members_are_carried(self) -> None:
+        repository = RosterRepository(
+            Path(self.enterContext(TemporaryDirectory())) / "rosters.sqlite3",
+        )
+        roster = repository.create_roster(
+            guild_id=1, name="Signup", clan_code="FAMILY", role_id=123, max_members=10,
+        )
+        roster = repository.update_roster(roster.id, reset_on_open=False)
+        roster, _ = repository.start_cycle(roster.id, "previous")
+        for member_id, tag in ((10, "#A"), (20, "#B")):
+            repository.add_members(roster.id, roster.active_cycle_id, member_id,
+                                   [{"player_tag": tag, "player_name": tag}], 10)
+        _, automation, _, roles = _wire_roster_service(object.__new__(Rosters), repository)
+        roles.sync.side_effect = LookupError("role sync failed")
+
+        with self.assertRaises(LookupError):
+            await automation.open_scheduled(roster, "next")
+        opened = repository.get_roster(roster.id)
+        self.assertEqual(len(repository.list_members(opened.id, opened.active_cycle_id)), 2)
+
+    async def test_post_failure_does_not_stop_later_rosters(self) -> None:
+        for scheduled in (False, True):
+            with self.subTest(scheduled=scheduled):
+                repository = RosterRepository(
+                    Path(self.enterContext(TemporaryDirectory())) / "rosters.sqlite3",
+                )
+                rosters = []
+                for name in ("First", "Second"):
+                    roster = repository.create_roster(
+                        guild_id=1, name=name, clan_code="FAMILY", role_id=None, max_members=10,
+                    )
+                    if scheduled:
+                        roster = repository.configure_schedule(
+                            roster.id, enabled=True, timezone_name="UTC", open_day="1",
+                            open_time="00:00", close_day="20", close_time="00:00",
+                            reset_on_open=True,
+                        )
+                    else:
+                        roster = repository.update_roster(
+                            roster.id, one_off_open_ts=1, one_off_close_ts=2_000_000_000,
+                        )
+                    rosters.append(roster)
+                _, automation, posts, _ = _wire_roster_service(object.__new__(Rosters), repository)
+                posts.refresh.side_effect = [discord.HTTPException(
+                    SimpleNamespace(status=500, reason="failure"), "failure"), None]
+                with self.assertLogs("elbow_helper.features.rosters.services.automation", "ERROR"):
+                    await automation.run_due(datetime(2026, 7, 10, tzinfo=timezone.utc))
+                self.assertEqual(posts.refresh.await_count, 2)
+                self.assertIsNotNone(repository.get_roster(rosters[1].id).active_cycle_id)
 
     async def test_disabling_a_schedule_needs_no_other_options(self) -> None:
         temp_dir = TemporaryDirectory()

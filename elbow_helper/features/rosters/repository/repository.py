@@ -417,44 +417,88 @@ class RosterRepository:
             reset_on_open=int(reset_on_open),
         )
 
+    @staticmethod
+    def _start_cycle(
+        conn: sqlite3.Connection, roster_id: int, cycle_key: str, now: int,
+    ) -> tuple[int, int | None]:
+        row = conn.execute("SELECT active_cycle_id FROM rosters WHERE id = ?", (roster_id,)).fetchone()
+        if row is None:
+            raise KeyError(roster_id)
+        previous_cycle_id = int(row["active_cycle_id"]) if row["active_cycle_id"] else None
+        conn.execute(
+            """
+            INSERT INTO roster_cycles(roster_id, cycle_key, opened_ts)
+            VALUES (?, ?, ?)
+            ON CONFLICT(roster_id, cycle_key) DO UPDATE SET
+                opened_ts = excluded.opened_ts,
+                closed_ts = NULL
+            """,
+            (roster_id, cycle_key, now),
+        )
+        cycle = conn.execute(
+            "SELECT id FROM roster_cycles WHERE roster_id = ? AND cycle_key = ?",
+            (roster_id, cycle_key),
+        ).fetchone()
+        cycle_id = int(cycle["id"])
+        conn.execute(
+            """
+            UPDATE rosters
+            SET active_cycle_id = ?, status = 'open', last_open_cycle_key = ?,
+                updated_ts = ?
+            WHERE id = ?
+            """,
+            (cycle_id, cycle_key, now, roster_id),
+        )
+        return cycle_id, previous_cycle_id
+
     def start_cycle(self, roster_id: int, cycle_key: str) -> tuple[Roster, int | None]:
-        now = int(time.time())
-        previous_cycle_id: int | None = None
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute("SELECT active_cycle_id FROM rosters WHERE id = ?", (roster_id,)).fetchone()
-            if row is None:
-                raise KeyError(roster_id)
-            previous_cycle_id = int(row["active_cycle_id"]) if row["active_cycle_id"] else None
-            conn.execute(
-                """
-                INSERT INTO roster_cycles(roster_id, cycle_key, opened_ts)
-                VALUES (?, ?, ?)
-                ON CONFLICT(roster_id, cycle_key) DO UPDATE SET
-                    opened_ts = excluded.opened_ts,
-                    closed_ts = NULL
-                """,
-                (roster_id, cycle_key, now),
-            )
-            cycle = conn.execute(
-                "SELECT id FROM roster_cycles WHERE roster_id = ? AND cycle_key = ?",
-                (roster_id, cycle_key),
-            ).fetchone()
-            cycle_id = int(cycle["id"])
-            conn.execute(
-                """
-                UPDATE rosters
-                SET active_cycle_id = ?, status = 'open', last_open_cycle_key = ?,
-                    updated_ts = ?
-                WHERE id = ?
-                """,
-                (cycle_id, cycle_key, now, roster_id),
-            )
+            _, previous_cycle_id = self._start_cycle(conn, roster_id, cycle_key, int(time.time()))
             conn.commit()
         roster = self.get_roster(roster_id)
         if roster is None:
             raise KeyError(roster_id)
         return roster, previous_cycle_id
+
+    def start_scheduled_cycle(self, roster_id: int, cycle_key: str) -> tuple[Roster, int | None]:
+        """Open a scheduled cycle and carry signups in the same transaction."""
+        now = int(time.time())
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM rosters WHERE id = ?", (roster_id,)).fetchone()
+            roster = self._roster(row)
+            if roster is None:
+                raise KeyError(roster_id)
+            if roster.last_open_cycle_key == cycle_key:
+                return roster, roster.active_cycle_id
+            cycle_id, previous_cycle_id = self._start_cycle(conn, roster_id, cycle_key, now)
+            if not roster.reset_on_open and previous_cycle_id is not None:
+                previous_members = conn.execute(
+                    """SELECT * FROM roster_members WHERE roster_id = ? AND cycle_id = ?
+                    ORDER BY townhall DESC, hero_sum DESC,
+                             player_name COLLATE NOCASE, player_tag""",
+                    (roster_id, previous_cycle_id),
+                ).fetchall()
+                by_member: dict[int, list[sqlite3.Row]] = {}
+                for member in previous_members:
+                    by_member.setdefault(member["discord_user_id"], []).append(member)
+                # Preserve the existing member grouping and capacity order.
+                carried = [member for accounts in by_member.values() for member in accounts]
+                conn.executemany(
+                    """INSERT OR IGNORE INTO roster_members(
+                        roster_id, cycle_id, player_tag, discord_user_id, player_name,
+                        clan_code, townhall, hero_sum, signed_up_ts
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    ((roster_id, cycle_id, member["player_tag"], member["discord_user_id"],
+                      member["player_name"], member["clan_code"], member["townhall"],
+                      member["hero_sum"], now) for member in carried[:roster.max_members]),
+                )
+            opened = self._roster(conn.execute(
+                "SELECT * FROM rosters WHERE id = ?", (roster_id,),
+            ).fetchone())
+            conn.commit()
+        return opened, previous_cycle_id
 
     def close_cycle(self, roster_id: int, cycle_key: str | None = None) -> Roster:
         now = int(time.time())

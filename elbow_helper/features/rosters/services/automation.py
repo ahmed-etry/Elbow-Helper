@@ -8,14 +8,12 @@ from collections.abc import Callable
 from datetime import datetime
 from datetime import timezone as dt_timezone
 import logging
-import sqlite3
 
 from discord.ext import commands
 
 from ..config import CWL_SIGNUP_ROSTER_ID
 from ..repository import RosterRepository
 from ..models import Roster
-from ..models import RosterMember
 from .roles import RosterRoleSynchronizer
 from .scheduling import due_window
 from .scheduling import next_window
@@ -165,7 +163,7 @@ class RosterAutomationService:
     async def _start_cycle(self, roster_id: int, cycle_key: str) -> Roster:
         roster = (
             await asyncio.to_thread(
-                self._repository.start_cycle,
+                self._repository.start_scheduled_cycle,
                 roster_id,
                 cycle_key,
             )
@@ -197,40 +195,19 @@ class RosterAutomationService:
                         should_have=False,
                     )
             else:
-                await self._carry_members_forward(current, previous_members)
+                carried_members = await asyncio.to_thread(
+                    self._repository.list_members,
+                    current.id,
+                    current.active_cycle_id,
+                )
+                carried_ids = {row.discord_user_id for row in carried_members}
+                for member_id in dict.fromkeys(row.discord_user_id for row in previous_members):
+                    await self._roles.sync(
+                        current,
+                        member_id,
+                        should_have=member_id in carried_ids,
+                    )
             await self._refresh_posts(current)
-
-    async def _carry_members_forward(
-        self,
-        roster: Roster,
-        previous_members: list[RosterMember],
-    ) -> None:
-        by_member: dict[int, list[dict[str, object]]] = {}
-        for row in previous_members:
-            by_member.setdefault(row.discord_user_id, []).append(
-                {
-                    "player_tag": row.player_tag,
-                    "player_name": row.player_name,
-                    "clan_code": row.clan_code,
-                    "townhall": row.townhall,
-                    "hero_sum": row.hero_sum,
-                }
-            )
-        for member_id, accounts in by_member.items():
-            member_added, _ = await asyncio.to_thread(
-                self._repository.add_members,
-                roster.id,
-                roster.active_cycle_id,
-                member_id,
-                accounts,
-                roster.max_members,
-                None,
-            )
-            await self._roles.sync(
-                roster,
-                member_id,
-                should_have=member_added > 0,
-            )
 
     async def close_scheduled(self, roster: Roster, cycle_key: str) -> None:
         async with self._lock_for(roster.id):
@@ -268,7 +245,7 @@ class RosterAutomationService:
                     and roster.last_close_cycle_key != cycle_key
                 ):
                     await self.close_scheduled(roster, cycle_key)
-            except (OSError, RuntimeError, sqlite3.Error):
+            except Exception:
                 LOGGER.exception(
                     "Timed roster transition failed roster_id=%s",
                     roster.id,
@@ -291,7 +268,7 @@ class RosterAutomationService:
                     and roster.last_close_cycle_key != window.cycle_key
                 ):
                     await self.close_scheduled(roster, window.cycle_key)
-            except (OSError, RuntimeError, sqlite3.Error):
+            except Exception:
                 LOGGER.exception(
                     "Scheduled roster transition failed roster_id=%s",
                     roster.id,

@@ -538,6 +538,7 @@ class RosterMembershipService:
                     roster.active_cycle_id,
                 )
                 ineligible: dict[int, list[str]] = {}
+                eligible: set[int] = set()
                 for row in members:
                     if (
                         target_member_ids is not None
@@ -545,10 +546,13 @@ class RosterMembershipService:
                     ):
                         continue
                     if row.discord_user_id in eligible_member_ids:
+                        eligible.add(row.discord_user_id)
                         continue
                     ineligible.setdefault(row.discord_user_id, []).append(
                         row.player_tag
                     )
+                for member_id in eligible:
+                    await self._roles.sync(roster, member_id, should_have=True)
                 if not ineligible:
                     continue
                 roster_removed = 0
