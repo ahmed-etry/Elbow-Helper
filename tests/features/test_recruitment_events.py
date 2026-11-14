@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from elbow_helper.configuration.roles import RECRUITERS
 from elbow_helper.data.events import EventsStore, load_state, record, save_state
 from elbow_helper.features.recruitment import trials as trial_module
+from elbow_helper.features.recruitment import helpers
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
 from elbow_helper.features.recruitment.state import (
     RecruitmentState, default_state, decision_event, trial_event, trial_started_at,
@@ -110,9 +111,8 @@ class RecruitmentHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(owner.recruitment_state.trials(), {})
         reminder = owner.recruitment_state.reminders()["200"]
         self.assertEqual(reminder["_case_started_at"], START_US)
-        with patch.object(trial_module, "can_rename", return_value=True):
-            ended = await owner.complete_trial_end(200, 42, self.recruiter, allow_missing=True,
-                                                   resolve_reminder=True, via="agent")
+        ended = await owner.complete_trial_end(200, 42, self.recruiter, allow_missing=True,
+                                               resolve_reminder=True, via="agent")
         self.assertTrue(ended.ended)
         rows = await owner.recruitment_state.events.read(workflow="recruitment")
         self.assertEqual([row["kind"] for row in rows],
@@ -142,11 +142,14 @@ class RecruitmentHistoryTests(unittest.IsolatedAsyncioTestCase):
         await self.seed({"trials": {"200": saved_work()["trials"]["200"]}})
         owner = await self.new_owner()
         events = owner.recruitment_state.events
+        self.ticket.name = trial_module.TRIAL_TICKET_PREFIXES_END[0][0] + "member"
+        self.enterContext(patch.object(helpers, "channel_rename_timestamps", {}))
         await events.call(lambda c: c.execute(
             "CREATE TRIGGER fail_end BEFORE INSERT ON workflow_events WHEN NEW.kind='trial_ended' "
             "BEGIN SELECT RAISE(ABORT,'failed'); END"))
         with self.assertRaises(sqlite3.IntegrityError):
             await owner.complete_trial_end(200, 42, self.recruiter)
+        self.ticket.edit.assert_not_awaited()
         self.assertIn("200", owner.recruitment_state.trials())
         self.assertIn("200", (await owner.recruitment_state.events.call(load_state, "recruitment"))["trials"])
         await events.call(lambda c: c.execute("DROP TRIGGER fail_end"))
