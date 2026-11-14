@@ -35,7 +35,7 @@ from .config import DECLINED_TICKET_PREFIXES
 from .config import TICKET_ACCEPTED
 from .config import TICKET_TRIAL_ENDED
 from .config import TRIAL_DAYS_DEFAULT
-from .helpers import can_rename
+from .helpers import rename_ticket
 from .helpers import new_ticket_name
 from .statements import ACCEPT_TEMPLATE
 from .statements import CHECKUP_TEMPLATE
@@ -152,13 +152,11 @@ class RecruitmentCommandMixin:
         if candidate and candidate != channel.name:
             if len(candidate) > 100:
                 rename_failed = True
-            elif can_rename(channel.guild.id):
+            else:
                 try:
-                    await channel.edit(name=candidate)
+                    rename_failed = not await rename_ticket(channel, candidate)
                 except (discord.Forbidden, discord.HTTPException):
                     rename_failed = True
-            else:
-                rename_failed = True
         await channel.send(prepared["message"])
         await self.record_decision("declined", channel.id, applicant.id, actor_id=actor_id, via=via)
         lines = [f"Declined {applicant.display_name}. Message sent to {channel.mention}."]

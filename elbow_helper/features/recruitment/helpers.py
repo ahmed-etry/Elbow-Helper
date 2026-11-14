@@ -2,25 +2,35 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import asyncio
+from datetime import datetime, timezone
 from typing import Optional
+from weakref import WeakValueDictionary
 
 import discord
 from elbow_helper.configuration.clans import CLAN_INFO_BOARDS
 
 # In-memory rename throttle.
 channel_rename_timestamps = {}
+_channel_rename_locks = WeakValueDictionary()
 
-def can_rename(guild_id):
-    # Soft cap: at most two renamesevery 10 minutes.
-    now = datetime.utcnow()
-    timestamps = channel_rename_timestamps.get(guild_id, [])
+def can_rename(channel_id):
+    # Per-channel soft cap: at most two successful renames every 10 minutes.
+    now = datetime.now(timezone.utc)
+    timestamps = channel_rename_timestamps.get(channel_id, [])
     timestamps = [ts for ts in timestamps if (now - ts).total_seconds() < 600]
-    if len(timestamps) >= 2:
-        return False
-    timestamps.append(now)
-    channel_rename_timestamps[guild_id] = timestamps
-    return True
+    channel_rename_timestamps[channel_id] = timestamps
+    return len(timestamps) < 2
+
+
+async def rename_ticket(channel: discord.TextChannel, name: str) -> bool:
+    """Apply the soft cap per channel, charging only completed renames."""
+    async with _channel_rename_locks.setdefault(channel.id, asyncio.Lock()):
+        if not can_rename(channel.id):
+            return False
+        await channel.edit(name=name)
+        channel_rename_timestamps[channel.id].append(datetime.now(timezone.utc))
+        return True
 
 
 def new_ticket_name(channel: discord.TextChannel, prefixes: list[tuple[str, str]]) -> Optional[str]:

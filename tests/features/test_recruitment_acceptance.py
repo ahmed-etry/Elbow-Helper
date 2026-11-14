@@ -17,6 +17,7 @@ from tests.features.profile_source import profile_demand
 from elbow_helper.data.events.testing import MemoryEventsStore
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.recruitment import commands
+from elbow_helper.features.recruitment import helpers
 from elbow_helper.features.recruitment import trials
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
 from elbow_helper.features.recruitment.state import RecruitmentState
@@ -280,6 +281,29 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         tracking_channel.send.assert_not_awaited()
         rename.assert_awaited_once_with(channel)
 
+    async def test_rename_cap_is_per_ticket_and_failed_edits_do_not_use_it(self):
+        for fail_first in (False, True):
+            with self.subTest(fail_first=fail_first), patch.object(helpers, "channel_rename_timestamps", {}):
+                owner = TrialMixin()
+                owner.logger = MagicMock()
+                channel = SimpleNamespace(
+                    id=200, guild=SimpleNamespace(id=1),
+                    name=trials.TRIAL_TICKET_PREFIXES_START[0][0] + "member", edit=AsyncMock(),
+                )
+                if fail_first:
+                    channel.edit.side_effect = discord.Forbidden(
+                        SimpleNamespace(status=403, reason="Forbidden"), "denied")
+                    for _ in range(2):
+                        self.assertFalse(await owner._rename_trial_ticket(channel))
+                    channel.edit.side_effect = None
+                self.assertTrue(await owner._rename_trial_ticket(channel))
+                self.assertTrue(await owner._rename_trial_ticket(channel))
+                self.assertFalse(await owner._rename_trial_ticket(channel))
+                other = SimpleNamespace(id=201, guild=channel.guild, name=channel.name, edit=AsyncMock())
+                self.assertTrue(await owner._rename_trial_ticket(other))
+                self.assertEqual(channel.edit.await_count, 4 if fail_first else 2)
+                other.edit.assert_awaited_once()
+
     async def test_departed_trial_member_removes_tracking_before_state(self) -> None:
         owner = TrialMixin()
         owner._trial_lock = asyncio.Lock()
@@ -340,6 +364,82 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(ended)
         self.assertEqual(owner.recruitment_state.trials(), {"200": {"applicant_id": 42}})
 
+    async def test_failed_trial_followup_stays_pending_until_another_end(self):
+        for expired in (False, True):
+            with self.subTest(expired=expired):
+                owner = TrialMixin()
+                owner._trial_lock, owner._reminder_lock = asyncio.Lock(), asyncio.Lock()
+                owner.logger = MagicMock()
+                info = {"start": "2020-01-01T00:00:00+00:00", "days": 7, "applicant_id": 42,
+                        "tracking_msg_id": 500, "tracking_channel_id": 600}
+                reminder = {"channel_id": 800, "message_id": 700, "applicant_id": 42,
+                            "created_at": 1577836800, "resolved_at": None}
+                owner.recruitment_state = await self._state(
+                    trials={} if expired else {"200": info},
+                    reminders={"200": reminder} if expired else {},
+                )
+                channel = SimpleNamespace(
+                    id=200, name=trials.TRIAL_TICKET_PREFIXES_END[0][0] + "member",
+                    guild=SimpleNamespace(id=1), edit=AsyncMock(),
+                    send=AsyncMock(side_effect=discord.HTTPException(
+                        SimpleNamespace(status=500, reason="Server Error"), "down")),
+                )
+                tracking_message = SimpleNamespace(delete=AsyncMock())
+                tracking_channel = MagicMock(spec=discord.TextChannel)
+                tracking_channel.fetch_message = AsyncMock(side_effect=[
+                    tracking_message,
+                    discord.NotFound(SimpleNamespace(status=404, reason="Not Found"), "gone"),
+                ])
+
+                async def no_history(**_):
+                    return
+                    yield
+
+                tracking_channel.history = no_history
+                owner.bot = SimpleNamespace(get_channel={200: channel, 600: tracking_channel}.get)
+                channel.fetch_message = AsyncMock(return_value=SimpleNamespace(id=700, edit=AsyncMock()))
+                owner._build_trial_reminder_embed = MagicMock(return_value=None)
+                actor = SimpleNamespace(id=7, roles=[SimpleNamespace(id=1)])
+                with patch.object(trials, "CORE", frozenset({1})), patch.object(helpers, "channel_rename_timestamps", {}):
+                    result = await owner.complete_trial_end(
+                        200, 42, actor, allow_missing=expired, resolve_reminder=expired)
+                    self.assertFalse(result.ended)
+                    self.assertIn("couldn't post the trial follow-up", result.error)
+                    channel.edit.assert_not_awaited()
+                    self.assertEqual(owner.recruitment_state.trials(), {} if expired else {"200": info})
+                    self.assertFalse(owner.recruitment_state.reminders().get("200", {}).get("resolved_at"))
+                    self.assertEqual(await owner.recruitment_state.events.read(), [])
+                    channel.send.side_effect = None
+                    result = await owner.complete_trial_end(
+                        200, 42, actor, allow_missing=expired, resolve_reminder=expired)
+                self.assertTrue(result.ended)
+                self.assertEqual(owner.recruitment_state.trials(), {})
+                self.assertEqual(channel.send.await_count, 2)
+                self.assertEqual(len(await owner.recruitment_state.events.read()), 1)
+                channel.edit.assert_awaited_once()
+                if not expired:
+                    tracking_message.delete.assert_awaited_once()
+
+    async def test_trial_ends_with_a_notice_when_the_bot_cannot_send_in_the_ticket(self):
+        owner = TrialMixin()
+        owner._trial_lock, owner._reminder_lock = asyncio.Lock(), asyncio.Lock()
+        owner.logger = MagicMock()
+        info = {"start": "2020-01-01T00:00:00+00:00", "days": 7, "applicant_id": 42}
+        owner.recruitment_state = await self._state(trials={"200": info})
+        channel = SimpleNamespace(
+            id=200, name="ticket-member", guild=SimpleNamespace(id=1), edit=AsyncMock(),
+            send=AsyncMock(side_effect=discord.Forbidden(
+                SimpleNamespace(status=403, reason="Forbidden"), "denied")),
+        )
+        owner.bot = SimpleNamespace(get_channel=lambda _: channel)
+        owner._delete_tracking_message = AsyncMock(return_value=True)
+        actor = SimpleNamespace(id=7, roles=[SimpleNamespace(id=1)])
+        with patch.object(trials, "CORE", frozenset({1})):
+            result = await owner.complete_trial_end(200, 42, actor)
+        self.assertTrue(result.ended)
+        self.assertIn("can't send messages in the ticket", " ".join(result.notices))
+        self.assertEqual(owner.recruitment_state.trials(), {})
+
     async def test_expired_trial_remains_active_when_reminder_state_fails(self) -> None:
         owner = TrialMixin()
         owner._trial_lock = asyncio.Lock()
@@ -352,7 +452,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             "tracking_msg_id": 500,
             "tracking_channel_id": 600,
         }
-        owner.recruitment_state = await self._state({"200": dict(trial_info)})
+        owner.recruitment_state = await self._state({"200": dict(trial_info), "201": dict(trial_info)})
         owner.recruitment_state.events.fail_next_write = True
         owner._delete_tracking_message = AsyncMock(return_value=True)
         owner._build_trial_reminder_embed = MagicMock(return_value=MagicMock())
@@ -365,13 +465,34 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             reminder_channel if channel_id == trials.REC_ROOM else ticket_channel
         )
 
-        with self.assertRaises(sqlite3.OperationalError):
-            await TrialMixin.check_expired_trials.coro(owner)
+        await TrialMixin.check_expired_trials.coro(owner)
 
         self.assertEqual(owner.recruitment_state.trials(), {"200": trial_info})
-        self.assertEqual(owner.recruitment_state.reminders(), {})
-        owner._delete_tracking_message.assert_not_awaited()
+        self.assertEqual(set(owner.recruitment_state.reminders()), {"201"})
+        owner._delete_tracking_message.assert_awaited_once_with(trial_info, ticket_channel_id=201)
         reminder_message.delete.assert_awaited_once_with()
+
+    async def test_unexpected_error_in_one_expired_trial_does_not_stop_the_sweep(self) -> None:
+        owner = TrialMixin()
+        owner._trial_lock = asyncio.Lock()
+        owner._reminder_lock = asyncio.Lock()
+        owner.logger = MagicMock()
+        trial_info = {"start": "2020-01-01T00:00:00+00:00", "days": 7, "applicant_id": 42}
+        owner.recruitment_state = await self._state({"200": dict(trial_info), "201": dict(trial_info)})
+        owner._delete_tracking_message = AsyncMock(side_effect=[AttributeError("odd entry"), True])
+        owner._build_trial_reminder_embed = MagicMock(return_value=MagicMock())
+        reminder_channel = SimpleNamespace(
+            id=800, send=AsyncMock(return_value=SimpleNamespace(id=700, delete=AsyncMock())))
+        owner.bot = MagicMock()
+        owner.bot.get_channel.side_effect = lambda channel_id: (
+            reminder_channel if channel_id == trials.REC_ROOM
+            else SimpleNamespace(id=channel_id, mention=f"<#{channel_id}>"))
+
+        await TrialMixin.check_expired_trials.coro(owner)
+
+        self.assertEqual(owner.recruitment_state.trials(), {"200": trial_info})
+        owner.logger.exception.assert_called_once()
+        self.assertEqual(owner.logger.exception.call_args.args[1], 200)
 
     async def test_expired_trial_ends_when_its_ticket_was_deleted(self) -> None:
         owner = TrialMixin()

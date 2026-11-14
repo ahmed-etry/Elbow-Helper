@@ -230,21 +230,37 @@ class TicketMixin:
 
     @tasks.loop(minutes=30)
     async def cleanup_old_ticket_reminders(self):
-        # Delete stale reminder messages and clear tracking metadata.
+        # Keep failed deletions pending and retain active tickets' duplicate suppression.
         now = datetime.now(timezone.utc)
-        reminders_changed = False
         async with self._ticket_reminder_lock:
-            reminders = dict(self.ticket_reminders)
+            reminders = {key: dict(info) for key, info in self.ticket_reminders.items()}
         for channel_id, info in list(reminders.items()):
             last_at = info.get("last_reminder_at")
             if not last_at:
                 continue
             if (now - last_at) < timedelta(hours=REMINDER_HOURS):
                 continue
+            ticket_deleted = False
+            if self.bot.get_channel(int(channel_id)) is None:
+                try:
+                    await self.bot.fetch_channel(int(channel_id))
+                except discord.NotFound:
+                    ticket_deleted = True
+                except (discord.Forbidden, discord.HTTPException):
+                    self.logger.warning("Could not check stale recruitment ticket %s", channel_id)
+                    continue
             message_id = info.get("message_id")
             message_channel_id = info.get("message_channel_id") or REC_ROOM
             if message_id:
                 channel = self.bot.get_channel(message_channel_id)
+                if channel is None:
+                    try:
+                        channel = await self.bot.fetch_channel(message_channel_id)
+                    except discord.NotFound:
+                        pass
+                    except (discord.Forbidden, discord.HTTPException):
+                        self.logger.warning("Could not fetch reminder channel %s", message_channel_id)
+                        continue
                 if channel:
                     try:
                         msg = await channel.fetch_message(int(message_id))
@@ -257,6 +273,7 @@ class TicketMixin:
                             message_id,
                             message_channel_id,
                         )
+                        continue
                     except discord.HTTPException as e:
                         self.logger.warning(
                             "Discord API error deleting stale reminder message %s in channel %s: %s",
@@ -264,6 +281,7 @@ class TicketMixin:
                             message_channel_id,
                             e,
                         )
+                        continue
                     except (TypeError, ValueError) as e:
                         self.logger.exception(
                             "Unexpected error deleting stale reminder message %s in channel %s: %s",
@@ -271,15 +289,19 @@ class TicketMixin:
                             message_channel_id,
                             e,
                         )
-            if info.get("message_id") is not None or info.get("message_channel_id") is not None:
-                info["message_id"] = None
-                info["message_channel_id"] = None
-                reminders_changed = True
-        if reminders_changed:
+                        continue
+            if not ticket_deleted and info.get("message_id") is None and info.get("message_channel_id") is None:
+                continue
             async with self._ticket_reminder_lock:
-                for channel_id, info in reminders.items():
-                    self.ticket_reminders[int(channel_id)] = info
-                await self.recruitment_state.save_ticket_activity(self.ticket_reminders)
+                if self.ticket_reminders.get(channel_id) != info:
+                    continue
+                updated = dict(self.ticket_reminders)
+                if ticket_deleted:
+                    updated.pop(channel_id)
+                else:
+                    updated[channel_id] = {**info, "message_id": None, "message_channel_id": None}
+                await self.recruitment_state.save_ticket_activity(updated)
+                self.ticket_reminders = updated
 
     @cleanup_old_ticket_reminders.before_loop
     async def before_cleanup_old_ticket_reminders(self):

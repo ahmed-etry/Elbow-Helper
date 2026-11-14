@@ -219,6 +219,15 @@ Applicant identity: {applicant_identity}
                 channel_id = data.get("channel_id")
                 if channel_id:
                     channel = self.bot.get_channel(int(channel_id))
+                    if channel is None:
+                        try:
+                            channel = await self.bot.fetch_channel(int(channel_id))
+                        except discord.NotFound:
+                            messages_to_remove.append(msg_id_str)
+                            continue
+                        except (discord.Forbidden, discord.HTTPException):
+                            self.logger.warning("Could not fetch AI summary channel %s", channel_id)
+                            continue
                     if channel:
                         try:
                             message = await channel.fetch_message(msg_id)
@@ -235,6 +244,7 @@ Applicant identity: {applicant_identity}
                                 msg_id,
                                 channel_id,
                             )
+                            continue
                         except discord.HTTPException as e:
                             self.logger.warning(
                                 "Error deleting AI summary message %s in channel %s: %s",
@@ -242,6 +252,7 @@ Applicant identity: {applicant_identity}
                                 channel_id,
                                 e,
                             )
+                            continue
                         except (TypeError, ValueError) as e:
                             self.logger.exception(
                                 "Unexpected error deleting AI summary message %s in channel %s: %s",
@@ -249,15 +260,21 @@ Applicant identity: {applicant_identity}
                                 channel_id,
                                 e,
                             )
+                            continue
+                    else:
+                        continue
                 messages_to_remove.append(msg_id_str)
             except (TypeError, ValueError, KeyError) as e:
                 self.logger.exception("Unexpected error processing AI cleanup for %s: %s", msg_id_str, e)
                 messages_to_remove.append(msg_id_str)
         if messages_to_remove:
             async with self._applicant_ai_lock:
+                updated = dict(self.applicant_ai_messages)
                 for msg_id_str in messages_to_remove:
-                    self.applicant_ai_messages.pop(msg_id_str, None)
-                await self._save_applicant_ai_messages()
+                    if updated.get(msg_id_str) == messages_to_cleanup[msg_id_str]:
+                        updated.pop(msg_id_str, None)
+                await self.recruitment_state.save_ai_messages(updated)
+                self.applicant_ai_messages = updated
 
     @tasks.loop(hours=6)
     async def cleanup_applicant_ai(self):

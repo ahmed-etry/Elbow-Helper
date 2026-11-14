@@ -23,7 +23,7 @@ from .config import TRIAL_DAYS_DEFAULT
 from .config import TRIAL_RESOLVED_REMINDER_RETENTION_HOURS
 from .config import TRIAL_TICKET_PREFIXES_END
 from .config import TRIAL_TICKET_PREFIXES_START
-from .helpers import can_rename
+from .helpers import rename_ticket
 from .helpers import new_ticket_name
 from .state import recruitment_event
 from .state import reminder_case
@@ -77,11 +77,8 @@ class TrialMixin:
         new_name = new_ticket_name(channel, TRIAL_TICKET_PREFIXES_START)
         if not new_name:
             return True
-        if not can_rename(channel.guild.id):
-            return False
         try:
-            await channel.edit(name=new_name)
-            return True
+            return await rename_ticket(channel, new_name)
         except (discord.Forbidden, discord.HTTPException) as error:
             self.logger.warning(
                 "Failed to rename channel %s (%s): %s",
