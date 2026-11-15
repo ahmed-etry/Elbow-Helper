@@ -2,8 +2,11 @@
 
 from types import SimpleNamespace
 from datetime import datetime, timezone
+import threading
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import discord
 
 from elbow_helper.agent.safety.access import ACCESS_LEAD
 from elbow_helper.agent.actions.contracts import ActionClass
@@ -53,6 +56,56 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
         workflow.create_one_time_event.assert_called_once_with(**prepared)
         workflow.force_refresh.assert_awaited_once()
 
+    async def test_confirmed_changes_save_off_the_event_loop(self):
+        saved_on = []
+
+        def save(result):
+            def mutate(*args, **kwargs):
+                saved_on.append(threading.get_ident())
+                return result
+            return mutate
+
+        event = {"key": "alpha", "name": "Alpha", "enabled": True, "source": "custom",
+                 "category_id": None, "grace_period_hours": 24}
+        preset = {**event, "source": "preset"}
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        prepared = {"name": "Event", "start": start, "end": start, "timezone": "UTC", "grace_hours": 24}
+        embed = SimpleNamespace(title="Event", description="Done", fields=[],
+                                footer=SimpleNamespace(text=None))
+        workflow = SimpleNamespace(
+            event_management_state=lambda value: {"event": preset if value == "preset" else event,
+                                                  "position": 0, "count": 2},
+            prepare_one_time_event_values=MagicMock(return_value=(prepared, None)),
+            create_one_time_event=save("key"), update_one_time_event=save(True),
+            update_preset_event=save(True), toggle_event=save(True),
+            set_event_category=save(True), move_event_to_position=save(True),
+            reset_preset_event=save(True),
+            force_refresh=AsyncMock(), build_event_detail_embed=MagicMock(return_value=embed),
+        )
+        tools = {tool.definition.name: tool for tool in event_management_tools()}
+        category = MagicMock(spec=discord.CategoryChannel)
+        category.name = "Events"
+        calls = (
+            ("create_event_tracker", {"name": "Event", "start": "s", "end": "e", "timezone": "UTC"}),
+            ("edit_event_tracker", {"event": "Alpha", "name": "Event", "start": "s", "end": "e",
+                                    "timezone": "UTC"}),
+            ("edit_preset_event", {"event": "preset", "name": "Renamed"}),
+            ("set_event_enabled", {"event": "Alpha", "enabled": False}),
+            ("set_event_category", {"event": "Alpha", "category_id": 5}),
+            ("move_event", {"event": "Alpha", "position": 2}),
+            ("restore_event_defaults", {"event": "preset"}),
+        )
+        for name, values in calls:
+            context = SimpleNamespace(
+                private_pass=True, bot=SimpleNamespace(get_cog=lambda cog: workflow),
+                guild=SimpleNamespace(get_channel=lambda channel_id: category), state=AgentTurnState())
+            with patch("elbow_helper.agent.features.event_stats.management.require_evidence_access",
+                       new_callable=AsyncMock):
+                result = await tools[name].handler(context, values)
+            self.assertEqual(result["status"], "confirmation_required", name)
+            await context.state.proposed_changes[0].run()
+        self.assertEqual(len(saved_on), 7)
+        self.assertNotIn(threading.get_ident(), saved_on)
     async def test_move_to_top_is_one_confirmed_feature_operation(self):
         state = {"event": {"key": "alpha", "name": "Alpha", "enabled": True,
                            "source": "preset", "category_id": None},

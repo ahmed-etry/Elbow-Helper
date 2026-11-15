@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from typing import Any
 
@@ -197,10 +198,10 @@ async def _prepare_form(context: AgentRequestContext, values: Mapping[str, Any],
 
     async def run() -> ActionOutcome:
         if current is None:
-            key = workflow.create_one_time_event(**prepared)
+            key = await asyncio.to_thread(workflow.create_one_time_event, **prepared)
         else:
             key = before["key"]
-            if not workflow.update_one_time_event(key, **prepared):
+            if not await asyncio.to_thread(workflow.update_one_time_event, key, **prepared):
                 raise ActionRefused('That event tracker is unavailable.')
         await workflow.force_refresh(context.guild)
         return ActionOutcome("complete", "private",
@@ -247,7 +248,7 @@ async def _prepare_preset(context: AgentRequestContext,
         return workflow.event_management_state(event["key"]) == current
 
     async def run() -> ActionOutcome:
-        if not workflow.update_preset_event(event["key"], name=name, grace_hours=grace):
+        if not await asyncio.to_thread(workflow.update_preset_event, event["key"], name=name, grace_hours=grace):
             raise ActionRefused('That event tracker is unavailable.')
         await workflow.force_refresh(context.guild)
         return ActionOutcome("complete", "private", text=embed_text(
@@ -325,13 +326,13 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
 
     async def run() -> ActionOutcome:
         if operation == "set_event_enabled":
-            ok = workflow.toggle_event(key)
+            ok = await asyncio.to_thread(workflow.toggle_event, key)
         elif operation == "set_event_category":
-            ok = workflow.set_event_category(key, category_id)
+            ok = await asyncio.to_thread(workflow.set_event_category, key, category_id)
         elif operation == "move_event":
-            ok = workflow.move_event_to_position(key, target)
+            ok = await asyncio.to_thread(workflow.move_event_to_position, key, target)
         elif operation == "restore_event_defaults":
-            ok = workflow.reset_preset_event(key)
+            ok = await asyncio.to_thread(workflow.reset_preset_event, key)
         else:
             ok, message = await workflow.delete_custom_event(context.guild, key)
         if not ok:
