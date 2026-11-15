@@ -327,6 +327,17 @@ class ExaminationRoutingFlowMixin:
         self._save()
 
     async def route_ticket(self, channel: discord.TextChannel, ticket_type: str) -> None:
+        # The mark means a task is routing this ticket now, so a failure must not leave it set.
+        try:
+            await self._route_ticket(channel, ticket_type)
+        except BaseException:
+            case = self._get_case(channel.id)
+            if case and case.get("routing_inflight"):
+                case["routing_inflight"] = False
+                self._save()
+            raise
+
+    async def _route_ticket(self, channel: discord.TextChannel, ticket_type: str) -> None:
         # Main routing logic for clan or elder promotions.
         opener = await self.find_ticket_opener(channel)
         latest_message = await self._latest_applicant_message(channel, opener)

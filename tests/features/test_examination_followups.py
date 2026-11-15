@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -63,9 +62,8 @@ class ExaminationFollowupTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch(
                 "elbow_helper.features.examination.followups.asyncio.sleep",
-                new=AsyncMock(side_effect=[None, asyncio.CancelledError]),
+                new=AsyncMock(),
             ),
-            self.assertRaises(asyncio.CancelledError),
         ):
             await owner._followup_loop()
 
@@ -146,17 +144,23 @@ class ExaminationFollowupTests(unittest.IsolatedAsyncioTestCase):
                         owner._save.assert_called_once_with()
 
     async def test_one_failed_send_does_not_block_other_cases(self) -> None:
-        owner = self._owner()
-        cases = owner._get_cases.return_value
-        cases["124"] = dict(cases["123"], ticket_channel_id=124)
-        owner._send_followup = AsyncMock(side_effect=[_discord_error(500), None])
+        for error in (_discord_error(500), LookupError("follow-up failed")):
+            with self.subTest(error=type(error).__name__):
+                owner = self._owner()
+                cases = owner._get_cases.return_value
+                cases["124"] = dict(cases["123"], ticket_channel_id=124)
+                owner._send_followup = AsyncMock(side_effect=[error, None])
 
-        await self._run_pass(owner)
+                if isinstance(error, discord.HTTPException):
+                    await self._run_pass(owner)
+                else:
+                    with self.assertLogs("elbow_helper.features.examination.followups", "ERROR"):
+                        await self._run_pass(owner)
 
-        self.assertEqual(cases["123"]["stage"], "initial")
-        self.assertEqual(cases["124"]["stage"], "reminder")
-        self.assertEqual(owner._send_followup.await_count, 2)
-        owner._save.assert_called_once_with()
+                self.assertEqual(cases["123"]["stage"], "initial")
+                self.assertEqual(cases["124"]["stage"], "reminder")
+                self.assertEqual(owner._send_followup.await_count, 2)
+                owner._save.assert_called_once_with()
 
 
 if __name__ == "__main__":

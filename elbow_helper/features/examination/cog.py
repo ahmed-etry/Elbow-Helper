@@ -70,6 +70,11 @@ class Examination(
 
     async def cog_load(self) -> None:
         await self.state_store.startup()
+        # A ticket marked as routing was being routed by the process that saved it, which is gone.
+        for case in self.state_store.cases().values():
+            if isinstance(case, dict) and case.get("routing_inflight") is True and not case.get("routing_message_id"):
+                case["routing_inflight"] = False
+                self.state_store.save()
 
     def cog_unload(self) -> None:
         state_store = getattr(self, "state_store", None)
