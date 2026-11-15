@@ -20,7 +20,7 @@ from elbow_helper.agent.reports.base import retain_report, ArtifactCapacityError
 from elbow_helper.agent.reports.tools import authorize_report
 from elbow_helper.agent.conversation.findings import family_revisions
 from elbow_helper.agent.reads.cache import ReadDependencies
-from elbow_helper.agent.plan.input_rules import RULES
+from elbow_helper.agent.plan.input_rules import RULES, input_rule_issue
 
 COMMON = {
     'fresh': {'type': 'boolean', 'description': 'Force fresh source reads, including nested reads. Use for a requested recheck.'},
@@ -212,6 +212,19 @@ def saved_slice(data, requested):
     return wanted
 
 
+def carried_selection(saved, requested, schemas):
+    """The saved selection changed by the requested fields. A saved field the requested fields
+    exclude under the lookup's own input rules is left out, so the read never gets a combination
+    nobody sent."""
+    selection = dict(requested)
+    for key, value in saved.items():
+        if key not in selection and not any(input_rule_issue({**selection, key: value}, schema)[0]
+                                            and not input_rule_issue(selection, schema)[0]
+                                            for schema in schemas):
+            selection[key] = value
+    return selection
+
+
 def sliced_payload(identifier, data, wanted):
     rows = [row for row in data['rows'] if all(row[SLICE_COLUMNS[key]] in values
                                                for key, values in wanted.items())]
@@ -273,13 +286,15 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
                     or not await authorize_report(context, identifier)):
                 return {'error': 'That report is no longer available here.', 'cause': 'report_unavailable'}
             requested = {key: value for key, value in arguments.items() if key not in COMMON}
-            if arguments.get('fresh') or requested and (arguments.get('cursor') or offset):
+            if arguments.get('fresh'):
                 return {'error': 'Read a new snapshot to change its selection.', 'cause': 'invalid_arguments'}
             saved = json.loads(report.payload)
             if saved['summary'].get('requester_id', context.member.id) != context.member.id:
                 return {'error': 'Read a new snapshot for this request.', 'cause': 'report_unavailable'}
             if requested:
                 wanted = saved_slice(saved, requested)
+                if wanted != {} and (arguments.get('cursor') or offset):
+                    return {'error': 'Read a new snapshot to change its selection.', 'cause': 'invalid_arguments'}
                 if wanted:
                     # The saved rows already hold this slice: keep it as its own report.
                     try:
@@ -295,7 +310,9 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
                 elif wanted is None:
                     # It needs data the saved rows lack: read again with the saved selection changed.
                     arguments = {**{key: value for key, value in arguments.items() if key != 'report_id'},
-                                 **saved['summary'].get('selection', {}), **requested}
+                                 **carried_selection(saved['summary'].get('selection', {}), requested,
+                                                     [{'properties': properties},
+                                                      *({RULES: [rule]} for rule in checks)])}
                     identifier = None
             if identifier and arguments.get('cursor'):
                 try:
@@ -437,10 +454,13 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
                        retained_fields=(*contract.retained_fields, "report_id"))
     # A report_id continuation carries its selection, so selection rules skip it.
     checks = [{'needs_all': [field], 'error': 'Please specify ' + field + '.'} for field in required]
-    checks = [{**rule, 'unless': ['report_id']} for rule in (*checks, *rules)]
+    checks = [{**rule, 'unless': [*rule.get('unless', ()), 'report_id']} for rule in (*checks, *rules)]
     return RegisteredAgentTool(AgentToolDefinition(name, description,
         {'type': 'object', 'properties': {**properties, **COMMON},
          'required': [], 'additionalProperties': False, **({RULES: checks} if checks else {})},
-        usage_note=usage_note or 'Fresh selection or report_id + cursor continuation. Follow next_cursor to completion. Exports use every retained row.'),
+        usage_note=usage_note or 'Fresh selection or report_id + cursor continuation. '
+            # A lookup delivered whole reaches the answer step complete: there is no cursor to follow.
+            + ('' if whole and WHOLE_FAMILIES[name].restore is True and WHOLE_FAMILIES[name].finishes is True
+               else 'Follow next_cursor to completion. ') + 'Exports use every retained row.'),
         handle, contract=contract,
         returns='report_id,rows:[{typed family fields}],total_rows,next_offset,complete_snapshot')

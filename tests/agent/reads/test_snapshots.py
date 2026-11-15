@@ -3,7 +3,7 @@ import csv
 from io import StringIO
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.reads.snapshots import family_tool, FamilyReport, decode_family, saved_slice
 from tests.agent.engine.test_agent_plan_flow import _context
 
@@ -107,12 +107,20 @@ class FamilyReportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exported['artifact']['total_rows'], 2)
 
     async def test_repeating_the_saved_selection_uses_the_same_report(self):
-        tool, calls = await self._clan_tool()
-        context = _context()
-        first = await tool.handler(context, {'clan_codes': ['BE1', 'BE4'], 'metric': 'ass'})
-        again = await tool.handler(context, {'report_id': first['report_id'],
-                                             'clan_codes': ['BE1', 'BE4'], 'metric': 'ass'})
-        self.assertEqual((again['report_id'], again['total_rows'], len(calls)), (first['report_id'], 4, 1))
+        reader = AsyncMock(return_value={'rows': [{'member_id': 41}, {'member_id': 42}]})
+        tool = family_tool('read_recruitment_pipeline', 'Read recruitment tickets.',
+                           {'stage': {'type': 'string'}}, reader)
+        for page in ('cursor', 'offset'):
+            context = _context()
+            first = await tool.handler(context, {'stage': 'pipeline', 'limit': 1})
+            paging = {page: first['next_cursor'] if page == 'cursor' else 1}
+            again = await tool.handler(context, {'report_id': first['report_id'], 'stage': 'pipeline',
+                                                 'limit': 200, **paging})
+            self.assertEqual((again['report_id'], again['rows']),
+                             (first['report_id'], [{'member_id': 42}]))
+            changed = await tool.handler(context, {'report_id': first['report_id'], 'stage': 'accepted', **paging})
+            self.assertEqual(changed['cause'], 'invalid_arguments')
+        self.assertEqual(reader.await_count, 2)
 
     async def test_request_beyond_the_saved_rows_reads_fresh_with_the_saved_selection(self):
         tool, calls = await self._clan_tool()
@@ -167,6 +175,18 @@ class FamilyReportTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(saved_slice(saved, {'account_tags': ['not a tag']}))
         saved['rows'][0].pop('player_tag')
         self.assertIsNone(saved_slice(saved, {'account_tags': ['#P0']}))
+
+    def test_cursor_sentence_only_where_the_lookup_is_not_delivered_whole(self):
+        from elbow_helper.agent.engine.registry import build_agent_tools
+        tools = build_agent_tools()
+        sentence = 'Follow next_cursor to completion.'
+        for name in ('read_current_war', 'read_donation_history', 'read_hibernation', 'read_promotion_cases'):
+            self.assertNotIn(sentence, tools[name].definition.usage_note)
+        # Whole only for some results: other results still page.
+        self.assertIn(sentence, tools['read_community_reference'].definition.usage_note)
+        async def read(context, arguments):
+            return {'rows': []}
+        self.assertIn(sentence, family_tool('read_synthetic', 'Read.', {}, read).definition.usage_note)
 
     async def test_report_requires_provenance_and_matching_family(self):
         async def read(context, arguments):

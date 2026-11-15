@@ -15,7 +15,8 @@ from elbow_helper.agent.reads import people as record_identity
 from elbow_helper.agent.reads.people import PeopleAdapter, PeopleSelection
 
 
-async def resolve_account_names(context, queries):
+async def resolve_account_names(context, queries, people=None):
+    people = people or PeopleAdapter(context)
     await require_evidence_access(context)
     accounts, missing = {}, []
 
@@ -32,13 +33,13 @@ async def resolve_account_names(context, queries):
         if source == 'current_family_roster':
             account['player_name'] = name
 
-    current_links = await PeopleAdapter(context).links(PeopleSelection('all'))
+    current_links = await people.links(PeopleSelection('all'))
     if current_links.status != 'available':
         missing.append({'source': 'bot_account_links', 'cause': current_links.status})
     for row in current_links.by_tag.values():
         if row:
             add(row.get('player_tag'), row.get('player_name_last_seen'), 'bot_account_links')
-    directory = await PeopleAdapter(context).directory_names()
+    directory = await people.directory_names()
     if directory is None:
         missing.append({'source': 'stored_account_directory', 'cause':
                         'missing_setup' if context.cwl_queries is None else 'source_unavailable'})
@@ -64,7 +65,7 @@ async def resolve_account_names(context, queries):
     # one owner. Unowned candidates must still require clarification.
     candidates = {row['player_tag']: row for resolution in resolutions
                   for row in resolution['candidates']}
-    selected_links = await PeopleAdapter(context).links(PeopleSelection('accounts', tuple(sorted(candidates))))
+    selected_links = await people.links(PeopleSelection('accounts', tuple(sorted(candidates))))
     links = selected_links.by_tag
     if selected_links.status != 'available':
         source = {'source': 'bot_account_links', 'cause': selected_links.status}
@@ -92,8 +93,9 @@ async def resolve_account_names(context, queries):
             'selection_complete': all(row['status'] == 'resolved' for row in resolutions)}
 
 
-async def resolve_names(context, queries, look_in=None):
+async def resolve_names(context, queries, look_in=None, people=None):
     """Search the requested identity source; only misses use the other source."""
+    people = people or PeopleAdapter(context)
     if look_in not in ('game', 'discord'):
         return {'error': 'look_in is required for name lookups; choose game or discord.',
                 'cause': 'invalid_arguments', 'invalid_fields': ['look_in']}
@@ -102,7 +104,7 @@ async def resolve_names(context, queries, look_in=None):
 
     async def search(side, indices):
         if side == 'game':
-            result = await resolve_account_names(context, [queries[index] for index in indices])
+            result = await resolve_account_names(context, [queries[index] for index in indices], people)
             for source in result['missing_sources']:
                 if source not in missing:
                     missing.append(source)
@@ -138,7 +140,7 @@ async def resolve_names(context, queries, look_in=None):
         for index in unknown:
             if resolutions[index]['status'] == 'not_found':
                 resolutions[index]['status'] = 'unknown'
-    selected_links = await PeopleAdapter(context).links(PeopleSelection('members', tuple(sorted(members))))
+    selected_links = await people.links(PeopleSelection('members', tuple(sorted(members))))
     links = selected_links.by_member
     if members and selected_links.status != 'available':
         source = {'source': 'bot_account_links', 'cause': selected_links.status}

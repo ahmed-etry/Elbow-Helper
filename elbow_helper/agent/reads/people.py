@@ -315,23 +315,33 @@ def membership_events(accounts, after, clan_codes):
     return sorted(events, key=lambda row: (row["observed_at"], row["player_tag"]), reverse=True)
 
 
-async def read_membership_history(context, arguments):
-    await require_evidence_access(context)
+def membership_window(arguments):
+    """(history_after, after, before), or the refusal naming the one cause that applied."""
     try:
         after = search_date(arguments.get("after"))
         before = search_date(arguments.get("before")) or datetime.now(timezone.utc)
-        history_after = search_date(arguments.get("history_after")) or (
-            max(after - timedelta(days=30), before - timedelta(days=90)) if after else None)
-        offset, limit = arguments.get("offset", 0), arguments.get("limit", 25)
-        codes = arguments.get("clan_codes", [])
-        if (after is None or history_after is None or not history_after <= after < before
-                or before - history_after > timedelta(days=90)
-                or type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 25
-                or not isinstance(codes, list) or len(codes) > 20 or any(code not in CLANS for code in codes)):
-            raise ValueError("Invalid membership selection")
+        history_after = search_date(arguments.get("history_after"))
     except (ValueError, TypeError, AttributeError):
-        return {"error": "Use ISO dates within ninety days, valid clan codes and a page of 1..25.",
-                "cause": "invalid_arguments"}
+        after = None
+    if after is None or not after < before or history_after is not None and history_after > after:
+        return "Use ISO dates in order: history_after, then after, then before."
+    codes = arguments.get("clan_codes", [])
+    if not isinstance(codes, list) or len(codes) > 20 or any(code not in CLANS for code in codes):
+        return "Choose up to 20 valid clan codes."
+    offset, limit = arguments.get("offset", 0), arguments.get("limit", 25)
+    if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 25:
+        return "Use an offset of 0 or more and a limit of 1..25."
+    return (history_after or after - timedelta(days=30)), after, before
+
+
+async def read_membership_history(context, arguments):
+    await require_evidence_access(context)
+    window = membership_window(arguments)
+    if isinstance(window, str):
+        return {"error": window, "cause": "invalid_arguments"}
+    history_after, after, before = window
+    offset, limit = arguments.get("offset", 0), arguments.get("limit", 25)
+    codes = arguments.get("clan_codes", [])
     start, end = int(history_after.timestamp() * SECOND), int(before.timestamp() * SECOND)
     snapshot = await record(context, "stay_reads", "movements", after=start, before=end,
                                             limit=STAY_LIMIT)

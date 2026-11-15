@@ -1,6 +1,7 @@
 """Typed account projections and authorized cohort references shared by family reads."""
 import json
 
+from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.reads.snapshots import FamilyReport, UNKEPT_REPORT
 from ..reports.tools import authorize_report
 from .wars import performance_projection
@@ -25,7 +26,7 @@ PERFORMANCE = {'type':'object','properties':{
     'season':{'type':'string','maxLength':20},
     'after':{'type':'string','format':'date-time'},'before':{'type':'string','format':'date-time'},
     'clan_codes':{'type':'array','minItems':1,'maxItems':9,'items':{'type':'string',
-        'enum':['BEH','BE4','BES','BE1','BEM','BEC','BEE','BEP','BEW']}}},
+        'enum':list(CLANS)}}},
     'required':['war_type'],'additionalProperties':False}
 
 
@@ -58,13 +59,21 @@ def unknown_account_data(row, arguments):
         row.get('profile_status')!='ok' or unknown_account_filter(row,arguments))
 
 
+# Reads whose rows name the members or accounts a cohort_ref selects.
+COHORT_FAMILIES = ('read_member_cohort', 'read_member_accounts', 'read_clan_rosters', 'read_recruitment_pipeline',
+                   'read_cwl_results', 'read_war_participation')
+
+
 async def cohort_selection(context, identifier, selector):
     report = context.state.reports.get(identifier)
     if report is None and identifier in context.state.unkept_reports:
         return dict(UNKEPT_REPORT)
-    if (not isinstance(report,FamilyReport) or report.family not in (
-        'read_member_cohort','read_member_accounts','read_clan_rosters','read_recruitment_pipeline','read_cwl_results')
-            or not await authorize_report(context,identifier)):
+    if (isinstance(report, FamilyReport) and report.guild_id == context.guild.id
+            and report.family not in COHORT_FAMILIES):
+        return {'error': 'cohort_ref takes a report from ' + ', '.join(COHORT_FAMILIES[:-1])
+                         + ' or ' + COHORT_FAMILIES[-1] + '.',
+                'cause': 'invalid_arguments', 'invalid_fields': ['cohort_ref']}
+    if not isinstance(report,FamilyReport) or not await authorize_report(context,identifier):
         return {'error':'That cohort is no longer available here. Read it again.','cause':'report_unavailable'}
     rows = json.loads(report.payload)['rows']
     if json.loads(report.payload)['summary'].get('requester_id', context.member.id) != context.member.id:
@@ -84,7 +93,8 @@ async def cohort_selection(context, identifier, selector):
         links = selected.by_member
         tags = {row['player_tag'] for values in links.values() for row in values}
     values = members if selector=='member_ids' else sorted(tags)
-    if selector == 'member_ids' and tags and report.family in ('read_cwl_results', 'read_clan_rosters', 'read_member_accounts'):
+    if selector == 'member_ids' and tags and report.family in ('read_cwl_results', 'read_clan_rosters', 'read_member_accounts',
+                                                               'read_war_participation'):
         selector, values = 'account_tags', sorted(tags)
     if selector=='member_ids' and not values and tags:
         selector,values = 'account_tags',sorted(tags)

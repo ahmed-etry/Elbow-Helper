@@ -83,12 +83,15 @@ class NameResolutionViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(json.loads(context.state.reports[page['report_id']].payload)['rows']),
                          len(payload['rows']))
 
-    async def test_indivisible_large_header_reports_capacity_and_retains_full_report(self):
+    async def test_indivisible_large_header_keeps_a_successful_report_with_no_page_rows(self):
         payload = named_accounts(200)
         context = _context()
         tool = family_tool('read_member_accounts', 'Synthetic accounts.', {}, AsyncMock(return_value=payload))
         page = await tool.handler(context, {})
-        self.assertEqual(page['cause'], 'capacity')
+        self.assertNotIn('error', page)
+        self.assertEqual((page['returned_rows'], page['total_rows'], page['next_offset']),
+                         (0, len(payload['rows']), 0))
+        self.assertLessEqual(view_size(page), 16_000)
         retained = json.loads(context.state.reports[page['report_id']].payload)
         self.assertEqual(retained['summary']['name_resolutions'], payload['name_resolutions'])
         self.assertEqual(retained['rows'], payload['rows'])

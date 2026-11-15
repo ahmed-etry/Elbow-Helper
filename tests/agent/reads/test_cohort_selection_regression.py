@@ -12,6 +12,37 @@ from tests.agent.reads.record_stub import with_record
 
 
 class CohortSelectionRegressionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_member_accounts_reads_the_accounts_of_a_war_participation_report(self):
+        # Live: a month of participation, then read_member_accounts with that step's report as cohort_ref.
+        context = with_record(replace(_context(), account_links=SimpleNamespace(
+            get_links_for_members=lambda ids: {41: [{'player_tag': '#P0'}, {'player_tag': '#Q0'}]},
+            get_links_by_tags=lambda tags: {tag: {'discord_user_id': 41, 'player_tag': tag} for tag in tags})))
+        context.guild.get_member = lambda identifier: context.member if identifier == 41 else None
+        for role in context.member.roles:
+            role.name, role.is_default = 'Core', lambda: False
+        source = {'rows': [{'player_tag': '#P0', 'player_name': '#P0', 'war_id': '#C0', 'clan_code': 'BEH',
+                            'attacks_expected': 2, 'attacks_used': 1, 'missed': 1}], 'war_ids': ['#C0'], 'coverage': {}}
+        self.enterContext(patch.object(record_wars, 'regular_wars', AsyncMock(return_value=source)))
+        participation_tool = next(tool for tool in war_reads.TOOLS if tool.definition.name == 'read_war_participation')
+        month = await participation_tool.handler(context, {'clan_codes': ['BEH'], 'war_type': 'REG',
+            'after': '2026-11-01T00:00:00+00:00', 'before': '2026-12-01T00:00:00+00:00'})
+        accounts_tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
+        profiles = {'#P0': {'status': 'ok', 'data': {'name': 'First', 'townHallLevel': 17}}}
+        with patch.object(identity_reads, 'profiles', AsyncMock(return_value=profiles)):
+            names = await accounts_tool.handler(context, {'cohort_ref': month['report_id']})
+        self.assertNotIn('error', names)
+        # The war's accounts only, not every account their owner has.
+        self.assertEqual([row['player_tag'] for row in names['rows']], ['#P0'])
+        # A report of a kind the option does not take says which kinds it takes.
+        names_ref = await accounts_tool.handler(context, {'cohort_ref': names['report_id']})
+        self.assertNotIn('error', names_ref)
+        context.state.reports[month['report_id']] = replace(context.state.reports[month['report_id']],
+                                                            family='read_current_war')
+        wrong = await accounts_tool.handler(context, {'cohort_ref': month['report_id']})
+        self.assertEqual(wrong['cause'], 'invalid_arguments')
+        self.assertIn('read_war_participation', wrong['error'])
+        self.assertNotIn('no longer available', wrong['error'])
+
     async def test_filtered_cohort_keeps_only_retained_accounts_after_links_change(self):
         context = _context()
         for role in context.member.roles:

@@ -464,14 +464,15 @@ async def member_cohort(context, arguments):
     if basis == 'accepted_recruitment' and any(key in arguments for key in ('joined_after', 'joined_before')):
         return {'error': 'Choose acceptance dates separately from Discord join dates.', 'cause': 'invalid_arguments'}
     date_fields = ('accepted_after', 'accepted_before') if basis == 'accepted_recruitment' else ('joined_after', 'joined_before')
+    dates = 'acceptance' if basis == 'accepted_recruitment' else 'join'
     try:
         after, before = (datetime.fromisoformat(arguments[key]) if arguments.get(key) else None for key in date_fields)
     except ValueError:
         return {'error': 'Choose valid timezone-aware dates.', 'cause': 'invalid_arguments'}
     if any(value is not None and value.utcoffset() is None for value in (after, before)):
-        return {'error': 'Choose timezone-aware join dates.', 'cause': 'invalid_arguments'}
+        return {'error': 'Choose timezone-aware ' + dates + ' dates.', 'cause': 'invalid_arguments'}
     if after and before and after >= before:
-        return {'error': 'The join window must end after it starts.', 'cause': 'invalid_arguments'}
+        return {'error': 'The ' + dates + ' window must end after it starts.', 'cause': 'invalid_arguments'}
     roles = set(arguments.get('role_ids', []))
     home_roles = set()
     if basis == 'role_holders' and arguments.get('role_name'):
@@ -480,7 +481,7 @@ async def member_cohort(context, arguments):
         name = arguments['role_name'].strip().casefold()
         matches = [role for role in context.guild.roles if role.name.casefold() == name]
         if len(matches) != 1:
-            return {'rows': [], 'status': 'needs_input', 'missing_fields': ['role_id'],
+            return {'rows': [], 'status': 'needs_input', 'missing_fields': ['role_ids'],
                     'roles': [{'role_id': role.id, 'name': role.name} for role in matches]}
         roles = {matches[0].id}
         home_roles = {CLANS[code].member_role_id for code in arguments.get('clan_codes', [])
@@ -503,13 +504,13 @@ async def member_cohort(context, arguments):
         joined = (datetime.fromisoformat(accepted[identifier]) if identifier in accepted else None) if basis == 'accepted_recruitment' else getattr(member, 'joined_at', None)
         held = {role.id for role in member.roles} if member else set()
         if (ids is not None and identifier not in ids
-                or basis == 'role_holders' and not (roles <= held if arguments.get('role_match') == 'all' else roles & held)
+                or roles and not (roles <= held if arguments.get('role_match') == 'all' else roles & held)
                 or home_roles and not home_roles & held
                 or after and joined is not None and joined < after
                 or before and joined is not None and joined >= before):
             continue
         rows.append({**member_fields(member, identifier, include_roles=arguments.get('include_roles', False),
-                                    selected_role_ids=roles if basis == 'role_holders' else ()),
+                                    selected_role_ids=roles),
                      'membership_status': 'present' if member else 'not_in_guild', 'selection_status':
                      'unknown_date' if (after or before) and joined is None else 'selected',
                      **({'accepted_at': accepted.get(identifier)}
@@ -599,7 +600,7 @@ COHORT_RULES = (
      'error': 'Use role_holders to select a named role.'},
     {'when': {'basis': [basis for basis in BASES if basis != 'clan_rosters']}, 'forbids': ['exclude_leadership'],
      'error': 'exclude_leadership requires basis=clan_rosters.'},
-    {'when': {'basis': ['joined_discord', 'role_holders', 'accepted_recruitment']},
+    {'when': {'basis': ['joined_discord', 'role_holders', 'accepted_recruitment', 'clan_rosters']},
      'forbids': ['member_ids', 'cohort_ref'], 'error': 'Use basis=selected for a chosen set.'},
     {'when': {'basis': ['selected']}, 'needs': ['member_ids', 'cohort_ref'], 'error': CHOSEN_SET},
     {'when': {'basis': ['selected']}, 'only_one': ['member_ids', 'cohort_ref'], 'error': CHOSEN_SET},
@@ -611,13 +612,30 @@ COHORT_RULES = (
     {'when': {'basis': ['joined_discord', 'role_holders']}, 'aware': ['joined_after', 'joined_before'],
      'error': 'Choose timezone-aware join dates.'},
     {'when': {'basis': ['accepted_recruitment']}, 'aware': ['accepted_after', 'accepted_before'],
-     'error': 'Choose timezone-aware join dates.'},
+     'error': 'Choose timezone-aware acceptance dates.'},
     {'when': {'basis': ['role_holders']}, 'with': ['role_name'], 'forbids': ['role_ids', 'clan_role'],
      'error': 'Choose a role name or role IDs or a configured clan role.'},
     {'when': {'basis': ['role_holders']}, 'with': ['role_ids', 'clan_codes'], 'forbids': ['clan_role'],
      'error': 'Choose role IDs or a configured clan role.'},
     {'when': {'basis': ['role_holders']}, 'needs': ['role_ids', 'role_name', 'clan_codes'],
-     'error': 'Which Discord role holders do you want?'})
+     'error': 'Which Discord role holders do you want?'},
+    # Options a basis never reads: refused here instead of accepted and ignored.
+    {'when': {'basis': [basis for basis in BASES if basis != 'clan_rosters']}, 'forbids': ['roster_basis'],
+     'error': 'roster_basis requires basis=clan_rosters.'},
+    {'when': {'basis': ['joined_discord', 'accepted_recruitment', 'selected']}, 'forbids': ['clan_codes'],
+     'error': 'clan_codes requires basis=role_holders or clan_rosters.'},
+    {'when': {'basis': [basis for basis in BASES if basis != 'role_holders']}, 'forbids': ['clan_role'],
+     'error': 'clan_role requires basis=role_holders.'},
+    {'when': {'basis': ['joined_discord', 'role_holders', 'clan_rosters']}, 'forbids': ['accepted_after', 'accepted_before'],
+     'error': 'accepted_after and accepted_before require basis=accepted_recruitment.'},
+    {'when': {'basis': ['clan_rosters']}, 'forbids': ['joined_after', 'joined_before'],
+     'error': 'joined_after and joined_before require basis=joined_discord or role_holders.'},
+    {'when': {'basis': ['clan_rosters']}, 'forbids': ['role_ids'],
+     'error': 'role_ids requires basis=role_holders, joined_discord or accepted_recruitment.'},
+    {'when': {'basis': ['role_holders']}, 'with': ['clan_role'], 'needs_all': ['clan_codes'],
+     'error': 'clan_role requires clan_codes.'},
+    {'unless': ['include_activity'], 'forbids': ['after', 'before'],
+     'error': 'after and before require include_activity.'})
 
 TOOLS = (
  family_tool('read_member_accounts', 'Look up names on a chosen side, then join linked accounts and owners.',
