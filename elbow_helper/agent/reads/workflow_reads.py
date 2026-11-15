@@ -279,6 +279,30 @@ async def active_trial_rows(context, ticket=None):
             'coverage': 'All registered trial status records; ticket content is separately authorized.'}
 
 
+# Without a war start, this end-time gap proves battle day began after hibernation started.
+UNKNOWN_WAR_START_CERTAINTY_SECONDS = 48 * 3600
+
+
+def ranked_gap_summary(gaps):
+    """How many ranked log gaps since the start, the hours they cover and the longest; None when unknown."""
+    if gaps is None:
+        return {'ranked_log_gaps_since_start': None, 'ranked_log_gap_hours_since_start': None,
+                'longest_ranked_log_gap_since_start': None}
+    spans = sorted(((datetime.fromisoformat(gap['after']), datetime.fromisoformat(gap['before']), gap)
+                    for gap in gaps), key=lambda span: span[:2])
+    covered, reached = 0.0, None
+    for after, before, _ in spans:
+        # Gaps of different causes can overlap; their time counts once.
+        start = after if reached is None else max(after, reached)
+        if before > start:
+            covered += (before - start).total_seconds()
+        reached = before if reached is None else max(reached, before)
+    longest = max(spans, key=lambda span: span[1] - span[0], default=None)
+    return {'ranked_log_gaps_since_start': len(gaps),
+            'ranked_log_gap_hours_since_start': round(covered / 3600, 1),
+            'longest_ranked_log_gap_since_start': longest[2] if longest else None}
+
+
 async def hibernation(context, arguments):
     result = await complete_snapshot(context, read_active_hibernation, {'limit':500}, 'records')
     if 'error' in result:
@@ -308,11 +332,12 @@ async def hibernation(context, arguments):
                 tag = link['player_tag']
                 item = logs.get(tag)
                 status = item['watch_status'] if item else 'unavailable'
-                accounts.append({'player_tag':tag,'profile_status':status,
-                    **(item['activity_since'] if item and row['started_ts'] is not None else {
-                        'observed_ranked_attacks_since_start': None,
-                        'latest_observed_ranked_attack_at': None,
-                        'ranked_log_gaps_since_start': None})})
+                since = (item['activity_since'] if item and row['started_ts'] is not None else {
+                    'observed_ranked_attacks_since_start': None,
+                    'latest_observed_ranked_attack_at': None,
+                    'ranked_log_gaps_since_start': None})
+                accounts.append({'player_tag':tag,'profile_status':status, **since,
+                                 **ranked_gap_summary(since['ranked_log_gaps_since_start'])})
                 account = accounts[-1]
                 for kind, war_type in [('regular_war', 'REG'), ('cwl', 'CWL')]:
                     if kind not in kinds:
@@ -320,8 +345,9 @@ async def hibernation(context, arguments):
                     evidence = [war for war in war_rows or [] if war.get('war_type') == war_type
                         and war['player_tag'] == tag and row['started_ts'] is not None
                         and war['end_ts'] > row['started_ts']]
-                    within = [war for war in evidence if war.get('start_ts') is not None
-                              and war['start_ts'] >= row['started_ts']]
+                    within = [war for war in evidence if (
+                        war['start_ts'] >= row['started_ts'] if war.get('start_ts') is not None
+                        else war['end_ts'] >= row['started_ts'] + UNKNOWN_WAR_START_CERTAINTY_SECONDS)]
                     overlapping = [war for war in evidence if war not in within]
                     post_start_attacks = (
                         sum(war['attacks_used'] for war in within)
@@ -340,8 +366,8 @@ async def hibernation(context, arguments):
                                  else 'latest_observed_cwl_war_end_at')
                     account[end_field] = (
                         datetime.fromtimestamp(latest, timezone.utc).isoformat() if latest is not None else None)
-            row.update(accounts=accounts, activity_coverage='Ranked activity uses stored battle logs; a gap in log reading or an absence does not establish inactivity.',
-                       war_activity_coverage='Stored wars have no individual attack timestamps. Counts use wars starting at or after hibernation; overlapping or undated-start wars retain unknown attack timing. Latest war-end dates are not attack dates.',
+            row.update(accounts=accounts, activity_coverage='Ranked activity uses stored battle logs; a gap in log reading or an absence does not establish inactivity. Each gap: read_ranked_activity with detail.',
+                       war_activity_coverage='Stored wars have no individual attack timestamps. Counts use wars whose battle day started at or after hibernation, or with no start time that ended over 48 hours after it; other overlapping wars retain unknown attack timing. Latest war-end dates are not attack dates.',
                        ownership_basis='current bot links; historical ownership unknown')
     sort_field = 'started_at' if arguments.get('sort') == 'longest_hibernating' else 'joined_at'
     rows.sort(key=lambda row:(row.get(sort_field) is None,row.get(sort_field) or '',row['member_id']))
