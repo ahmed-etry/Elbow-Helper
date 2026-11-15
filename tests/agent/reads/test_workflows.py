@@ -75,11 +75,50 @@ class WorkflowFamilyTests(unittest.IsolatedAsyncioTestCase):
         first = accounts[tags[0]]
         self.assertEqual(first['observed_ranked_attacks_since_start'], 1)
         self.assertEqual(first['latest_observed_ranked_attack_at'], '2020-01-01T00:01:00+00:00')
-        self.assertEqual(first['ranked_log_gaps_since_start'], [{'after': '2020-01-01T00:00:00+00:00',
-            'before': '2020-01-01T00:00:30+00:00', 'cause': 'before_first_read'}])
+        self.assertEqual(first['ranked_log_gaps_since_start'], 1)
+        self.assertEqual(first['ranked_log_gap_hours_since_start'], 0.0)
+        self.assertEqual(first['longest_ranked_log_gap_since_start'], {'after': '2020-01-01T00:00:00+00:00',
+            'before': '2020-01-01T00:00:30+00:00', 'cause': 'before_first_read'})
         self.assertEqual(accounts[tags[1]]['observed_ranked_attacks_since_start'], 0)
         self.assertIsNone(accounts[tags[-1]]['observed_ranked_attacks_since_start'])
         self.assertEqual(accounts[tags[-1]]['profile_status'], 'never_read')
+
+    async def test_hibernation_activity_of_a_member_with_many_accounts_reads_without_refusal(self):
+        # A member hibernating for over a year with 16 linked accounts, each with many short log gaps
+        # and one long one: every gap in the member row made it larger than a page between steps.
+        start, second, hour = 1577836800, 1_000_000, 3600
+        tags = ['#P0' + letter for letter in '0289PYLQGRJCUV'] + ['#P20', '#P22']
+        from tests.agent.reads.test_ranked import account as full_account, coverage, stored
+
+        def account(tag):
+            gaps = [{'after': (start + 2 * hour * index) * second, 'before': (start + 2 * hour * index + hour) * second,
+                     'cause': 'log_not_read'} for index in range(40)]
+            gaps.append({'after': (start + 100 * hour) * second, 'before': (start + 400 * 24 * hour) * second,
+                         'cause': 'overdue'})
+            return {**full_account(tag, status='partial'), 'battles': [],
+                    'log_coverage': {**coverage('partial'), 'gaps': gaps}}
+        window = AsyncMock(side_effect=lambda selector, values, **kw: stored([account(tag) for tag in values]))
+        context = _context()
+        for role in context.member.roles:
+            role.name = 'Synthetic'
+            role.is_default = lambda: False
+        context.guild.get_member = lambda identifier: context.member if identifier == context.member.id else SimpleNamespace(id=identifier, display_name='Synthetic', roles=[], joined_at=None)
+        context = replace(context, bot=SimpleNamespace(ranked_reads=SimpleNamespace(window=window)),
+            account_links=SimpleNamespace(get_links_for_members=lambda ids: {41: [{'player_tag': tag} for tag in tags]}))
+        source = {'rows': [{'member_id': 41, 'started_at': '2020-01-01T00:00:00+00:00',
+                            'started_ts': start, 'start_time_status': 'recorded'}]}
+        tool = next(tool for tool in reads.TOOLS if tool.definition.name == 'read_hibernation')
+        with patch.object(reads, 'complete_snapshot', AsyncMock(return_value=source)):
+            page = await tool.handler(context, {'include_activity': True, 'activity_kinds': ['ranked']})
+        self.assertNotIn('error', page)
+        self.assertEqual((page['total_rows'], len(page['rows'])), (1, 1))
+        accounts = page['rows'][0]['accounts']
+        self.assertEqual(sorted(item['player_tag'] for item in accounts), sorted(tags))
+        for item in accounts:
+            self.assertEqual(item['ranked_log_gaps_since_start'], 41)
+            # The 40 short gaps end before the long one starts: 40 hours plus 9,500 hours.
+            self.assertEqual(item['ranked_log_gap_hours_since_start'], 9540.0)
+            self.assertEqual(item['longest_ranked_log_gap_since_start']['cause'], 'overdue')
 
 
     async def test_trial_end_followup_never_invents_a_new_acceptance_or_finalization(self):

@@ -208,10 +208,10 @@ async def read_clash(context, arguments):
     ):
         return invalid_arguments("Select 1 to 40 dotted Clash field paths.", "fields")
     cap = 200 if kind == "player" else 20
-    if (
-        kind not in ENDPOINTS or not 1 <= len(tags) <= cap
-    ):
-        return invalid_arguments("The selected Clash batch is too large or has an unknown kind.", "kind", "tags")
+    if kind not in ENDPOINTS:
+        return invalid_arguments("Choose a supported Clash kind.", "kind")
+    if not 1 <= len(tags) <= cap:
+        return invalid_arguments(f"Select 1 to {cap} Clash tags for {kind}.", "tags")
     normalized = []
     for value in tags:
         clan = (
@@ -240,8 +240,9 @@ async def read_clash(context, arguments):
     if any(tag not in collected for tag in normalized) and (client is None or not client.configured):
         return {"error": "The Clash API is not set up."}
     limit = arguments.get("limit", 2 if kind == "capital_raids" else 10)
-    if type(limit) is not int or not 1 <= limit <= (10 if kind == "capital_raids" else 50):
-        return invalid_arguments("The selected Clash history limit is invalid.", "limit")
+    limit_cap = 10 if kind == "capital_raids" else 50
+    if type(limit) is not int or not 1 <= limit <= limit_cap:
+        return invalid_arguments(f"Use a Clash history limit from 1 to {limit_cap} for {kind}.", "limit")
     order, offset = arguments.get("order", "newest_first"), arguments.get("offset", 0)
     try:
         after, before = search_date(arguments.get("after")), search_date(arguments.get("before"))
@@ -253,9 +254,6 @@ async def read_clash(context, arguments):
     except (ValueError, TypeError, AttributeError):
         return invalid_arguments("Use valid ISO dates, chronological order and offset for battle logs only.",
                                  "after", "before", "order", "offset")
-    aggregate = arguments.get("aggregate")
-    if aggregate is not None:
-        return invalid_arguments("Choose a supported battle-log aggregate.", "aggregate")
     items = [{"tag": tag, "status": "unavailable"} for tag in normalized]
     semaphore = asyncio.Semaphore(8)
     deadline = time.monotonic() + budgets.TOOL_TIMEOUT_SECONDS - 1
@@ -436,11 +434,11 @@ def clash_tools():
                 },
                 "required": ["kind", "tags"], "additionalProperties": False,
                 RULES: [{"when": {"kind": [kind for kind in ENDPOINTS if kind != "battle_log"]},
-                         "forbids": ["order", "offset", "after", "before", "aggregate"],
-                         "error": "Use order, offset, dates and aggregates for battle logs only."}],
+                         "forbids": ["order", "offset", "after", "before"],
+                         "error": "Use order, offset and dates for battle logs only."}],
             },
             usage_note="Use resolved tags, never placeholder values; fields overrides detail. War/CWL facts: external clans only. CWL-only clans need a CWL cohort first.",
         ),
         read_clash,
-        contract=CapabilityContract(), returns="items[].tag,status,data; observed_at",
+        contract=CapabilityContract(),
     ),)

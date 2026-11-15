@@ -48,7 +48,7 @@ def poll_tools():
 async def post_channel(context, identifier):
     channel = await resolve_channel(context, identifier)
     if not callable(getattr(channel, "send", None)):
-        raise DiscordActionRefused("The selected poll is invalid.")
+        raise DiscordActionRefused("That channel cannot receive messages.")
     thread_types = (discord.ChannelType.public_thread, discord.ChannelType.private_thread,
                     discord.ChannelType.news_thread)
     sending = ("send_messages_in_threads" if getattr(channel, "type", None) in thread_types

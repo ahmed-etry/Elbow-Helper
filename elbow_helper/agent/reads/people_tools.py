@@ -17,5 +17,4 @@ def account_read_tools():
             usage_note="Use before player lookups. These bot links are separate from ClashPerk links; no API token is needed to read a linked account's public profile.",
         ), read_people_links,
         contract=CapabilityContract(entity_fields=(("member_ids", "discord_member_set"),)),
-        returns="accounts:[{member_id,player_tag,player_name}],unlinked_member_ids,member_ids,account_count,member_count",
     ),)

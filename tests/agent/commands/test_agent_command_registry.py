@@ -74,6 +74,13 @@ class CommandRegistryTests(unittest.TestCase):
             "applicant_second_opinion", "health_player",
             "health_clan", "health_settings",
         })
+        from elbow_helper.agent.engine.registry import build_agent_tools
+        reserved_names = set(build_agent_tools())
+        with patch('elbow_helper.agent.engine.registry.build_agent_tools',
+                   side_effect=AssertionError('Request already built the registry')):
+            tools, reused = build_command_tools(bot, enabled_adapters(), reserved_names=reserved_names)
+        self.assertEqual(set(reused), set(capabilities))
+        self.assertEqual(set(tools), set(capabilities))
         self.assertEqual(capabilities["applicant_second_opinion"].required, ("ticket",))
         self.assertEqual(capabilities["health_player"].required, ("account",))
         self.assertEqual(

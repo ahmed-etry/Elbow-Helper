@@ -97,7 +97,7 @@ async def create_action(context, arguments):
     if arguments["kind"] == "category" and any(
         key in arguments for key in ("category_id", "topic", "slowmode_seconds")
     ):
-        raise DiscordActionRefused("The selected category is invalid.")
+        raise DiscordActionRefused("Categories do not support category_id, topic or slowmode_seconds.")
     parent = await category(context, arguments.get("category_id"))
     _, permission_lines = await initial_overwrites(context, parent, arguments.get("overwrites", []))
 
@@ -138,7 +138,7 @@ async def edit_action(context, arguments, *, undo=False):
     if channel.type == discord.ChannelType.category and any(
         key in arguments for key in ("category_id", "topic", "slowmode_seconds")
     ):
-        raise DiscordActionRefused("The selected category is invalid.")
+        raise DiscordActionRefused("Categories do not support category_id, topic or slowmode_seconds.")
     moving = desired["category_id"] != before["category_id"]
     if moving:
         await category(context, desired["category_id"])

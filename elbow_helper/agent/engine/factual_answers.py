@@ -149,7 +149,7 @@ def numeric_conflicts(question, answer, evidence, *, ranked_only=False):
         query_counts = {str(index): result for index, result in enumerate(observations(evidence))
                         if "rows" in result and "row_count" in result}
         try:
-            expected = strict_answer(question, query_counts)
+            expected = strict_answer(query_counts)
         except GroundingError:
             expected = None
         if expected is not None and expected.isdigit():

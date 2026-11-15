@@ -82,13 +82,17 @@ async def prepare_role_connection_change(context: AgentRequestContext,
     connection_id = values.get("connection_id")
     before = workflow.role_connection_state(connection_id) if connection_id else None
     if operation == "create":
-        if connection_id or "target_role_id" not in values:
+        if connection_id:
             raise ActionRefused('That role connection is unavailable.')
+        if "target_role_id" not in values:
+            return {"error": "Supply a target role.", "cause": "invalid_arguments",
+                    "missing_fields": ["target_role_id"]}
         connection_id = workflow.new_connection_id()
         after = {"id": connection_id, "target_role_id": values["target_role_id"],
                  "all": list(values.get("all", [])), "any": list(values.get("any", []))}
         if not after["all"] and not after["any"]:
-            raise ActionRefused('That role connection is unavailable.')
+            return {"error": "Supply all or any conditions.", "cause": "invalid_arguments",
+                    "missing_fields": ["all", "any"]}
     elif operation == "update":
         if before is None:
             raise ActionRefused('That role connection is unavailable.')

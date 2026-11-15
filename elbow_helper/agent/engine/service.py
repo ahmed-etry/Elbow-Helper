@@ -154,6 +154,7 @@ class AgentService:
             command_tools, command_capabilities = build_command_tools(
                 context.bot,
                 enabled_adapters(),
+                reserved_names=set(capability_registry),
             )
             capability_registry.update(command_tools)
             current_member = context.guild.get_member(context.member.id)

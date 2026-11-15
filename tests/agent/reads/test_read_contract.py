@@ -38,6 +38,7 @@ COMPLETE = {
     'read_war_attacks': {'war_type': 'both', 'latest_completed': 1},
     'read_member_cohort': {'basis': 'joined_discord'},
     'read_ranked_activity': {'after': START, 'member_ids': [41]},
+    'read_donation_history': {'after': START, 'before': END, 'clan_codes': ['BEH']},
     'read_member_accounts': {'member_ids': [41]},
     'read_discord_access': {'member_ids': [41]},
     'read_discord_members': {'member_ids': [41]},
@@ -52,22 +53,30 @@ COMPLETE = {
 # Planner mistakes the plan check refuses before any read runs.
 MISTAKES = {
     'read_war_participation': [
-        {'war_type': 'REG'}, {'war_type': 'REG', 'season': '2026-09', 'latest_completed': 2},
+        {'war_type': 'REG'}, {'war_type': 'REG', 'season_keys': ['2026-09'], 'latest_completed': 2},
         {'war_type': 'REG', 'before': END}, {'war_type': 'REG', 'season': 'September'},
         {'war_type': 'REG', 'after': NAIVE}],
     'read_war_attacks': [
-        {'war_type': 'CWL'}, {'war_type': 'REG', 'season': '2026-09', 'latest_completed': 2},
+        {'war_type': 'CWL'}, {'war_type': 'REG', 'season_keys': ['2026-09'], 'latest_completed': 2},
         {'war_type': 'REG', 'before': END}, {'war_type': 'both', 'after': NAIVE},
         {'war_type': 'REG', 'season': '2026-09', 'account_tags': ['#P0'], 'member_ids': [41]}],
     'read_cwl_results': [
         {'metric': 'ass'}, {'metric': 'bonus', 'clan_codes': [NON_CWL]},
         {'metric': 'ass', 'clan_codes': [CWL_CLAN_CODES[0]], 'history_limit': 2},
         {'metric': 'bonus', 'clan_codes': [CWL_CLAN_CODES[0]], 'history_limit': 3},
-        {'metric': 'ass', 'clan_codes': [CWL_CLAN_CODES[0]], 'season': '2026-09', 'latest_completed': 3},
+        {'metric': 'ass', 'clan_codes': [CWL_CLAN_CODES[0]], 'season_keys': ['2026-09'], 'latest_completed': 3},
         {'metric': 'participation', 'season': '2026-09', 'history_limit': 2},
-        {'metric': 'signup_pool', 'season_keys': ['2026-09']}, {'metric': 'assigned_rosters', 'season': '2026-09', 'after': START},
+        {'metric': 'signup_pool', 'history_limit': 2}, {'metric': 'assigned_rosters', 'season': '2026-09', 'after': START},
         {'metric': 'mega_ass', 'season_keys': ['2026-09']},
-        {'metric': 'league', 'latest_completed': 1}, {'before': END}],
+        {'metric': 'league', 'latest_completed': 1}, {'before': END},
+        # Performance is the default metric: a second period selector changed the data or failed in the lookup.
+        {'metric': 'performance', 'season': '2026-09', 'history_limit': 2},
+        {'season': '2026-09', 'season_keys': ['2026-08']},
+        {'metric': 'performance', 'season_keys': ['2026-08'], 'latest_completed': 3},
+        {'season': '2026-09', 'after': START, 'before': END},
+        # sheet_by only shapes an XLSX file.
+        {'metric': 'performance', 'sheet_by': 'clan_code'},
+        {'metric': 'performance', 'sheet_by': 'clan_code', 'delivery': 'csv'}],
     'read_member_accounts': [
         {'name': 'Synthetic'}, {'account_names': ['Synthetic']},
         {'name': 'Synthetic', 'member_ids': [41], 'look_in': 'game'},
@@ -80,7 +89,15 @@ MISTAKES = {
         {'basis': 'role_holders', 'role_name': 'Synthetic', 'role_ids': [1]},
         {'basis': 'role_holders', 'role_ids': [1], 'clan_codes': ['BEH'], 'clan_role': 'member'},
         {'basis': 'accepted_recruitment', 'joined_after': START},
-        {'basis': 'joined_discord', 'joined_after': NAIVE}],
+        {'basis': 'joined_discord', 'joined_after': NAIVE},
+        # Options this basis never reads were accepted and changed nothing.
+        {'basis': 'joined_discord', 'roster_basis': 'current_in_game'},
+        {'basis': 'joined_discord', 'clan_codes': ['BEH']},
+        {'basis': 'joined_discord', 'clan_role': 'member'},
+        {'basis': 'role_holders', 'role_ids': [1], 'clan_role': 'member'},
+        {'basis': 'joined_discord', 'after': START}],
+    # The season was read and history_limit dropped without a word.
+    'read_cwl_performance': [{'season': '2026-09', 'history_limit': 2}],
     'read_conversation_evidence': [
         {'mode': 'search'}, {'mode': 'search', 'channel_id': 91, 'channel_ids': [92]},
         {'mode': 'message_window', 'channel_id': 91}, {'mode': 'channel_window'},
@@ -91,7 +108,11 @@ MISTAKES = {
     'read_discord_members': [{'hibernation_report_id': 'synthetic', 'member_ids': [41]},
                              {'joined_after': NAIVE}],
     'search_discord_messages': [{'channel_id': 91, 'channel_ids': [92]}],
-    'read_ranked_activity': [{'after': START}, {'after': START, 'cohort_ref': 'synthetic', 'member_ids': [41]}],
+    'read_ranked_activity': [{'after': START}, {'after': START, 'cohort_ref': 'synthetic', 'member_ids': [41]},
+                             {'after': START, 'member_ids': [41], 'season': '2026-09'},
+                             {'after': START, 'member_ids': [41], 'membership_basis': 'current_in_game'}],
+    'read_donation_history': [{'after': START}, {'after': START, 'clan_codes': ['BEH'], 'member_ids': [41]},
+                              {'after': NAIVE, 'clan_codes': ['BEH']}],
     'read_clash': [{'kind': 'clan', 'tags': ['BEH'], 'offset': 2}],
     'start_discord_research_job': [{'channel_id': 91}],
     'start_discord_research_batch': [
@@ -102,7 +123,6 @@ MISTAKES = {
 # Mistakes only the run can see (they depend on the request time); the handler must
 # still return them as one top-level planner error.
 RUNTIME_MISTAKES = {
-    'read_membership_history': [{'after': RECENT, 'history_after': '2025-01-01T00:00:00+00:00'}],
     'remember_task_instruction': [{'label': 'Synthetic', 'quote': 'not in the request'}],
     'retire_task_instruction': [{'instruction_id': 'synthetic'}],
 }
@@ -242,6 +262,11 @@ class InputRuleTests(unittest.TestCase):
             with self.subTest(metric=metric):
                 self.assertTrue(self.check('read_cwl_results', {
                     'metric': metric, 'clan_codes': ['BEH'], 'history_limit': 2}).ok)
+
+    def test_a_season_can_be_narrowed_to_its_newest_wars_for_performance(self):
+        for metric in ({'metric': 'performance'}, {}):
+            self.assertTrue(self.check('read_cwl_results', {
+                **metric, 'season': '2026-09', 'latest_completed': 3}).ok)
 
     def test_a_report_continuation_skips_selection_rules(self):
         self.assertTrue(self.check('read_war_participation', {'report_id': 'synthetic'}).ok)

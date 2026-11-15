@@ -46,8 +46,7 @@ def member_lifecycle_tools() -> tuple[RegisteredAgentTool, ...]:
         (
             "read_member_history",
             "Read a member's server joins and leaves, with recruitment source and leave reason, oldest first.",
-            {"member_id": {"type": "integer", "minimum": 1},
-             "cursor": {"type": "string", "maxLength": 64}},
+            {"member_id": {"type": "integer", "minimum": 1}},
             ("member_id",), read_member_history,
         ),
         (
@@ -85,7 +84,7 @@ async def read_member_lifecycle(
     if context.member_lifecycle_queries is None:
         return {"error": "Member lifecycle observations are not available."}
     if await accessible_message_channel(context, OVERSEEING_TERRACE) is None:
-        return {"error": "The member lifecycle source is not accessible."}
+        return {"error": "The member lifecycle source is not accessible.", "cause": "access_denied"}
     current_members = {
         member.id: member.display_name for member in context.guild.members
     }

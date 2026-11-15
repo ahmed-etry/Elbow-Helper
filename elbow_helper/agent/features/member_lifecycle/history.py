@@ -19,7 +19,7 @@ def _iso(at):
 async def read_member_history(context, arguments):
     await require_evidence_access(context)
     if await accessible_message_channel(context, OVERSEEING_TERRACE) is None:
-        return {"error": "The member lifecycle source is not accessible."}
+        return {"error": "The member lifecycle source is not accessible.", "cause": "access_denied"}
     member_id = arguments.get("member_id")
     if type(member_id) is not int or member_id <= 0:
         return {"error": "Supply a valid member ID."}
@@ -33,7 +33,7 @@ async def read_member_history(context, arguments):
     except (ValueError, OSError, sqlite3.Error):
         return {"error": "Stored member lifecycle observations could not be read."}
     if await accessible_message_channel(context, OVERSEEING_TERRACE) is None:
-        return {"error": "The member lifecycle source is not accessible."}
+        return {"error": "The member lifecycle source is not accessible.", "cause": "access_denied"}
     context.state.source_channels.add(OVERSEEING_TERRACE)
     await require_evidence_access(context)
     entries = []

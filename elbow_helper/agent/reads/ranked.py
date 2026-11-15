@@ -19,6 +19,9 @@ SECOND = 1_000_000
 FAILURES = (OSError, sqlite3.Error, TimeoutError, SQLiteMigrationError, ValueError)
 MAX_ACCOUNTS = 10_000
 SELECTOR_ERROR = 'Choose members, accounts or clans.'
+SEASON_ERROR = 'season and membership_basis apply only to clan_tags that include a CWL-only clan.'
+COVERAGE_FIELDS = ('clan_code', 'name', 'tag', 'basis', 'season', 'status', 'observed_at',
+                   'cohort_accounts', 'included_accounts', 'excluded_accounts', 'unknown_filter_accounts')
 LIMITATIONS = ["selection_rank_uses_last_stored_trophies_within_selected_accounts",
                "attacks_used_counts_stored_ranked_and_legend_attacks_including_losses",
                "log_coverage_gaps_can_hide_battles", "attack_quota_unavailable",
@@ -102,6 +105,10 @@ async def read_ranked(context, arguments, *, selection_maximum=200, starts=None)
     request = checked_request(arguments, selection_maximum)
     if isinstance(request, dict):
         return request
+    if (arguments.get('season') or arguments.get('membership_basis')) and not (
+            request.selector == 'clan_tags'
+            and any(clan.cwl_only and clan.tag in request.values for clan in CLANS.values())):
+        return invalid_arguments(SEASON_ERROR, 'season', 'membership_basis')
     roster_coverage = None
     if request.selector == 'clan_tags' and arguments.get('membership_basis', 'community') == 'community':
         codes = [next((code for code, clan in CLANS.items() if clan.tag == value), None) for value in request.values]

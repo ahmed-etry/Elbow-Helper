@@ -105,11 +105,12 @@ def validate_command_names(
 
 
 def build_command_capabilities(
-    bot: Any, adapters: Sequence[CommandAdapter],
+    bot: Any, adapters: Sequence[CommandAdapter], *, reserved_names: set[str] | None = None,
 ) -> dict[str, CommandCapability]:
     """Expose only adapters backed by both a command and a help entry."""
-    from ..engine.registry import build_agent_tools
-    reserved_names = set(build_agent_tools())
+    if reserved_names is None:
+        from ..engine.registry import build_agent_tools
+        reserved_names = set(build_agent_tools())
     validate_command_names(adapters, reserved_names)
     commands = discover_commands(bot)
     help_entries = {entry.path: entry for entry in HELP_ENTRIES}

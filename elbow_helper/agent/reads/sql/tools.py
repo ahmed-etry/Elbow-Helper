@@ -29,5 +29,5 @@ def dataset_tools():
             ),
         ),
         query_bot_data,
-        contract=CapabilityContract(), returns="rows[] with the selected columns",
+        contract=CapabilityContract(),
     ),)

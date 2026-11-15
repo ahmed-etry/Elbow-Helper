@@ -24,7 +24,7 @@ class RolePreviewDiscoveryTests(unittest.IsolatedAsyncioTestCase):
         context = replace(context, hibernation_queries=SimpleNamespace(is_hibernating=lambda _: False))
         tools = {t.definition.name: replace(t, specialist_group='changes') for t in discord_role_tools()}
         active = {}
-        opened = await discovery_tool(tools, active, lambda: None).handler(context,
+        opened = await discovery_tool(context, tools, active, lambda: None).handler(context,
             {'group': 'changes', 'intent': 'inspect'})
         preview = active['read_discord_role_change_preview']
         self.assertIs(preview.effect, AgentCapabilityEffect.READ)

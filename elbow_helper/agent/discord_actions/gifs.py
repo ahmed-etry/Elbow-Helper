@@ -21,7 +21,7 @@ def gif_tools():
         usage_note="Social replies name a library meme in submit_social_reply. Delivered automatically; never paste GIF links."),
         find_gif,
         effect=AgentCapabilityEffect.READ, action_class=ActionClass.OUTPUT,
-        contract=CapabilityContract(()), returns="url"),)
+        contract=CapabilityContract(())),)
 
 
 def channel_gif_history(messages, bot_id):

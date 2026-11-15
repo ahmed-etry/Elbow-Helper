@@ -39,8 +39,7 @@ def discord_role_tools() -> tuple[RegisteredAgentTool, ...]:
                 "required": ["member_ids", "operation"], "additionalProperties": False},
             usage_note='Read-only eligibility and exact delta; use this for inspection. To prepare a confirmation preview use add_discord_roles or remove_discord_roles directly.',
         ), read_role_change_preview, contract=CapabilityContract(
-            entity_fields=(("role_id", "discord_role"), ("member_ids", "discord_member_set"))),
-        returns="role_id,role_name,members:[{member_id,current_role_ids,add_role_ids,remove_role_ids,allowed,refusal}]"),
+            entity_fields=(("role_id", "discord_role"), ("member_ids", "discord_member_set")))),
         RegisteredAgentTool(AgentToolDefinition(
             name="add_discord_roles",
             description="Prepare a confirmation preview to add one Discord role by exact name or ID; never applies it.",

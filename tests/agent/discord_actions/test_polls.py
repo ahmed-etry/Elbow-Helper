@@ -80,7 +80,7 @@ class PollTests(unittest.IsolatedAsyncioTestCase):
     async def test_non_message_channel_is_refused_before_preview(self):
         context, channel, _ = self.context()
         channel.send = None
-        with self.assertRaisesRegex(ValueError, "The selected poll is invalid"):
+        with self.assertRaisesRegex(ValueError, "That channel cannot receive messages"):
             await prepare_poll(context, {"channel_id": 200, "question": "Synthetic",
                                          "answers": ["A", "B"], "duration_hours": 1})
         self.assertFalse(context.state.proposed_changes)

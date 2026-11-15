@@ -174,9 +174,12 @@ async def requester_tickets(context, arguments):
     A channel name, a read grant or a participant mention in member prose is
     never ownership evidence. The original bot opener is a structured source.
     """
-    if (arguments.get('member_ids') not in (None, [context.member.id])
-            or any(arguments.get(key) for key in ('performance', 'after', 'before', 'source_cursor'))):
+    if arguments.get('member_ids') not in (None, [context.member.id]):
         return {'error': 'That recruitment ticket is unavailable here.', 'cause': 'scope_refused'}
+    unsupported = [key for key in ('performance', 'after', 'before', 'source_cursor') if arguments.get(key)]
+    if unsupported:
+        return {'error': 'Requester tickets do not support performance, dates or source_cursor.',
+                'cause': 'invalid_arguments', 'invalid_fields': unsupported}
     candidates, private_available = [], False
     for channel in sorted(context.guild.text_channels, key=lambda item: item.id):
         if (channel.category_id != RECRUITMENT_TICKET_CATEGORY

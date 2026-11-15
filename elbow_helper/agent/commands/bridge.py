@@ -62,16 +62,16 @@ def _record_outcome(context: Any, outcome: ActionOutcome,
 
 
 def build_command_tools(
-    bot: Any, adapters: Sequence[CommandAdapter],
+    bot: Any, adapters: Sequence[CommandAdapter], *, reserved_names: set[str] | None = None,
 ) -> tuple[dict[str, RegisteredAgentTool], dict[str, CommandCapability]]:
-    capabilities = build_command_capabilities(bot, adapters)
+    capabilities = build_command_capabilities(bot, adapters, reserved_names=reserved_names)
     tools: dict[str, RegisteredAgentTool] = {}
     for name, capability in capabilities.items():
         async def handle(context, values, selected=capability):
             if selected.visible_to is not None:
                 member = context.guild.get_member(context.member.id)
                 if member is None or not any(role.id in selected.visible_to for role in member.roles):
-                    return {"error": ACTION_UNAVAILABLE}
+                    return {"error": ACTION_UNAVAILABLE, "cause": "access_denied"}
             missing_options = tuple(
                 option for option in selected.option_info
                 if option.name in selected.required
