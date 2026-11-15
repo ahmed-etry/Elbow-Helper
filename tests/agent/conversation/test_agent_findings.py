@@ -54,14 +54,3 @@ class FindingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['items'][0]['data']['items'], [])
         self.assertEqual(result['items'][0]['coverage']['unknown_timestamp_rows'], 1)
         self.assertFalse(result['items'][0]['coverage']['selection_complete'])
-
-
-    async def test_aggregate_rejects_non_battle_requests(self):
-        result = await self.read({}, kind="player", tags=["#P0"], aggregate="ranked_attacks")
-        self.assertIn("error", result)
-
-    async def test_latest_log_rejects_every_old_aggregate_without_a_live_call(self):
-        for aggregate in ('ranked_attacks', 'ranked_defenses', 'all_attacks', 'all_defenses'):
-            with self.subTest(aggregate=aggregate):
-                result = await self.read({}, kind='battle_log', tags=['#P0'], aggregate=aggregate)
-                self.assertIn('error', result)

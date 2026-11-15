@@ -6,14 +6,15 @@ from elbow_helper.agent.reads.people import PeopleAdapter, PeopleSelection
 
 
 async def roster_cohort(context, arguments):
-    from elbow_helper.agent.reads.identity_reads import clan_rosters, member_fields, DEFAULT_ROSTER_BASIS
+    from elbow_helper.agent.reads.identity_reads import clan_rosters, member_fields, joined_order, DEFAULT_ROSTER_BASIS
     from elbow_helper.agent.reads.member_context import PROFILE_ROLE_GROUPS
+    people = PeopleAdapter(context)
     roster = await clan_rosters(context, {**arguments,
-        'basis': arguments.get('roster_basis', DEFAULT_ROSTER_BASIS)})
+        'basis': arguments.get('roster_basis', DEFAULT_ROSTER_BASIS)}, people)
     if 'error' in roster:
         return roster
     tags = sorted({row['player_tag'] for row in roster['rows'] if row.get('player_tag')})
-    selected_links = await PeopleAdapter(context).links(PeopleSelection('accounts', tuple(tags)))
+    selected_links = await people.links(PeopleSelection('accounts', tuple(tags)))
     if selected_links.status == 'source_unavailable':
         return {'error': 'Account links are not available.', 'cause': 'source_unavailable'}
     links = selected_links.by_tag
@@ -53,6 +54,8 @@ async def roster_cohort(context, arguments):
                    if activity['war_source_status'] == 'not_checked' else {})})
     rows.sort(key=lambda row: (row['member_id'] is None, row['member_id'] or 0,
                                row['accounts'][0].get('player_tag') or ''))
+    if arguments.get('sort'):
+        rows.sort(key=lambda row: joined_order(row, 'joined_at', arguments['sort'] == 'newest_first'))
     return {'rows': rows, 'basis': 'clan_rosters',
             **({'configured_role_groups': list(PROFILE_ROLE_GROUPS)} if arguments.get('include_roles') else {}),
             'account_count': len(tags),

@@ -151,18 +151,19 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
     async def _process_unlinked_players(self) -> None:
         links = (await asyncio.to_thread(self.get_all_links))
         members = await self._candidate_members()
+        ignored, pending_suggestions = await asyncio.to_thread(self.poll_suggestion_state)
+        refreshes: dict[str, dict[str, str]] = {}
         for player_tag, row in self._player_locations.items():
             if player_tag in ignored:
                 continue
             if player_tag in links:
-                await self.update_link_last_seen(
-                    player_tag=player_tag,
-                    player_name_last_seen=str(row.get("player_name") or ""),
-                    last_seen_clan_tag=str(row.get("clan_tag") or ""),
-                    last_seen_clan_code=str(row.get("clan_code") or ""),
-                    last_seen_role=str(row.get("role") or ""),
-                )
-                pending = (await asyncio.to_thread(self.get_pending_suggestion, player_tag))
+                refreshes[player_tag] = {
+                    "player_name_last_seen": str(row.get("player_name") or ""),
+                    "last_seen_clan_tag": str(row.get("clan_tag") or ""),
+                    "last_seen_clan_code": str(row.get("clan_code") or ""),
+                    "last_seen_role": str(row.get("role") or ""),
+                }
+                pending = pending_suggestions.get(player_tag)
                 if pending:
                     (await asyncio.to_thread(self.delete_suggestion, player_tag))
                     await self._finalize_suggestion_message(pending)
@@ -180,6 +181,8 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
                     "proposed_display_name": candidate.member.display_name if candidate else "",
                 }
             )
+        if refreshes:
+            await self.update_links_last_seen(refreshes)
 
     async def lookup_players(self, player_tags: list[str]) -> list[dict[str, str]]:
         """Return linkable players, omitting only confirmed nonexistent tags."""

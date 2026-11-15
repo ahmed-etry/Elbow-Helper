@@ -414,6 +414,30 @@ class PlayerCollectorTests(PlayerTestCase):
         self.assertEqual(len(recovered.output), 1)
         self.assertIn("player_profile #P0", recovered.output[0])
 
+    async def test_an_outage_logs_each_distinct_cause_once_with_how_many_accounts_had_it(self):
+        letters = "0289PYLQGRJCUV"
+        tags = ["#" + "".join(letters[number // 14 ** place % 14] for place in range(3)) for number in range(300)]
+        await self.roster(10, [player(tag) for tag in tags])
+        resets = {f"/players/%23{tag[1:]}" for tag in tags[::6]}
+
+        async def get(path):
+            if path in resets:
+                raise OSError("connection reset")
+            raise TimeoutError("private")
+
+        self.client.get.side_effect = get
+        with self.assertLogs("elbow_helper.data.collectors.service", level="DEBUG") as logs:
+            await self.collect(100)
+            await self.collect(HOUR_US + 100)
+        self.assertEqual(len(logs.output), 2)
+        for output in logs.output:
+            self.assertEqual(output.count("Traceback"), 2)
+            self.assertIn("TimeoutError: private", output)
+            self.assertIn("OSError: connection reset", output)
+            self.assertIn("same failure for 250 items", output)
+            self.assertIn("same failure for 50 items", output)
+            self.assertLess(output.count("\n"), 60)
+
     async def test_cancelled_profile_pass_marks_unattempted_accounts_skipped(self):
         await self.roster(10, [player(), player("#Q0")])
         entered = asyncio.Event()

@@ -5,7 +5,7 @@ from datetime import datetime
 from dataclasses import replace
 import time
 
-from elbow_helper.configuration.clans import CLANS, CLAN_ORDER
+from elbow_helper.configuration.clans import CLANS, CLAN_ORDER, CLAN_CWL_ROLE_IDS
 from elbow_helper.configuration.roles import MEMBER_ROLE_ID, TRIAL_ROLE_ID
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.agent.reads.snapshots import family_tool, Whole, IDS, TAGS, DATE
@@ -283,8 +283,8 @@ async def clan_rosters(context, arguments, people=None):
     deadline = time.monotonic() + TOOL_TIMEOUT_SECONDS - 3
     context = replace(context, deadline_monotonic=min(deadline, context.deadline_monotonic)
                       if context.deadline_monotonic is not None else deadline)
-    codes = arguments.get('clan_codes', list(CLANS))
     basis = arguments.get('basis', DEFAULT_ROSTER_BASIS)
+    codes = arguments.get('clan_codes', list(CLAN_CWL_ROLE_IDS if basis == 'seasonal_cwl' else CLANS))
     result, summaries = [], []
     current = await read_clash(context, {'kind': 'clan', 'tags': [CLANS[code].tag for code in codes],
                    'member_scope': 'current', 'detail': 'full', 'limit': 50})
@@ -681,7 +681,7 @@ TOOLS = (
       'roster_basis': ROSTER_BASIS,
       'exclude_leadership': EXCLUDE_LEADERSHIP,
       'include_activity': {'type': 'boolean', 'description':
-          'Selected-account season donations and war activity within after/before; Discord last_active_day (UTC), '
+          'Selected-account current season donations; war activity within after/before; Discord last_active_day (UTC), '
           'active_streak_days and lifetime_messages from all-channel achievements records, independent of that period. '
           'Without after, returns stored Discord activity and marks game war activity not checked.'}, 'after': DATE, 'before': DATE,
       'member_ids': IDS, 'cohort_ref': {**COHORT_REF, 'description':

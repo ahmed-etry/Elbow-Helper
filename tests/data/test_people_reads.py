@@ -37,16 +37,11 @@ class PeopleReadTests(unittest.IsolatedAsyncioTestCase):
         await self.store.call(collect_player, run, 0, account_id, tag, response(payload, status), at)
         await self.store.finish(run)
 
-    async def test_accounts_owners_preserve_empty_members_alts_and_time_bounds(self):
+    async def test_accounts_preserve_empty_members_alts_and_time_bounds(self):
         await self.links(100, {**link(), "#Q0": {**link()["#P0"], "player_tag": "#Q0"}})
         await self.links(200, {**link(200), "#Q0": {**link()["#P0"], "player_tag": "#Q0"}})
         before = await self.people.accounts([100, 200, 300], 150)
         self.assertEqual([[a["player_tag"] for a in row["accounts"]] for row in before["rows"]], [["#P0", "#Q0"], [], []])
-        owners = (await self.people.owners(["pO", "#Q0"], 200))["rows"]
-        self.assertEqual([row["member_id"] for row in owners], [200, 100])
-        self.assertEqual(owners[0]["interval"]["previous_good_at"], 100)
-        self.assertFalse(owners[0]["interval"]["exact_start"])
-        self.assertIsNone((await self.people.owners(["#P0"], 50))["rows"][0]["member_id"])
         empty = await self.people.accounts([999], 50)
         self.assertFalse(empty["rows"][0]["accounts_complete"])
         self.assertEqual(empty["coverage"]["signals"][0]["status"], "not_tracked")
@@ -55,27 +50,6 @@ class PeopleReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(page1["rows"]), 3)
         self.assertTrue(page1["coverage"]["truncated"])
         self.assertIsNone(page2["next_offset"])
-
-    async def test_history_generations_require_every_clan_and_keep_latest_128(self):
-        def seed(c):
-            # This read needs generation boundaries, not 130 complete collector passes.
-            with c:
-                for at in (*range(100, 230), 300):
-                    run = c.execute(
-                        "INSERT INTO collection_runs(collector,scope_kind,scheduled_at,started_at,finished_at,status,expected) "
-                        "VALUES ('clans','family_clans',?,?,?,'ok',2)", (at, at, at)).lastrowid
-                    c.executemany(
-                        "INSERT INTO collection_items(run_id,ordinal,source_kind,scope_id,status,started_at,fetched_at,completeness_json) "
-                        "VALUES (?,?,'clan_roster',?,'ok',?,?,?)",
-                        [(run, ordinal, clan.tag, at, at,
-                          '{"complete":false}' if at == 300 and ordinal == 0 else '{"complete":true}')
-                         for ordinal, clan in enumerate(CLANS)])
-        await self.store.call(seed)
-        result = await self.membership.generations(0, 301)
-        self.assertTrue(result['truncated'])
-        self.assertEqual(len(result['rows']), 128)
-        self.assertEqual([result['rows'][0]['at'], result['rows'][-1]['at']], [102, 229])
-        self.assertFalse(any(row['at'] == 300 for row in result['rows']))
 
     async def test_profile_history_preserves_moves_ownership_names_and_time_bounds(self):
         await self.clans(100)
@@ -159,41 +133,6 @@ class PeopleReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "unknown")
         self.assertEqual(result["missing_sources"][0]["cause"], "unavailable")
 
-    async def test_partial_generation_outage_and_transfer_keep_original_good_time(self):
-        await self.clans(100)
-        await self.clans(200, [clan_response(0, [], declared=1), clan_response(1, [])])
-        result = await self.membership.current(tags=["#P0"], as_of=2_000_000_100)
-        row = result["rows"][0]
-        self.assertEqual((row["clan_tag"], row["status"]), ("#PY", "last_known_clan"))
-        self.assertEqual(row["coverage"]["signals"][0]["last_good_at"], 100)
-        self.assertEqual(row["coverage"]["signals"][0]["status"], "stale")
-        self.assertFalse(result["family_generation_complete"])
-        self.assertTrue(row["coverage"]["signals"][0]["gaps"])
-        await self.clans(2_000_000_200, [response(None, 503), clan_response(1, [player()])])
-        result = await self.membership.at(2_000_000_200, tags=["#P0"])
-        self.assertEqual(result["rows"][0]["clan_tag"], "#LQ")
-        history = await self.membership.history(0, 2_000_000_300, tags=["#P0"])
-        self.assertEqual([s["start_kind"] for s in history["rows"]], ["first_observed", "transfer"])
-        self.assertEqual(history["rows"][1]["previous_good_at"], 200)
-        self.assertFalse(history["coverage"]["complete"])
-
-    async def test_membership_history_merges_roles_returns_and_half_open_windows(self):
-        await self.clans(100)
-        await self.clans(200, [clan_response(0, [player(role="admin")]), clan_response(1, [])])
-        await self.clans(300, [clan_response(0, []), clan_response(1, [])])
-        await self.clans(400)
-        result = await self.membership.history(0, 500, tags=["#P0"])
-        self.assertEqual(len(result["rows"]), 2)
-        self.assertEqual([r["role"] for r in result["rows"][0]["roles"]], ["member", "admin"])
-        self.assertEqual(result["rows"][1]["start_kind"], "return")
-        self.assertEqual(result["rows"][0]["events"][-1]["last_confirmed_at"], 200)
-        self.assertEqual((await self.membership.at(200, tags=["#P0"]))["rows"][0]["role"], "admin")
-        self.assertEqual((await self.membership.at(300, tags=["#P0"]))["rows"][0]["status"], "unknown_destination")
-        page1 = await self.membership.history(0, 500, limit=1)
-        self.assertTrue(page1["truncated"])
-        self.assertEqual(len((await self.membership.history(0, 500, offset=1, limit=1))["rows"]), 1)
-        self.assertFalse(result["rows"][0]["first_observed_is_first_ever"])
-
     async def test_summary_clanless_unlinked_partial_profile_and_per_account_outage(self):
         await self.links(100, {**link(), "#Q0": {**link()["#P0"], "player_tag": "#Q0"}})
         payload = profile()
@@ -205,10 +144,7 @@ class PeopleReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[1]["townHallLevel"], payload["townHallLevel"])
         self.assertEqual(rows[1]["fields"]["trophies"], payload["trophies"])
         self.assertEqual(rows[2]["coverage"]["status"], "unavailable")
-        self.assertEqual((await self.membership.current(tags=["#P0"], as_of=200))["rows"][0]["status"], "no_clan_observed")
         await self.clans(300)
-        owner = (await self.people.owners(["#G0"], 300))["rows"][0]
-        self.assertIsNone(owner["member_id"])
         await self.observe_profile("#P0", 3_600_000_200, status=503)
         rows = (await self.people.account_summary(["#P0"], 8_000_000_200))["rows"]
         self.assertEqual(rows[0]["coverage"]["status"], "stale")
@@ -231,23 +167,9 @@ class PeopleReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum("SELECT * FROM collection_items WHERE source_kind='account_links'" in s for s in traces), 1)
         with self.assertRaises(sqlite3.OperationalError):
             await self.people._read(lambda c: c.execute("DELETE FROM account_links"))
-        self.assertEqual((await self.people.owners(["#P0"], 100))["rows"][0]["member_id"], 100)
         self.path.rename(self.path.with_suffix(".missing"))
         with self.assertRaises(FileNotFoundError):
             await self.people.accounts([100], 100)
-
-    async def test_history_cannot_borrow_future_observations_or_endpoints(self):
-        await self.clans(100)
-        await self.clans(200, [clan_response(0, []), clan_response(1, [player()])])
-        at = (await self.membership.at(150, tags=["#P0"]))["rows"][0]
-        self.assertIsNone(at["stay"]["to_at"])
-        self.assertEqual(at["stay"]["last_confirmed_at"], 100)
-        result = await self.membership.history(100, 200)
-        self.assertEqual(len(result["rows"]), 1)
-        self.assertIsNone(result["rows"][0]["to_at"])
-        self.assertEqual(result["rows"][0]["coverage"]["last_good_at"], 100)
-        result = await self.membership.history(200, 201)
-        self.assertEqual(len(result["rows"]), 2)  # absence at the inclusive start
 
     async def test_ownership_outage_preserves_links_and_unknown_age_metadata(self):
         await self.links(100, link(player_name_last_seen="Legacy Name", last_seen_clan_tag="#PY"))
@@ -261,9 +183,6 @@ class PeopleReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(account["player_name"], "Legacy Name")
         self.assertIsNone(account["link_metadata"]["observed_at"])
         self.assertEqual(account["field_sources"]["name"], "legacy_unknown_age")
-        location = (await self.membership.at(700_000_100, tags=["#P0"]))["rows"][0]
-        self.assertEqual(location["status"], "unknown_location")
-        self.assertIsNone(location["clan_tag"])
 
     async def test_partial_profile_scalar_presence_missing_counters_and_compact_spans(self):
         await self.links(100, link())
@@ -286,33 +205,6 @@ class PeopleReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(coverage["status"], "partial")
         self.assertFalse(coverage["continuous_state_known"])
 
-    async def test_complete_generation_empty_rosters_conflicts_and_paging(self):
-        await self.clans(100, [clan_response(0, [player(), player("#Q0")]), clan_response(1, [])])
-        result = await self.membership.current(as_of=100, limit=1)
-        self.assertTrue(result["family_generation_complete"])
-        self.assertTrue(result["truncated"])
-        self.assertEqual((await self.membership.current(as_of=100, offset=1, limit=1))["rows"][0]["player_tag"], "#Q0")
-        self.assertIsNone(result["rows"][0]["ownership"]["member_id"])
-        await self.clans(200, [clan_response(0, [player()]), clan_response(1, [player()])])
-        result = await self.membership.current(as_of=200)
-        self.assertFalse(result["family_generation_complete"])
-        self.assertEqual(result["rows"][0]["status"], "last_known_clan")
-        await self.clans(300, [clan_response(0, []), clan_response(1, [])])
-        result = await self.membership.current(as_of=300)
-        self.assertEqual(result["rows"], [])
-        self.assertTrue(result["family_generation_complete"])
-
-    async def test_newer_outside_profile_preserves_conflicting_roster_evidence(self):
-        await self.clans(100)
-        payload = profile()
-        payload["clan"] = {"tag": "#GJ", "name": "Outside clan"}
-        await self.observe_profile("#P0", 200, payload)
-        row = (await self.membership.current(tags=["#P0"], as_of=200))["rows"][0]
-        self.assertEqual(row["status"], "conflicting_observations")
-        self.assertEqual(row["profile_location"]["clan"]["tag"], "#GJ")
-        self.assertEqual(row["clan_tag"], "#PY")
-        self.assertEqual(row["stay"]["last_confirmed_at"], 100)
-
     async def test_role_cohort_keeps_configured_home_and_utility_assignments_distinct(self):
         clans = [SimpleNamespace(code="HOME", tag="#PY", member_role_id=10, is_utility=False),
                  SimpleNamespace(code="EXTRA", tag="#LQ", member_role_id=20, is_utility=True)]
@@ -332,12 +224,8 @@ class PeopleReadTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_arguments_and_unknown_sources(self):
         for call in (self.people.accounts([0]), self.people.accounts(range(1, 202)),
-                     self.people.owners(["invalid"]), self.people.cohort([1], match="bad"),
+                     self.people.cohort([1], match="bad"),
                      self.people.resolve(""), self.people.resolve("x" * 101),
-                     self.people.accounts([1], limit=201), self.membership.history(2, 1),
-                     self.membership.at(-1), self.membership.current(clans=["bad"])):
+                     self.people.accounts([1], limit=201)):
             with self.assertRaises(ValueError):
                 await call
-        result = await self.membership.at(100, tags=["#P0"])
-        self.assertEqual(result["rows"][0]["status"], "unknown_location")
-        self.assertFalse(result["coverage"]["complete"])

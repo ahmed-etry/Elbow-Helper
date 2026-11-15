@@ -123,6 +123,11 @@ RESULT_FIELDS['read_member_cohort']['activity_coverage'] = {
     'discord_activity_coverage': names('members_checked,members_not_checked,source_reads_complete,basis')}
 RESULT_FIELDS['read_member_cohort']['clans'] = [names(
     'clan_code,name,tag,basis,status,cohort_accounts,included_accounts,excluded_accounts,unknown_filter_accounts,in_game_members,in_game_capacity,open_in_game_slots')]
+RESULT_FIELDS['read_donation_history'] = {**COMMON, 'rows': [names(
+    'month,player_tag,player_name,member_id,member_name,account_tags,donations,donations_received,coverage,'
+    'clan_donations,clan_donations_received,clan_coverage')],
+    'months': [names('month,after,before')],
+    **names('unit,after,before,account_count,population,basis,clan_basis,ownership_basis,unlinked_member_ids')}
 RESULT_FIELDS['read_discord_access'] = {**COMMON, 'rows': [names(
     'channel_id,channel_name,channel_permissions,view_channel,read_message_history')],
     'actors': [names('actor_kind,actor_id,actor_name,guild_permissions,role_only')],

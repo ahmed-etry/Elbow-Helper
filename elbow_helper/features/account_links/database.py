@@ -66,8 +66,8 @@ class AccountLinksDbMixin:
     async def restore_links(self, before: Mapping[str, Mapping[str, Any] | None]) -> None:
         await self._link_writer().restore_links(before)
 
-    async def update_link_last_seen(self, **row) -> None:
-        await self._link_writer().update_link_last_seen(**row)
+    async def update_links_last_seen(self, refreshes: Mapping[str, Mapping[str, str]]) -> None:
+        await self._link_writer().update_links_last_seen(refreshes)
 
     def delete_suggestion(self, player_tag: str) -> None:
         with self._db_connect() as conn:
