@@ -164,21 +164,24 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
         while True:
             await asyncio.sleep(60)
             if self.transcript_archive is not None:
-                self.transcript_archive.enqueue_debug_prune()
+                try:
+                    self.transcript_archive.enqueue_debug_prune()
+                except Exception:
+                    LOGGER.exception("Agent debug transcript expiry failed")
             if self.persistence is not None:
                 try:
                     await self.persistence.prune(self._conversations)
-                except (OSError, sqlite3.Error, RuntimeError):
+                except Exception:
                     LOGGER.exception("Agent checkpoint expiry failed")
             if self.research_jobs is not None:
                 try:
                     await asyncio.to_thread(self.research_jobs.prune)
-                except (OSError, sqlite3.Error, RuntimeError):
+                except Exception:
                     LOGGER.exception("Agent research job expiry failed")
             if self.action_repository is not None:
                 try:
                     await asyncio.to_thread(self.action_repository.prune_log)
-                except (OSError, sqlite3.Error, RuntimeError):
+                except Exception:
                     LOGGER.exception("Agent action log expiry failed")
 
     async def _run_member_request(self, message, member, question, conversation,

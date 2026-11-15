@@ -71,6 +71,28 @@ def _message(*, author: _Member, bot_id: int, content: str):
 
 
 class AgentCogTests(unittest.IsolatedAsyncioTestCase):
+    async def test_expiry_loop_survives_an_unlisted_error_in_any_step(self):
+        cog = object.__new__(AgentCog)
+        cog._conversations = {}
+        cog.transcript_archive = SimpleNamespace(
+            enqueue_debug_prune=MagicMock(side_effect=LookupError("debug prune failed")))
+        cog.persistence = SimpleNamespace(prune=AsyncMock(side_effect=LookupError("checkpoint failed")))
+        cog.research_jobs = SimpleNamespace(prune=MagicMock(side_effect=LookupError("jobs failed")))
+        cog.action_repository = SimpleNamespace(prune_log=MagicMock(side_effect=LookupError("log failed")))
+        sleeps = 0
+
+        async def pass_time(_):
+            nonlocal sleeps
+            sleeps += 1
+            if sleeps == 3:
+                raise asyncio.CancelledError
+
+        with patch("elbow_helper.agent.cog.asyncio.sleep", new=pass_time), \
+                self.assertLogs("elbow_helper.agent.cog", "ERROR"), \
+                self.assertRaises(asyncio.CancelledError):
+            await cog._prune_checkpoints()
+        self.assertEqual(cog.action_repository.prune_log.call_count, 2)
+
     async def test_real_typing_refresh_stops_before_recording_public_or_private_terminal_delivery(self):
         from discord.context_managers import Typing
 

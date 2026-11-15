@@ -12,6 +12,8 @@ import discord
 
 from elbow_helper.agent.safety.access import AgentAccessLost, require_access, require_evidence_access
 from ..engine.service import AgentUnavailableError
+from ..engine.models import AgentDelivery
+from elbow_helper.core.logging import TransientExternalFailurePolicy
 from ..discord_actions.safety import check_post_access
 from ..discord_actions.direct_messages import deliver_dms
 from ..discord_actions.messages import post_mentions
@@ -202,7 +204,7 @@ class ScheduledRunner:
         try:
             channel = await self._destination(rule)
         except (TimeoutError, discord.HTTPException) as error:
-            if isinstance(error, discord.HTTPException) and error.status < 500:
+            if not TransientExternalFailurePolicy.is_transient_exception(error):
                 raise
             LOGGER.warning("Agent standing destination unavailable: kind=%s rule=%s",
                            kind, identifier)
@@ -250,6 +252,7 @@ class ScheduledRunner:
         context = self.context_factory(message, member)
         result = None
         failure = None
+        sent = AgentDelivery()
         try:
             context.state.source_channels.update(rule["rule"].get("detail_sources", ()))
             context.state.required_access.update(rule["rule"].get("detail_access", ()))
@@ -274,9 +277,11 @@ class ScheduledRunner:
                             return None
                         return reminder_stop_view(self.repository, identifier, member_id)
 
+                    delivery_errors = []
                     outcomes = await deliver_dms(
                         context, rule["rule"]["dm_member_ids"], content,
                         view_factory=view_factory, recipient_allowed=recipient_allowed,
+                        on_error=delivery_errors.append,
                     )
                     current = await asyncio.to_thread(
                         self.repository.standing, kind="reminder", identifier=identifier,
@@ -287,6 +292,9 @@ class ScheduledRunner:
                                    datetime.now(timezone.utc),
                                    current["rule"].get("runs_completed", 0)))
                     if not stopped and not any(row["delivered"] for row in outcomes):
+                        for error in delivery_errors:
+                            if TransientExternalFailurePolicy.is_transient_exception(error):
+                                raise error
                         raise ValueError("No reminder recipient received the message")
                     result = ScheduledResult(completed=stopped)
                 else:
@@ -296,23 +304,40 @@ class ScheduledRunner:
                         await channel.send(part, allowed_mentions=mentions)
                     result = ScheduledResult()
             elif kind == "request":
+                async def tracked_delivery(*args, **kwargs):
+                    return await self.delivery(*args, delivery=sent, **kwargs)
+
                 result = await run_saved_request(
                     context,
                     rule["rule"],
                     service=self.service,
-                    delivery=self.delivery,
+                    delivery=tracked_delivery,
                     action_runner=self.action_runner,
                 )
+                if (result is not None and result.action_run is not None
+                        and result.action_run["status"] != "completed"):
+                    failure = ACTION_STANDING_RUN_FAILED.format(kind=self._name(kind))
             else:
                 result = await check_watcher(context, rule)
         except AgentAccessLost:
             failure = ACTION_STANDING_ACCESS_PAUSED.format(kind=self._name(kind))
-        except StandingDMUnavailable:
-            failure = ACTION_STANDING_DM_PAUSED.format(kind=self._name(kind))
-        except discord.HTTPException:
+        except (TimeoutError, discord.HTTPException, StandingDMUnavailable) as error:
+            delivery_error = error.__cause__ if isinstance(error, StandingDMUnavailable) else error
+            if TransientExternalFailurePolicy.is_transient_exception(delivery_error):
+                if kind == "request" and self._went_out(sent):
+                    # The answer is out; running it again would post it twice.
+                    LOGGER.warning("Agent standing run failed after posting: kind=%s rule=%s",
+                                   kind, identifier)
+                    await self._finish(kind, rule, owner, notice_sent=False, run_completed=True)
+                    return
+                LOGGER.warning("Agent standing delivery unavailable: kind=%s rule=%s", kind, identifier)
+                await asyncio.to_thread(self.repository.release_standing,
+                    kind=kind, identifier=identifier, owner=owner)
+                return
             failure = (
                 ACTION_STANDING_DM_PAUSED
-                if rule["rule"].get("deliver_to") == "dm" and kind != "reminder"
+                if isinstance(error, StandingDMUnavailable)
+                or rule["rule"].get("deliver_to") == "dm" and kind != "reminder"
                 else ACTION_STANDING_RUN_FAILED
             ).format(kind=self._name(kind))
         except AgentUnavailableError:
@@ -345,6 +370,10 @@ class ScheduledRunner:
             )
         else:
             await self._finish(kind, rule, owner, notice_sent=False)
+
+    @staticmethod
+    def _went_out(sent: AgentDelivery) -> bool:
+        return bool(sent.message_ids or sent.attempted_nonces or sent.unknown)
 
     async def _finish(
         self,

@@ -1,6 +1,7 @@
 """Scheduled work claims once and retains watcher state."""
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
@@ -27,6 +28,38 @@ class ScheduledRunnerTests(unittest.IsolatedAsyncioTestCase):
             rule={"request": "Synthetic", "schedule": {
                 "kind": "once", "at_utc": "2026-01-01T00:00:00Z"}}, next_at=1,
         )
+
+    async def test_delivery_errors_keep_temporary_failures_due_and_pause_permanent_ones(self):
+        self.runner.context_factory = lambda message, member: SimpleNamespace(
+            source_message=message, guild=member.guild, member=member, state=AgentTurnState(),
+        )
+        self.member.bot = False
+        self.member.display_name = "Synthetic"
+        self.member.send = AsyncMock()
+        for kind, operation in (("reminder", self.channel.send), ("dm_reminder", self.member.send), ("watcher", self.watch_request)):
+            for status in (503, 429, 408, None, 403, 404):
+                with self.subTest(kind=kind, status=status):
+                    rule = {"text": "Synthetic", "schedule": {
+                        "kind": "once", "at_utc": "2026-01-01T00:00:00Z"}}
+                    saved_kind = "reminder" if kind == "dm_reminder" else kind
+                    if kind == "dm_reminder":
+                        rule["dm_member_ids"] = [self.member.id]
+                    identifier = self.repository.create_standing(
+                        kind=saved_kind, guild_id=1, requester_id=2,
+                        destination_channel_id=3, rule=rule, next_at=1,
+                    )
+                    operation.side_effect = (TimeoutError("Synthetic") if status is None else
+                        discord.HTTPException(SimpleNamespace(status=status, reason="Synthetic"), "Synthetic"))
+                    await self._tick()
+                    row = self.repository.standing(kind=saved_kind, identifier=identifier)
+                    self.assertEqual(row["status"], "paused" if status in (403, 404) else "active")
+                    self.assertIsNone(row["lease_owner"])
+                    if status not in (403, 404):
+                        self.assertEqual(row["next_check_at" if kind == "watcher" else "next_run_at"], 1)
+                    operation.side_effect = None
+                    await self._tick()
+                    if status not in (403, 404):
+                        self.assertEqual(self.repository.standing(kind=saved_kind, identifier=identifier)["status"], "completed")
 
     async def test_service_outage_keeps_rules_active_and_notifies_once(self):
         for kind, operation in (("request", self.run_request), ("watcher", self.watch_request)):
@@ -63,12 +96,42 @@ class ScheduledRunnerTests(unittest.IsolatedAsyncioTestCase):
                 operation.side_effect = None
                 await self._tick()
 
+    async def test_temporary_error_after_the_answer_posted_finishes_the_run(self):
+        now = datetime.now(timezone.utc)
+        identifier = self.repository.create_standing(
+            kind="request", guild_id=1, requester_id=2, destination_channel_id=3,
+            rule={"request": "Synthetic", "schedule": {
+                "kind": "interval", "seconds": 86400,
+                "anchor_utc": (now - timedelta(seconds=30)).isoformat().replace("+00:00", "Z")}},
+            next_at=now.timestamp() - 30)
+
+        async def send(message, text, *_, delivery, **__):
+            delivery.record(5, text)
+
+        self.runner.delivery = send
+
+        async def post_then_fail(*_, delivery, **__):
+            await delivery(None, "Synthetic", None, ())
+            raise discord.HTTPException(SimpleNamespace(status=503, reason="Synthetic"), "Synthetic")
+
+        self.run_request.side_effect = post_then_fail
+        await self._tick()
+        await self._tick()
+        self.run_request.assert_awaited_once()
+        row = self.repository.standing(kind="request", identifier=identifier)
+        self.assertEqual(row["status"], "active")
+        self.assertGreater(row["next_run_at"], now.timestamp() + 80000)
+        self.assertEqual(row["rule"]["runs_completed"], 1)
+        self.channel.send.assert_not_awaited()
+
     async def test_transient_destination_failures_leave_the_run_due(self):
         self.member.guild.get_channel_or_thread = lambda _: None
         self.channel.guild = self.member.guild
         self.bot.fetch_channel = AsyncMock(return_value=self.channel)
         self.runner._destination = lambda rule: ScheduledRunner._destination(self.runner, rule)
         for error in (TimeoutError("Synthetic"), discord.HTTPException(
+            SimpleNamespace(status=429, reason="Rate limited"), "Synthetic",
+        ), discord.HTTPException(
             SimpleNamespace(status=503, reason="Unavailable"), "Synthetic",
         )):
             with self.subTest(error=type(error).__name__):
@@ -192,6 +255,30 @@ class ScheduledRunnerTests(unittest.IsolatedAsyncioTestCase):
             self.repository.standing(kind="request", identifier=identifier)["status"],
             "completed",
         )
+
+    async def test_unsuccessful_action_run_pauses_without_counting_a_run(self):
+        from elbow_helper.agent.conversation.wording import (
+            ACTION_STANDING_REQUEST_NAME, ACTION_STANDING_RUN_FAILED,
+        )
+
+        for status in ("failed", "stopped", "interrupted", "completed"):
+            with self.subTest(status=status):
+                identifier = self._due_once()
+                self.run_request.return_value = ScheduledResult(action_run={"status": status})
+                self.channel.send.reset_mock()
+                await self._tick()
+                await self._tick()
+                row = self.repository.standing(kind="request", identifier=identifier)
+                succeeded = status == "completed"
+                self.assertEqual(row["status"], "completed" if succeeded else "paused")
+                self.assertEqual(row["rule"].get("runs_completed", 0), int(succeeded))
+                self.assertIsNone(row["lease_owner"])
+                if succeeded:
+                    self.channel.send.assert_not_awaited()
+                else:
+                    self.channel.send.assert_awaited_once()
+                    self.assertIn(ACTION_STANDING_RUN_FAILED.format(
+                        kind=ACTION_STANDING_REQUEST_NAME), self.channel.send.await_args.args[0])
 
     async def test_watcher_completes_after_first_alert(self):
         identifier = self.repository.create_standing(
