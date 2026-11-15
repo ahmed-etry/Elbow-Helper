@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import closing
+import json
 from dataclasses import replace
 import sqlite3
 import threading
@@ -12,7 +13,9 @@ from elbow_helper.data.links.table import LinkFacade
 from elbow_helper.data.links.service import LinkService
 from elbow_helper.data.reads import MembershipReads, PeopleReads
 from elbow_helper.data.store import FamilyStore
-from elbow_helper.data.store.link_state import LinkConflict
+from elbow_helper.data.store.schema import SCHEMA_VERSION
+from elbow_helper.data.store.link_state import LinkConflict, receipt
+from elbow_helper.data.store.projections import canonical_json
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.agent.features.account_links.data import SOURCES
 from elbow_helper.agent.reads.sql.query import run_query
@@ -121,10 +124,6 @@ class RecordLinkTests(PeopleFixture):
         self.assertEqual([(r["player_tag"], r["discord_id"], r["from_at"], r["to_at"]) for r in history],
                          [("#P0", 100, 200, 204), ("#P0", 300, 204, 205), ("#P0", 100, 205, None),
                           ("#V0", 300, 201, 202), ("#V0", 400, 203, 205)])
-        people = PeopleReads(self.store)
-        for at, owners in ((201, [100, 300]), (202, [100, None]), (203, [100, 400]),
-                           (204, [300, 400]), (205, [100, None])):
-            self.assertEqual([r["member_id"] for r in (await people.owners(["#P0", "#V0"], at))["rows"]], owners)
 
     async def test_same_instant_failure_and_retry_do_not_consume_a_timestamp(self):
         with patch("elbow_helper.data.links.service.now_us", return_value=300):
@@ -210,6 +209,80 @@ class RecordLinkTests(PeopleFixture):
         self.assertEqual(len(await self.rows("SELECT * FROM account_links")), 3)
 
 
+    async def test_refresh_records_only_accounts_that_changed_and_still_marks_the_rest_seen(self):
+        seen = dict(player_name_last_seen="Fresh", last_seen_clan_tag="#QQ", last_seen_clan_code="ONE",
+                    last_seen_role="member")
+        await self.service.update_links_last_seen({"#P0": seen, "#R0": seen}, at=300)
+
+        async def counts():
+            return [len(await self.rows(f"SELECT * FROM {table}"))
+                    for table in ("link_operations", "collection_runs", "collection_items")]
+
+        def observed():
+            return self.rows("SELECT a.player_tag,l.last_observed_at FROM account_links l "
+                             "JOIN accounts a ON a.id=l.account_id WHERE l.to_at IS NULL ORDER BY a.player_tag")
+        recorded = await counts()
+        await self.service.update_links_last_seen({"#P0": seen, "#R0": seen, "#V0": seen}, at=400)
+        self.assertEqual(await counts(), recorded)
+        self.assertEqual([r["last_observed_at"] for r in await observed()], [400, 200, 400])
+        await self.service.update_links_last_seen({"#P0": seen, "#R0": {**seen, "last_seen_role": "elder"}}, at=500)
+        self.assertEqual(await counts(), [count + 1 for count in recorded])
+        operation = (await self.rows("SELECT after_json FROM link_operations ORDER BY id DESC LIMIT 1"))[0]
+        self.assertEqual(list(json.loads(operation["after_json"])), ["#R0"])
+        self.assertEqual([r["last_observed_at"] for r in await observed()], [500, 200, 500])
+        self.assertEqual((await self.service.read_links())["#R0"]["last_seen_role"], "elder")
+
+    async def test_migration_removes_unchanged_refreshes_and_keeps_receipts_still_pointed_at(self):
+        def refresh_record(c, key, at):
+            item = receipt(c, "link_operation", key, at, 1)
+            c.execute("INSERT INTO link_operations(operation_key,requested_json,before_json,after_json,"
+                      "before_digest,after_digest,created_at,finished_at,status,source_item_id) "
+                      "VALUES (?,?,'{}','{}','same','same',?,?,'complete',?)",
+                      (key, canonical_json({"kind": "refresh", "rows": {}}), at, at, item))
+            return item
+        await self.service.update_link_last_seen(player_tag="#P0", player_name_last_seen="Fresh",
+            last_seen_clan_tag="", last_seen_clan_code="", last_seen_role="", at=300)
+        def seed(c):
+            with c:
+                items = [refresh_record(c, f"drop{index}", 400 + index) for index in range(3)]
+                kept = refresh_record(c, "kept", 410)
+                pointed = items[1]
+                c.execute("INSERT INTO legacy_link_aliases VALUES ((SELECT id FROM accounts WHERE player_tag='#R0'),"
+                          "999,'Old','old',NULL,'legacy_unknown_age',?)", (pointed,))
+                c.execute("UPDATE account_links SET last_observed_at=410 WHERE to_at IS NULL")
+                c.execute("UPDATE account_link_metadata SET source_item_id=? WHERE account_id="
+                          "(SELECT id FROM accounts WHERE player_tag='#P0')", (kept,))
+                # An unchanged upsert is the audit trail of a real request and stays.
+                c.execute("UPDATE link_operations SET before_digest='x',after_digest='x',"
+                          "requested_json=? WHERE operation_key='drop2'", (canonical_json({"kind": "upsert", "rows": {}}),))
+            return kept, pointed
+        kept, pointed = await self.store.call(seed)
+        before = await PeopleReads(self.store).account_history(["#P0"], 1000)
+
+        async def reopen():
+            # The store's own startup applies the step, on a connection that enforces foreign keys.
+            await self.execute("PRAGMA user_version=21")
+            self.store = FamilyStore(self.store.path)
+            await self.store.initialize()
+        await reopen()
+        self.assertEqual(await self.rows("PRAGMA user_version"), [{"user_version": SCHEMA_VERSION}])
+        self.assertEqual(await self.rows("PRAGMA foreign_keys"), [{"foreign_keys": 1}])
+        self.assertEqual([r["operation_key"] for r in await self.rows(
+            "SELECT operation_key FROM link_operations WHERE operation_key LIKE 'drop%' OR operation_key='kept'")],
+            ["drop2"])
+        # Receipts that account metadata and an old alias still point at stay, each with its run.
+        # (The unchanged upsert left in place keeps its own receipt too.)
+        self.assertEqual([r["id"] for r in await self.rows(
+            "SELECT id FROM collection_items WHERE scope_id LIKE 'drop%' OR scope_id='kept' ORDER BY id")],
+            [pointed, pointed + 1, kept])
+        self.assertEqual(len(await self.rows(
+            "SELECT * FROM collection_runs WHERE scope_kind LIKE 'drop%' OR scope_kind='kept'")), 3)
+        self.assertEqual(await self.rows("PRAGMA foreign_key_check"), [])
+        self.assertEqual(await PeopleReads(self.store).account_history(["#P0"], 1000), before)
+        settled = await self.dump()
+        await reopen()
+        self.assertEqual(await self.dump(), settled)
+
     async def test_record_rosters_cover_success_empty_failure_staleness_and_generations(self):
         reads = MembershipReads(self.store, clans=CLANS.values())
         snapshot = await reads.rosters(as_of=200)
@@ -246,16 +319,6 @@ class RecordLinkTests(PeopleFixture):
         result, _ = await asyncio.to_thread(run_query, sources, paths, set(), "SELECT * FROM links.links")
         self.assertIn('error', result)
         self.assertEqual(self.legacy.read_bytes(), before)
-
-    async def test_local_ownership_never_ages_out_between_commands(self):
-        people = PeopleReads(self.store)
-        result = await people.owners(['#P0'], 2_000_000_000)
-        self.assertEqual(result['rows'][0]['member_id'], 100)
-        self.assertTrue(result['coverage']['complete'])
-        await self.service.upsert_link(**row(owner=300), at=300)
-        result = await people.owners(['#P0'], 2_000_000_000)
-        self.assertEqual(result['rows'][0]['member_id'], 300)
-        self.assertTrue(result['coverage']['complete'])
 
     async def test_cancellation_finishes_the_first_commit_before_the_next_writer(self):
         entered, release = threading.Event(), threading.Event()

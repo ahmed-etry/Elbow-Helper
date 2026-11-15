@@ -27,6 +27,15 @@ def compatibility(connection):
     return result
 
 
+def newest_link_time(connection, at=None):
+    """Latest completed link change or sighting of an owned account, up to ``at``; 0 when there is none."""
+    limit = 2 ** 62 if at is None else at
+    return connection.execute(
+        "SELECT MAX(COALESCE((SELECT MAX(created_at) FROM link_operations WHERE status='complete' AND created_at<=?),0),"
+        "COALESCE((SELECT MAX(last_observed_at) FROM account_links WHERE last_observed_at<=?),0))",
+        (limit, limit)).fetchone()[0]
+
+
 def receipt(connection, kind, scope, at, count):
     run = connection.execute(
         "INSERT INTO collection_runs(collector,scope_kind,scheduled_at,started_at,finished_at,status,"

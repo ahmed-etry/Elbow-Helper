@@ -223,6 +223,40 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ClanSnapshotTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_poll_reads_ignored_tags_and_suggestions_once_for_every_tracked_account(self) -> None:
+        with TemporaryDirectory() as directory:
+            with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
+                links = object.__new__(AccountLinks)
+                links._init_db()
+                links.add_ignored_tag("#IGNORED")
+                for tag in ("#LINKED", "#PENDING"):
+                    links.upsert_suggestion(
+                        player_tag=tag, player_name=tag, current_clan_code="BEH", current_clan_tag="#C",
+                        proposed_discord_user_id=0, proposed_display_name="", review_channel_id=1,
+                        review_message_id=2)
+                links._player_locations = {
+                    tag: {"player_tag": tag, "player_name": tag, "clan_code": "BEH", "clan_tag": "#C"}
+                    for tag in ("#IGNORED", "#LINKED", "#PENDING", "#NEW1", "#NEW2")}
+                links.get_all_links = lambda: {"#LINKED": {"discord_user_id": 5}}
+                links._candidate_members = AsyncMock(return_value=[])
+                links.update_links_last_seen = AsyncMock()
+                links.publish_suggestion = AsyncMock()
+                links._finalize_suggestion_message = AsyncMock()
+                connects = []
+                connect = links._db_connect
+                links._db_connect = lambda: connects.append(1) or connect()
+
+                await links._process_unlinked_players()
+                # One read for the whole poll, and one to drop the linked player's old suggestion.
+                self.assertEqual(len(connects), 2)
+
+                self.assertEqual(
+                    [call.args[0]["player_tag"] for call in links.publish_suggestion.await_args_list],
+                    ["#NEW1", "#NEW2"])
+                self.assertEqual(list(links.update_links_last_seen.await_args.args[0]), ["#LINKED"])
+                self.assertEqual(
+                    [row["player_tag"] for row in links.list_pending_suggestions()], ["#PENDING"])
+                links._finalize_suggestion_message.assert_awaited_once()
 
 
     async def test_incomplete_clan_response_preserves_the_previous_snapshot(self) -> None:

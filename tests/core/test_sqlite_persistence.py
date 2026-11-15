@@ -150,6 +150,39 @@ class SQLiteMigrationTests(unittest.TestCase):
         ).fetchall()
         self.assertEqual(objects, [])
 
+    def test_step_without_foreign_keys_is_checked_afterwards_and_enforcement_returns(self) -> None:
+        connection = sqlite3.connect(":memory:")
+        self.addCleanup(connection.close)
+        connection.execute("PRAGMA foreign_keys=ON")
+        inside = []
+
+        def create(conn: sqlite3.Connection) -> None:
+            conn.execute("CREATE TABLE parent(id INTEGER PRIMARY KEY)")
+            conn.execute("CREATE TABLE child(parent_id INTEGER REFERENCES parent(id))")
+            conn.execute("INSERT INTO parent VALUES (1)")
+            conn.execute("INSERT INTO child VALUES (1)")
+
+        def clean(conn: sqlite3.Connection) -> None:
+            inside.append(conn.execute("PRAGMA foreign_keys").fetchone()[0])
+            conn.execute("DELETE FROM child")
+            conn.execute("DELETE FROM parent")
+
+        def orphan(conn: sqlite3.Connection) -> None:
+            conn.execute("DELETE FROM parent")
+
+        base = SQLiteMigration(1, "create", create)
+        with self.assertRaises(SQLiteMigrationError):
+            run_sqlite_migrations(
+                connection, (base, SQLiteMigration(2, "orphan", orphan, enforce_foreign_keys=False)),
+                target_version=2)
+        self.assertEqual(sqlite_schema_version(connection), 0)
+        self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+        run_sqlite_migrations(
+            connection, (base, SQLiteMigration(2, "clean", clean, enforce_foreign_keys=False)), target_version=2)
+        self.assertEqual(inside, [0])
+        self.assertEqual(sqlite_schema_version(connection), 2)
+        self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+
     def test_current_target_version_is_an_idempotent_no_op(self) -> None:
         connection = sqlite3.connect(":memory:")
         self.addCleanup(connection.close)

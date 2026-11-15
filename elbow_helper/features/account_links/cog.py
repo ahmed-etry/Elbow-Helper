@@ -152,7 +152,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         links = (await asyncio.to_thread(self.get_all_links))
         members = await self._candidate_members()
         for player_tag, row in self._player_locations.items():
-            if (await asyncio.to_thread(self.is_ignored_tag, player_tag)):
+            if player_tag in ignored:
                 continue
             if player_tag in links:
                 await self.update_link_last_seen(
@@ -167,7 +167,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
                     (await asyncio.to_thread(self.delete_suggestion, player_tag))
                     await self._finalize_suggestion_message(pending)
                 continue
-            if (await asyncio.to_thread(self.get_pending_suggestion, player_tag)):
+            if player_tag in pending_suggestions:
                 continue
             candidate = find_best_candidate(player_name=str(row.get("player_name") or ""), members=members)
             await self.publish_suggestion(

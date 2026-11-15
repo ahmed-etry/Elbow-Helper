@@ -24,11 +24,18 @@ class UnversionedSQLiteSchemaError(SQLiteMigrationError):
 
 @dataclass(frozen=True, slots=True)
 class SQLiteMigration:
-    """One schema transition ending at ``version``."""
+    """One schema transition ending at ``version``.
+
+    A step that deletes rows other tables point at, from tables with unindexed
+    references, sets ``enforce_foreign_keys=False``. The runner then applies the
+    pending steps with enforcement off and fails the migration if a foreign-key
+    check afterwards reports anything.
+    """
 
     version: int
     name: str
     apply: Callable[[sqlite3.Connection], None]
+    enforce_foreign_keys: bool = True
 
 
 def sqlite_schema_version(connection: sqlite3.Connection) -> int:
@@ -83,6 +90,14 @@ def run_sqlite_migrations(
         )
 
     active_migration: SQLiteMigration | None = None
+    # The pragma cannot change inside a transaction, so it is set before the
+    # pending steps' single transaction and restored after it.
+    relaxed = (
+        any(not migration.enforce_foreign_keys for migration in pending)
+        and connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    )
+    if relaxed:
+        connection.execute("PRAGMA foreign_keys=OFF")
     try:
         with sqlite_transaction(connection, immediate=True):
             for active_migration in pending:
@@ -95,6 +110,10 @@ def run_sqlite_migrations(
                         f"Migration {active_migration.version} committed its own "
                         "transaction."
                     )
+            if relaxed and connection.execute("PRAGMA foreign_key_check").fetchone():
+                raise SQLiteMigrationError(
+                    "Foreign-key check failed after a migration that ran without enforcement."
+                )
             connection.execute(f"PRAGMA user_version={target_version}")
     except SQLiteMigrationError:
         raise
@@ -104,6 +123,9 @@ def run_sqlite_migrations(
         raise SQLiteMigrationError(
             f"SQLite migration {version} ({name}) failed."
         ) from error
+    finally:
+        if relaxed:
+            connection.execute("PRAGMA foreign_keys=ON")
 
     return tuple(migration.version for migration in pending)
 

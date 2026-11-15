@@ -86,7 +86,7 @@ class PeopleReads(RecordReads):
     @staticmethod
     def _current_links(connection, at):
         from elbow_helper.data.links.selectors import require_links
-        from ..store.link_state import LinkConflict
+        from ..store.link_state import LinkConflict, newest_link_time
         source = signal(connection, "account_links", "current", at)
         try:
             require_links(connection)
@@ -97,8 +97,7 @@ class PeopleReads(RecordReads):
         rows = [dict(row) for row in connection.execute("SELECT * FROM current_link_rows ORDER BY player_tag")]
         # This projection has no past versions; an older as_of cannot describe its rows.
         imported = connection.execute("SELECT frozen_at FROM imports WHERE topic='people_membership'").fetchone()
-        changed = connection.execute("SELECT MAX(created_at) FROM link_operations WHERE status='complete'").fetchone()[0]
-        current_at = max(imported[0] if imported else 0, changed or 0)
+        current_at = max(imported[0] if imported else 0, newest_link_time(connection))
         coverage = envelope([source], at=at)
         if at < current_at:
             coverage.update(complete=False, unavailable="current_projection_only")

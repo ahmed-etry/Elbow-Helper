@@ -36,6 +36,39 @@ def create_link_schema(connection):
         JOIN account_link_metadata d ON d.account_id=a.id WHERE l.to_at IS NULL""")
 
 
+def remove_unchanged_refreshes(connection):
+    """Delete the records of every refresh that changed nothing; return how many were removed.
+
+    Each poll once recorded every linked account, changed or not. A receipt that
+    another row still points to (the stored last-seen values of an account point
+    at the receipt that wrote them) is kept with its run.
+    """
+    tables = [row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+    references = {"collection_items": [], "collection_runs": []}
+    for table in tables:
+        for row in connection.execute(f"PRAGMA foreign_key_list('{table}')"):
+            if row[2] in references and table != "link_operations":
+                references[row[2]].append((table, row[3]))
+    connection.execute("CREATE TEMP TABLE unchanged_refreshes AS SELECT id,source_item_id FROM link_operations "
+                       "WHERE status='complete' AND before_digest=after_digest "
+                       "AND json_extract(requested_json,'$.kind')='refresh'")
+    connection.execute("CREATE TEMP TABLE dropped_items AS SELECT DISTINCT source_item_id AS id "
+                       "FROM unchanged_refreshes WHERE source_item_id IS NOT NULL")
+    for table, column in references["collection_items"]:
+        connection.execute(f"DELETE FROM dropped_items WHERE id IN (SELECT {column} FROM {table})")
+    removed = connection.execute("DELETE FROM link_operations WHERE id IN (SELECT id FROM unchanged_refreshes)").rowcount
+    connection.execute("CREATE TEMP TABLE dropped_runs AS SELECT DISTINCT run_id AS id FROM collection_items "
+                       "WHERE id IN (SELECT id FROM dropped_items)")
+    connection.execute("DELETE FROM collection_items WHERE id IN (SELECT id FROM dropped_items)")
+    for table, column in references["collection_runs"]:
+        connection.execute(f"DELETE FROM dropped_runs WHERE id IN (SELECT {column} FROM {table})")
+    connection.execute("DELETE FROM dropped_runs WHERE id IN (SELECT run_id FROM collection_items)")
+    connection.execute("DELETE FROM collection_runs WHERE id IN (SELECT id FROM dropped_runs)")
+    for name in ("unchanged_refreshes", "dropped_items", "dropped_runs"):
+        connection.execute(f"DROP TABLE temp.{name}")
+    return removed
+
+
 def create_current_link_schema(connection):
     # Presentation metadata preserves legacy spelling and natural row order;
     # account identity and dated ownership remain in accounts/account_links.

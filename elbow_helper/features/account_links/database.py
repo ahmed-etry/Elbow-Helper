@@ -84,6 +84,13 @@ class AccountLinksDbMixin:
             rows = conn.execute("SELECT * FROM suggestions ORDER BY player_tag ASC").fetchall()
         return [dict(row) for row in rows]
 
+    def poll_suggestion_state(self) -> tuple[set[str], dict[str, dict[str, Any]]]:
+        """Ignored tags and pending suggestions, read together for one clan poll."""
+        with self._db_connect() as conn:
+            ignored = {row["player_tag"] for row in conn.execute("SELECT player_tag FROM ignored_tags")}
+            pending = {row["player_tag"]: dict(row) for row in conn.execute("SELECT * FROM suggestions")}
+        return ignored, pending
+
     def upsert_suggestion(
         self,
         *,

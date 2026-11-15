@@ -98,11 +98,24 @@ class LinkService:
     async def delete_link(self, tag, *, operation_key=None, at=None):
         return await self.delete_links([tag], operation_key=operation_key, at=at)
 
+    async def update_links_last_seen(self, refreshes, *, operation_key=None, at=None):
+        for metadata in refreshes.values():
+            if set(metadata) != set(FIELDS[2:]) or any(
+                    value is not None and not isinstance(value, str) for value in metadata.values()):
+                raise ValueError("invalid_link_metadata")
+        return await self._write_rows(refreshes, operation_key, at, "refresh")
+
     async def update_link_last_seen(self, *, player_tag, operation_key=None, at=None, **metadata):
-        if set(metadata) != set(FIELDS[2:]) or any(
-                value is not None and not isinstance(value, str) for value in metadata.values()):
-            raise ValueError("invalid_link_metadata")
-        return await self._write_rows({player_tag: metadata}, operation_key, at, "refresh")
+        return await self.update_links_last_seen({player_tag: metadata}, operation_key=operation_key, at=at)
+
+    @staticmethod
+    def _confirm(connection, tags, at):
+        """An unchanged account keeps its open link, observed again now; nothing else is written."""
+        for start in range(0, len(tags), 500):
+            batch = tags[start:start + 500]
+            connection.execute(
+                "UPDATE account_links SET last_observed_at=? WHERE to_at IS NULL AND account_id IN "
+                f"(SELECT id FROM accounts WHERE player_tag IN ({','.join('?' for _ in batch)}))", (at, *batch))
 
     def _mutate(self, connection, requested, operation_key, at, kind):
         connection.execute("PRAGMA synchronous=FULL")
@@ -128,13 +141,19 @@ class LinkService:
             newest = connection.execute(
                 "SELECT MAX(COALESCE((SELECT MAX(created_at) FROM link_operations),0),"
                 "COALESCE((SELECT MAX(from_at) FROM account_links),0),"
-                "COALESCE((SELECT MAX(to_at) FROM account_links),0))").fetchone()[0]
+                "COALESCE((SELECT MAX(to_at) FROM account_links),0),"
+                "COALESCE((SELECT MAX(last_observed_at) FROM account_links),0))").fetchone()[0]
             if at <= newest:
                 at = newest + 1
             current = compatibility(connection)
             if kind == "refresh":
-                requested = {tag: {**current[tag], **{key: row[key] for key in FIELDS[2:]}}
-                             for tag, row in requested.items() if tag in current}
+                # A refresh records only the accounts whose values changed; the others are just seen again.
+                seen = {tag: {**current[tag], **{key: row[key] for key in FIELDS[2:]}}
+                        for tag, row in requested.items() if tag in current}
+                self._confirm(connection, [tag for tag, row in seen.items() if row == current[tag]], at)
+                requested = {tag: row for tag, row in seen.items() if row != current[tag]}
+                if not requested:
+                    return operation_key
             before = {tag: current.get(tag) for tag in requested}
             after = patched(current, requested)
             item = receipt(connection, "link_operation", operation_key, at, len(requested))

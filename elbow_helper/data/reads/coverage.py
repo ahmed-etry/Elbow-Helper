@@ -6,6 +6,7 @@ Their absence is explicit: poll evidence never promises continuous tracking.
 
 import json
 
+from ..store.link_state import newest_link_time
 from ..store.wars import END_DRIFT
 from ..store.war_completeness import war_side_coverage as war_side_coverage
 from .core import MAX_PAGE
@@ -115,8 +116,7 @@ def signal(connection, kind, scope, at, *, after=None, before=None, account_id=N
         empty = not connection.execute("SELECT 1 FROM account_links LIMIT 1").fetchone()
         if imported or (not has_import and (local or empty)):
             started = imported[0] if imported else first_change or 0
-            latest_change = connection.execute("SELECT MAX(created_at) FROM link_operations "
-                                               "WHERE status='complete' AND created_at<=?", (end,)).fetchone()[0]
+            latest_change = newest_link_time(connection, end)
             pending = connection.execute("SELECT 1 FROM link_operations WHERE status='pending'").fetchone()
             count = connection.execute("SELECT COUNT(*) FROM account_links WHERE from_at<=? "
                                        "AND (to_at IS NULL OR to_at>?)", (end, end)).fetchone()[0]
