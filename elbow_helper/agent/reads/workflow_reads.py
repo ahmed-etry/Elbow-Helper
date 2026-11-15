@@ -161,8 +161,6 @@ async def recruitment(context, arguments):
             row['accounts'] = [account for account in accounts.get('rows',[]) if identifier and account.get('member_id')==identifier]
         result['account_coverage'] = accounts.get('error') or accounts.get('coverage') or 'No resolved applicant IDs.'
     performance = arguments.get('performance')
-    if performance is None and arguments.get('include_accounts') and stage in ('active_trials', 'pipeline', 'lifecycle'):
-        performance = {'war_type': 'both', 'latest_completed': 30}
     if performance:
         result['performance_coverage'] = await performance_projection(context, result['rows'], performance)
     return {**result, 'stage':stage,
@@ -396,7 +394,7 @@ TOOLS = (
      'ticket_channel_id':TICKET,'member_ids':IDS,'after':{'type':'string','format':'date-time'},
      'include_accounts':{'type':'boolean'},'performance':PERFORMANCE,
      'include_profile':{'type':'boolean','description':
-         'With include_accounts: clan role.'},
+         'With include_accounts: trial or member status, join date, home clans, clan role.'},
      'include_standing':{'type':'boolean','description':
          'With include_accounts: leagues, trophies, donations, career war stars.'},
      'before':{'type':'string','format':'date-time'},'source_cursor':{'type':'string','maxLength':200}}, recruitment,

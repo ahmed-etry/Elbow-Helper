@@ -15,7 +15,7 @@ def member_row(**extra):
             'nickname': 'Nick', 'joined_at': '2026-01-01T00:00:00+00:00',
             'family_membership_roles': {'member': {'role_id': 1, 'held': True}, 'trial': {'role_id': 2, 'held': False}},
             'home_clans': [{'clan_code': 'BEH', 'name': 'Home', 'tag': '#H0', 'role_id': 3, 'role_name': 'BEH'}],
-            'participation_clans': [], 'home_clan_status': 'resolved', 'home_clan_basis': BASIS,
+            'home_clan_codes': ['BEH'], 'participation_clans': [], 'home_clan_status': 'resolved', 'home_clan_basis': BASIS,
             'roles': [{'role_id': 5, 'name': 'Synthetic role'}], 'selection_status': 'selected',
             'accounts': [dict(ACCOUNT)], **extra}
 
@@ -57,12 +57,27 @@ class CohortProfileTests(unittest.TestCase):
         self.assertIn('joined_at', joined)
         self.assertIn('family_membership_roles', joined)
         self.assertNotIn('home_clans', joined)
+        self.assertEqual(joined['home_clan_codes'], ['BEH'])
+        chosen = cohort_view({'basis': 'selected', 'member_ids': [12]})['rows'][0]
+        self.assertEqual(chosen['home_clan_codes'], ['BEH'])
+        active = cohort_view({'basis': 'selected', 'member_ids': [12], 'include_activity': True},
+                             activity_coverage={'basis': 'synthetic'})['rows'][0]
+        self.assertEqual(active['home_clan_codes'], ['BEH'])
         by_clan = cohort_view({'basis': 'role_holders', 'role_name': 'Synthetic role', 'clan_codes': ['BEH'],
                                'include_roles': False})['rows'][0]
         self.assertIn('home_clans', by_clan)
         self.assertIn('home_clan_status', by_clan)
         self.assertNotIn('joined_at', by_clan)
         self.assertIn('roles', by_clan)  # requested role holders show the roles they hold
+        self.assertNotIn('home_clan_codes', by_clan)  # the full clans are already there
+        by_role = cohort_view({'basis': 'role_holders', 'role_ids': [5]})['rows'][0]
+        self.assertEqual(by_role['home_clan_codes'], ['BEH'])
+        for field in ('home_clans', 'participation_clans', 'home_clan_status', 'nickname', 'joined_at',
+                      'family_membership_roles'):
+            self.assertNotIn(field, by_role)
+        with_profile = cohort_view({'basis': 'role_holders', 'role_ids': [5], 'include_profile': True})['rows'][0]
+        self.assertEqual(with_profile['home_clans'][0]['name'], 'Home')
+        self.assertNotIn('home_clan_codes', with_profile)
         roster = cohort_view({'basis': 'clan_rosters'})['rows'][0]
         self.assertIn('home_clans', roster)
         self.assertEqual(roster['accounts'][0]['donations'], 40)
@@ -72,15 +87,23 @@ class RecruitmentSnapshotTests(unittest.TestCase):
     def view(self, selection):
         return family_model_view({'family': 'read_recruitment_pipeline', 'selection': selection,
             'rows': [{'applicant_member_id': 12, 'ticket_channel_id': 7, 'accounts': [dict(ACCOUNT)]}],
-            'members': [{'member_id': 12, 'member_name': 'Synthetic member', 'account_tags': ['#P0'],
-                         'home_clan_status': 'resolved', 'roles': []}]})
+            'members': [{**member_row(), 'account_tags': ['#P0']}]})
 
 
     def test_applicant_profiles_and_rows_are_not_dropped(self):
         view = self.view({'stage': 'ticket_evidence', 'include_accounts': True})
         self.assertEqual(len(view['rows']), 1)
         self.assertEqual(view['rows'][0]['ticket_channel_id'], 7)
-        self.assertEqual(view['members'][0]['home_clan_status'], 'resolved')
+        # Members follow the member lookup's rule: profile fields only on include_profile.
+        profile_fields = ('nickname', 'joined_at', 'family_membership_roles', 'home_clans',
+                          'participation_clans', 'home_clan_status')
+        for field in profile_fields:
+            self.assertNotIn(field, view['members'][0])
+        profile = self.view({'stage': 'ticket_evidence', 'include_accounts': True, 'include_profile': True})
+        for field in profile_fields:
+            self.assertIn(field, profile['members'][0])
+        self.assertEqual(profile['members'][0]['home_clan_status'], 'resolved')
+        self.assertEqual(profile['family_membership_role_ids'], {'member': 1, 'trial': 2})
 
 
 if __name__ == '__main__':

@@ -67,11 +67,6 @@ def account_view(row, *, nested=False, requested_role_ids=()):
     return result
 
 
-def roster_role_view(row):
-    return pick(row, ('member_id', 'member_name', 'player_tag', 'player_name',
-                      'profile_status'))
-
-
 def ranked_view(row):
     # A fixed schema lets the transport encode large selections once as a
     # column table, including accounts whose names or ranking are unknown.
@@ -170,6 +165,23 @@ def account_profile_drops(selection):
     return drops
 
 
+def family_roles_once(data):
+    """The family member and trial role IDs go on the view once; each member keeps whether it holds them."""
+    for field in ('rows', 'members'):
+        if not isinstance(data.get(field), list):
+            continue
+        items = []
+        for item in data[field]:
+            roles = item.get('family_membership_roles') if isinstance(item, dict) else None
+            if isinstance(roles, dict):
+                data.setdefault('family_membership_role_ids',
+                                {name: role.get('role_id') for name, role in roles.items()})
+                item = {**item, 'family_membership_roles': {name: pick(role, ('held',))
+                                                            for name, role in roles.items()}}
+            items.append(item)
+        data[field] = items
+
+
 def plain_member_row(item, data, family, selection):
     """Drop profile, roles, history and the repeated home clan explanation unless requested."""
     item = dict(item)
@@ -205,7 +217,9 @@ def family_model_view(payload, *, shared_rows=True):
     if not isinstance(rows, list):
         return data
     selection = data.get('selection') if isinstance(data.get('selection'), dict) else {}
-    plain_accounts = family == 'read_member_accounts' and not selection.get('include_profile')
+    # Member lists keep profile fields only on include_profile, whichever lookup joined them.
+    member_lists = family in ('read_member_accounts', 'read_recruitment_pipeline')
+    plain_accounts = member_lists and not selection.get('include_profile')
     account_drops = account_profile_drops(selection) if family == 'read_member_accounts' else set()
     # Cohorts and recruitment rows follow member lookups: profile, roles and history only on request.
     plain_rows = family in ('read_member_cohort', 'read_recruitment_pipeline')
@@ -213,7 +227,7 @@ def family_model_view(payload, *, shared_rows=True):
         selected_members = {row.get('member_id') or row.get('applicant_member_id') for row in rows}
         data['members'] = [account_view(member) for member in data['members']
                            if member.get('member_id') in selected_members]
-        if family == 'read_member_accounts':
+        if member_lists:
             # The home clan explanation is stated once in the planner context, never per member.
             data['members'] = [omit(member, ('home_clan_basis', *(MEMBER_PROFILE_FIELDS if plain_accounts else ())))
                                for member in data['members']]
@@ -231,11 +245,10 @@ def family_model_view(payload, *, shared_rows=True):
     # Source channels are retained access bookkeeping; nothing the model is told to use reads them.
     data.pop('provenance', None)
     if isinstance(data.get('unknown_accounts'), list):
-        projection = roster_role_view if 'home_role_comparisons' in data else account_view
+        # Each of these accounts is a row of this view already; name it, not a second copy of the row.
         selected = {row.get('player_tag') for row in rows}
-        data['unknown_accounts'] = [projection(row) for row in data['unknown_accounts']
+        data['unknown_accounts'] = [pick(row, ('member_id', 'player_tag')) for row in data['unknown_accounts']
                                    if row.get('player_tag') in selected]
-        data['unknown_accounts'] = [omit(row, account_drops) for row in data['unknown_accounts']]
     if isinstance(data.get('clan_facts'), list):
         data['clan_facts'] = [pick(row, ('clan_code', 'name', 'tag', 'operational_cwl_only',
             'configured_cwl_only', 'membership_basis', 'configured_membership_basis',
@@ -383,4 +396,5 @@ def family_model_view(payload, *, shared_rows=True):
                     summary['top_rows'] = [pick(row, ('player_tag', 'player_name', 'rank',
                         'ass_score', 'score', 'attacks', 'attacks_expected', 'stars'))
                         for row in summary['top_rows']]
+    family_roles_once(data)
     return data

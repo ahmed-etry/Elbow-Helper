@@ -69,7 +69,8 @@ for family in ('read_clan_rosters', 'read_member_accounts', 'read_war_participat
 for family in ('read_member_accounts', 'read_member_cohort'):
     RESULT_FIELDS[family]['rows'][0].update(
         has_elbow_helper_links=None,
-        family_membership_roles={name: names('role_id,held') for name in ('member', 'trial')})
+        family_membership_roles={name: names('held') for name in ('member', 'trial')})
+    RESULT_FIELDS[family]['family_membership_role_ids'] = names('member,trial')
     RESULT_FIELDS[family]['rows'][0].update(
         **names('home_clan_status,home_clan_basis'),
         home_clans=[names('clan_code,name,tag,role_id,role_name')])
@@ -95,7 +96,7 @@ RESULT_FIELDS['read_clan_rosters']['rows'][0].pop('leadership')
 RESULT_FIELDS['read_cwl_results']['clan_results'] = [{
     **names('clan_code,league,completed_wars,scoring_status,ranked_population'),
     'top_rows': RESULT_FIELDS['read_cwl_results']['rows']}]
-RESULT_FIELDS['read_member_accounts']['unknown_accounts'] = RESULT_FIELDS['read_member_accounts']['rows']
+RESULT_FIELDS['read_member_accounts']['unknown_accounts'] = [names('member_id,player_tag')]
 RESULT_FIELDS['read_clan_rosters']['clans'] = [names('clan_code,name,tag,basis,season,status,cohort_accounts,included_accounts,excluded_accounts,unknown_filter_accounts,in_game_members,in_game_capacity,capacity_basis,open_in_game_slots,town_halls')]
 RESULT_FIELDS['read_clan_rosters']['clans'][0]['entry_settings'] = names(
     'type,join_method,type_meaning,requiredTownhallLevel,requiredTrophies,requiredBuilderBaseTrophies')
@@ -137,6 +138,7 @@ RESULT_FIELDS['read_recruitment_pipeline']['rows'][0].update(
     timeline=[WORKFLOW_EVENT], accounts=RESULT_FIELDS['read_member_accounts']['rows'],
     period_status=None, period_evidence=[WORKFLOW_EVENT], undated_evidence=[WORKFLOW_EVENT])
 RESULT_FIELDS['read_recruitment_pipeline']['members'] = RESULT_FIELDS['read_member_accounts']['members']
+RESULT_FIELDS['read_recruitment_pipeline']['family_membership_role_ids'] = names('member,trial')
 RESULT_FIELDS['read_recruitment_pipeline']['source_next_cursor'] = None
 RATIO = names('numerator,denominator,value,display')
 PERFORMANCE = {**names('wars,observed_attacks,measurement_status,accounts'),

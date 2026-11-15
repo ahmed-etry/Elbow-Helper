@@ -51,6 +51,7 @@ class PeopleAdapter:
 
     def __init__(self, context: Any):
         self.context = context
+        self.link_snapshot = None
 
     async def links(self, selection: PeopleSelection) -> PeopleLinks:
         context = self.context
@@ -70,7 +71,10 @@ class PeopleAdapter:
         try:
             reader = getattr(getattr(context, 'bot', None), 'people_reads', None)
             if getattr(reader, 'link_service', None) is not None:
-                snapshot = await reader.current_links()
+                # Every selection filters the same full table, so one adapter reads it once.
+                if self.link_snapshot is None:
+                    self.link_snapshot = await reader.current_links()
+                snapshot = self.link_snapshot
                 if snapshot['coverage'].get('unavailable'):
                     return PeopleLinks({}, {}, 'source_unavailable')
                 wanted = set(selection.values)
@@ -78,6 +82,7 @@ class PeopleAdapter:
                     if (selection.direction == 'members' and row['discord_user_id'] not in wanted
                             or selection.direction == 'accounts' and row['player_tag'] not in wanted):
                         continue
+                    row = dict(row)
                     tags[row['player_tag']] = row
                     members.setdefault(row['discord_user_id'], []).append(row)
             elif selection.direction == 'members':

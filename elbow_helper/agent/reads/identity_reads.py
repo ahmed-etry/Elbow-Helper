@@ -88,6 +88,7 @@ def member_fields(member, identifier, *, include_roles=False, selected_role_ids=
 
 
 async def member_accounts(context, arguments):
+    people = PeopleAdapter(context)
     roster_clans, roster_names = {}, {}
     name_selection = {}
     name_identifiers = []
@@ -111,7 +112,7 @@ async def member_accounts(context, arguments):
                     'cause': 'invalid_arguments', 'conflicting_fields': [name_selector, *conflicts]}
         from elbow_helper.agent.reads.account_names import resolve_names
         name_selection = await resolve_names(context, arguments.get('account_names') or [arguments['name']],
-                                             arguments.get('look_in'))
+                                             arguments.get('look_in'), people)
         if 'error' in name_selection:
             return name_selection
         selected_accounts = name_selection.pop('accounts')
@@ -146,7 +147,7 @@ async def member_accounts(context, arguments):
                    if (tag := normalize_player_tag(value)) is not None})
     if arguments.get('account_tags') and len(tags) != len(set(arguments['account_tags'])):
         return {'error': 'Choose valid, distinct account tags.', 'cause': 'invalid_arguments'}
-    selected_links = await PeopleAdapter(context).links(PeopleSelection(
+    selected_links = await people.links(PeopleSelection(
         'members' if identifiers else 'accounts', tuple(identifiers or tags)))
     if selected_links.status == 'source_unavailable':
         return {'error': 'Account links are not available.', 'cause': 'source_unavailable'}
@@ -164,7 +165,8 @@ async def member_accounts(context, arguments):
                    if row.get('member_id') is not None})
     identifiers = sorted(set(identifiers) | set(owners.values()))
     members = await account_members(context, identifiers,
-        links=links if arguments.get('member_ids') else None, include_roles=arguments.get('include_roles', False))
+        links=links if arguments.get('member_ids') else None, include_roles=arguments.get('include_roles', False),
+        people=people)
     members_by_id = {row['member_id']: row for row in members}
     for resolution in name_selection.get('name_resolutions', []):
         if resolution['status'] == 'resolved':
@@ -257,12 +259,12 @@ async def member_accounts(context, arguments):
                          'all bot-linked accounts for selected members; missing profiles remain unknown')}
 
 
-async def account_members(context, identifiers, *, links=None, include_roles=False):
+async def account_members(context, identifiers, *, links=None, include_roles=False, people=None):
     """Keep each linked owner's Discord facts once, separate from game rows."""
     identifiers = sorted(set(identifiers) - {None})
     links_available = context.account_links is not None
     if links is None:
-        selected = await PeopleAdapter(context).links(PeopleSelection('members', tuple(identifiers)))
+        selected = await (people or PeopleAdapter(context)).links(PeopleSelection('members', tuple(identifiers)))
         links, links_available = selected.by_member, selected.status == 'available'
     await require_evidence_access(context)
     result = []
@@ -276,7 +278,7 @@ async def account_members(context, identifiers, *, links=None, include_roles=Fal
     return result
 
 
-async def clan_rosters(context, arguments):
+async def clan_rosters(context, arguments, people=None):
     from elbow_helper.agent.reads.domain_facts import clan_profile
     deadline = time.monotonic() + TOOL_TIMEOUT_SECONDS - 3
     context = replace(context, deadline_monotonic=min(deadline, context.deadline_monotonic)
@@ -355,7 +357,7 @@ async def clan_rosters(context, arguments):
     tags = sorted({row['player_tag'] for row in result if row.get('player_tag')})
     if arguments.get('exclude_leadership'):
         tags = sorted(set(tags) | leadership_tags)
-    selected_links = await PeopleAdapter(context).links(PeopleSelection('accounts', tuple(tags)))
+    selected_links = await (people or PeopleAdapter(context)).links(PeopleSelection('accounts', tuple(tags)))
     if selected_links.status == 'source_unavailable':
         return {'error': 'Account links are not available.', 'cause': 'source_unavailable'}
     links = selected_links.by_tag
