@@ -343,7 +343,7 @@ async def read_discord_research_job(
     if scope is None:
         return {"error": "That research job is not available in this conversation."}
     if await accessible_message_channel(context, scope.source_channel_id) is None:
-        return {"error": "The research source is no longer accessible."}
+        return {"error": "The research source is no longer accessible.", "cause": "access_denied"}
     context.state.source_channels.add(scope.source_channel_id)
     await require_evidence_access(context)
     job = await asyncio.to_thread(
@@ -379,7 +379,7 @@ async def retain_discord_research_report(
     if scope is None:
         return {"error": "That research job is not available in this conversation."}
     if await accessible_message_channel(context, scope.source_channel_id) is None:
-        return {"error": "The research source is no longer accessible."}
+        return {"error": "The research source is no longer accessible.", "cause": "access_denied"}
     context.state.source_channels.add(scope.source_channel_id)
     await require_evidence_access(context)
     job = await asyncio.to_thread(
@@ -442,7 +442,7 @@ async def cancel_discord_research_job(
             conversation_root_id=root_id, requester_id=context.member.id,
         )
     except PermissionError:
-        return {"error": "Only the member who started that research job can cancel it."}
+        return {"error": "Only the member who started that research job can cancel it.", "cause": "access_denied"}
     if job is None:
         return {"error": "That research job is not available in this conversation."}
     return job.manifest()

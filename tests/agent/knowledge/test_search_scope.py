@@ -9,7 +9,8 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID, LEAD
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
-from elbow_helper.agent.knowledge.tools import search_approved_knowledge
+from elbow_helper.agent.knowledge.tools import knowledge_tools, search_approved_knowledge
+from elbow_helper.agent.plan.checker import valid_arguments
 from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState
 from tests.agent.safety.test_agent_audiences import Channel, Member, Role, Thread
 
@@ -121,6 +122,13 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([s["visibility"] for s in result["sections"] if "body" in s], ["public"])
 
     async def test_invalid_scope_cannot_widen_search(self):
+        schema = knowledge_tools()[0].definition.parameters
+        self.assertNotIn("scope", schema["properties"])
+        self.assertTrue(valid_arguments({}, schema))
+        self.assertFalse(valid_arguments({"scope": "all"}, schema))
+        # Reaching the handler anyway must not widen what the search may see.
+        plain_context = replace(self.context, state=AgentTurnState())
+        plain = await search_approved_knowledge(plain_context, {})
         result = await search_approved_knowledge(self.context, {"scope": "all"})
-        self.assertIn("error", result)
-        self.assertEqual(self.context.state.required_access, set())
+        self.assertEqual(result, plain)
+        self.assertEqual(self.context.state.required_access, plain_context.state.required_access)

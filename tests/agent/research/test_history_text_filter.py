@@ -68,6 +68,23 @@ class HistoryChunkTests(unittest.IsolatedAsyncioTestCase):
             self.fail("Batched history failed to advance")
         self.assertEqual(found, [row.message_id for row in rows])
 
+    async def test_period_read_stops_where_the_request_has_no_more_room_and_resumes_there(self):
+        context = _context()
+        rows = history(context, [(1, "word " * 200, (), ()) for _ in range(60)])
+        context.reserve_search_page = AsyncMock(side_effect=lambda used: 20_000 - used)
+        arguments = {"channel_id": 100, "after": "2026-09-01", "limit": 10}
+        first = await read_discord_channel_history(context, arguments, complete_content=True, whole_period=True)
+        read = len(first["messages"])
+        # Fewer rows than the period holds, no more than the room allows, and the
+        # cursor resumes at the first row not delivered.
+        self.assertTrue(10 < read < 60)
+        self.assertLessEqual(sum(len(row["content"]) for row in first["messages"]), 16_000)
+        self.assertEqual(first["coverage"]["unread_period"]["before"], first["messages"][-1]["timestamp"])
+        context.reserve_search_page = None
+        second = await read_discord_channel_history(context, {
+            "channel_id": 100, "cursor": first["coverage"]["next_cursor"], "limit": 1}, complete_content=True)
+        self.assertEqual(second["messages"][0]["message_id"], rows[read].message_id)
+
     async def test_batched_access_loss_discards_all_earlier_messages(self):
         context = _context()
         history(context, [(1, "Sensitive", (), ()), (1, "Other", (), ())])

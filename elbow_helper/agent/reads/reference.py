@@ -10,7 +10,7 @@ from ..files.attachments import attachment_metadata
 from .domain_facts import domain_reference
 from .war_tools import CLANS_INPUT
 from elbow_helper.agent.safety.disclosure import request_scope, exclude_source
-from ..knowledge.tools import _section_id
+from ..knowledge.tools import _section_id, has_section_id, SECTION_ID_LENGTH
 from ..conversation.replay import replay_answer
 from elbow_helper.agent.conversation.wording import ACTION_EMPTY
 from ..research.history import read_discord_channel_history, read_message_context
@@ -39,7 +39,8 @@ async def community_reference(context, arguments):
     ids, titles = set(arguments.get('section_ids',[])), set(arguments.get('titles',[]))
     selection = bool(ids or titles)
     selected_headings = {(section.file_name, section.title, section.visibility)
-                         for section in catalog.active_sections if _section_id(section) in ids}
+                         for section in catalog.active_sections
+                         if any(has_section_id(section, identifier) for identifier in ids)}
     def selected(section):
         return ((section.file_name, section.title, section.visibility) in selected_headings
                 or section.title in titles or section.file_name in titles)
@@ -96,7 +97,8 @@ async def community_reference(context, arguments):
                 if role.id in READ_ACCESS_ROLE_SETS[level] and getattr(role, 'name', None)],
                 'available_privately': True} for level in sorted(excluded_levels)],
             'selection_complete':catalog.store_status=='available' and (
-                not selection or bool(visible) and ids <= {_section_id(section) for section in visible}
+                not selection or bool(visible)
+                and all(any(has_section_id(section, identifier) for section in visible) for identifier in ids)
                 and all(any(section.title == title or section.file_name == title for section in visible) for title in titles)),
             'coverage':'Exact approved titles or section IDs. Index rows contain no section bodies.'}
 
@@ -263,7 +265,7 @@ TOOLS = (
     {'reference_kind':{'type':'string','enum':['knowledge','clans','roles','workflows','bot_workflows']},
      'clan_codes':CLANS_INPUT,
      'titles':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','maxLength':200}},
-     'section_ids':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','minLength':64,'maxLength':64}}}, community_reference,
+     'section_ids':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','minLength':SECTION_ID_LENGTH,'maxLength':64}}}, community_reference,
     whole=Whole(selected_facts, selected_facts, selected_facts)),
  family_tool('read_conversation_evidence','Search full messages or read discussion chunks, causal replies and attachments.',
     {'mode':{'type':'string','enum':['reply','replay','reply_chain','message_window','channel_window','search','author_mentions','attachments']},

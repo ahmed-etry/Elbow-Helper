@@ -18,25 +18,21 @@ def knowledge_tools():
         "search_approved_knowledge",
         "Open matching titles first; search sections within the active destination scope.",
         {"type":"object", "properties":{
-            "scope":{"type":"string", "enum":["channel", "requester"]},
             "query":{"type":"string", "minLength":0, "maxLength":200},
             "titles":{"type":"array", "minItems":1, "maxItems":5, "uniqueItems":True,
                       "description":"Exact indexed headings or filenames. Query searches within selected files.",
                       "items":{"type":"string"}},
-            "section_id":{"type":"string", "minLength":64, "maxLength":64},
+            "section_id":{"type":"string", "minLength":SECTION_ID_LENGTH, "maxLength":64},
             "offset":{"type":"integer", "minimum":0},
             "limit":{"type":"integer", "minimum":1, "maximum":8},
             "section_offset":{"type":"integer", "minimum":0}},
          "required":[], "additionalProperties":False},
         usage_note="Open indexed headings for community questions. Filenames restrict query; exact headings open fully. Page relevant sections before claiming knowledge is missing."), search_approved_knowledge,
-        contract=CapabilityContract(()), returns="sections:[{title,body,visibility}],available_privately"),)
+        contract=CapabilityContract(())),)
 
 
 async def search_approved_knowledge(context, arguments):
     await require_evidence_access(context)
-    scope = arguments.get("scope", "requester")
-    if scope not in ("channel", "requester"):
-        return {"error": "Use channel or requester knowledge scope."}
     if context.knowledge_store is None:
         return _unavailable()
     try:
@@ -68,7 +64,7 @@ async def search_approved_knowledge(context, arguments):
     elif arguments.get("query", "").strip():
         relevant = catalog.search(metadata, query=arguments["query"], limit=None)
     elif "section_id" in arguments:
-        relevant = tuple(section for section in excluded if _section_id(section) == arguments["section_id"]
+        relevant = tuple(section for section in excluded if has_section_id(section, arguments["section_id"])
                          and has_reader_access_requirements(context.guild, context.member.id, {section.visibility}))
     else:
         relevant = ()
@@ -77,7 +73,7 @@ async def search_approved_knowledge(context, arguments):
         exclude_source(context, "knowledge:" + _section_id(section), "role_scope",
                        relevant=(section.file_name, section.title) in relevant_titles)
     if "section_id" in arguments:
-        sections = tuple(section for section in visible if _section_id(section) == arguments["section_id"])
+        sections = tuple(section for section in visible if has_section_id(section, arguments["section_id"]))
         method = "section_id"
     else:
         sections, method = catalog.select(visible, titles=arguments.get("titles", ()),
@@ -125,9 +121,21 @@ async def channel_knowledge_access(context, levels=None):
     return set(active if levels is None else active & levels)
 
 
-def _section_id(section):
+SECTION_ID_LENGTH = 12
+
+
+def _section_digest(section):
     return hashlib.sha256((section.file_name + "\0" + section.title + "\0" + section.body
                            + (f"\0{section.part}" if section.parts > 1 else "")).encode()).hexdigest()
+
+
+def _section_id(section):
+    return _section_digest(section)[:SECTION_ID_LENGTH]
+
+
+def has_section_id(section, identifier):
+    """An ID is the start of the section's digest, so full digests shown earlier still open it."""
+    return len(identifier) >= SECTION_ID_LENGTH and _section_digest(section).startswith(identifier)
 
 
 def _unavailable():

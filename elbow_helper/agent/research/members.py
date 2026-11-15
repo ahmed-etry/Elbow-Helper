@@ -78,7 +78,7 @@ async def read_discord_members(
         if not isinstance(report, HibernationReport) or report.guild_id != context.guild.id:
             return invalid_arguments("Read active hibernation to obtain a report for this conversation.", "hibernation_report_id")
         if await accessible_message_channel(context, report.source_channel_id) is None:
-            return {"error": "Hibernation status evidence is not accessible from this conversation."}
+            return {"error": "Hibernation status evidence is not accessible from this conversation.", "cause": "access_denied"}
         context.state.source_channels.add(report.source_channel_id)
         # Select from the complete retained snapshot, never the visible page or role count.
         identifiers = [row.member_id for row in report.snapshot.records]
@@ -263,7 +263,7 @@ def member_tools():
             AgentToolDefinition(
                 name="find_discord_roles",
                 description=(
-                    "Check named guild roles, their holders and clan purpose before claiming a role is absent."
+                    "Check named guild roles, their holder counts and clan purpose before claiming a role is absent."
                 ),
                 parameters={
                     "type": "object",
@@ -315,8 +315,6 @@ async def find_discord_roles(
             "managed": role.managed,
             "permissions": [name for name, enabled in role.permissions if enabled],
             "member_count": counts[role.id],
-            "members": [{"member_id": member.id, "display_name": member.display_name}
-                        for member in members if any(held.id == role.id for held in member.roles)],
             "clan_purposes": purposes,
         })
     offset = arguments.get("offset", 0)

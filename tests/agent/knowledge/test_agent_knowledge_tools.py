@@ -12,7 +12,7 @@ from elbow_helper.configuration.roles import (
 )
 from elbow_helper.agent.safety.access import AgentAccessLost, LookupAccessDenied
 from elbow_helper.agent.knowledge.store import KnowledgeStore
-from elbow_helper.agent.knowledge.tools import search_approved_knowledge
+from elbow_helper.agent.knowledge.tools import _section_digest, search_approved_knowledge, knowledge_tools
 from elbow_helper.agent.engine.models import AgentTurnState
 
 
@@ -37,6 +37,13 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
     def write(self, name, text):
         (self.path / name).write_text(text, encoding="utf-8")
 
+    async def test_search_scope_is_decided_by_request_access_without_an_option(self):
+        self.assertNotIn('scope', knowledge_tools()[0].definition.parameters['properties'])
+        self.write('leadership.md', '# Core leadership senate\nPublic responsibilities.')
+        result = await search_approved_knowledge(self.context, {'query': 'core leadership senate'})
+        self.assertEqual([section['title'] for section in result['sections']], ['Core leadership senate'])
+        self.assertEqual(result['scope'], 'channel')
+
     async def test_broad_search_starts_small_and_keeps_explicit_continuation(self):
         self.write("many.md", "\n".join(f"# Topic {index}\nShared policy {index}." for index in range(9)))
         arguments = {"query": "Shared policy"}
@@ -48,13 +55,21 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
                          & {row["section_id"] for row in second["sections"]})
         self.assertEqual(len(second["sections"]), 3)
 
+    async def test_full_length_section_id_from_an_earlier_reply_still_opens_its_section(self):
+        self.write("topics.md", "# Alpha guide\nAlpha body\n# Beta guide\nBeta body")
+        section = (await search_approved_knowledge(self.context, {"titles": ["Beta guide"]}))["sections"][0]
+        section_obj = next(row for row in self.store.load().active_sections if row.title == "Beta guide")
+        for identifier in (section["section_id"], _section_digest(section_obj)):
+            result = await search_approved_knowledge(self.context, {"section_id": identifier})
+            self.assertEqual([row["body"] for row in result["sections"]], ["Beta body"])
+
     def assert_sections(self, result, expected):
         self.assertEqual([
             {key: section[key] for key in ("title", "body", "visibility")}
             for section in result["sections"]
         ], expected)
         for section in result["sections"]:
-            self.assertRegex(section["section_id"], r"^[0-9a-f]{64}$")
+            self.assertRegex(section["section_id"], r"^[0-9a-f]{12}$")
             self.assertEqual(section["section_offset"], 0)
             self.assertEqual(section["total_characters"], len(section["body"]))
             self.assertFalse(section["truncated"])
