@@ -140,6 +140,21 @@ class LifecycleHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cog.lifecycle_state.open_joins(), {})
         self.assertEqual(cog.lifecycle_state.open_joins(), {})
 
+    async def test_join_and_leave_are_recorded_when_the_overseeing_channel_is_missing(self):
+        await self.seed({"platform_counts": {}})
+        cog = await self.new_cog(PeopleReads(self.family))
+        guild = SimpleNamespace(id=GUILD_ID, get_channel=lambda _: None, get_role=lambda _: None)
+        member = SimpleNamespace(id=7, guild=guild, joined_at=JOINED, display_name="Synthetic", nick=None,
+                                 mention="<@7>", roles=[], created_at=JOINED - timedelta(days=400))
+        with (patch.object(cog_module.discord, "TextChannel", FakeTextChannel),
+              patch.object(cog_module, "snapshot_invites", AsyncMock(return_value={}))):
+            await cog.on_member_join(member)
+            await cog.on_member_remove(member)
+        joined, left = await self.events.read(workflow="lifecycle")
+        self.assertEqual((joined["kind"], joined["case_key"], joined["source_message_id"]),
+                         ("joined", f"7:{JOINED_US}", None))
+        self.assertEqual((left["kind"], left["case_key"]), ("left", f"7:{JOINED_US}"))
+
     async def test_failed_write_keeps_state_and_history_and_a_restart_records_the_leave_once(self):
         await self.seed({"members": saved_work()["members"], "platform_counts": {"Referral": 1}})
         state = await self.new_state()

@@ -140,7 +140,7 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
         overseer = member.guild.get_channel(OVERSEEING_TERRACE)
         if not isinstance(overseer, discord.TextChannel):
             LOGGER.warning("Overseer channel not found: %s", OVERSEEING_TERRACE)
-            return
+            overseer = None
 
         if not self.invite_cache:
             await self._refresh_invite_cache(member.guild)
@@ -177,10 +177,11 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
         embed.add_field(name="🌍 Platform", value=platform, inline=True)
 
         message_id = None
-        try:
-            message_id = (await overseer.send(embed=embed)).id
-        except (discord.Forbidden, discord.HTTPException) as exc:
-            LOGGER.warning("Failed to send join snapshot: %s", exc)
+        if overseer is not None:
+            try:
+                message_id = (await overseer.send(embed=embed)).id
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                LOGGER.warning("Failed to send join snapshot: %s", exc)
         # The join's time is the record's; this keeps its source, counted for the week as before.
         await self.lifecycle_state.joined(member.id, joined_at_us(member), platform, message_id)
 
