@@ -109,7 +109,24 @@ class FamilyWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
     def family(result):
-        return {entry["player_tag"]: entry for row in result["rows"] for entry in row.get("family_wars", [])}
+        # Expand the single per-clan home of figures for the existing cross-clan assertions.
+        entries = {}
+        for row in result['rows']:
+            for entry in row.get('family_wars', []):
+                clans = {clan['clan_code']: {**clan} for clan in entry.get('by_clan', [])}
+                for reference in entry.get('row_figures', []):
+                    clan = clans.setdefault(reference['clan_code'], {'clan_code': reference['clan_code']})
+                    clan['regular' if reference['war_type'] == 'REG' else 'cwl'] = {
+                        'wars': len(row['war_ids']), **{key: row[key] for key in ZERO if key != 'wars'}}
+                for clan in clans.values():
+                    for kind in ('regular', 'cwl'):
+                        clan.setdefault(kind, dict(ZERO))
+                expanded = {**entry, 'by_clan': list(clans.values())}
+                for kind in ('regular', 'cwl'):
+                    expanded[kind] = {key: sum(clan[kind][key] for clan in clans.values()) for key in ZERO}
+                expanded['combined'] = {key: expanded['regular'][key] + expanded['cwl'][key] for key in ZERO}
+                entries[entry['player_tag']] = expanded
+        return entries
 
     async def test_a_transfer_shows_its_wars_in_the_other_clan_and_its_arrival(self):
         result = await self.read(account_tags=["#Y0"])
@@ -157,13 +174,14 @@ class FamilyWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_clan_scoped_figures_are_unchanged(self):
         arguments = {"war_type": "both", "clan_codes": ["BEH"], "account_tags": ["#P0", "#Y0", "#C0"], **OCTOBER}
-        plain = await war_reads.participation(self.context, arguments)
+        plain = await war_reads.participation_totals(self.context, arguments)
         family = await wars.war_participation(self.context, arguments)
-        self.assertEqual([{key: value for key, value in row.items() if key != "family_wars"} for row in family["rows"]],
+        self.assertEqual([{key: value for key, value in row.items() if key not in ('family_wars', 'clan_participation', 'leadership')}
+                          for row in family["rows"]],
                          plain["rows"])
         self.assertEqual({key: value for key, value in family.items()
-                          if key not in ("rows", "family_wars_scope", "record_span")},
-                         {key: value for key, value in plain.items() if key != "rows"})
+                          if key not in ("rows", "family_wars_scope", "record_span", 'members', 'clan_participation')},
+                         {key: value for key, value in plain.items() if key not in ('rows', 'members', 'clan_participation')})
 
     async def test_a_season_reads_that_month_and_its_league(self):
         entries = self.family(await wars.war_participation(self.context, {
@@ -174,7 +192,7 @@ class FamilyWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         result = await self.read(unit="member", member_ids=[41])
         (row,) = result["rows"]
         self.assertEqual([entry["player_tag"] for entry in row["family_wars"]], ["#P0", "#P2"])
-        self.assertEqual(row["family_wars"][0]["regular"]["wars"], 2)
+        self.assertEqual(self.family(result)['#P0']['regular']['wars'], 2)
 
     async def test_whole_clan_reads_and_war_subsets_add_nothing_per_account(self):
         result = await self.read()
@@ -183,7 +201,8 @@ class FamilyWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         subset = await wars.war_participation(self.context, {"war_type": "REG", "clan_codes": ["BEH"],
                                                           "latest_completed": 1, "account_tags": ["#P0"]})
         self.assertEqual(subset["family_wars_scope"]["status"], "not_read")
-        self.assertFalse(any("family_wars" in row for row in subset["rows"]))
+        self.assertTrue(all(set(entry) == {'player_tag', 'record_span'} for row in subset['rows']
+                            for entry in row['family_wars']))
         # The tool reads the same way.
         report = await TOOLS["read_war_participation"].handler(self.context, {
             "war_type": "REG", "clan_codes": ["BEH"], "account_tags": ["#Y0"], **OCTOBER})
@@ -194,7 +213,8 @@ class FamilyWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         result = await wars.war_participation(replace(self.context, cwl_queries=None), {
             "war_type": "REG", "clan_codes": ["BEH"], "account_tags": ["#P0"], **OCTOBER})
         self.assertEqual(result["family_wars_scope"], {"status": "unavailable", "cause": "missing_setup"})
-        self.assertEqual((result["rows"][0]["attacks_used"], "family_wars" in result["rows"][0]), (2, False))
+        self.assertEqual(result['rows'][0]['attacks_used'], 2)
+        self.assertEqual(set(result['rows'][0]['family_wars'][0]), {'player_tag', 'record_span'})
         # Without clan stays, the war figures stay and the stay fields are left out.
         result = await wars.war_participation(replace(self.context, bot=SimpleNamespace(war_reads=self.context.bot.war_reads)),
                                            {"war_type": "REG", "clan_codes": ["BEH"], "account_tags": ["#Y0"], **OCTOBER})

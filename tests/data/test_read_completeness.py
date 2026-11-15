@@ -4,7 +4,7 @@ import sqlite3
 import unittest
 from unittest.mock import patch
 
-from elbow_helper.data.reads import CwlReads, MembershipReads, PeopleReads, WarReads
+from elbow_helper.data.reads import CwlReads, PeopleReads, WarReads
 from tests.data import test_family_store as family
 from tests.data import test_people_reads as people_fixtures
 from tests.data.test_wars import END, SECOND, START, WarFixture, group, war
@@ -18,14 +18,10 @@ class NeutralWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         empty = await reads.totals(["#PY"], START, self.at, time_field="observed_at",
                                    player_tags=["#P0"], as_of=self.at)
         self.assertEqual(empty["rows"], [])
-        found = await reads.participation(["#PY"], START, self.at + 1, time_field="observed_at", as_of=self.at)
-        self.assertEqual({row["time"] for row in found["rows"]}, {self.at})
-        self.assertTrue(all(row["missed"] is None for row in found["rows"]))
         await self.execute("UPDATE war_members SET attacks_expected=NULL WHERE player_tag='#P0'")
         (unknown,) = (await reads.totals(["#PY"], START, self.at + 1, time_field="observed_at",
                                         player_tags=["#P0"], as_of=self.at))["rows"]
         self.assertEqual((unknown["wars"], unknown["wars_without_counts"], unknown["attacks_used"]), (1, 1, 0))
-        self.assertFalse(found["coverage"]["complete"])
 
     async def test_time_state_unions_are_one_snapshot_and_deduplicate(self):
         await self.record(war("warEnded"), at=END + SECOND)
@@ -108,20 +104,12 @@ class PeopleEvidenceTests(unittest.IsolatedAsyncioTestCase):
     clans = family.FamilyStoreTests.clans
     links = family.FamilyStoreTests.links
 
-    async def test_history_and_generations_describe_missing_and_failed_observations(self):
+    async def test_history_and_rosters_describe_missing_and_failed_observations(self):
         people = PeopleReads(self.store, clans=family.CLANS)
         history = await people.account_history(["#P0"], 100)
         self.assertEqual(history["coverage"]["unobserved_accounts"], ["#P0"])
         self.assertFalse(history["coverage"]["complete"])
         await self.clans(100)
         await self.clans(200, [family.response({}, 503), family.clan_response(1, [])])
-        result = await self.membership.generations(0, 201)
-        self.assertEqual([row["at"] for row in result["rows"]], [100])
-        self.assertFalse(result["coverage"]["complete"])
-        self.assertTrue(any(source["failures"] for source in result["coverage"]["signals"]))
         rosters = await self.membership.rosters(as_of=200)
         self.assertFalse(rosters["coverage"]["complete"])
-        with self.assertRaises(ValueError):
-            await self.membership.generations(2, 1)
-        empty = await MembershipReads(self.store, clans=()).generations(0, 1)
-        self.assertFalse(empty["coverage"]["complete"])

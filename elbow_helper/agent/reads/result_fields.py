@@ -180,8 +180,8 @@ for family in ('read_member_accounts', 'read_member_cohort'):
 # Only the participation tool adds family-wide wars; rows other reads share stay as they are.
 _FAMILY_FIGURES = names('wars,attacks_used,attacks_expected,missed,unconfirmed_opportunities')
 RESULT_FIELDS['read_war_participation']['rows'] = [{**RESULT_FIELDS['read_war_participation']['rows'][0], 'family_wars': [{
-    **names('player_tag,current_clan_code,in_current_clan_since,previous_family_clan_code,previous_family_clan_last_seen_at'),
-    'regular': _FAMILY_FIGURES, 'cwl': _FAMILY_FIGURES, 'combined': _FAMILY_FIGURES,
+    **names('player_tag,wars,current_clan_code,in_current_clan_since,previous_family_clan_code,previous_family_clan_last_seen_at'),
+    'row_figures': [names('clan_code,war_type')],
     'by_clan': [{**names('clan_code'), 'regular': _FAMILY_FIGURES, 'cwl': _FAMILY_FIGURES}]}]}]
 RESULT_FIELDS['read_war_participation']['family_wars_scope'] = names(
     'status,reason,cause,clan_codes,regular_wars,cwl_wars,lineups_complete,clan_stays,meanings')
@@ -196,3 +196,13 @@ for _family in ('read_war_participation', 'read_war_attacks'):
         **names('status,cause,accounts_not_listed,meanings'), 'checked': {**_SPAN, **names('period')},
         'recorded': [{**names('war_type'), **_SPAN}],
         'accounts': [{**names('player_tag,war_type,wars_outside_checked'), **_SPAN}]}
+RESULT_FIELDS['read_war_participation']['rows'][0]['family_wars'][0]['record_span'] = [
+    {**names('war_type,wars_outside_checked'), **_SPAN}]
+RESULT_FIELDS['read_war_participation']['record_span'].pop('accounts')
+RESULT_FIELDS['read_war_participation']['record_span'].pop('accounts_not_listed')
+RESULT_FIELDS['read_war_participation']['rows'][0]['clan_participation'] = [
+    {**names('clan_code,status'), 'account_tags': ['']}]
+RESULT_FIELDS['read_war_participation'].pop('members')
+for _group in RESULT_FIELDS['read_war_participation']['clan_participation'][0].values():
+    if isinstance(_group, dict):
+        _group.pop('identities', None)

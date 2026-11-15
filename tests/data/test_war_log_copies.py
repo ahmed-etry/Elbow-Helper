@@ -114,7 +114,7 @@ class LogMatchTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         members = await self.rows("SELECT * FROM war_members WHERE war_id=? ORDER BY id", (live["id"],))
         attacks = await self.rows("SELECT * FROM war_attacks WHERE war_id=? ORDER BY attack_order", (live["id"],))
         await self.execute("UPDATE war_collection_state SET war_id=? WHERE source_kind='current_war'", (copy["id"],))
-        await self.execute(f"PRAGMA user_version={SCHEMA_VERSION - 1}")
+        await self.execute("PRAGMA user_version=20")
         self.store = FamilyStore(self.path)
         await self.store.initialize()
         self.assertEqual(await self.store.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), SCHEMA_VERSION)
@@ -136,7 +136,7 @@ class LogMatchTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                                                   (live["id"],)))
         self.assertEqual(untouched, await self.rows("SELECT * FROM war_sides WHERE war_id=? ORDER BY side", (other["id"],)))
         self.assertEqual(await self.rows("PRAGMA foreign_key_check"), [])
-        self.assertEqual((MIGRATIONS[-1].version, MIGRATIONS[-1].apply), (SCHEMA_VERSION, merge_drifted_log_copies))
+        self.assertIn((21, merge_drifted_log_copies), [(m.version, m.apply) for m in MIGRATIONS])
 
     async def test_the_upgrade_leaves_a_copy_two_wars_could_own(self):
         await self.old_duplicate(rival_war())

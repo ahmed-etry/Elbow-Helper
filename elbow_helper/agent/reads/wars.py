@@ -30,10 +30,12 @@ class WarRequest:
     season: str | None
     war_ids: tuple[str, ...]
     latest_completed: int | None
+    player_tags: tuple[str, ...] | None
 
     def regular_arguments(self):
         return {'clan_codes': list(self.clan_codes), 'after_ts': self.after_ts, 'before_ts': self.before_ts,
                 'war_ids': self.war_ids,
+                **({'player_tags': self.player_tags} if self.player_tags is not None else {}),
                 **({'latest_completed': self.latest_completed} if self.latest_completed is not None else {})}
 
 
@@ -52,12 +54,13 @@ def period(arguments):
 
 
 def single_selection(context, arguments):
-    """Arguments with the window closed, and its bounds, once exactly one selector is used."""
+    """One period with its window closed, optionally limited to its latest wars."""
     if arguments.get('after') and not arguments.get('before'):
         arguments = {**arguments, 'before': context.source_message.created_at.isoformat()}
     after, before = period(arguments)
     selectors = [bool(arguments.get(key)) for key in ('season', 'season_keys', 'war_ids', 'latest_completed', 'history_limit')]
-    if sum(selectors) + (after is not None) > 1:
+    combined = bool(arguments.get('season') and arguments.get('latest_completed'))
+    if sum(selectors) + (after is not None) - combined > 1:
         raise ValueError('Choose one season selection, war selection or date window.')
     return arguments, after, before
 
@@ -74,7 +77,8 @@ async def record_selection(context, selection):
     try:
         request = WarRequest(selection['war_type'], tuple(selection['clan_codes']),
                              selection.get('after_ts'), selection.get('before_ts'), selection.get('season'),
-                             tuple(selection.get('war_ids', ())), selection.get('latest_completed'))
+                             tuple(selection.get('war_ids', ())), selection.get('latest_completed'),
+                             selection.get('player_tags'))
         regular = await record_wars.regular_wars(context, **request.regular_arguments())
     except record_wars.FAILURES:
         return dict(record_wars.UNAVAILABLE)
@@ -92,6 +96,16 @@ async def selected_wars(context, arguments, war_type, *, running=False):
         return {'error': 'Stored war evidence is not available.', 'cause': 'missing_setup'}
     try:
         arguments, after, before = single_selection(context, arguments)
+        has_period = any(arguments.get(key) for key in
+                         ('season', 'season_keys', 'history_limit', 'war_ids', 'latest_completed', 'after'))
+        subject = any(arguments.get(key) for key in ('account_tags', 'member_ids', 'cohort_ref'))
+        player_tags = None
+        if subject and (not has_period or arguments.get('latest_completed')):
+            from .war_attacks import selected_accounts
+            accounts = await selected_accounts(context, arguments)
+            if 'error' in accounts:
+                return accounts
+            player_tags = tuple(sorted(accounts['tags']))
         if arguments.get('season_keys') and war_type != 'CWL' or war_type == 'both' and arguments.get('season'):
             sources = []
             for season in arguments.get('season_keys', [arguments.get('season')]):
@@ -101,6 +115,8 @@ async def selected_wars(context, arguments, war_type, *, running=False):
                     if 'error' in source:
                         return source
                     sources.append(source)
+            if war_type == 'both' and arguments.get('latest_completed'):
+                return record_wars.combine(*sources, arguments['latest_completed'])
             return {'rows': [row for source in sources for row in source['rows']],
                     'war_ids': sorted({value for source in sources for value in source['war_ids']}),
                     'source_coverage': [source['coverage'] for source in sources],
@@ -118,7 +134,7 @@ async def selected_wars(context, arguments, war_type, *, running=False):
                 end = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
                 after, before, season = int(start.timestamp()), int(end.timestamp()), None
         if not (after is not None or season or arguments.get('season_keys') or arguments.get('history_limit')
-                or arguments.get('war_ids') or arguments.get('latest_completed')):
+                or arguments.get('war_ids') or arguments.get('latest_completed') or subject):
             return {'error': 'Which season, wars or date window do you want?', 'cause': 'invalid_arguments',
                     'missing_fields': ['season', 'season_keys', 'after', 'war_ids', 'latest_completed', 'history_limit']}
         selection = dict(clan_codes=arguments.get('clan_codes', list(CLANS)), war_type=war_type,
@@ -127,7 +143,12 @@ async def selected_wars(context, arguments, war_type, *, running=False):
             **{key: arguments[key] for key in ('season_keys', 'history_limit') if arguments.get(key)},
             **({'latest_completed': arguments['latest_completed']} if arguments.get('latest_completed') else {}),
             **({'running': True} if running else {}))
+        if player_tags is not None:
+            selection['player_tags'] = player_tags
         if war_type == 'CWL':
+            if arguments.get('account_tags'):
+                selection['player_tags'] = [tag for value in arguments['account_tags']
+                                            if (tag := normalize_player_tag(value)) is not None]
             return await stored_read(context, context.cwl_queries, 'participation', **selection)
         # Recent seasons are a league selection, refused for regular wars as league history refuses them.
         if arguments.get('history_limit'):
@@ -145,9 +166,13 @@ STAY_BATCH = 200
 FAMILY_MEANINGS = {
     'family_wars': 'One entry per account: its stored wars in every family clan over the same period, '
                    'whichever clan it was in, and its family clan stays.',
-    'regular, cwl, combined': 'Regular wars, CWL wars, and the two added together.',
-    'by_clan': 'The regular and CWL figures in each family clan where a lineup listed the account.',
-    'wars': 'Distinct wars whose lineup listed the account. The other figures mean what they mean on the row.',
+    'by_clan': 'Regular and CWL figures per family clan; types absent from both by_clan and row_figures '
+               'have zero stored wars. '
+               'Sum clans for each type, and both types for combined figures.',
+    'row_figures': 'Clan and war type whose figures equal the row: wars is its distinct war count; '
+                   'the other figures are the row fields of the same name.',
+    'wars': 'Zero on an account entry means no stored family lineup in this period. '
+            'In figure blocks it counts distinct wars; other figures mean what they mean on the row.',
     'current_clan_code, in_current_clan_since': 'The family clan it is in now, and the first family roster '
                                                 'that listed it there; null when it is in no family clan.',
     'previous_family_clan_code, previous_family_clan_last_seen_at': 'The family clan it was in before that, '
@@ -165,12 +190,13 @@ def family_periods(arguments):
     return [{key: arguments[key] for key in ('after', 'before') if arguments.get(key)}]
 
 
-async def family_sources(context, periods):
+async def family_sources(context, periods, arguments):
     """Regular and CWL wars of every family clan over each period; an error ends the reads."""
     sources = []
     for selection in periods:
         for kind in ('REG', 'CWL'):
-            source = await selected_wars(context, {**selection, 'clan_codes': list(CLANS)}, kind, running=True)
+            subject = {key: arguments[key] for key in ('account_tags', 'member_ids') if arguments.get(key)}
+            source = await selected_wars(context, {**selection, **subject, 'clan_codes': list(CLANS)}, kind, running=True)
             if 'error' in source:
                 return source
             sources.append((kind, source))
@@ -220,7 +246,7 @@ async def family_wars(context, arguments, rows, accounts):
     periods = family_periods(arguments)
     if periods is None:
         return {'status': 'not_read', 'reason': 'war_ids and latest_completed choose wars, not a period'}
-    sources = await family_sources(context, periods)
+    sources = await family_sources(context, periods, arguments)
     if isinstance(sources, dict):
         return {'status': 'unavailable', 'cause': sources.get('cause', 'source_unavailable')}
     tags = sorted({tag for row in rows for tag in accounts(row)})
@@ -232,15 +258,26 @@ async def family_wars(context, arguments, rows, accounts):
     for row in rows:
         entries = []
         for tag in accounts(row):
-            def figures(kind, code=None):
-                return war_figures([item for item in own[tag] if item['war_type'] == kind
-                                    and (code is None or item['clan_code'] == code)])
-            regular, cwl = figures('REG'), figures('CWL')
-            entries.append({'player_tag': tag, 'regular': regular, 'cwl': cwl,
-                'combined': {key: regular[key] + cwl[key] for key in FAMILY_FIGURES},
-                'by_clan': [{'clan_code': code, 'regular': figures('REG', code), 'cwl': figures('CWL', code)}
-                            for code in sorted({item['clan_code'] for item in own[tag]})],
-                **(stay_facts(stays.get(tag, [])) if stays is not None else {})})
+            entry = {'player_tag': tag,
+                     **(stay_facts(stays.get(tag, [])) if stays is not None else {})}
+            row_figures = {'wars': len(row['war_ids']), **{key: row[key] for key in FAMILY_FIGURES[1:]}}
+            if not own[tag]:
+                entry['wars'] = 0
+            for code in sorted({item['clan_code'] for item in own[tag]}):
+                clan = {'clan_code': code}
+                for kind, field in (('REG', 'regular'), ('CWL', 'cwl')):
+                    observations = [item for item in own[tag] if item['war_type'] == kind
+                                    and item['clan_code'] == code]
+                    if not observations:
+                        continue
+                    figures = war_figures(observations)
+                    if figures == row_figures:
+                        entry.setdefault('row_figures', []).append({'clan_code': code, 'war_type': kind})
+                    else:
+                        clan[field] = figures
+                if len(clan) > 1:
+                    entry.setdefault('by_clan', []).append(clan)
+            entries.append(entry)
         row['family_wars'] = entries
     wars = {kind: {war for each, source in sources if each == kind for war in source.get('war_ids', ())}
             for kind in ('REG', 'CWL')}
@@ -341,26 +378,34 @@ async def participation_totals(context, arguments, *, separate_seasons=False, fa
     if arguments.get('top_n'):
         result = result[:arguments['top_n']]
     family_scope = None
+    def accounts(row):
+        if row.get('player_tag'):
+            return [row['player_tag']]
+        return sorted(set(row['account_tags'])
+                      | {tag for tag in selected_tags if owners.get(tag) == row['member_id']})
     if family and (arguments.get('account_tags') or arguments.get('member_ids')):
-        def accounts(row):
-            if row.get('player_tag'):
-                return [row['player_tag']]
-            return sorted(set(row['account_tags'])
-                          | {tag for tag in selected_tags if owners.get(tag) == row['member_id']})
         family_scope = await family_wars(context, arguments, result, accounts)
     span = None
     if family:
         from .war_span import record_span
         named = arguments.get('account_tags') or arguments.get('member_ids')
-        span = await record_span(context, arguments, source, sorted(selected_tags) if named else None)
+        entries = {}
+        if named:
+            for row in result:
+                if 'family_wars' not in row:
+                    row['family_wars'] = [{'player_tag': tag} for tag in accounts(row)]
+                entries.update((entry['player_tag'], entry) for entry in row['family_wars'])
+        span = await record_span(context, arguments, source, sorted(entries) if named else None,
+                                 account_entries=entries)
     clan_totals = []
     periods = [(season, code) for season in source.get('component_seasons', [arguments.get('season')])
                for code in arguments.get('clan_codes', sorted({r['clan_code'] for r in rows if r.get('clan_code')}))]
     for season, code in periods:
+        # Regular wars have no CWL season label; their selection already applied the UTC month window.
         observations = [row for row in rows if row.get('clan_code') == code
-                        and (season is None or row.get('season') == season)]
+                        and (season is None or row.get('season') in ('', season))]
         selected = [war for war in source.get('war_aliases', []) if war['clan_code'] == code
-                    and (season is None or war.get('season') == season)]
+                    and (season is None or war.get('season') in ('', season))]
         empty = {war['war_id'] for war in source.get('wars_without_rosters', [])}
         confirmed = (bool(observations) and all(row.get('missed') is not None for row in observations)
                      and not any(war['war_id'] in empty for war in selected))
@@ -373,14 +418,25 @@ async def participation_totals(context, arguments, *, separate_seasons=False, fa
             'totals_complete': confirmed,
             **({'season_complete': confirmed and war_count >= 7} if separate_seasons and season else {})})
     from .member_context import account_owner_profiles
-    member_profiles = account_owner_profiles(result) if unit == 'account' else None
+    member_profiles = account_owner_profiles(result) if unit == 'account' and not family else None
+    participation = clan_participation(rows, owners, context.guild,
+        arguments.get('clan_codes', sorted({r['clan_code'] for r in rows if r.get('clan_code')})))
+    if family:
+        # Identities belong to the same paged rows as their measures, never to a repeated header.
+        for clan in participation:
+            for status in ('warring', 'joined_without_attacking', 'unknown'):
+                for identity in clan[status].pop('identities'):
+                    for row in result:
+                        tags = sorted(set(accounts(row)) & set(identity['account_tags']))
+                        if tags:
+                            row.setdefault('clan_participation', []).append({
+                                'clan_code': clan['clan_code'], 'status': status, 'account_tags': tags})
     return {**source, 'rows': result, 'clan_totals': clan_totals,
             **({'members': member_profiles} if member_profiles is not None else {}),
             **({'family_wars_scope': family_scope} if family_scope is not None else {}),
             **({'record_span': span} if span is not None else {}),
             'ranked_population': population, 'opportunity_unit': 'account-war',
-            'clan_participation': clan_participation(rows, owners, context.guild,
-                arguments.get('clan_codes', sorted({r['clan_code'] for r in rows if r.get('clan_code')}))),
+            'clan_participation': participation,
             'participation_meanings': {
                 'warring': 'Joined a stored war and attacked at least once in the selected period.',
                 'joined_without_attacking': 'Joined stored wars but used no attacks; confirmed final participation only.',

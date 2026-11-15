@@ -8,7 +8,6 @@ from .core import placeholders
 SECOND = 1_000_000
 CHUNK = 365 * 86400 * SECOND
 CAPTURE_WINDOW = 72 * 3600 * SECOND
-FLOOR = int(datetime(2020, 1, 1, tzinfo=timezone.utc).timestamp()) * SECOND
 MAX_SELECTED_WARS = 10_000
 
 
@@ -20,6 +19,7 @@ class RegularSelection:
     war_ids: tuple[str, ...]
     latest_completed: int | None
     as_of: int
+    player_tags: tuple[str, ...] | None
 
 
 def regular_id(view):
@@ -90,7 +90,7 @@ def select_regular(connection, request):
         end, found = before, set()
         while end > after and (enough is None or len(found) < enough):
             start = max(after, end - CHUNK)
-            wars = select_wars(connection, [clan], start, end, ('REG',), request.as_of)
+            wars = select_wars(connection, [clan], start, end, ('REG',), request.as_of, player_tags=request.player_tags)
             for row, facing, _, _ in wars:
                 if requested:
                     view = war_view(connection, row, facing, request.as_of)
@@ -131,8 +131,12 @@ def select_regular(connection, request):
                 keep(row, row['facing'])
     else:
         for clan in request.clans:
-            scan(clan, FLOOR if request.latest_completed else request.after,
-                 request.as_of + 1 if request.latest_completed else request.before,
+            first = request.after
+            if first is None:
+                first = connection.execute('SELECT MIN(end_at) FROM wars WHERE type=\'REG\'').fetchone()[0]
+                if first is None:
+                    continue
+            scan(clan, first, request.before if request.before is not None else request.as_of + 1,
                  enough=request.latest_completed, count_friendly=request.latest_completed is None)
 
     entries = sorted(selected.values(), key=lambda item: (-item[1]['end_at'], item[1]['clan_tag'], item[1]['war_id']))

@@ -54,6 +54,6 @@ class WarTagSelectionTests(unittest.IsolatedAsyncioTestCase):
         missing = await self.tools['read_war_participation'].handler(self.context, {
             'war_type': 'CWL', 'latest_completed': 1, 'account_tags': ['yo']})
         self.assertEqual(missing['rows'][0]['player_tag'], '#Y0')
-        # Every checked war has a stored lineup, so an account in none of them is a known zero.
-        self.assertEqual(missing['rows'][0]['attacks_used'], 0)
-        self.assertEqual(missing['rows'][0]['participation_status'], 'not_in_checked_lineups')
+        # Latest wars now select this account's wars; no appearance leaves no checked war.
+        self.assertIsNone(missing['rows'][0]['attacks_used'])
+        self.assertEqual(missing['rows'][0]['participation_status'], 'unknown')

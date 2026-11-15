@@ -3,47 +3,58 @@
 import json
 
 
+def war_side_coverages(connection, war_ids):
+    """Read side evidence for a set of wars in four statements."""
+    ids = json.dumps(list(war_ids))
+    wars = {row["id"]: row for row in connection.execute(
+        "SELECT * FROM wars WHERE id IN (SELECT value FROM json_each(?))", (ids,))}
+    members = {(row["war_id"], row["side"]): row for row in connection.execute(
+        "SELECT war_id,side,COUNT(*) AS members,"
+        "SUM(name IS NULL OR townhall IS NULL OR source_map_position IS NULL) AS missing_lineup,"
+        "SUM(attacks_expected IS NULL OR attacks_used IS NULL) AS missing_counts "
+        "FROM war_members WHERE war_id IN (SELECT value FROM json_each(?)) GROUP BY war_id,side", (ids,))}
+    attacks = {}
+    unattributed = {}
+    # With neither attacker nor defender known, an attack could belong to either side.
+    for row in connection.execute(
+            "SELECT a.war_id,m.side,"
+            "SUM(a.attacker_member_id IS NULL AND a.defender_member_id IS NULL) AS unattributed,"
+            "SUM(COALESCE(json_extract(a.extra_json,'$.stub'),0)=0) AS stored "
+            "FROM war_attacks a LEFT JOIN war_members m ON m.id=a.attacker_member_id "
+            "WHERE a.war_id IN (SELECT value FROM json_each(?)) GROUP BY a.war_id,m.side", (ids,)):
+        attacks[row["war_id"], row["side"]] = row["stored"]
+        unattributed[row["war_id"]] = unattributed.get(row["war_id"], 0) + row["unattributed"]
+    sides = {}
+    for row in connection.execute(
+            "SELECT * FROM war_sides WHERE war_id IN (SELECT value FROM json_each(?))", (ids,)):
+        war = wars[row["war_id"]]
+        count = members.get((war["id"], row["side"]))
+        total = count["members"] if count else 0
+        counted = war["team_size"] is not None and total == war["team_size"]
+        # Bases copied from old attacks do not prove a captured opponent lineup.
+        partial = war["type"] == "CWL" and json.loads(row["extra_json"]).get("partial", False)
+        stored = attacks.get((war["id"], row["side"]), 0)
+        sides.setdefault(war["id"], []).append({
+            "clan_tag": row["clan_tag"], "team_size": war["team_size"], "members": total,
+            "lineup_complete": counted and not (count["missing_lineup"] if count else 0) and not partial,
+            "attacks_reported": row["attacks"], "attacks_stored": stored,
+            "attacks_complete": (counted and not (count["missing_counts"] if count else 0)
+                                 and not unattributed.get(war["id"], 0) and row["attacks"] is not None
+                                 and stored == row["attacks"])})
+    return {(war_id, own["clan_tag"]): {
+        "war_id": war_id, "type": wars[war_id]["type"], "type_basis": wars[war_id]["type_basis"],
+        "state": wars[war_id]["state"], "final": wars[war_id]["final_at"] is not None,
+        "own": own, "opponent": next(side for side in pair if side is not own),
+        "unattributed_attacks": unattributed.get(war_id, 0)}
+        for war_id, pair in sides.items() for own in pair}
+
+
 def war_side_coverage(connection, war_id, clan_tag):
     """Lineup and attack completeness of a clan's side, kept apart from its opponent's.
 
     Returns None when the clan did not fight this war.
     """
-    war = connection.execute("SELECT * FROM wars WHERE id=?", (war_id,)).fetchone()
-    sides = {row["clan_tag"]: row for row in connection.execute("SELECT * FROM war_sides WHERE war_id=?", (war_id,))}
-    if war is None or clan_tag not in sides:
-        return None
-    # A known defender places an attack on the other side; with neither known,
-    # the attack could be either side's.
-    unattributed = connection.execute(
-        "SELECT COUNT(*) FROM war_attacks WHERE war_id=? AND attacker_member_id IS NULL AND defender_member_id IS NULL",
-        (war_id,)).fetchone()[0]
-
-    def side(row):
-        members = connection.execute(
-            "SELECT COUNT(*),COALESCE(SUM(name IS NULL OR townhall IS NULL OR source_map_position IS NULL),0),"
-            "COALESCE(SUM(attacks_expected IS NULL OR attacks_used IS NULL),0) "
-            "FROM war_members WHERE war_id=? AND side=?", (war_id, row["side"])).fetchone()
-        stored = connection.execute(
-            "SELECT COUNT(*) FROM war_attacks a JOIN war_members m ON m.id=a.attacker_member_id "
-            "WHERE a.war_id=? AND m.side=? AND COALESCE(json_extract(a.extra_json,'$.stub'),0)=0",
-            (war_id, row["side"])).fetchone()[0]
-        counted = war["team_size"] is not None and members[0] == war["team_size"]
-        # Imported league defenders were observed only as bases that were hit.
-        # Even when every base was hit, that is not a captured opponent lineup.
-        partial = war["type"] == "CWL" and json.loads(row["extra_json"]).get("partial", False)
-        lineup = counted and not members[1] and not partial
-        # Every attack, and so every miss, needs each member's expected and used attacks, not their town hall
-        # or map position.
-        attacks = (counted and not members[2] and not unattributed and row["attacks"] is not None
-                   and stored == row["attacks"])
-        return {"clan_tag": row["clan_tag"], "team_size": war["team_size"], "members": members[0],
-                "lineup_complete": lineup, "attacks_reported": row["attacks"], "attacks_stored": stored,
-                "attacks_complete": attacks}
-
-    other = next(row for tag, row in sides.items() if tag != clan_tag)
-    return {"war_id": war_id, "type": war["type"], "type_basis": war["type_basis"], "state": war["state"],
-            "final": war["final_at"] is not None, "own": side(sides[clan_tag]), "opponent": side(other),
-            "unattributed_attacks": unattributed}
+    return war_side_coverages(connection, [war_id]).get((war_id, clan_tag))
 
 
 

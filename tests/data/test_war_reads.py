@@ -7,7 +7,6 @@ from elbow_helper.features.clan_reporting.record_wars import monthly_results
 from elbow_helper.data.store.war_projection import HOUR, api_time
 
 from . import test_family_store as fixtures
-from .test_family_store import link
 from .test_wars import END, SECOND, START, WarFixture, war
 
 
@@ -172,67 +171,19 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         causes = {war["war_id"]: war["causes"] for war in result["coverage"]["incomplete_wars"]}
         self.assertEqual(sorted(causes.values()), [["lineup_incomplete", "attacks_incomplete"], ["not_final"]])
         self.assertFalse(result["coverage"]["complete"])
-        rows = (await self.reads.participation(["#PY"], END, END + 3 * DAY, as_of=at))["rows"]
-        self.assertEqual([(r["player_tag"], r["attacks_used"], r["missed"], r["final"]) for r in rows],
-                         [("#P0", 1, None, False), ("#P2", 0, None, False)])
 
-    async def test_final_counts_without_every_attack_still_give_known_misses(self):
-        # Early copied wars list each account's final count but not where it stands on the map.
+    async def test_clan_attack_no_account_holds_leaves_completed_misses_unknown(self):
+        # A clan total containing an attack no account holds cannot prove missed attacks.
         early = war("warEnded")
         for member in early["clan"]["members"]:
             member.pop("townhallLevel")
         await self.record(early, at=END + 90 * SECOND)
-        at = END + DAY
-        rows = (await self.reads.participation(["#PY"], END, END + DAY, as_of=at))["rows"]
-        self.assertEqual([(r["player_tag"], r["missed"], r["attacks_complete"]) for r in rows],
-                         [("#P0", 1, True), ("#P2", 1, True)])
-        # One attack is missing from the saved list, but the accounts' used attacks still add up to the clan's total.
         await self.execute("DELETE FROM war_attacks WHERE attack_order=1")
-        rows = (await self.reads.participation(["#PY"], END, END + DAY, as_of=at))["rows"]
-        self.assertEqual([(r["player_tag"], r["missed"], r["attacks_complete"]) for r in rows],
-                         [("#P0", 1, False), ("#P2", 1, False)])
-        # A total the copy summed from those same counts proves nothing.
-        await self.execute("UPDATE war_sides SET extra_json='{\"derived\": [\"attacks\"]}' WHERE clan_tag='#PY'")
-        rows = (await self.reads.participation(["#PY"], END, END + DAY, as_of=at))["rows"]
-        self.assertEqual([r["missed"] for r in rows], [None, None])
-        await self.execute("UPDATE war_sides SET extra_json='{}' WHERE clan_tag='#PY'")
-        # The clan's total counts an attack no account holds: only an account with every attack used is final.
         await self.execute("UPDATE war_members SET attacks_used=2 WHERE player_tag='#P0'")
         await self.execute("UPDATE war_sides SET attacks=4 WHERE clan_tag='#PY'")
-        rows = (await self.reads.participation(["#PY"], END, END + DAY, as_of=at))["rows"]
-        self.assertEqual([(r["player_tag"], r["missed"]) for r in rows], [("#P0", 0), ("#P2", None)])
-        self.assertIsNone((await self.reads.completed(["#PY"], END, END + DAY, as_of=at))["rows"][0]["missed_attacks"])
-        # Before the war ends nothing is final, not even a full account.
-        await self.execute("UPDATE wars SET state='inWar'")
-        rows = (await self.reads.participation(["#PY"], END, END + DAY, as_of=at))["rows"]
-        self.assertEqual([r["missed"] for r in rows], [None, None])
-
-    async def test_participation_counts_hits_stars_triples_and_groups_by_owner(self):
-        await self.links(END, link(100))
-        await self.record(war("warEnded"), at=END + 90 * SECOND)
-        at = END + DAY
-        rows = (await self.reads.participation(["#PY"], END, END + DAY, as_of=at))["rows"]
-        self.assertEqual([(r["player_tag"], r["attacks_used"], r["attacks_expected"], r["missed"], r["stars"],
-                           r["triples"], r["destruction"], r["attacks_measured"]) for r in rows],
-                         [("#P0", 1, 2, 1, 3, 1, 100.0, 1), ("#P2", 1, 2, 1, 3, 1, 100.0, 1)])
-        only = await self.reads.participation(["#PY"], END, END + DAY, player_tags=["#P2"], as_of=at)
-        self.assertEqual([r["player_tag"] for r in only["rows"]], ["#P2"])
-        grouped = await self.reads.participation(["#PY"], END, END + DAY, group_by="owner", as_of=at)
-        self.assertEqual([(g["unit"], g["member_id"], g["player_tags"], g["wars"], g["missed"], g["totals_complete"])
-                          for g in grouped["rows"]],
-                         [("account", None, ["#P2"], 1, 1, True), ("member", 100, ["#P0"], 1, 1, True)])
-        self.assertEqual(grouped["ownership_basis"], "owner at as_of")
-        # Before the link existed the account was unowned.
-        early = await self.reads.participation(["#PY"], END, END + DAY, group_by="owner", as_of=END - 1)
-        self.assertEqual(early["rows"], [])
-        # One unknown miss makes the owner's total unknown, never smaller.
-        unfinished = war("inWar", clans=("#PY", "#CU"), end="20261030T180000.000Z")
-        unfinished.update(preparationStartTime="20261028T180000.000Z", startTime="20261029T180000.000Z")
-        await self.record(unfinished, at=END + DAY + HOUR)
-        wide = await self.reads.participation(["#PY"], END, END + 3 * DAY, group_by="owner", as_of=END + 5 * DAY)
-        member = next(g for g in wide["rows"] if g["unit"] == "member")
-        self.assertEqual((member["wars"], member["opportunities"], member["attacks_used"], member["missed"],
-                          member["totals_complete"]), (2, 2, 2, None, False))
+        self.assertIsNone((await self.reads.completed(
+            ["#PY"], END, END + DAY, as_of=END + DAY,
+        ))["rows"][0]["missed_attacks"])
 
     async def test_attacks_carry_both_town_halls_positions_and_freshness(self):
         repeated = war("warEnded")
@@ -354,9 +305,7 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                      lambda: self.reads.completed([], START, END),
                      lambda: self.reads.completed(["#PY"], START, END, types=["OTHER"]),
                      lambda: self.reads.completed(["#PY"], START, END, limit=201),
-                     lambda: self.reads.participation(["#PY"], START, END, group_by="clan"),
                      lambda: self.reads.attacks(["#PY"], START, END, direction="both"),
-                     lambda: self.reads.participation(["#PY"], START, END, time_field="live"),
                      lambda: monthly_results(self.reads, "#PY", "2026-13"),
                      lambda: monthly_results(self.reads, "#PY", "2026-1"),
                      lambda: self.reads.current("not a tag")):

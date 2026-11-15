@@ -4,7 +4,7 @@ import unittest
 from elbow_helper.data.reads import WarReads
 from elbow_helper.features.clan_health.record_wars import capture_page
 from tests.data.test_wars import WarFixture, war, START, END, SECOND
-from tests.data.test_war_reads import friendly, DAY, HOUR
+from tests.data.test_war_reads import friendly, DAY
 
 
 class CaptureReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
@@ -34,31 +34,6 @@ class CaptureReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                 row["time_basis"] = {"end_at": "war_end", "observed_at": "last_check"}[row["time_basis"]]
         result.update(view=view, bounds="inclusive" if view == "capture" else "exclusive_end")
         return result
-
-    async def test_health_views_keep_capture_time_and_completed_meanings(self):
-        await self.record(war("preparation"), at=START - HOUR)
-        await self.record(war(), at=self.at)
-        capture = await self.capture("participation", ["#PY"], START, self.at, as_of=self.at)
-        self.assertEqual([(r["player_tag"], r["state"], r["time"], r["time_basis"], r["attacks_used"],
-                           r["attacks_expected"], r["stars"]) for r in capture["rows"]],
-                         [("#P0", "inWar", self.at, "last_check", 1, 2, 3), ("#P2", "inWar", self.at, "last_check", 0, 2, 0)])
-        self.assertEqual(capture["bounds"], "inclusive")
-        self.assertEqual((await self.capture("participation", ["#PY"], START, self.at - 1, as_of=self.at))["rows"], [])
-        self.assertEqual((await self.capture("participation", ["#PY"], START, END + DAY, view="completed",
-                                                           as_of=self.at))["rows"], [])
-        await self.record(war("warEnded"), at=END + 90 * SECOND)
-        await self.record(friendly(), at=END + 3 * DAY)
-        at = END + 4 * DAY
-        ended = await self.capture("participation", ["#PY"], END, END + 3 * DAY, view="completed", as_of=at)
-        self.assertEqual({(r["time"], r["time_basis"], r["type"]) for r in ended["rows"]}, {(END, "war_end", "REG")})
-        self.assertEqual((await self.capture("participation", ["#PY"], START, END, view="completed", as_of=at))["rows"], [])
-        self.assertEqual(len((await self.capture("participation", ["#PY"], START, END, as_of=at))["rows"]), 2)
-        with_friendly = await self.capture("participation", ["#PY"], END, END + 3 * DAY, types=["REG", "FRIENDLY"], as_of=at)
-        self.assertEqual(sorted({r["type"] for r in with_friendly["rows"]}), ["FRIENDLY", "REG"])
-        # League wars are read only when asked for; there are none here.
-        self.assertEqual((await self.capture("participation", ["#PY"], END, END + DAY, types=["CWL"], as_of=at))["rows"], [])
-        with self.assertRaises(ValueError):
-            await self.capture("participation", ["#PY"], END, END + DAY, types=["ARRANGED"])
 
     async def test_health_totals_sum_each_account_over_one_snapshot_and_keep_unknown_counts_apart(self):
         await self.record(war(), at=self.at)

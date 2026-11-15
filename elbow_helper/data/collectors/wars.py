@@ -79,7 +79,8 @@ async def collect_pass(owner, run, initial):
         try:
             final = job.get("end_at") is not None and job.get("final_at") is None and now_us() >= job["end_at"] + 90 * SECOND
             response = await owner.clash_client.get(path_for(job), **({"fresh": True} if final else {}))
-        except Exception:
+        except Exception as cause:
+            owner._causes[run].append(((kind, scope), cause))
             response = None
         await owner.store.call(record_response, run, ordinal, kind, scope, response, family_tags, now_us())
         if kind == "war_log":

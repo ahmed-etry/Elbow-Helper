@@ -24,7 +24,11 @@ JUNE_END = "20250610T180000.000Z"
 
 
 def entries(result):
-    return {(row["player_tag"], row["war_type"]): row for row in result["record_span"]["accounts"]}
+    if 'accounts' in result['record_span']:
+        return {(row['player_tag'], row['war_type']): row for row in result['record_span']['accounts']}
+    return {(entry['player_tag'], span['war_type']): {'player_tag': entry['player_tag'], **span}
+            for row in result['rows'] for entry in row.get('family_wars', [])
+            for span in entry.get('record_span', [])}
 
 
 class RecordSpanTests(WarFixture, unittest.IsolatedAsyncioTestCase):
@@ -84,7 +88,7 @@ class RecordSpanTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                                              "last_war_end": "2026-10-30", "wars": 3}])
         self.assertNotIn("accounts", span)
         self.assertEqual((span["status"], set(span["meanings"])),
-                         ("read", {"record_span", "checked", "recorded", "accounts"}))
+                         ("read", {"record_span", "checked", "recorded", "rows.family_wars.record_span"}))
         # Every family clan, both war types.
         family = await wars.war_participation(self.context, {"war_type": "both", **OCTOBER})
         self.assertEqual(family["record_span"]["recorded"], [
@@ -120,16 +124,16 @@ class RecordSpanTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual((found["#P0", "REG"]["wars_outside_checked"], found["#P0", "CWL"]["wars_outside_checked"]),
                          (1, 1))
         self.assertEqual((found["#P0", "CWL"]["first_war_end"], found["#P0", "CWL"]["wars"]), ("2026-10-10", 1))
-        # An account with no stored wars is listed with none.
-        empty = entries(await self.participation(account_tags=["#V0"], **OCTOBER))
-        self.assertEqual(empty["#V0", "REG"], {"player_tag": "#V0", "war_type": "REG", "first_war_end": None,
-                                               "last_war_end": None, "wars": 0, "wars_outside_checked": 0})
+        # A checked account with no stored wars has an empty span, not repeated zero blocks.
+        empty = await self.participation(account_tags=['#V0'], **OCTOBER)
+        self.assertEqual(empty['record_span']['status'], 'read')
+        self.assertEqual(empty['rows'][0]['family_wars'][0]['record_span'], [])
 
     async def test_the_selected_wars_are_unchanged(self):
         for arguments in ({"latest_completed": 1}, OCTOBER, {"season": "2026-10"}):
             with self.subTest(arguments=arguments):
                 selection = {"war_type": "REG", "clan_codes": ["BEH"], "account_tags": ["#P0"], **arguments}
-                plain = await war_reads.participation(self.context, selection)
+                plain = await war_reads.participation_totals(self.context, selection)
                 spanned = await wars.war_participation(self.context, selection)
                 self.assertEqual((spanned["war_ids"], spanned["clan_totals"]), (plain["war_ids"], plain["clan_totals"]))
                 self.assertEqual([row["war_ids"] for row in spanned["rows"]], [row["war_ids"] for row in plain["rows"]])
@@ -162,7 +166,10 @@ class RecordSpanTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         with patch.object(WarReads, "record_span", side_effect=OSError("locked")):
             failed = await self.participation(**selection)
         self.assertEqual(failed["record_span"], {"status": "unavailable", "cause": "source_unavailable"})
-        self.assertEqual(failed["rows"], before["rows"])
+        def without_span(rows):
+            return [{**row, 'family_wars': [{key: value for key, value in entry.items() if key != 'record_span'}
+                                           for entry in row['family_wars']]} for row in rows]
+        self.assertEqual(without_span(failed['rows']), without_span(before['rows']))
         with patch.object(WarReads, "record_span", side_effect=OSError("locked")):
             attacks = await war_attacks.war_attacks(self.context, {"war_type": "REG", **selection})
         self.assertEqual((attacks["record_span"]["status"], len(attacks["rows"])), ("unavailable", 2))
@@ -172,12 +179,12 @@ class RecordSpanTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(league["record_span"], {"status": "unavailable", "cause": "missing_setup"})
         self.assertEqual(len(league["rows"]), 1)
 
-    async def test_accounts_beyond_the_limit_are_counted(self):
+    async def test_accounts_beyond_the_old_header_limit_stay_on_their_rows(self):
         with patch.object(war_span, "MAX_ACCOUNTS", 1):
             result = await self.participation(account_tags=["#P0", "#P2", "#Z0"], **OCTOBER)
         # A tag that is not a Clash tag has no wars to read.
-        self.assertEqual(([row["player_tag"] for row in result["record_span"]["accounts"]],
-                          result["record_span"]["accounts_not_listed"]), (["#P0"], 1))
+        self.assertEqual({tag for tag, _ in entries(result)}, {'#P0', '#P2'})
+        self.assertNotIn('accounts_not_listed', result['record_span'])
 
     async def test_the_record_read_checks_its_bounds(self):
         reads = self.context.bot.war_reads

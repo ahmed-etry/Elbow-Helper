@@ -56,7 +56,7 @@ def span(row):
             'last_war_end': day(record_wars.seconds(row.get('last_end_at'))), 'wars': row.get('wars', 0)}
 
 
-async def record_span(context, arguments, source, tags=None):
+async def record_span(context, arguments, source, tags=None, *, account_entries=None):
     """The record's first and last wars beside the wars ``source`` checked.
 
     ``tags`` are the accounts the selection named, or None for clans only.
@@ -74,7 +74,7 @@ async def record_span(context, arguments, source, tags=None):
     named = {normalize_player_tag(tag): tag for tag in tags or ()}
     named.pop(None, None)
     selected = sorted(named)
-    listed = selected[:MAX_ACCOUNTS]
+    listed = selected if account_entries is not None else selected[:MAX_ACCOUNTS]
     dependencies = getattr(context, 'read_dependencies', None)
     if dependencies is not None:
         # Taken before the read, as the other war reads do.
@@ -82,11 +82,17 @@ async def record_span(context, arguments, source, tags=None):
                     if getattr(context, 'read_cache', None) is not None else None)
         dependencies.observe(context, reads, revision)
     try:
-        found = await reads.record_span(
-            [CLANS[code].tag for code in arguments.get('clan_codes', list(CLANS))], types=kinds,
-            player_tags=listed, family=[clan.tag for clan in CLANS.values()],
-            windows=[(after * record_wars.SECOND, before * record_wars.SECOND) for after, before in windows],
-            as_of=read_core.now_us())
+        # The record accepts 200 account tags per read; paged account entries have no header cap.
+        found = {'recorded': [], 'accounts': []}
+        as_of = read_core.now_us()
+        for start in range(0, max(1, len(listed)), 200):
+            batch = await reads.record_span(
+                [CLANS[code].tag for code in arguments.get('clan_codes', list(CLANS))], types=kinds,
+                player_tags=listed[start:start + 200], family=[clan.tag for clan in CLANS.values()],
+                windows=[(after * record_wars.SECOND, before * record_wars.SECOND) for after, before in windows],
+                as_of=as_of)
+            found['recorded'] = batch['recorded']
+            found['accounts'].extend(batch['accounts'])
     except (*record_wars.FAILURES, ValueError):
         return {'status': 'unavailable', 'cause': 'source_unavailable'}
     recorded = {row['type']: row for row in found['recorded']}
@@ -103,4 +109,14 @@ async def record_span(context, arguments, source, tags=None):
         if len(selected) > len(listed):
             result['accounts_not_listed'] = len(selected) - len(listed)
     result['meanings'] = MEANINGS
+    if account_entries is not None:
+        for entry in result.pop('accounts', []):
+            tag = entry.pop('player_tag')
+            spans = account_entries[tag].setdefault('record_span', [])
+            if entry['wars']:
+                spans.append(entry)
+        result['meanings'] = {('rows.family_wars.record_span' if key == 'accounts' else key): value
+                              for key, value in MEANINGS.items()}
+        result['meanings']['rows.family_wars.record_span'] += (
+            ' Within a checked account\'s record_span list, omitted types have no stored wars.')
     return result

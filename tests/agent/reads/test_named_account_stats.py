@@ -355,7 +355,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
             {'rows': [{'player_tag': '#P0', 'war_ids': [], 'attacks_used': None,
                        'observation_status': 'no_stored_participation'}]},
             {'error': 'Synthetic CWL failure', 'cause': 'source_unavailable'}])
-        with patch.object(account_activity, 'participation', read_wars), \
+        with patch.object(account_activity, 'participation_totals', read_wars), \
              patch.object(ranked_reads, 'read_ranked', AsyncMock(return_value={
                  'rows': [{'player_tag': '#P0', 'attacks_used': 4}]})):
             reads = await account_activity.account_activity(_context(), rows,
@@ -370,7 +370,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_rejected_history_selection_does_not_establish_missing_data(self):
         from elbow_helper.agent.reads import ranked as ranked_reads
-        with patch.object(account_activity, 'participation', AsyncMock(return_value={'rows': []})), \
+        with patch.object(account_activity, 'participation_totals', AsyncMock(return_value={'rows': []})), \
              patch.object(ranked_reads, 'read_ranked', AsyncMock(return_value={
                  'error': 'Synthetic selection error', 'cause': 'invalid_arguments'})):
             reads = await account_activity.account_activity(_context(), [{'player_tag': '#P0'}],

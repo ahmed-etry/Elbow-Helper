@@ -10,10 +10,10 @@ import json
 from datetime import datetime, timezone
 
 from elbow_helper.infrastructure.persistence.revisions import sqlite_revision
+from elbow_helper.domain.player_tags import normalize_player_tag
 
 from .core import RecordReads, page, pagination, placeholders, tags, timestamp
 from .coverage import envelope, war_side_coverage, war_signal
-from .people import ownership
 
 TYPES = ("CWL", "FRIENDLY", "REG")
 REGULAR = ("REG",)
@@ -139,13 +139,18 @@ def member_rows(connection, war, clan, coverage):
         "ON a.war_id=m.war_id AND a.attacker_member_id=m.id AND COALESCE(json_extract(a.extra_json,'$.stub'),0)=0 "
         "WHERE m.war_id=? AND m.side=? GROUP BY m.id ORDER BY m.player_tag",
         (war["id"], side_of(connection, war["id"], clan))).fetchall()
-    reported = coverage["own"]["attacks_reported"]
     extra = connection.execute("SELECT extra_json FROM war_sides WHERE war_id=? AND clan_tag=?",
                                (war["id"], clan)).fetchone()[0]
-    counted = (reported is not None and "attacks" not in json.loads(extra).get("derived", ()) and bool(lineup)
-               and all(row["attacks_expected"] is not None and row["attacks_used"] is not None for row in lineup)
-               and sum(row["attacks_used"] for row in lineup) == reported)
-    final = war["state"] == "warEnded" and (coverage["own"]["attacks_complete"] or counted)
+    return participation_rows(war, clan, coverage, lineup, extra)
+
+
+def participation_rows(war, clan, coverage, lineup, extra, totals=None):
+    """Apply the shared final-count rules to a lineup read on its own or in a set."""
+    if totals is None:
+        totals = {"members": len(lineup), "missing_counts": sum(
+            row["attacks_expected"] is None or row["attacks_used"] is None for row in lineup),
+            "used": sum(row["attacks_used"] or 0 for row in lineup)}
+    final = final_participation(war["state"], coverage, totals, extra)
     rows = []
     for row in lineup:
         expected, used = row["attacks_expected"], row["attacks_used"]
@@ -159,6 +164,14 @@ def member_rows(connection, war, clan, coverage):
                      "attacks_measured": row["measured"], "final": war["state"] == "warEnded",
                      "attacks_complete": coverage["own"]["attacks_complete"]})
     return rows
+
+
+def final_participation(state, coverage, totals, extra):
+    """Whether independent whole-side evidence proves final attack counts."""
+    reported = coverage["own"]["attacks_reported"]
+    counted = (reported is not None and "attacks" not in json.loads(extra).get("derived", ())
+               and bool(totals["members"]) and not totals["missing_counts"] and totals["used"] == reported)
+    return state == "warEnded" and (coverage["own"]["attacks_complete"] or counted)
 
 
 def first_gap(connection, war_id, attacks):
@@ -296,12 +309,12 @@ def selection(time_field, states):
     return time_field, states
 
 
-def select_wars(connection, clans, after, before, types, at, time_field="end_at", states=None):
+def select_wars(connection, clans, after, before, types, at, time_field="end_at", states=None, player_tags=None):
     """Wars in an explicit half-open interval over stored end or last observation times."""
     if isinstance(time_field, tuple):
         selected = {}
         for field, selected_states in time_field:
-            for item in select_wars(connection, clans, after, before, types, at, field, selected_states):
+            for item in select_wars(connection, clans, after, before, types, at, field, selected_states, player_tags):
                 selected.setdefault((item[0]["id"], item[1]), item)
         if len(selected) > MAX_WARS:
             raise ValueError(f"The window selects more than {MAX_WARS} wars; choose a shorter one")
@@ -311,6 +324,10 @@ def select_wars(connection, clans, after, before, types, at, time_field="end_at"
     if states is not None:
         where += f" AND w.state IN ({placeholders(states)})"
         args += states
+    if player_tags is not None:
+        where += (" AND EXISTS (SELECT 1 FROM war_members m WHERE m.war_id=w.id AND m.side=s.side "
+                  "AND m.player_tag IN (SELECT value FROM json_each(?)))")
+        args += (json.dumps(player_tags),)
     # Source checks may observe an unchanged war without rewriting its facts.
     observed = ("MIN(?,MAX(w.last_seen_at,COALESCE((SELECT MAX(c.last_success_at) FROM war_collection_state c "
                 "WHERE c.war_id=w.id AND ((c.source_kind='current_war' AND c.scope_id=s.clan_tag) "
@@ -377,37 +394,6 @@ def window_coverage(connection, clans, types, after, before, at, wars, truncated
     return result
 
 
-def add(total, value):
-    return None if total is None or value is None else total + value
-
-
-def by_owner(connection, rows, at):
-    """Group account rows by each account's owner at as_of; unlinked accounts stay apart."""
-    owners = {tag: ownership(connection, tag, at) for tag in sorted({row["player_tag"] for row in rows})}
-    groups = {}
-    for row in rows:
-        owner = owners[row["player_tag"]]
-        key = ("member", owner["member_id"]) if owner["member_id"] else ("account", row["player_tag"])
-        group = groups.setdefault(key, {
-            "unit": key[0], "member_id": owner["member_id"], "player_tags": [], "ownership_status": owner["status"],
-            "war_ids": [], "opportunities": 0, "attacks_used": 0, "attacks_expected": 0, "missed": 0,
-            "stars": 0, "triples": 0, "destruction": 0, "attacks_measured": 0})
-        if row["player_tag"] not in group["player_tags"]:
-            group["player_tags"].append(row["player_tag"])
-        if row["war_id"] not in group["war_ids"]:
-            group["war_ids"].append(row["war_id"])
-        group["opportunities"] += 1
-        for field in ("attacks_used", "attacks_expected", "missed", "stars", "triples", "destruction", "attacks_measured"):
-            group[field] = add(group[field], row[field])
-    result = []
-    for _, group in sorted(groups.items(), key=lambda item: item[0]):
-        group["wars"] = len(group.pop("war_ids"))
-        group["player_tags"].sort()
-        group["totals_complete"] = group["missed"] is not None
-        result.append(group)
-    return result
-
-
 class WarReads(RecordReads):
     """Bounded war reads; every result carries coverage and record war IDs.
 
@@ -420,7 +406,8 @@ class WarReads(RecordReads):
         path = getattr(self.store, "path", None)
         return sqlite_revision(path) if path is not None else None
 
-    async def regular_selection(self, clans, *, after=None, before=None, war_ids=(), latest_completed=None, as_of=None):
+    async def regular_selection(self, clans, *, after=None, before=None, war_ids=(), latest_completed=None, as_of=None,
+                                player_tags=None):
         """Select regular wars by window, legacy/record IDs, or latest distinct wars.
 
         Compact participation and coverage are read in the same worker snapshot.
@@ -434,11 +421,15 @@ class WarReads(RecordReads):
         ids = tuple(dict.fromkeys(ids))
         if latest_completed is not None and (type(latest_completed) is not int or not 1 <= latest_completed <= 100):
             raise ValueError('Expected 1..100 latest completed wars')
-        if bool(ids) + (latest_completed is not None) + (after is not None or before is not None) != 1:
+        subject = None if player_tags is None else tuple(normalize_player_tag(tag) for tag in player_tags)
+        if subject is not None and None in subject:
+            raise ValueError('Invalid Clash tag')
+        if (ids and (latest_completed is not None or after is not None or before is not None)
+                or not ids and latest_completed is None and after is None and before is None and subject is None):
             raise ValueError('Choose regular war IDs, latest wars or a window')
         if after is not None or before is not None:
             after, before = window(after, before)
-        return await self._read(select_regular, RegularSelection(clans, after, before, ids, latest_completed, at))
+        return await self._read(select_regular, RegularSelection(clans, after, before, ids, latest_completed, at, subject))
 
     async def current(self, clan, as_of=None, *, lineups=False):
         """What the war board shows now: the clan's latest current-war check.

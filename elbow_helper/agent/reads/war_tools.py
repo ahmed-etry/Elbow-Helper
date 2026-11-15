@@ -29,13 +29,14 @@ WINDOW_RULES = (
     {'aware': ['after', 'before'], 'error': 'Choose timezone-aware dates.'})
 WAR_SELECTORS = ['season', 'season_keys', 'war_ids', 'latest_completed', 'after']
 ONE_SELECTION = 'Choose one season selection, war selection or date window.'
-# A single season is allowed through the plan check; cwl_rosters accepts it only
-# when it is the season of the current roster cycle.
-HISTORICAL = ['season_keys', 'after', 'before', 'war_ids', 'latest_completed', 'history_limit']
-PARTICIPATION_PERIOD_NOTE = 'A period is required, with no default: give season, season_keys, latest_completed, after/before or war_ids. Account filters are not a period.'
+PARTICIPATION_PERIOD_NOTE = 'Without accounts, members or a cohort, give season, season_keys, latest_completed, after/before or war_ids; otherwise all their stored wars are read.'
+SELECTION_RULES = (
+    {'only_one': [key for key in WAR_SELECTORS if key != 'latest_completed'], 'error': ONE_SELECTION},
+    {'only_one': [key for key in WAR_SELECTORS if key != 'season'], 'error': ONE_SELECTION})
 PARTICIPATION_RULES = (*WINDOW_RULES,
-    {'only_one': WAR_SELECTORS, 'error': ONE_SELECTION},
-    {'needs': WAR_SELECTORS, 'error': 'Which season, wars or date window do you want?'})
+    *SELECTION_RULES,
+    {'unless': ['account_tags', 'member_ids', 'cohort_ref'],
+     'needs': WAR_SELECTORS, 'error': 'Which season, wars or date window do you want?'})
 ATTACK_RULES = (*PARTICIPATION_RULES,
     {'only_one': ['account_tags', 'member_ids', 'cohort_ref'], 'error': 'Choose accounts, members or a cohort, not several.'})
 CWL_RULES = (*WINDOW_RULES,

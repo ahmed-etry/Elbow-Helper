@@ -9,7 +9,7 @@ from .api_fields import create_api_field_schema, rebuild_field_changes
 from .source_schema import create_source_schema
 from .link_reviews import create_schema as create_review_schema
 from .saved_payloads import create_schema as create_saved_payload_schema
-from .link_schema import create_link_schema, create_current_link_schema
+from .link_schema import create_link_schema, create_current_link_schema, remove_unchanged_refreshes
 from .battle_coverage import create_watch_schema
 from .profile_schema import create_profile_history_schema
 from .raids import create_raid_schema
@@ -18,7 +18,7 @@ from .war_completeness import fill_cwl_allowance, upgrade_cwl_completeness
 
 
 # Later subjects add migrations; they must not rewrite this baseline.
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 STATEMENTS = (
     """CREATE TABLE collection_runs (
         id INTEGER PRIMARY KEY, collector TEXT NOT NULL, scope_kind TEXT NOT NULL,
@@ -309,4 +309,8 @@ MIGRATIONS = (
     SQLiteMigration(19, "account review state", create_review_schema),
     SQLiteMigration(20, "saved board evidence", create_saved_payload_schema),
     SQLiteMigration(21, "war-log copies merged into their war", merge_drifted_log_copies),
+    # Receipts are referenced from tables with no index on the reference, so each deleted row would
+    # scan them all; the foreign-key check after the step stands in for the per-row check.
+    SQLiteMigration(22, "account-link refreshes that changed nothing removed", remove_unchanged_refreshes,
+                    enforce_foreign_keys=False),
 )

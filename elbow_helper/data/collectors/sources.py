@@ -62,7 +62,8 @@ async def collect_sources(owner, collector):
                     options = {"attempts": 1, "fresh": True} if job["source_kind"] == "ranked_group" and not job["current"] else {}
                     try:
                         response = await owner.clash_client.get(path_for(job), **options)
-                    except Exception:
+                    except Exception as cause:
+                        owner._causes[run].append(((job["source_kind"], job["scope_id"]), cause))
                         response = None
                     after = await owner.store.call(record_source, run, ordinal, job, response, now_us())
                     if not after or page == MAX_PAGES_PER_PASS - 1:

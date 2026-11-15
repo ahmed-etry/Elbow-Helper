@@ -3,6 +3,7 @@
 import asyncio
 from datetime import datetime
 import logging
+import traceback
 
 import discord
 from discord.ext import commands
@@ -41,6 +42,26 @@ def _described(failures) -> str:
     return ", ".join(named[:LISTED_ITEMS]) + (f", and {len(named) - LISTED_ITEMS} more" if len(named) > LISTED_ITEMS else "")
 
 
+def _described_causes(causes, failures) -> str:
+    """One traceback per distinct cause, with how many items had it.
+
+    Items fail the same way together (an unreachable API fails every account), so a cause is the
+    exception type, its message and the line that raised it, not each item's own traceback.
+    """
+    groups = {}
+    for key, cause in causes:
+        if key not in failures and RUN_KEY not in failures:
+            continue
+        raised_at = traceback.extract_tb(cause.__traceback__)[-1:]
+        signature = (type(cause), str(cause), tuple((frame.filename, frame.lineno) for frame in raised_at))
+        first, count = groups.get(signature, (cause, 0))
+        groups[signature] = (first, count + 1)
+    return "".join(
+        "\n" + "".join(traceback.format_exception(first)).rstrip()
+        + (f"\n(same failure for {count} items)" if count > 1 else "")
+        for first, count in groups.values())
+
+
 def _timestamp(value: datetime | None) -> int | None:
     return int(value.timestamp() * 1_000_000) if value is not None else None
 
@@ -70,6 +91,7 @@ class FamilyCollectors(commands.Cog):
         self._source_locks = {name: asyncio.Lock() for name in SOURCE_COLLECTORS}
         # What each collector is known to be failing at: {collector: {(kind, scope): how}}.
         self._failing = {}
+        self._causes = {}
         self._closing = False
         # Member ID to (time, channel ID) of their newest message not saved yet.
         self._messages = {}
@@ -81,7 +103,7 @@ class FamilyCollectors(commands.Cog):
             await self.store.initialize()
         except Exception:
             # An unavailable database cannot truthfully hold a failed run.
-            LOGGER.warning("Family record initialization failed; collectors will retry")
+            LOGGER.warning("Family record initialization failed; collectors will retry", exc_info=True)
         self._tasks = [
             asyncio.create_task(self._schedule("clans", CLAN_INTERVAL_SECONDS, self.collect_clans)),
             asyncio.create_task(self._schedule("players", PLAYER_INTERVAL_SECONDS, self.collect_players)),
@@ -123,10 +145,10 @@ class FamilyCollectors(commands.Cog):
             except asyncio.CancelledError:
                 raise
             except Exception:
-                LOGGER.warning("Family %s scheduling failed; will retry", name)
+                LOGGER.warning("Family %s scheduling failed; will retry", name, exc_info=True)
             await asyncio.sleep(SCHEDULE_CHECK_SECONDS)
 
-    def _note(self, collector, run, specs, error, problems):
+    def _note(self, collector, run, specs, error, problems, causes=()):
         # A failure warns when it starts and the collector logs once when it ends; a run that fails the same
         # way again is only a debug line. A new item failing, or an item failing another way, warns again.
         # `problems` is None when nothing failed. Only items polled in this run can recover; a run that
@@ -138,10 +160,11 @@ class FamilyCollectors(commands.Cog):
         polled = set() if error else {RUN_KEY, *specs}
         recovered = {key: known.pop(key) for key in [key for key in known if key in polled and key not in current]}
         started = {key: how for key, how in current.items() if known.get(key) != how}
+        details = _described_causes(causes, started or current)
         if started:
-            LOGGER.warning("Family %s collection failing (run=%s): %s", collector, run, _described(started))
+            LOGGER.warning("Family %s collection failing (run=%s): %s%s", collector, run, _described(started), details)
         elif current:
-            LOGGER.debug("Family %s collection still failing (run=%s): %s", collector, run, _described(current))
+            LOGGER.debug("Family %s collection still failing (run=%s): %s%s", collector, run, _described(current), details)
         if recovered:
             LOGGER.info("Family %s collection recovered (run=%s): %s", collector, run, _described(recovered))
         known.update(current)
@@ -151,29 +174,35 @@ class FamilyCollectors(commands.Cog):
         error = None
         cancelled = False
         report = None
+        causes = []
         try:
             run = await self.store.begin_run(collector, scope_kind, specs, now_us())
+            self._causes[run] = causes
             await operation(run)
         except asyncio.CancelledError:
             error = "interrupted"
             cancelled = True
-        except Exception:
+        except Exception as cause:
             error = "collector_error"
+            causes.append((RUN_KEY, cause))
         finally:
             if run is not None:
                 try:
                     report = await self.store.finish(run, error=error)
-                except Exception:
+                except Exception as cause:
                     error = "store_unavailable"
+                    causes.append((RUN_KEY, cause))
             problems = None
             if error is None and report and (report["failed"] or self._failing.get(collector)):
                 try:
                     problems = await self.store.call(FamilyStore.problems, run)
-                except Exception:
+                except Exception as cause:
                     # The items cannot be named; the failure is still reported, as the collector's.
                     error = "item_failure"
+                    causes.append((RUN_KEY, cause))
+            self._causes.pop(run, None)
             if error or problems or self._failing.get(collector):
-                self._note(collector, run, specs, error, problems)
+                self._note(collector, run, specs, error, problems, causes)
         if cancelled:
             raise asyncio.CancelledError
         return report
@@ -195,7 +224,8 @@ class FamilyCollectors(commands.Cog):
                     await self.store.requested(run, index * 2 + 1)
                     try:
                         responses.append(await self.clash_client.get(f"/clans/{encode_clash_tag(clan.tag)}"))
-                    except Exception:
+                    except Exception as cause:
+                        self._causes[run].append((("clan_profile", clan.tag), cause))
                         responses.append(None)
                     self.profiles.observed("clan", clan.tag, responses[-1])
                 await self.store.call(collect_clans, run, self.clans, responses, now_us())
@@ -210,7 +240,7 @@ class FamilyCollectors(commands.Cog):
             try:
                 accounts = await self.store.call(due_accounts, now_us())
             except Exception:
-                LOGGER.warning("Family players account list unavailable; will retry")
+                LOGGER.warning("Family players account list unavailable; will retry", exc_info=True)
                 return
             specs = [("player_profile", row["player_tag"]) for row in accounts]
 
@@ -221,7 +251,8 @@ class FamilyCollectors(commands.Cog):
                     await self.store.requested(run, ordinal)
                     try:
                         response = await self.clash_client.get(f"/players/{encode_clash_tag(row['player_tag'])}")
-                    except Exception:
+                    except Exception as cause:
+                        self._causes[run].append((("player_profile", row["player_tag"]), cause))
                         response = None
                     self.profiles.observed("player", row["player_tag"], response)
                     await self.store.call(collect_player, run, ordinal, row["id"], row["player_tag"], response, now_us())
@@ -265,10 +296,11 @@ class FamilyCollectors(commands.Cog):
                     async for member in guild.fetch_members(limit=None):
                         rows.append(_member_row(member))
                     complete = type(before) is int and before == guild.member_count == len(rows)
-                except (discord.HTTPException, OSError, ValueError):
+                except (discord.HTTPException, OSError, ValueError) as cause:
                     # Completed pages remain positive observations. Missing
                     # pages never turn a scan into evidence of departure.
                     complete = False
+                    self._causes[run].append((("discord_scan", scope), cause))
                 await self.store.call(observe_discord, run, rows, now_us(), complete=complete, scope=scope)
 
             return await self._run("discord", "guild", [("discord_scan", scope)], operation)

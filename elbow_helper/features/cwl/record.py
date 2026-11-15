@@ -293,7 +293,7 @@ class CwlHistory:
                 row["clan_code"], row["war_id"], row["attack_order"], row["player_name"]))}
 
     def participation(self, *, clan_codes, war_type, after_ts=None, before_ts=None, season=None, war_ids=(),
-                   latest_completed=None, season_keys=(), history_limit=None, running=False):
+                   latest_completed=None, season_keys=(), history_limit=None, running=False, player_tags=None):
         """League-war participation from stored lineups, in the old participation shape.
 
         Ended wars count from their final lineups. With ``running``, a chosen
@@ -309,7 +309,14 @@ class CwlHistory:
             if season or season_keys or war_ids or latest_completed or after_ts is not None or before_ts is not None:
                 raise ValueError("Choose recent seasons or an explicit period, not both.")
         completed_only = not running or history_limit is not None or latest_completed is not None
-        wars = self._wars(clan_codes, details=False, ended=completed_only)
+        # Account history and latest wars select the account's wars. An explicit
+        # period keeps every war's coverage, even when only its account rows are read.
+        subject_wars = player_tags is not None and (latest_completed is not None or not (
+            season or season_keys or history_limit is not None or war_ids
+            or after_ts is not None or before_ts is not None))
+        wars = self._wars(clan_codes, details=False, ended=completed_only,
+                          seasons=[season] if season is not None else list(season_keys) if season_keys else None,
+                          **({'player_tags': player_tags} if subject_wars else {}))
         if len(wars) > MAX_WARS:
             raise ValueError("Choose fewer clans; stored war identities exceed the snapshot bound.")
         component_seasons = list(season_keys)
@@ -332,18 +339,16 @@ class CwlHistory:
         selected.sort(key=lambda war: (-war["end_ts"], war["clan_code"], war["war_id"]))
         if latest_completed is not None:
             selected = selected[:latest_completed]
-        details = {}
-        tags = sorted({war["war_id"].removeprefix("CWL:") for war in selected})
-        for index in range(0, len(tags), TAGS_PER_READ):
-            details.update(((war["war_id"], war["clan_code"]), war) for war in self._wars(
-                sorted({war["clan_code"] for war in selected}), war_tags=tags[index:index + TAGS_PER_READ],
-                ended=completed_only))
+        records = [{"id": war["record_war_id"], "clan_tag": war["clan_tag"], "state": war["state"],
+                    "end_at": war["end_ts"] * SECOND, "coverage": war["coverage"]} for war in selected]
+        details = self._run(self.reads.selected_participation_rows(records, player_tags=player_tags)) if records else {}
         rows, empty, sources, unproven, coverage, named = [], [], [], set(), [], {}
         for summary in selected:
-            war = details.get((summary["war_id"], summary["clan_code"]), {**summary, "roster": [], "attacks": []})
+            war = summary
+            detail = details[war["record_war_id"], war["clan_tag"]]
             entry = war_entry(war["war_id"], war.get("clan_name"), war.get("opponent_name"), war["end_ts"])
             named.setdefault(war["war_id"], entry)
-            if not war["roster"]:
+            if not detail["has_roster"]:
                 empty.append(entry)
                 unproven.add(war["war_id"])
             own = war["coverage"]["own"]
@@ -356,30 +361,22 @@ class CwlHistory:
                 coverage.append({**entry, "clan_code": war["clan_code"], "uncertainty_reasons": causes})
             sources.append({**entry, "clan_code": war["clan_code"], "season": war["cwl_season"],
                             "aliases": [war["war_id"]], "sources": [war["source"]]})
-            attacks = defaultdict(list)
-            for attack in war["attacks"]:
-                attacks[attack["player_tag"]].append(attack)
-            for member in sorted(war["roster"], key=lambda row: row["player_tag"]):
+            if detail["unproven"]:
+                unproven.add(war["war_id"])
+            for member in detail["rows"]:
                 tag, expected = member["player_tag"], member["attacks_expected"]
-                measured = attacks.get(tag, [])
                 used = member["attacks_used"]
                 complete = member["missed"] is not None
                 if not complete:
                     unproven.add(war["war_id"])
-                stars = [attack["stars"] for attack in measured if type(attack["stars"]) is int and 0 <= attack["stars"] <= 3]
-                destruction = [attack["destruction"] for attack in measured
-                               if type(attack["destruction"]) in (int, float) and 0 <= attack["destruction"] <= 100]
                 rows.append({
                     "war_id": war["war_id"], "war_aliases": [war["war_id"]], "clan_code": war["clan_code"],
                     "war_type": "CWL", "season": war["cwl_season"], "start_ts": war["start_ts"],
-                    "end_ts": war["end_ts"], "player_tag": tag, "player_name": member["player_name"],
+                    "end_ts": war["end_ts"], "player_tag": tag, "player_name": member["player_name"] or tag,
                     "attacks_expected": expected if complete else None, "attacks_used": used,
                     "missed": member["missed"], "final_capture": complete,
                     "uncertainty_reasons": [] if complete else causes,
-                    "observed_attack_performance": {
-                        "attacks": len(measured), "stars": sum(stars), "stars_measured": len(stars),
-                        "triples": sum(value == 3 for value in stars), "destruction_total": sum(destruction),
-                        "destruction_measured": len(destruction)}})
+                    "observed_attack_performance": member["performance"]})
         return {"rows": rows, "war_ids": sorted({war["war_id"] for war in selected}),
                 **({"component_seasons": component_seasons,
                     "clan_seasons": [{"season": key, "clan_code": code,

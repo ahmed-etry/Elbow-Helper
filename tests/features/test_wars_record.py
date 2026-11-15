@@ -271,7 +271,10 @@ class ManagerLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_startup_replays_the_record_and_each_collection_pass_refreshes_it(self):
         bot = MagicMock(war_reads=MagicMock())
         manager = self.manager(bot)
-        manager._periodic_summary_cleanup = AsyncMock()
+        manager._periodic_summary_cleanup = MagicMock(
+            add_exception_type=MagicMock(),
+            start=lambda: asyncio.create_task(asyncio.sleep(0)),
+        )
         manager._sync_war_state_from_record = AsyncMock()
         manager._refresh_from_record = AsyncMock()
         await manager.on_ready()

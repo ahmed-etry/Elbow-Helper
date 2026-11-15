@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.reads import record_wars, war_attacks, war_tools as war_reads, wars
 from elbow_helper.agent.safety.access import AgentAccessLost
+from elbow_helper.agent.plan.input_rules import input_rule_issue
 from elbow_helper.data.reads import CwlReads, WarReads
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.cwl.record import CwlHistory
@@ -19,6 +20,7 @@ from tests.agent.engine.test_agent_plan_flow import _context
 from tests.agent.reads.test_family_wars import renamed
 from tests.agent.reads.test_record_wars import FAMILY, OCTOBER, later_war, old_id, ts
 from tests.data.test_wars import END, SECOND, WarFixture, group, war
+from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
 
 DAY = 86400 * SECOND
 TOOLS = {tool.definition.name: tool for tool in war_reads.TOOLS}
@@ -101,6 +103,38 @@ class WarAttackTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         # One war type at a time.
         self.assertEqual([row["war_type"] for row in (await self.read(war_type="CWL", account_tags=["#P0"]))["rows"]],
                          ["CWL"])
+
+    async def test_account_history_without_a_period_reads_all_stored_wars(self):
+        for name, kind in (("read_war_participation", "CWL"), ("read_war_participation", "REG"),
+                           ("read_war_attacks", "REG")):
+            arguments = {"war_type": kind, "account_tags": ["#P0"]}
+            with self.subTest(lookup=name, war_type=kind):
+                self.assertEqual(input_rule_issue(arguments, TOOLS[name].definition.parameters)[0], "")
+                result = await TOOLS[name].handler(self.context, arguments)
+                self.assertNotIn("error", result)
+                if name == "read_war_participation":
+                    self.assertEqual(len(result["rows"][0]["war_ids"]), 1 if kind == "CWL" else 2)
+                else:
+                    self.assertEqual(result["coverage"]["wars_checked"], 2)
+                    self.assertEqual(len(result["rows"]), 2)
+
+    async def test_latest_wars_are_selected_from_the_named_accounts_lineups(self):
+        record = LeagueRecord(self.temporary.name, FAMILY)
+        await record.week("BEH", "2026-10", [league_war(tag, index + 1,
+            ts(LEAGUE_END) + (index + 1) * 86400, [member("#P0")], [attack(1, "#P0", "#Q0")])
+            for index, tag in enumerate(("#RY", "#RL"))])
+        await record.week("BE4", "2026-10", [league_war(tag, index + 1, END // SECOND + index,
+            [member("#Y0")]) for index, tag in enumerate(("#R8", "#R9", "#RP"))])
+        for kind, expected in (("CWL", {"CWL:#R0", "CWL:#RY", "CWL:#RL"}),
+                               ("REG", {old_id(later_war()), old_id(war("warEnded"))})):
+            for name in ("read_war_participation", "read_war_attacks"):
+                with self.subTest(war_type=kind, lookup=name):
+                    result = await TOOLS[name].handler(self.context, {
+                        "war_type": kind, "account_tags": ["#P0"], "latest_completed": 3})
+                    self.assertNotIn("error", result)
+                    ids = (set(result["war_ids"]) if name == "read_war_participation"
+                           else {row["war_id"] for row in result["rows"]})
+                    self.assertEqual(ids, expected)
 
     async def test_the_period_and_clan_choose_the_wars(self):
         # A window holding only the later regular war.

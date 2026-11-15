@@ -73,6 +73,8 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs("elbow_helper.data.collectors.service", level="WARNING") as logs:
             report = await self.collectors.collect_clans()
         self.assertEqual(len(logs.output), 1)
+        self.assertIn("TimeoutError: private detail", logs.output[0])
+        self.assertIn("Traceback", logs.output[0])
         self.assertEqual(self.client.get.await_count, 2)
         self.assertEqual(report["failed"], 2)
         items = await self.rows("SELECT * FROM collection_items ORDER BY ordinal")
@@ -87,7 +89,7 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
             await self.collectors.collect_clans()
         self.assertEqual(len(first.output), 1)
         self.assertIn("clan_profile #PY (fetch_failed)", first.output[0])
-        self.assertNotIn("private detail", first.output[0])
+        self.assertIn("TimeoutError: private detail", first.output[0])
         self.client.get.side_effect = [TimeoutError("private detail"), good[1]]
         with self.assertNoLogs(service, level="INFO"):
             report = await self.collectors.collect_clans()
