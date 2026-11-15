@@ -585,7 +585,7 @@ class AnswerFlow:
             evidence = answer_evidence(review_evidence, guild=self.context.guild, subjects=subjects)
             evidence.update(supplementary)
         complete_measures = any(result.get('family') in (
-            'read_cwl_results', 'read_war_attendance', 'read_ranked_activity', 'read_clan_rosters',
+            'read_cwl_results', 'read_war_participation', 'read_ranked_activity', 'read_clan_rosters',
             'read_member_cohort', 'read_member_accounts') or restorable_reference(result)
             for result in self.completed_results.values())
         bounded = bounded_answer_evidence(evidence, room,
@@ -948,7 +948,7 @@ class AnswerFlow:
                 # These complete snapshots are restored and authorized again
                 # at the writer boundary. Other source pages still need reads.
                 restored = (value.get('family') in (
-                    'read_war_attendance', 'read_cwl_results', 'read_ranked_activity',
+                    'read_war_participation', 'read_cwl_results', 'read_ranked_activity',
                     'read_member_accounts', 'read_clan_rosters')
                     or value.get('family') == 'read_member_cohort'
                     and value.get('basis') in ('clan_rosters', 'role_holders', 'joined_discord')

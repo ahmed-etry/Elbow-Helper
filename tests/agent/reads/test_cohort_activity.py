@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.reads.cohort_activity import roster_cohort
 from elbow_helper.agent.reads.cohort_activity import discord_activity_projection
 from elbow_helper.agent.reads.cohort_activity import war_measures
-from elbow_helper.domain.war_attendance import aggregate_attendance
+from elbow_helper.domain.war_participation import aggregate_participation
 from elbow_helper.agent.reads.evidence import family_model_view
 from elbow_helper.features.achievements.queries import AchievementQueries
 from tests.agent.engine.test_agent_plan_flow import _context
@@ -30,13 +30,13 @@ class CohortActivityTests(unittest.IsolatedAsyncioTestCase):
                        attacks_used=1, attacks_expected=2, missed=1),
                   dict(player_tag='#P1', player_name='Second', war_id='C1',
                        attacks_used=1, attacks_expected=1, missed=0)]
-        observed = aggregate_attendance(source, {}, 'account')
+        observed = aggregate_participation(source, {}, 'account')
         result = war_measures(observed)
         self.assertEqual((result['attacks_used'], result['attacks_expected'],
                           result['missed'], result['attack_completion_percent']), (2, 3, 1, 66.67))
-        zero = aggregate_attendance([dict(source[0], attacks_used=0, missed=2)], {}, 'account')
+        zero = aggregate_participation([dict(source[0], attacks_used=0, missed=2)], {}, 'account')
         self.assertEqual(war_measures(zero)['attack_completion_percent'], 0)
-        incomplete = aggregate_attendance([dict(source[0], attacks_expected=None, missed=None)], {}, 'account')
+        incomplete = aggregate_participation([dict(source[0], attacks_expected=None, missed=None)], {}, 'account')
         for observations in ([], incomplete, observed + incomplete):
             with self.subTest(observations=observations):
                 self.assertIsNone(war_measures(observations)['attack_completion_percent'])

@@ -35,20 +35,20 @@ class TrialPerformanceRegressionTests(unittest.IsolatedAsyncioTestCase):
             report = await tool.handler(context, {'stage': 'active_trials',
                 'performance': {'war_type': 'both', 'latest_completed': 2}})
             candidate = unpack(delivered(report)['rows'])[0]
-            self.assertEqual(report['rows'][0]['war_attendance']['war_ids'], ['CWL:#C0', regular_id(regular)])
-            self.assertEqual(candidate['war_attendance']['attacks_expected'], 6)
+            self.assertEqual(report['rows'][0]['war_participation']['war_ids'], ['CWL:#C0', regular_id(regular)])
+            self.assertEqual(candidate['war_participation']['attacks_expected'], 6)
             for kind in ('REG', 'CWL'):
                 metrics = candidate['attack_performance'][kind]
                 self.assertEqual((metrics['wars'], metrics['account_war_opportunities']), (1, 2))
                 self.assertEqual(metrics['average_stars'], {'numerator': 4, 'denominator': 2})
                 self.assertEqual(metrics['triple_rate_percent'], {'numerator': 100, 'denominator': 2})
-            attendance_tool = next(tool for tool in war_reads.TOOLS if tool.definition.name == 'read_war_attendance')
+            participation_tool = next(tool for tool in war_reads.TOOLS if tool.definition.name == 'read_war_participation')
             selection = {'war_type': 'both', 'latest_completed': 2, 'account_tags': ['#P0', '#Q0']}
-            members = await attendance_tool.handler(context, {**selection, 'unit': 'member'})
+            members = await participation_tool.handler(context, {**selection, 'unit': 'member'})
             metrics = members['rows'][0]['attack_performance']
             self.assertEqual((metrics['wars'], metrics['account_war_opportunities']), (2, 4))
             self.assertEqual((metrics['average_stars']['numerator'], metrics['average_stars']['denominator']), (8, 4))
-            accounts = await attendance_tool.handler(context, selection)
+            accounts = await participation_tool.handler(context, selection)
             by_tag = {row['player_tag']: row for row in accounts['rows']}
             self.assertEqual(by_tag['#P0']['attacks_expected'], 3)
             self.assertEqual(by_tag['#Q0']['attacks_expected'], 3)

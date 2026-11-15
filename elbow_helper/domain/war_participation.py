@@ -1,10 +1,10 @@
-"""Attendance totals per account or owner over war lineup rows.
+"""Participation totals per account or owner over war lineup rows.
 
 Regular and league war rows both come from the family record.
 """
 
 
-def aggregate_attendance(rows, owners, unit):
+def aggregate_participation(rows, owners, unit):
     grouped = {}
     for row in rows:
         tag = row['player_tag']

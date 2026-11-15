@@ -1,4 +1,4 @@
-"""War participation separates attacks, confirmed non-attendance and unknowns."""
+"""War participation separates attacks, confirmed non-participation and unknowns."""
 from dataclasses import replace
 from types import SimpleNamespace
 import unittest
@@ -23,7 +23,7 @@ class ParticipationCountsTests(unittest.IsolatedAsyncioTestCase):
             get_links_by_tags=lambda _: {tag: {'discord_user_id': owner}
                 for tag, owner in (('#P0', 1), ('#Q0', 1), ('#P2', 2), ('#Q2', 3))}))
         with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'rows': rows, 'war_ids': ['one']})):
-            result = await war_reads.attendance(context, {'war_type': 'REG', 'unit': 'member',
+            result = await war_reads.participation_totals(context, {'war_type': 'REG', 'unit': 'member',
                 'clan_codes': ['BE1', 'BEE', 'BE4'], 'top_n': 1})
         visible = answer_evidence({'wars': result})['wars']
         first, second, empty = visible['clan_participation']

@@ -30,13 +30,13 @@ def war_row(index, *, observed=True):
 
 def war_result(count=24):
     rows = [war_row(index, observed=index % 4 != 0) for index in range(count)]
-    return {'family': 'read_war_attendance', 'rows': rows, 'total_rows': count, 'count': count,
+    return {'family': 'read_war_participation', 'rows': rows, 'total_rows': count, 'count': count,
             'opportunity_unit': 'account-war', 'coverage': {'query_complete': True}}
 
 
 class WriterRowTests(unittest.TestCase):
     def test_ratios_keep_their_display_including_unavailable(self):
-        facts = compact_writer_rows(war_result(), 'read_war_attendance')
+        facts = compact_writer_rows(war_result(), 'read_war_participation')
         text = json.dumps(facts)
         self.assertNotIn('numerator', text)
         self.assertNotIn('denominator', text)

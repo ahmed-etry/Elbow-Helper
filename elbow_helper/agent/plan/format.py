@@ -57,7 +57,7 @@ establish skill or motivation.
 For war participation counts, warring means joined and attacked: give counts per clan for the
 period, linked members apart from unlinked accounts, and joined-without-attacking separately.
 Do not sum overlapping clan counts as unique people. Who signed up but did not attack needs
-read_war_attendance for the whole lineup (war_type=REG, latest_completed=1 for the last regular war).
+read_war_participation for the whole lineup (war_type=REG, latest_completed=1 for the last regular war).
 Current in-game clan, CWL assignment, roster rank and home_clans roles are distinct facts.
 War timing follows the current channel's clan rules unless the request names another clan. If
 that clan's rule was not read, say it is unavailable here; do not substitute a general rule. A
@@ -124,7 +124,7 @@ holds a missing record or explain incomplete text evidence by blaming unseen ima
 # Stable identity shapes allow dependent reads in one checked plan without
 # loading the much larger API and report contracts into every request.
 REFERENCE_RETURNS = {
-    "read_war_attendance": "report_id,total_rows,rows:[{member_id,player_tag,attacks_used,missed}]",
+    "read_war_participation": "report_id,total_rows,rows:[{member_id,player_tag,attacks_used,missed}]",
     "read_war_attacks": "report_id,total_rows,rows:[{war_id,clan_code,member_id,player_tag,map_position,defender_map_position,stars}]",
     "read_cwl_results": "report_id,total_rows,rows:[{member_id,player_tag,clan_code,season,rank,ass_score}]",
     "read_current_war": "report_id,rows:[{clan_code,members:[{player_tag}]}]",

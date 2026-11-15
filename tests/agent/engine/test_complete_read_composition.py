@@ -147,13 +147,13 @@ class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):
             'war_ids': ['war-' + str(j) + '-' + 'x' * 80 for j in range(10)]} for i in range(54)]
         source = AsyncMock(return_value={'rows': rows, 'war_ids': ['war-' + str(j) for j in range(10)],
             'coverage': {'historical_collection_complete': False}})
-        tool = family_tool('read_war_attendance', 'Read war attendance.', {}, source)
+        tool = family_tool('read_war_participation', 'Read war participation.', {}, source)
         model = CaptureModel(_Session([], []))
-        registry = {'read_war_attendance': tool, 'hidden': replace(tool, default_visible=False)}
+        registry = {'read_war_participation': tool, 'hidden': replace(tool, default_visible=False)}
         with patch('elbow_helper.agent.engine.service.build_agent_tools', return_value=registry):
             flow, _ = AgentService(model)._start_flow(question='Compare the whole war cohort',
                 local_context='', context=context, conversation_history='')
-        results = await flow.runner.run(_plan([{'id': 'wars', 'capability': 'read_war_attendance',
+        results = await flow.runner.run(_plan([{'id': 'wars', 'capability': 'read_war_participation',
             'arguments': {'limit': 16}, 'depends_on': []}]))
         self.assertEqual(len(results['wars']['rows']), 16)
         flow.completed_results.update(results)

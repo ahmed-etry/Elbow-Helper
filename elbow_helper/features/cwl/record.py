@@ -292,9 +292,9 @@ class CwlHistory:
             "attacks": sorted((row for war in chosen for row in war["attacks"]), key=lambda row: (
                 row["clan_code"], row["war_id"], row["attack_order"], row["player_name"]))}
 
-    def attendance(self, *, clan_codes, war_type, after_ts=None, before_ts=None, season=None, war_ids=(),
+    def participation(self, *, clan_codes, war_type, after_ts=None, before_ts=None, season=None, war_ids=(),
                    latest_completed=None, season_keys=(), history_limit=None, running=False):
-        """League-war participation from stored lineups, in the old attendance shape.
+        """League-war participation from stored lineups, in the old participation shape.
 
         Ended wars count from their final lineups. With ``running``, a chosen
         season, window or set of wars also holds its wars still under way, with

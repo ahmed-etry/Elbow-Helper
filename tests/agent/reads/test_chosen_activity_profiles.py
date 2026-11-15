@@ -46,7 +46,7 @@ class ChosenActivityProfileTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({account['player_tag'] for row in rows for account in row['accounts']},
                          {'#P0', '#P2', '#P8'})
         self.assertEqual({row['member_id']: row['attacks_used'] for row in rows}, {42: 3, 43: 1})
-        self.assertEqual({row['member_id']: row['war_attendance']['attacks_used'] for row in rows},
+        self.assertEqual({row['member_id']: row['war_participation']['attacks_used'] for row in rows},
                          {42: 3, 43: 1})
         activity.assert_called_once_with([42, 43])
         context.account_links.get_links_for_members.assert_not_called()

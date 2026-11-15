@@ -1,6 +1,6 @@
 """Complete roster cohorts with account donations, war evidence and stored Discord activity."""
 import asyncio
-from elbow_helper.domain.war_attendance import aggregate_attendance
+from elbow_helper.domain.war_participation import aggregate_participation
 from elbow_helper.agent.reads.wars import selected_wars, period
 from elbow_helper.agent.reads.people import PeopleAdapter, PeopleSelection
 
@@ -118,7 +118,7 @@ async def activity_projection(context, rows, arguments):
         except (ValueError, TypeError):
             return {'error': 'Choose a complete date window with its end after its start.', 'cause': 'invalid_arguments'}
         wars = await selected_wars(context, selection, 'both')
-    measured = {r['player_tag']: r for r in aggregate_attendance(wars.get('rows', []), {}, 'account')}
+    measured = {r['player_tag']: r for r in aggregate_participation(wars.get('rows', []), {}, 'account')}
     for row in rows:
         for account in row['accounts']:
             observation = measured.get(account.get('player_tag'))

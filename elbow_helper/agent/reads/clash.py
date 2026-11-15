@@ -266,8 +266,8 @@ async def read_clash(context, arguments):
         if tag in collected:
             items[index] = {'tag': tag, 'status': 'record_required',
                             'tools': (['read_clan_rosters', 'read_cwl_results'] if kind == 'cwl_group'
-                                      else ['read_cwl_results', 'read_war_attendance'] if kind == 'cwl_war'
-                                      else ['read_current_war', 'read_war_attendance']),
+                                      else ['read_cwl_results', 'read_war_participation'] if kind == 'cwl_war'
+                                      else ['read_current_war', 'read_war_participation']),
                             'instruction': ('Use the collected family CWL record for this clan.'
                                 if kind in ('cwl_group', 'cwl_war')
                                 else 'Use the collected family war record for this clan.')}
@@ -305,7 +305,7 @@ async def read_clash(context, arguments):
                         and response.payload[side].get('tag') in {clan.tag for clan in CLANS.values()}
                         for side in ('clan', 'opponent')):
                     items[index] = {'tag': tag, 'status': 'record_required',
-                        'tools': ['read_cwl_results', 'read_war_attendance'],
+                        'tools': ['read_cwl_results', 'read_war_participation'],
                         'instruction': 'Use the collected family CWL record for this clan.'}
                     return
                 original = payload = (deepcopy(response.payload)

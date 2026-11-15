@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 from dataclasses import replace
-from elbow_helper.domain.war_attendance import aggregate_attendance
+from elbow_helper.domain.war_participation import aggregate_participation
 from elbow_helper.agent.reads import record_wars, war_tools as war_reads
 from elbow_helper.configuration.clans import CLANS
 from tests.agent.features.cwl.cwl_helpers import ResultQueries
@@ -28,7 +28,7 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
                  'attacks_expected': expected, 'attacks_used': expected - missed, 'missed': missed}
                 for tag, expected, missed in [('#P0', 10, 5), ('#Q0', 1, 1)]]
         with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'rows': rows, 'war_ids': ['one']})):
-            result = await war_reads.attendance(_context(), {'war_type': 'REG', 'sort': 'miss_rate', 'top_n': 1})
+            result = await war_reads.participation_totals(_context(), {'war_type': 'REG', 'sort': 'miss_rate', 'top_n': 1})
         self.assertEqual(result['rows'][0]['player_tag'], '#Q0')
         self.assertEqual(result['ranked_population'], 2)
         self.assertIn('miss_rate', result['ordering'])
@@ -57,7 +57,7 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
     async def test_regular_season_resolves_to_utc_dates_without_a_cwl_season_filter(self):
         query = AsyncMock(return_value={'rows': [], 'war_ids': [], 'coverage': {}})
         league = Mock()
-        context = recorded(replace(_context(), cwl_queries=SimpleNamespace(attendance=league)))
+        context = recorded(replace(_context(), cwl_queries=SimpleNamespace(participation=league)))
         with patch.object(record_wars, 'regular_wars', query):
             await war_reads.selected_wars(context, {'season': '2026-09', 'clan_codes': ['BEH']}, 'REG')
             self.assertEqual(query.await_args.kwargs['after_ts'], 1788220800)
@@ -72,7 +72,7 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_recent_seasons_are_refused_for_regular_wars_before_any_read(self):
         regular, league = AsyncMock(), Mock()
-        context = recorded(replace(_context(), cwl_queries=SimpleNamespace(attendance=league)))
+        context = recorded(replace(_context(), cwl_queries=SimpleNamespace(participation=league)))
         with patch.object(record_wars, 'regular_wars', regular):
             for kind in ('REG', 'both'):
                 result = await war_reads.selected_wars(context, {'history_limit': 1}, kind)
@@ -89,14 +89,14 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row['state'] for row in result['rows']], ['inWar', 'preparation'])
 
     def test_two_accounts_of_one_member_add_up_into_one_member_row(self):
-        rows = aggregate_attendance([{'player_tag': tag, 'player_name': tag, 'war_id': 'one',
+        rows = aggregate_participation([{'player_tag': tag, 'player_name': tag, 'war_id': 'one',
                                       'attacks_expected': 2, 'attacks_used': used, 'missed': 2 - used}
                                      for tag, used in [('#P0', 1), ('#Q0', 0)]], {'#P0': 41, '#Q0': 41}, 'member')
         self.assertEqual(len(rows), 1)
         self.assertEqual((rows[0]['missed'], rows[0]['attacks_expected'], rows[0]['miss_rate']), (3, 4, .75))
 
     def test_unconfirmed_final_capture_is_not_a_zero_miss(self):
-        rows = aggregate_attendance([{'player_tag':'#P0','player_name':'Synthetic','war_id':'one',
+        rows = aggregate_participation([{'player_tag':'#P0','player_name':'Synthetic','war_id':'one',
             'missed':None,'attacks_used':0,'attacks_expected':None}], {}, 'account')
         self.assertIsNone(rows[0]['miss_rate'])
         self.assertEqual(rows[0]['unconfirmed_opportunities'], 1)

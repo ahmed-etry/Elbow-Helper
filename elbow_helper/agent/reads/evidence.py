@@ -10,6 +10,10 @@ MEMBER_PROFILE_FIELDS = ('nickname', 'joined_at', 'family_membership_roles', 'ho
                          'participation_clans', 'home_clan_status')
 ACCOUNT_PROFILE_FIELDS = ('role',)
 ACCOUNT_STANDING_FIELDS = ('ranked_league', 'legacy_league', 'trophies', 'donations', 'war_stars')
+# What a war attack row repeats from its war.
+ATTACK_WAR_FIELDS = ('war_type', 'war_state', 'war_end_at', 'opponent_tag', 'opponent_name')
+# View fields that describe only the rows on the page they come with.
+PAGE_FIELDS = ('row_rendering', 'wars')
 
 
 def pick(value, fields):
@@ -163,6 +167,9 @@ def plain_member_row(item, data, family, selection):
 def family_model_view(payload):
     """Keep every selected identity and computed metric; full detail stays retained."""
     data = dict(payload)
+    if 'row_rendering' in data:
+        # Already this view: its rows no longer repeat what is the same on every row.
+        return data
     if isinstance(data.get('name_resolutions'), list):
         data['name_resolutions'] = [name_resolution_view(item) for item in data['name_resolutions']]
     family = data.get('family')
@@ -250,8 +257,8 @@ def family_model_view(payload):
             if family == 'read_recruitment_pipeline':
                 for field in ('start_ts', 'expected_end_ts', 'remaining_seconds', 'overdue_seconds'):
                     item.pop(field, None)
-                if isinstance(item.get('war_attendance'), dict):
-                    item['war_attendance'] = pick(item['war_attendance'], ('attacks_used', 'attacks_expected',
+                if isinstance(item.get('war_participation'), dict):
+                    item['war_participation'] = pick(item['war_participation'], ('attacks_used', 'attacks_expected',
                         'missed', 'unconfirmed_opportunities', 'totals_complete'))
                 if isinstance(item.get('attack_performance'), dict):
                     item['attack_performance'] = {kind: {
@@ -280,7 +287,7 @@ def family_model_view(payload):
         data['rows'] = [pick(row, ('member_id', 'member_name', 'joined_at', 'started_at',
             'started_ts', 'start_time_status', 'accounts', 'activity_coverage',
             'war_activity_coverage', 'ownership_basis')) for row in rows]
-    if family == 'read_war_attendance' or (
+    if family == 'read_war_participation' or (
             family == 'read_cwl_results' and isinstance(data.get('clan_participation'), list)):
         # Alias reconciliation detail is retained; model receives the checked
         # coverage and account metrics instead of repeated source identities.
@@ -292,13 +299,34 @@ def family_model_view(payload):
         # Repeating every selected identity in each page makes the header
         # indivisible. Project it to this page; full restoration projects all
         # rows and therefore restores every membership without another read.
-        data['clan_participation'] = participation_view(data.get('clan_participation', []), rows)
-        data['participation_scope'] = {
-            'counts': 'full selected report', 'identities': 'accounts on this page'}
+        if any('identities' in group for clan in data.get('clan_participation', [])
+               for group in clan.values() if isinstance(group, dict)):
+            data['clan_participation'] = participation_view(data['clan_participation'], rows)
+            data['participation_scope'] = {
+                'counts': 'full selected report', 'identities': 'accounts on this page'}
         data['rows'] = [dict(row, wars_observed=len(row['war_ids']))
                         if isinstance(row.get('war_ids'), list) else dict(row) for row in rows]
         for row in data['rows']:
             row.pop('war_ids', None)
+    if family == 'read_war_participation':
+        # Nested account entries share column names too, even when a member has fewer than ten.
+        for row in data['rows']:
+            entries = row.get('family_wars')
+            if isinstance(entries, list) and len(entries) > 1:
+                columns = list(dict.fromkeys(key for entry in entries for key in entry))
+                row['family_wars'] = {'columns': columns,
+                    'rows': [[entry.get(key) for key in columns] for entry in entries]}
+        # The short row form the answer step reads: every row and value kept, repeats stated once.
+        from elbow_helper.agent.engine.writer_rows import compact_writer_rows
+        data = compact_writer_rows(data, family)
+    if family == 'read_war_attacks' and rows and 'wars' not in data:
+        # Each war's details once per page; an attack finds them by its war_id and clan_code.
+        wars = {}
+        for row in rows:
+            wars.setdefault((row.get('war_id'), row.get('clan_code')), {
+                'war_id': row.get('war_id'), 'clan_code': row.get('clan_code'), **pick(row, ATTACK_WAR_FIELDS)})
+        data['wars'] = list(wars.values())
+        data['rows'] = [omit(row, ATTACK_WAR_FIELDS) for row in rows]
     if family == 'read_cwl_results':
         # Retain computed full-selection analysis for final composition without
         # growing every transport page's fixed header with a second full table.

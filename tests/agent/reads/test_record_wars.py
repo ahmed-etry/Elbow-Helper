@@ -18,7 +18,7 @@ from elbow_helper.agent.reads import projections, record_wars, war_tools as war_
 from elbow_helper.agent.reads.cache import ReadCache
 from elbow_helper.data.reads import CwlReads, WarReads
 from tests.data.record_fixtures import seed_war_alias
-from elbow_helper.domain.war_attendance import aggregate_attendance
+from elbow_helper.domain.war_participation import aggregate_participation
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.cwl.record import CwlHistory
 from elbow_helper.infrastructure.persistence.revisions import release_sqlite_revision
@@ -93,13 +93,13 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                           at=ts(payload["preparationStartTime"]) * SECOND)
         await self.record(payload, kind="cwl_war", scope=war_tag, at=ts(payload["endTime"]) * SECOND + 90 * SECOND)
 
-    async def attendance(self, arguments):
-        return await war_reads.attendance(self.context, arguments)
+    async def participation(self, arguments):
+        return await war_reads.participation(self.context, arguments)
 
-    async def test_attendance_counts_each_recorded_war_and_keeps_coverage(self):
+    async def test_participation_counts_each_recorded_war_and_keeps_coverage(self):
         await self.both_wars()
         arguments = {"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER}
-        new = await self.attendance(arguments)
+        new = await self.participation(arguments)
         wars = [old_id(war("warEnded")), old_id(later_war())]
         self.assertEqual(comparable(new), {"#P0": (wars, 2, 4, 2, 0, "warring", 6, 2, 2),
                                            "#P2": (wars, 2, 4, 2, 0, "warring", 6, 2, 2)})
@@ -111,7 +111,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                          ("family_record", 0, 0, 0))
         self.assertEqual({row["signal"] for row in coverage["source_status"]}, {"current_war", "war_log"})
         # The tool itself returns the same rows.
-        report = await TOOLS["read_war_attendance"].handler(self.context, arguments)
+        report = await TOOLS["read_war_participation"].handler(self.context, arguments)
         self.assertEqual(comparable(report), comparable(new))
 
 
@@ -119,29 +119,29 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.both_wars()
         context = replace(self.context, bot=None)
         for kind in ("REG", "both"):
-            result = await war_reads.attendance(context, {"war_type": kind, "clan_codes": ["BEH"], **OCTOBER})
+            result = await war_reads.participation(context, {"war_type": kind, "clan_codes": ["BEH"], **OCTOBER})
             self.assertEqual(result["cause"], "missing_setup")
         self.assertEqual((await war_reads.current_war(context, {"clan_codes": ["BEH"]}))["cause"], "missing_setup")
         # League wars come through the CWL queries.
-        self.assertNotIn("error", await war_reads.attendance(context, {"war_type": "CWL", "clan_codes": ["BEH"],
+        self.assertNotIn("error", await war_reads.participation(context, {"war_type": "CWL", "clan_codes": ["BEH"],
                                                                        **OCTOBER}))
 
     async def test_known_zero_stays_zero_and_a_missing_lineup_leaves_it_unknown(self):
         await self.both_wars()
         arguments = {"war_type": "REG", "clan_codes": ["BEH"], "account_tags": ["#Y0"], **OCTOBER}
-        (row,) = (await self.attendance(arguments))["rows"]
+        (row,) = (await self.participation(arguments))["rows"]
         self.assertEqual((row["attacks_used"], row["missed"], row["participation_status"]),
                          (0, 0, "not_in_checked_lineups"))
         # A window without wars checked nothing; absence stays unknown.
         empty = {**arguments, "after": "2026-09-01T00:00:00+00:00", "before": "2026-10-01T00:00:00+00:00"}
-        (row,) = (await self.attendance(empty))["rows"]
+        (row,) = (await self.participation(empty))["rows"]
         self.assertEqual((row["attacks_used"], row["observation_status"]), (None, "no_stored_participation"))
         # A war the record knows without its lineup leaves every absence unknown.
         partial = war("warEnded", clans=("#PY", "#LQ"), end="20261020T180000.000Z")
         partial.update(preparationStartTime="20261018T180000.000Z", startTime="20261019T180000.000Z")
         partial["clan"].pop("members")
         await self.record(partial, at=END + 3 * DAY)
-        result = await self.attendance(arguments)
+        result = await self.participation(arguments)
         # Each listed war carries both clan names and its end date, so an answer can name it.
         self.assertEqual(result["wars_without_rosters"], [{"war_id": old_id(partial), "clan_name": "Clan #PY",
                                                            "opponent_name": "Clan #LQ", "end_date": "2026-10-20"}])
@@ -165,7 +165,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         friendly = war("warEnded", clans=("#PY", "#LQ"), end="20261025T180000.000Z")
         friendly.update(preparationStartTime="20261024T170000.000Z", startTime="20261024T180000.000Z")
         await self.record(friendly, at=END + 3 * DAY)
-        result = await self.attendance({"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})
+        result = await self.participation({"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})
         self.assertEqual(result["war_ids"], [old_id(war("warEnded")), old_id(later_war())])
         self.assertEqual(result["coverage"]["friendly_wars_not_counted"], 1)
 
@@ -178,9 +178,9 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.store.call(lambda c: (seed_war_alias(c, "clan_health", earlier, "BEH", war_id, at=self.now), c.commit()))
         for selected in ([first], [earlier], ["CWL:#R0", earlier], ["not an id"]):
             with self.subTest(selected=selected):
-                result = await self.attendance({"war_type": "REG", "clan_codes": ["BEH"], "war_ids": selected})
+                result = await self.participation({"war_type": "REG", "clan_codes": ["BEH"], "war_ids": selected})
                 self.assertEqual(result["war_ids"], [first] if selected != ["not an id"] else [])
-        self.assertIn(earlier, (await self.attendance({"war_type": "REG", "clan_codes": ["BEH"],
+        self.assertIn(earlier, (await self.participation({"war_type": "REG", "clan_codes": ["BEH"],
                                                               "war_ids": [first]}))["war_aliases"][0]["aliases"])
 
     async def test_latest_wars_and_both_kinds_rank_together(self):
@@ -188,13 +188,13 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         league = war("warEnded", clans=("#PY", "#LQ"), end="20261029T180000.000Z")
         await self.league_war(league, "#R0")
         latest = {"clan_codes": ["BEH"], "latest_completed": 1}
-        self.assertEqual((await self.attendance({"war_type": "REG", **latest}))["war_ids"], [old_id(later_war())])
+        self.assertEqual((await self.participation({"war_type": "REG", **latest}))["war_ids"], [old_id(later_war())])
         for count, expected, used in ((2, [old_id(later_war()), "CWL:#R0"], 2),
                                       (3, [old_id(war("warEnded")), old_id(later_war()), "CWL:#R0"], 3)):
-            new = await self.attendance({"war_type": "both", "clan_codes": ["BEH"], "latest_completed": count})
+            new = await self.participation({"war_type": "both", "clan_codes": ["BEH"], "latest_completed": count})
             self.assertEqual(sorted(new["war_ids"]), sorted(expected))
             self.assertEqual(comparable(new)["#P0"][1:4], (used, 2 * used, used))
-        both = await self.attendance({"war_type": "both", "clan_codes": ["BEH"], **OCTOBER})
+        both = await self.participation({"war_type": "both", "clan_codes": ["BEH"], **OCTOBER})
         self.assertEqual(set(both["coverage"]), {"query_complete", "historical_collection_complete", "exact_ranking",
                                                  "regular_wars_not_checked_for_friendly", "friendly_wars_not_counted",
                                                  "regular", "league", "basis"})
@@ -285,7 +285,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                 {**base, "war_id": "no count", "attacks_used": None, "uncertainty_reasons": ["not_final"]},
                 {**base, "war_id": "ended", "attacks_used": 1, "uncertainty_reasons": ["attacks_incomplete"]},
                 {**base, "war_id": "older", "attacks_used": 1}]
-        (row,) = aggregate_attendance(rows, {}, "account")
+        (row,) = aggregate_participation(rows, {}, "account")
         self.assertEqual((row["attacks_used"], row["attacks_expected"], row["missed"],
                           row["unconfirmed_opportunities"], row["totals_complete"]), (1, 0, 0, 4, False))
 
@@ -293,9 +293,9 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
     async def test_another_clans_ended_round_never_hides_an_account_in_a_running_round(self):
         await self.running_league()
         season = {"season": "2026-11", "account_tags": ["#Y0", "#Y2", "#Y8"]}
-        for name, arguments in (("read_war_attendance", {"war_type": "CWL", **season}),
-                                ("read_war_attendance", {"war_type": "both", **season}),
-                                ("read_cwl_results", {"metric": "attendance", **season})):
+        for name, arguments in (("read_war_participation", {"war_type": "CWL", **season}),
+                                ("read_war_participation", {"war_type": "both", **season}),
+                                ("read_cwl_results", {"metric": "participation", **season})):
             with self.subTest(tool=name, arguments=arguments):
                 result = await TOOLS[name].handler(self.context, arguments)
                 rows = {row["player_tag"]: row for row in result["rows"]}
@@ -310,7 +310,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((rows["#Y2"]["war_ids"], rows["#Y2"]["participation_status"]),
                                  (["CWL:#R8"], "unknown"))
         # An account in none of the lineups is still a known zero, running wars checked too.
-        result = await self.attendance({"war_type": "CWL", **season})
+        result = await self.participation({"war_type": "CWL", **season})
         self.assertEqual(result["coverage"]["wars_not_final"], 1)
         absent = next(row for row in result["rows"] if row["player_tag"] == "#Y8")
         self.assertEqual((absent["attacks_used"], absent["participation_status"]), (0, "not_in_checked_lineups"))
@@ -320,7 +320,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.running_league()
         await self.execute("DELETE FROM war_attacks WHERE war_id=(SELECT id FROM wars WHERE war_tag='#R8')")
         await self.execute("DELETE FROM war_members WHERE war_id=(SELECT id FROM wars WHERE war_tag='#R8')")
-        result = await self.attendance({"war_type": "CWL", "season": "2026-11", "account_tags": ["#Y0"]})
+        result = await self.participation({"war_type": "CWL", "season": "2026-11", "account_tags": ["#Y0"]})
         (empty,) = result["wars_without_rosters"]
         self.assertEqual(empty["war_id"], "CWL:#R8")
         # A league war is named by both stored clan names and its end date too.
@@ -340,7 +340,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.both_wars()
         context = replace(self.context, read_cache=ReadCache())
         self.addCleanup(release_sqlite_revision, self.path)
-        tool = TOOLS["read_war_attendance"]
+        tool = TOOLS["read_war_participation"]
         with patch('elbow_helper.agent.reads.snapshots.require_evidence_access', AsyncMock()):
             result = await tool.handler(context, {"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})
         self.assertEqual(set(result["source_versions"]), {"cwl_queries", "war_reads"})
@@ -356,7 +356,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         rows = [{"applicant_member_id": 41}]
         coverage = await projections.performance_projection(self.context, rows, selection)
         self.assertNotIn("error", coverage)
-        self.assertEqual((rows[0]["war_attendance"]["attacks_expected"], rows[0]["war_attendance"]["missed"]), (8, 4))
+        self.assertEqual((rows[0]["war_participation"]["attacks_expected"], rows[0]["war_participation"]["missed"]), (8, 4))
         self.assertEqual(rows[0]["attack_performance"]["REG"]["account_war_opportunities"], 4)
         rows = [{"member_id": 41, "accounts": [{"player_tag": "#P0", "clan_code": "BEH"},
                                                {"player_tag": "#Y0", "clan_code": "BEH"}]}]

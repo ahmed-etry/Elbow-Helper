@@ -13,7 +13,7 @@ from elbow_helper.configuration.clans import CLANS
 from elbow_helper.data.reads import core as read_core
 from elbow_helper.domain.cwl import SEASON_KEY
 from elbow_helper.domain.player_tags import normalize_player_tag
-from elbow_helper.domain.war_attendance import aggregate_attendance
+from elbow_helper.domain.war_participation import aggregate_participation
 from elbow_helper.domain.war_views import board_payload, record_fresh
 from . import record_wars
 from .member_context import owner_context
@@ -80,7 +80,7 @@ async def record_selection(context, selection):
         return dict(record_wars.UNAVAILABLE)
     if selection['war_type'] == 'REG':
         return regular
-    league = await stored_read(context, context.cwl_queries, 'attendance', **{**selection, 'war_type': 'CWL'})
+    league = await stored_read(context, context.cwl_queries, 'participation', **{**selection, 'war_type': 'CWL'})
     return record_wars.combine(regular, league, selection.get('latest_completed'))
 
 
@@ -128,7 +128,7 @@ async def selected_wars(context, arguments, war_type, *, running=False):
             **({'latest_completed': arguments['latest_completed']} if arguments.get('latest_completed') else {}),
             **({'running': True} if running else {}))
         if war_type == 'CWL':
-            return await stored_read(context, context.cwl_queries, 'attendance', **selection)
+            return await stored_read(context, context.cwl_queries, 'participation', **selection)
         # Recent seasons are a league selection, refused for regular wars as league history refuses them.
         if arguments.get('history_limit'):
             raise ValueError('Invalid CWL history limit')
@@ -179,7 +179,7 @@ async def family_sources(context, periods):
 
 def war_figures(rows):
     """One account's totals over its lineup rows, counted as the row's own figures are."""
-    totals = aggregate_attendance(rows, {}, 'account')
+    totals = aggregate_participation(rows, {}, 'account')
     if not totals:
         return dict.fromkeys(FAMILY_FIGURES, 0)
     (item,) = totals
@@ -253,12 +253,12 @@ async def family_wars(context, arguments, rows, accounts):
             'meanings': FAMILY_MEANINGS}
 
 
-async def war_attendance(context, arguments):
-    """The attendance tool: chosen accounts or members also get their wars across the family."""
-    return await attendance(context, arguments, family=True)
+async def war_participation(context, arguments):
+    """The participation tool: chosen accounts or members also get their wars across the family."""
+    return await participation_totals(context, arguments, family=True)
 
 
-async def attendance(context, arguments, *, separate_seasons=False, family=False):
+async def participation_totals(context, arguments, *, separate_seasons=False, family=False):
     if arguments.get('cohort_ref'):
         from .projections import cohort_selection
         selected = await cohort_selection(context,arguments['cohort_ref'],'account_tags')
@@ -285,9 +285,9 @@ async def attendance(context, arguments, *, separate_seasons=False, family=False
         for row in rows:
             groups[(row['season'], row['clan_code'])].append(row)
         result = [dict(row, season=season, clan_code=code) for (season, code), observations in groups.items()
-                  for row in aggregate_attendance(observations, owners, arguments.get('unit', 'account'))]
+                  for row in aggregate_participation(observations, owners, arguments.get('unit', 'account'))]
     else:
-        result = aggregate_attendance(rows, owners, arguments.get('unit', 'account'))
+        result = aggregate_participation(rows, owners, arguments.get('unit', 'account'))
     unit = arguments.get('unit', 'account')
     selected_tags = set(arguments.get('account_tags', []))
     if arguments.get('member_ids') and not arguments.get('account_tags') and context.account_links:
@@ -472,13 +472,13 @@ async def performance_projection(context, rows, selection, *, account_tags=None)
     owners = {tag: value['discord_user_id'] for tag, value in linked.items() if value}
     selected = [row for row in result['rows'] if owners.get(row['player_tag']) in ids
                 and (account_tags is None or row['player_tag'] in account_tags)]
-    by_member = {row['member_id']: row for row in aggregate_attendance(selected, owners, 'member')}
+    by_member = {row['member_id']: row for row in aggregate_participation(selected, owners, 'member')}
     by_member_type = defaultdict(list)
     for opportunity in selected:
         by_member_type[(owners[opportunity['player_tag']], opportunity['war_type'])].append(opportunity)
     for row in rows:
         identifier = row.get('member_id') or row.get('applicant_member_id')
-        row['war_attendance'] = by_member.get(identifier)
+        row['war_participation'] = by_member.get(identifier)
         performance = {}
         for kind in ('REG', 'CWL'):
             metrics = aggregate_performance(by_member_type[(identifier, kind)])

@@ -244,5 +244,5 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
                 'performance':{'war_type':'CWL','season':'2026-09'}})
         self.assertEqual(source.await_count, 1)
         self.assertEqual(source.call_args.args[2], 'CWL')
-        self.assertEqual(result['rows'][0]['war_attendance']['missed'],1)
-        self.assertIsNone(result['rows'][1]['war_attendance'])
+        self.assertEqual(result['rows'][0]['war_participation']['missed'],1)
+        self.assertIsNone(result['rows'][1]['war_participation'])

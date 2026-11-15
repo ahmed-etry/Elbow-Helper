@@ -82,7 +82,7 @@ class DataGuide:
                 "cwl_group (season, clans, rounds.warTags), "
                 "war_log (items with results, stars, destruction), "
                 "current_war, war_log, cwl_group and cwl_war only cover clans the family record does not collect; "
-                "use read_current_war/read_war_attendance/read_cwl_results for family clans. "
+                "use read_current_war/read_war_participation/read_cwl_results for family clans. "
                 "battle_log (latest player attacks/defenses), "
                 "capital_raids (items without attackLog/defenseLog). "
                 "Defaults omit heroes, troops and other bulk fields. fields replaces defaults with "
@@ -92,7 +92,7 @@ class DataGuide:
                 "Use separate clan reads in one plan for complete default rosters. "
                 "Clash timestamps: 20261008T120000.000Z, UTC; battle before is exclusive.",
                 "CWL: a season key is the league's month, YYYY-MM, or a key a read returned; "
-                "read_cwl_results and read_war_attendance take and return it. "
+                "read_cwl_results and read_war_participation take and return it. "
                 "family.cwl_seasons.season_key selects it, cwl_rounds.round_no (1-7) is the CWL day; "
                 "join cwl_rounds.war_id to family.wars.id and season_id to cwl_seasons.id. "
                 "For clans configured for seasonal cohort lookups, resolve the season's assigned roster or CWL participants before "

@@ -14,15 +14,15 @@ from tests.agent.engine.test_agent_plan_flow import _context, _Model, _Session, 
 class DependentFamilyReadTests(unittest.IsolatedAsyncioTestCase):
     async def test_route_plan_subject_read_measurement_and_answer_share_the_family_budget(self):
         accounts = AsyncMock(return_value={'rows': [{'member_id': 41, 'home_clans': [{'clan_code': 'BEM'}]}]})
-        attendance = AsyncMock(return_value={'rows': [{'player_tag': '#P0', 'missed': 1}]})
+        participation = AsyncMock(return_value={'rows': [{'player_tag': '#P0', 'missed': 1}]})
         registry = {tool.definition.name: tool for tool in (
             family_tool('read_member_accounts', 'Read identities.', {}, accounts),
-            family_tool('read_war_attendance', 'Read measurements.', {
+            family_tool('read_war_participation', 'Read measurements.', {
                 'clan_codes': {'type': 'array', 'items': {'type': 'string'}},
-                'war_type': {'type': 'string'}, 'latest_completed': {'type': 'integer'}}, attendance))}
+                'war_type': {'type': 'string'}, 'latest_completed': {'type': 'integer'}}, participation))}
         registry['hidden'] = replace(registry['read_member_accounts'], default_visible=False)
         first = {'id': 'subject', 'capability': 'read_member_accounts', 'arguments': {}, 'depends_on': []}
-        second = {'id': 'measurement', 'capability': 'read_war_attendance', 'arguments': {
+        second = {'id': 'measurement', 'capability': 'read_war_participation', 'arguments': {
             'clan_codes': ['BEM'], 'war_type': 'REG', 'latest_completed': 1}, 'depends_on': []}
         session = _Session([
             replace(_model_step(_plan([first])), usage=AgentUsage(25_000, 1000)),
@@ -37,6 +37,6 @@ class DependentFamilyReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(flow.budget.spent_rounds, 4)
         self.assertEqual([call[1] for call in session.calls], [True, True, False])
         self.assertEqual(flow.runner.tool_calls, 2)
-        attendance.assert_awaited_once()
+        participation.assert_awaited_once()
         self.assertFalse(flow.budget.request_can_research(1000))
         self.assertGreater(flow.budget.request_output_limit(1000, allow_tools=False), 0)

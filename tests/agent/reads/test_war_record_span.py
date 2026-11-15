@@ -1,4 +1,4 @@
-"""War attendance and attack reads say how far back the stored wars go (synthetic).
+"""War participation and attack reads say how far back the stored wars go (synthetic).
 
 Wars are written into a family record. No Discord, Clash or LLM call is made.
 """
@@ -72,11 +72,11 @@ class RecordSpanTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                           at=ts(league["preparationStartTime"]) * SECOND)
         await self.record(league, kind="cwl_war", scope="#R0", at=ts(league["endTime"]) * SECOND + 90 * SECOND)
 
-    async def attendance(self, **arguments):
-        return await wars.war_attendance(self.context, {"war_type": "REG", "clan_codes": ["BEH"], **arguments})
+    async def participation(self, **arguments):
+        return await wars.war_participation(self.context, {"war_type": "REG", "clan_codes": ["BEH"], **arguments})
 
     async def test_a_clan_selection_states_the_record_span(self):
-        result = await self.attendance(latest_completed=1)
+        result = await self.participation(latest_completed=1)
         span = result["record_span"]
         self.assertEqual(span["checked"], {"first_war_end": "2026-10-30", "last_war_end": "2026-10-30",
                                            "wars": 1, "period": "checked_wars"})
@@ -86,14 +86,14 @@ class RecordSpanTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual((span["status"], set(span["meanings"])),
                          ("read", {"record_span", "checked", "recorded", "accounts"}))
         # Every family clan, both war types.
-        family = await wars.war_attendance(self.context, {"war_type": "both", **OCTOBER})
+        family = await wars.war_participation(self.context, {"war_type": "both", **OCTOBER})
         self.assertEqual(family["record_span"]["recorded"], [
             {"war_type": "REG", "first_war_end": "2025-06-10", "last_war_end": "2026-10-30", "wars": 4},
             {"war_type": "CWL", "first_war_end": "2026-10-10", "last_war_end": "2026-10-10", "wars": 1}])
         self.assertEqual(family["record_span"]["checked"]["period"], "chosen_dates")
 
     async def test_wars_before_the_checked_window_are_counted(self):
-        result = await self.attendance(account_tags=["#P0"], **OCTOBER)
+        result = await self.participation(account_tags=["#P0"], **OCTOBER)
         self.assertEqual(entries(result)["#P0", "REG"], {
             "player_tag": "#P0", "war_type": "REG", "first_war_end": "2025-06-10", "last_war_end": "2026-10-30",
             "wars": 3, "wars_outside_checked": 1})
@@ -101,19 +101,19 @@ class RecordSpanTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                          {"first_war_end": "2026-10-28", "last_war_end": "2026-10-30", "wars": 2,
                           "period": "chosen_dates"})
         # The latest war alone leaves the other two outside.
-        latest = await self.attendance(account_tags=["#P0"], latest_completed=1)
+        latest = await self.participation(account_tags=["#P0"], latest_completed=1)
         self.assertEqual(entries(latest)["#P0", "REG"]["wars_outside_checked"], 2)
         # A season is its month.
-        season = await self.attendance(account_tags=["#P0"], season="2026-10")
+        season = await self.participation(account_tags=["#P0"], season="2026-10")
         self.assertEqual(entries(season)["#P0", "REG"]["wars_outside_checked"], 1)
         # An account's wars in another family clan count, whichever clans were selected.
-        moved = await self.attendance(account_tags=["#Y0"], **OCTOBER)
+        moved = await self.participation(account_tags=["#Y0"], **OCTOBER)
         self.assertEqual(entries(moved)["#Y0", "REG"],
                          {"player_tag": "#Y0", "war_type": "REG", "first_war_end": "2026-10-20",
                           "last_war_end": "2026-10-20", "wars": 1, "wars_outside_checked": 0})
 
     async def test_both_war_types_and_members(self):
-        result = await wars.war_attendance(self.context, {"war_type": "both", "latest_completed": 2,
+        result = await wars.war_participation(self.context, {"war_type": "both", "latest_completed": 2,
                                                           "unit": "member", "member_ids": [41]})
         found = entries(result)
         self.assertEqual(set(found), {("#P0", "REG"), ("#P0", "CWL"), ("#P2", "REG"), ("#P2", "CWL")})
@@ -121,7 +121,7 @@ class RecordSpanTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                          (1, 1))
         self.assertEqual((found["#P0", "CWL"]["first_war_end"], found["#P0", "CWL"]["wars"]), ("2026-10-10", 1))
         # An account with no stored wars is listed with none.
-        empty = entries(await self.attendance(account_tags=["#V0"], **OCTOBER))
+        empty = entries(await self.participation(account_tags=["#V0"], **OCTOBER))
         self.assertEqual(empty["#V0", "REG"], {"player_tag": "#V0", "war_type": "REG", "first_war_end": None,
                                                "last_war_end": None, "wars": 0, "wars_outside_checked": 0})
 
@@ -129,12 +129,12 @@ class RecordSpanTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         for arguments in ({"latest_completed": 1}, OCTOBER, {"season": "2026-10"}):
             with self.subTest(arguments=arguments):
                 selection = {"war_type": "REG", "clan_codes": ["BEH"], "account_tags": ["#P0"], **arguments}
-                plain = await war_reads.attendance(self.context, selection)
-                spanned = await wars.war_attendance(self.context, selection)
+                plain = await war_reads.participation(self.context, selection)
+                spanned = await wars.war_participation(self.context, selection)
                 self.assertEqual((spanned["war_ids"], spanned["clan_totals"]), (plain["war_ids"], plain["clan_totals"]))
                 self.assertEqual([row["war_ids"] for row in spanned["rows"]], [row["war_ids"] for row in plain["rows"]])
         # No war selected and no dates chosen: every stored war is outside.
-        none = await self.attendance(account_tags=["#P0"], war_ids=["REG:#PY:20990101T000000.000Z:#GR"])
+        none = await self.participation(account_tags=["#P0"], war_ids=["REG:#PY:20990101T000000.000Z:#GR"])
         self.assertEqual((none["war_ids"], none["record_span"]["checked"]["wars"]), ([], 0))
         self.assertEqual(entries(none)["#P0", "REG"]["wars_outside_checked"], 3)
 
@@ -150,7 +150,7 @@ class RecordSpanTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual({tag for tag, _ in entries(members)}, {"#P0", "#P2"})
 
     async def test_the_tools_return_it(self):
-        for name in ("read_war_attendance", "read_war_attacks"):
+        for name in ("read_war_participation", "read_war_attacks"):
             with self.subTest(read=name):
                 report = await TOOLS[name].handler(self.context, {"war_type": "REG", "account_tags": ["#P0"],
                                                                   "latest_completed": 1})
@@ -158,23 +158,23 @@ class RecordSpanTests(WarFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_a_failed_or_missing_record_keeps_the_rest(self):
         selection = {"account_tags": ["#P0"], **OCTOBER}
-        before = await self.attendance(**selection)
+        before = await self.participation(**selection)
         with patch.object(WarReads, "record_span", side_effect=OSError("locked")):
-            failed = await self.attendance(**selection)
+            failed = await self.participation(**selection)
         self.assertEqual(failed["record_span"], {"status": "unavailable", "cause": "source_unavailable"})
         self.assertEqual(failed["rows"], before["rows"])
         with patch.object(WarReads, "record_span", side_effect=OSError("locked")):
             attacks = await war_attacks.war_attacks(self.context, {"war_type": "REG", **selection})
         self.assertEqual((attacks["record_span"]["status"], len(attacks["rows"])), ("unavailable", 2))
         # League wars read without the record's war reads; the span then has no source.
-        league = await wars.war_attendance(replace(self.context, bot=SimpleNamespace()),
+        league = await wars.war_participation(replace(self.context, bot=SimpleNamespace()),
                                            {"war_type": "CWL", "season": "2026-10", "account_tags": ["#P0"]})
         self.assertEqual(league["record_span"], {"status": "unavailable", "cause": "missing_setup"})
         self.assertEqual(len(league["rows"]), 1)
 
     async def test_accounts_beyond_the_limit_are_counted(self):
         with patch.object(war_span, "MAX_ACCOUNTS", 1):
-            result = await self.attendance(account_tags=["#P0", "#P2", "#Z0"], **OCTOBER)
+            result = await self.participation(account_tags=["#P0", "#P2", "#Z0"], **OCTOBER)
         # A tag that is not a Clash tag has no wars to read.
         self.assertEqual(([row["player_tag"] for row in result["record_span"]["accounts"]],
                           result["record_span"]["accounts_not_listed"]), (["#P0"], 1))

@@ -23,7 +23,7 @@ class RegularSelectionTests(WarFixture, unittest.IsolatedAsyncioTestCase):
     async def select(self, clans=('#PY',), **kwargs):
         return await self.reads.regular_selection(clans, as_of=END + 10 * DAY, **kwargs)
 
-    async def test_aliases_and_record_ids_resolve_without_a_second_attendance_selector(self):
+    async def test_aliases_and_record_ids_resolve_without_a_second_participation_selector(self):
         await self.record(war('warEnded'))
         row, = await self.rows('SELECT id FROM wars')
         alias = 'REG:#PY:20261020T180000.000Z:#GR'

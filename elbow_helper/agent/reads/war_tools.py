@@ -1,4 +1,4 @@
-"""Typed completed-war attendance, CWL scoring and current-war evidence."""
+"""Typed completed-war participation, CWL scoring and current-war evidence."""
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.cwl import SEASON_KEY
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
@@ -6,11 +6,11 @@ from elbow_helper.features.cwl.results import CwlResults
 from elbow_helper.agent.reads.snapshots import family_tool, IDS, TAGS, DATE
 from elbow_helper.agent.reads.clash import read_clash
 from elbow_helper.agent.reads.cache import stored_read
-from .wars import attendance, current_war, period, selected_wars, single_selection, war_attendance
+from .wars import participation_totals, current_war, period, selected_wars, single_selection, war_participation
 from .war_attacks import war_attacks
 from .war_measures import clan_participation, participation_status
 
-__all__ = ['TOOLS', 'attendance', 'current_war', 'period', 'selected_wars', 'single_selection',
+__all__ = ['TOOLS', 'participation_totals', 'current_war', 'period', 'selected_wars', 'single_selection',
            'participation_status', 'clan_participation', 'cwl_results']
 
 CLANS_INPUT = {'type': 'array', 'minItems': 1, 'maxItems': 9, 'uniqueItems': True,
@@ -32,16 +32,16 @@ ONE_SELECTION = 'Choose one season selection, war selection or date window.'
 # A single season is allowed through the plan check; cwl_rosters accepts it only
 # when it is the season of the current roster cycle.
 HISTORICAL = ['season_keys', 'after', 'before', 'war_ids', 'latest_completed', 'history_limit']
-ATTENDANCE_PERIOD_NOTE = 'A period is required, with no default: give season, season_keys, latest_completed, after/before or war_ids. Account filters are not a period.'
-ATTENDANCE_RULES = (*WINDOW_RULES,
+PARTICIPATION_PERIOD_NOTE = 'A period is required, with no default: give season, season_keys, latest_completed, after/before or war_ids. Account filters are not a period.'
+PARTICIPATION_RULES = (*WINDOW_RULES,
     {'only_one': WAR_SELECTORS, 'error': ONE_SELECTION},
     {'needs': WAR_SELECTORS, 'error': 'Which season, wars or date window do you want?'})
-ATTACK_RULES = (*ATTENDANCE_RULES,
+ATTACK_RULES = (*PARTICIPATION_RULES,
     {'only_one': ['account_tags', 'member_ids', 'cohort_ref'], 'error': 'Choose accounts, members or a cohort, not several.'})
 CWL_RULES = (*WINDOW_RULES,
     {'when': {'metric': ['ass', 'bonus']}, 'forbids': ['history_limit'],
      'error': 'ASS and bonus do not support history_limit. Use season (YYYY-MM) for one season, including the running one, season_keys for several seasons, or war_ids, latest_completed or after/before for part of a season.'},
-    {'when': {'metric': ['ass', 'bonus', 'attendance']}, 'only_one': [*WAR_SELECTORS, 'history_limit'],
+    {'when': {'metric': ['ass', 'bonus', 'participation']}, 'only_one': [*WAR_SELECTORS, 'history_limit'],
      'error': ONE_SELECTION},
     {'when': {'metric': ['ass', 'bonus']}, 'needs': ['clan_codes'], 'error': 'Which clan should I score?'},
     {'when': {'metric': ['ass', 'bonus']}, 'within': {'clan_codes': list(CWL_CLAN_CODES)},
@@ -84,13 +84,13 @@ async def cwl_results(context, arguments):
         return refused
     if context.cwl_queries is None:
         return {'error': 'CWL results are not available.', 'cause': 'missing_setup'}
-    if metric == 'attendance' or metric == 'performance' and any(arguments.get(key)
+    if metric == 'participation' or metric == 'performance' and any(arguments.get(key)
             for key in ('after', 'before', 'war_ids', 'latest_completed')):
-        if metric == 'attendance' and not any(arguments.get(key) for key in
+        if metric == 'participation' and not any(arguments.get(key) for key in
                 ('season', 'season_keys', 'history_limit', 'war_ids', 'latest_completed', 'after', 'before')):
             arguments = {**arguments, 'history_limit': 1}
-        result = await attendance(context, {**arguments, 'war_type': 'CWL'},
-                                  separate_seasons=metric == 'attendance')
+        result = await participation_totals(context, {**arguments, 'war_type': 'CWL'},
+                                  separate_seasons=metric == 'participation')
         return {**result, 'metric': metric,
                 'period_unit': 'season' if any(arguments.get(key) for key in ('season', 'season_keys', 'history_limit'))
                     else 'war' if arguments.get('latest_completed') or arguments.get('war_ids') else 'date_window',
@@ -120,27 +120,27 @@ async def cwl_leagues(context, arguments):
 
 
 TOOLS = (
- family_tool('read_war_attendance', 'Read completed-war participation, missed attacks, stars, triples and destruction per account.',
+ family_tool('read_war_participation', 'Read completed-war participation, missed attacks, stars, triples and destruction per account.',
      {**SELECTION, 'war_type': {'type': 'string', 'enum': ['REG', 'CWL', 'both']},
       'top_n': {'type': 'integer', 'minimum': 1, 'maximum': 500},
       'sort': {'type': 'string', 'enum': ['missed', 'miss_rate', 'attacks_used', 'attacks_expected']},
       'unit': {'type': 'string', 'enum': ['account', 'member']},
       'member_ids': IDS, 'account_tags': TAGS,
-      'cohort_ref':{'type':'string','minLength':1,'maxLength':32}}, war_attendance, required=('war_type',),
-     rules=ATTENDANCE_RULES,
-     usage_note=ATTENDANCE_PERIOD_NOTE),
+      'cohort_ref':{'type':'string','minLength':1,'maxLength':32}}, war_participation, required=('war_type',),
+     rules=PARTICIPATION_RULES,
+     usage_note=PARTICIPATION_PERIOD_NOTE),
  family_tool('read_war_attacks', 'Read individual stored war attacks: map positions and Town Halls, stars, destruction and order.',
      {**SELECTION, 'war_type': {'type': 'string', 'enum': ['REG', 'CWL', 'both']},
       'member_ids': IDS, 'account_tags': TAGS,
       'cohort_ref': {'type': 'string', 'minLength': 1, 'maxLength': 32}}, war_attacks, required=('war_type',),
      rules=ATTACK_RULES,
-     usage_note='Select the period as for read_war_attendance. Follow next_cursor to completion.'),
+     usage_note='Select the period as for read_war_participation. Follow next_cursor to completion.'),
  family_tool('read_cwl_results', 'Read current CWL signup/assigned rosters, season results, ASS, bonus and clan leagues.',
-     {**SELECTION, 'metric': {'type': 'string', 'enum': ['signup_pool', 'assigned_rosters', 'performance', 'attendance', 'ass', 'mega_ass', 'bonus', 'league'],
-                           'description': 'Use league without a historical selector for current clan CWL league labels. The attendance metric is CWL participation and defaults to the latest completed season; performance defaults to three seasons.'},
+     {**SELECTION, 'metric': {'type': 'string', 'enum': ['signup_pool', 'assigned_rosters', 'performance', 'participation', 'ass', 'mega_ass', 'bonus', 'league'],
+                           'description': 'Use league without a historical selector for current clan CWL league labels. The participation metric is CWL participation and defaults to the latest completed season; performance defaults to three seasons.'},
       'top_n': {'type': 'integer', 'minimum': 1, 'maximum': 500},
       'history_limit': {'type': 'integer', 'minimum': 1, 'maximum': 12,
-                        'description': 'Recent completed seasons for attendance, performance or MEGA ASS. Counts seasons, not wars. Use alone without another period selector.'}, 'account_tags': TAGS,
+                        'description': 'Recent completed seasons for participation, performance or MEGA ASS. Counts seasons, not wars. Use alone without another period selector.'}, 'account_tags': TAGS,
       'sheet_by': {'type': 'string', 'enum': ['clan_code']},
       'cohort_ref':{'type':'string','minLength':1,'maxLength':32}}, cwl_results, rules=CWL_RULES,
      usage_note='history_limit counts seasons; latest_completed counts wars. ASS/bonus accept multiple clan_codes; latest per clan. For a tab per clan: sheet_by=clan_code.'),

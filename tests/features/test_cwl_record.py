@@ -198,8 +198,8 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         await self.league_on_profile("Crystal League I", NOV)
         self.assertNotEqual(history.cache_revision(), before)
 
-    async def attendance_matches_shared_rows(self):
-        result = await self.call(self.history.attendance, clan_codes=["ONE"], war_type="CWL")
+    async def participation_matches_shared_rows(self):
+        result = await self.call(self.history.participation, clan_codes=["ONE"], war_type="CWL")
         shared = await WarReads(self.store).participation(
             ["#PY"], NOV - DAY, NOV + 30 * DAY, types=("CWL",), as_of=NOV + 30 * DAY)
         by_tag = {row["player_tag"]: row for row in shared["rows"]}
@@ -224,7 +224,7 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
                            "AND clan_tag='#PY'", (json.dumps({"derived": ["attacks"]}),))
         await self.execute("DELETE FROM war_attacks WHERE attacker_member_id IN (SELECT m.id FROM war_members m "
                            "JOIN wars w ON w.id=m.war_id WHERE w.war_tag='#R0' AND m.player_tag='#P2')")
-        result = await self.attendance_matches_shared_rows()
+        result = await self.participation_matches_shared_rows()
         rows = {row["player_tag"]: row for row in result["rows"]}
         self.assertEqual((rows["#P2"]["attacks_used"], rows["#P2"]["missed"]), (1, 0))
         self.assertEqual(rows["#P2"]["observed_attack_performance"]["attacks"], 0)
@@ -258,7 +258,7 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
             with self.subTest(missing_attacks=missing_attacks):
                 if missing_attacks:
                     await self.execute("DELETE FROM war_attacks")
-                result = await self.attendance_matches_shared_rows()
+                result = await self.participation_matches_shared_rows()
                 self.assertEqual([(row["player_tag"], row["attacks_used"], row["missed"], row["final_capture"])
                                   for row in result["rows"]], [("#P0", 1, 0, True), ("#P2", 0, 1, True)])
                 self.assertEqual(result["unproven_war_ids"], [])
@@ -268,7 +268,7 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
     async def test_a_chosen_season_or_window_lists_running_wars_with_no_misses(self):
         await self.november()
         chosen = {"clan_codes": ["ONE"], "war_type": "CWL", "running": True}
-        result = await self.call(self.history.attendance, **chosen, season="2026-11")
+        result = await self.call(self.history.participation, **chosen, season="2026-11")
         self.assertEqual(result["war_ids"], ["CWL:#R0", "CWL:#R8", "CWL:#RC"])
         self.assertEqual(result["coverage"]["wars_not_final"], 2)
         # Only wars with something missing are listed; the finished one is just counted.
@@ -284,11 +284,11 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIn("CWL:#R8", [war["war_id"] for war in result["unproven_war_ids"]])
         self.assertFalse(result["coverage"]["exact_ranking"])
         # A window holds a running war once it started, whenever it will end.
-        window = await self.call(self.history.attendance, **chosen, after_ts=(NOV - 2 * DAY) // SECOND,
+        window = await self.call(self.history.participation, **chosen, after_ts=(NOV - 2 * DAY) // SECOND,
                                  before_ts=(end_of(2) - DAY // 2) // SECOND)
         self.assertEqual(window["war_ids"], ["CWL:#R0", "CWL:#R8"])
         # By default the same selection stays completed wars.
-        result = await self.call(self.history.attendance, clan_codes=["ONE"], war_type="CWL", season="2026-11")
+        result = await self.call(self.history.participation, clan_codes=["ONE"], war_type="CWL", season="2026-11")
         self.assertEqual((result["war_ids"], result["coverage"]["wars_not_final"]), (["CWL:#R0"], 0))
 
 
@@ -297,7 +297,7 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(sqlite3.OperationalError):
             await asyncio.to_thread(CwlHistory(broken, None, CLANS).bonus_wars, "ONE", "2026-11")
         with self.assertRaises(sqlite3.OperationalError):
-            await asyncio.to_thread(CwlHistory(broken, None, CLANS).attendance, clan_codes=["ONE"], war_type="CWL")
+            await asyncio.to_thread(CwlHistory(broken, None, CLANS).participation, clan_codes=["ONE"], war_type="CWL")
 
 
 class GroupTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):

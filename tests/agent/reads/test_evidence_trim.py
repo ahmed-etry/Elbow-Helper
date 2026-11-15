@@ -19,7 +19,7 @@ def _size(value):
 
 class ModelViewTrimTests(unittest.TestCase):
     def test_war_reads_drop_id_lists_and_provenance_but_keep_counts(self):
-        for family in ('read_war_attendance', 'read_cwl_results'):
+        for family in ('read_war_participation', 'read_cwl_results'):
             for accounts in (1, 20):
                 with self.subTest(family=family, accounts=accounts):
                     payload = _payload(family, accounts)

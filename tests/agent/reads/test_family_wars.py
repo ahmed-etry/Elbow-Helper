@@ -1,4 +1,4 @@
-"""Chosen accounts' wars across every family clan, beside the clan-scoped attendance (synthetic).
+"""Chosen accounts' wars across every family clan, beside the clan-scoped participation (synthetic).
 
 Wars and clan stays are written into a family record. No Discord, Clash or LLM call is made.
 """
@@ -104,7 +104,7 @@ class FamilyWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.store.call(write)
 
     async def read(self, **arguments):
-        return await wars.war_attendance(self.context, {"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER,
+        return await wars.war_participation(self.context, {"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER,
                                                         **arguments})
 
     @staticmethod
@@ -157,8 +157,8 @@ class FamilyWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_clan_scoped_figures_are_unchanged(self):
         arguments = {"war_type": "both", "clan_codes": ["BEH"], "account_tags": ["#P0", "#Y0", "#C0"], **OCTOBER}
-        plain = await war_reads.attendance(self.context, arguments)
-        family = await wars.war_attendance(self.context, arguments)
+        plain = await war_reads.participation(self.context, arguments)
+        family = await wars.war_participation(self.context, arguments)
         self.assertEqual([{key: value for key, value in row.items() if key != "family_wars"} for row in family["rows"]],
                          plain["rows"])
         self.assertEqual({key: value for key, value in family.items()
@@ -166,7 +166,7 @@ class FamilyWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                          {key: value for key, value in plain.items() if key != "rows"})
 
     async def test_a_season_reads_that_month_and_its_league(self):
-        entries = self.family(await wars.war_attendance(self.context, {
+        entries = self.family(await wars.war_participation(self.context, {
             "war_type": "REG", "clan_codes": ["BEH"], "season": "2026-10", "account_tags": ["#Y0", "#C0"]}))
         self.assertEqual((entries["#Y0"]["regular"]["wars"], entries["#C0"]["cwl"]["wars"]), (1, 1))
 
@@ -180,23 +180,23 @@ class FamilyWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         result = await self.read()
         self.assertNotIn("family_wars_scope", result)
         self.assertFalse(any("family_wars" in row for row in result["rows"]))
-        subset = await wars.war_attendance(self.context, {"war_type": "REG", "clan_codes": ["BEH"],
+        subset = await wars.war_participation(self.context, {"war_type": "REG", "clan_codes": ["BEH"],
                                                           "latest_completed": 1, "account_tags": ["#P0"]})
         self.assertEqual(subset["family_wars_scope"]["status"], "not_read")
         self.assertFalse(any("family_wars" in row for row in subset["rows"]))
         # The tool reads the same way.
-        report = await TOOLS["read_war_attendance"].handler(self.context, {
+        report = await TOOLS["read_war_participation"].handler(self.context, {
             "war_type": "REG", "clan_codes": ["BEH"], "account_tags": ["#Y0"], **OCTOBER})
         self.assertEqual(report["family_wars_scope"]["status"], "read")
 
     async def test_an_unavailable_source_keeps_the_clan_figures(self):
         # Without the league source, the family read fails but the clan's regular wars still come back.
-        result = await wars.war_attendance(replace(self.context, cwl_queries=None), {
+        result = await wars.war_participation(replace(self.context, cwl_queries=None), {
             "war_type": "REG", "clan_codes": ["BEH"], "account_tags": ["#P0"], **OCTOBER})
         self.assertEqual(result["family_wars_scope"], {"status": "unavailable", "cause": "missing_setup"})
         self.assertEqual((result["rows"][0]["attacks_used"], "family_wars" in result["rows"][0]), (2, False))
         # Without clan stays, the war figures stay and the stay fields are left out.
-        result = await wars.war_attendance(replace(self.context, bot=SimpleNamespace(war_reads=self.context.bot.war_reads)),
+        result = await wars.war_participation(replace(self.context, bot=SimpleNamespace(war_reads=self.context.bot.war_reads)),
                                            {"war_type": "REG", "clan_codes": ["BEH"], "account_tags": ["#Y0"], **OCTOBER})
         entry = self.family(result)["#Y0"]
         self.assertEqual(result["family_wars_scope"]["clan_stays"], "unavailable")

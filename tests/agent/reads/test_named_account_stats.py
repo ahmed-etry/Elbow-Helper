@@ -306,7 +306,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
             cwl = record.queries()
             self.assertEqual({row['player_tag'] for row in await asyncio.to_thread(cwl.account_names)},
                              {'#P0', '#Q0'})
-            cwl.attendance = Mock(wraps=cwl.attendance)
+            cwl.participation = Mock(wraps=cwl.participation)
             ranked = AsyncMock(return_value={'accounts': [], 'total_accounts': 0, 'offset': 0,
                 'next_offset': None, 'coverage_complete': False, 'unobserved_selections': ['#P0'], 'bases': {}})
             context = with_record(replace(context_with_names(linked=[('#P0', 'Amber Comet'), ('#Q0', 'Other Beacon')]),
@@ -334,8 +334,8 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(activity['cwl']['war_ids'], ['CWL:#P8'])
             self.assertEqual(activity['cwl']['attacks_used'], 1)
             # League wars through the CWL queries, regular wars through the record's war reads.
-            self.assertEqual({call.kwargs['war_type'] for call in cwl.attendance.call_args_list}, {'CWL'})
-            for call in [*cwl.attendance.call_args_list, *regular.await_args_list]:
+            self.assertEqual({call.kwargs['war_type'] for call in cwl.participation.call_args_list}, {'CWL'})
+            for call in [*cwl.participation.call_args_list, *regular.await_args_list]:
                 self.assertEqual(set(call.kwargs['clan_codes']), set(CLANS))
                 self.assertEqual(call.kwargs['after_ts'], int(datetime(2025, 11, 2, tzinfo=timezone.utc).timestamp()))
             regular.assert_awaited_once()
@@ -355,7 +355,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
             {'rows': [{'player_tag': '#P0', 'war_ids': [], 'attacks_used': None,
                        'observation_status': 'no_stored_participation'}]},
             {'error': 'Synthetic CWL failure', 'cause': 'source_unavailable'}])
-        with patch.object(account_activity, 'attendance', read_wars), \
+        with patch.object(account_activity, 'participation', read_wars), \
              patch.object(ranked_reads, 'read_ranked', AsyncMock(return_value={
                  'rows': [{'player_tag': '#P0', 'attacks_used': 4}]})):
             reads = await account_activity.account_activity(_context(), rows,
@@ -370,7 +370,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_rejected_history_selection_does_not_establish_missing_data(self):
         from elbow_helper.agent.reads import ranked as ranked_reads
-        with patch.object(account_activity, 'attendance', AsyncMock(return_value={'rows': []})), \
+        with patch.object(account_activity, 'participation', AsyncMock(return_value={'rows': []})), \
              patch.object(ranked_reads, 'read_ranked', AsyncMock(return_value={
                  'error': 'Synthetic selection error', 'cause': 'invalid_arguments'})):
             reads = await account_activity.account_activity(_context(), [{'player_tag': '#P0'}],

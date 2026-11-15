@@ -5,7 +5,7 @@ COMMON = {**names('schema_version,report_id,total_rows,returned_rows,next_offset
           'artifact': names('report_id,filename,total_rows')}
 RESULT_FIELDS = {
     'read_ranked_activity': {**COMMON, 'rows': [{**names('player_tag,member_id,player_name,status,selection_rank,ranked_league,attacks_used,attacks_available,watch_status,watched_from,counts_complete'), 'observed_attacks':names('battles,average_stars,average_destruction_percent,triple_rate_percent'), 'observed_defenses':names('battles,average_stars,average_destruction_percent,triple_rate_percent')}]},
-    'read_war_attendance': {**COMMON, 'rows': [names('member_id,member_name,player_tag,player_name,account_tags,war_ids,attacks_used,attacks_expected,missed,miss_rate,unconfirmed_opportunities,unit,missing_link')]},
+    'read_war_participation': {**COMMON, 'rows': [names('member_id,member_name,player_tag,player_name,account_tags,war_ids,attacks_used,attacks_expected,missed,miss_rate,unconfirmed_opportunities,unit,missing_link')]},
     'read_cwl_results': {**COMMON, 'rows': [names('player_tag,player_name,clan_code,season,league,rank,rank_total,ass_score,score,attacks,attacks_expected,multi_season_score,multi_season_rank')]},
     'read_current_war': {**COMMON, 'rows': [{**names('clan_code,status,state,start_at,end_at,team_size,opponent'), 'members': [names('player_tag,player_name,attacks_used,unused_attacks,missed')]}]},
 }
@@ -40,10 +40,10 @@ RESULT_FIELDS.update({
 })
 
 # Keep composition paths aligned with the complete retained family contracts.
-RESULT_FIELDS['read_war_attendance'].update(names('war_ids,ranked_population,opportunity_unit'))
-RESULT_FIELDS['read_war_attendance']['rows'][0].update(names('totals_complete'))
-RESULT_FIELDS['read_war_attendance']['rows'][0].update(names('participation_status'))
-RESULT_FIELDS['read_war_attendance']['clan_participation'] = [{
+RESULT_FIELDS['read_war_participation'].update(names('war_ids,ranked_population,opportunity_unit'))
+RESULT_FIELDS['read_war_participation']['rows'][0].update(names('totals_complete'))
+RESULT_FIELDS['read_war_participation']['rows'][0].update(names('participation_status'))
+RESULT_FIELDS['read_war_participation']['clan_participation'] = [{
     **names('clan_code,wars_observed'),
     **{status: {**names('member_count,unlinked_account_count'),
                 'identities': [names('member_id,member_name,player_tag,player_name,account_tags,unit')]}
@@ -59,7 +59,7 @@ RESULT_FIELDS['read_member_accounts'].update(
                               'accounts': [names('player_tag,player_name')]}],
         'candidates': [names('player_tag,player_name,names,sources,member_id,member_name,membership_status')],
         'selected_accounts': [names('player_tag,player_name,member_id,member_name')]}])
-for family in ('read_clan_rosters', 'read_member_accounts', 'read_war_attendance'):
+for family in ('read_clan_rosters', 'read_member_accounts', 'read_war_participation'):
     RESULT_FIELDS[family]['rows'][0].update(
         leadership={'status': None, 'roles': [names('role_id,name')]})
 for family in ('read_member_accounts', 'read_member_cohort'):
@@ -84,7 +84,7 @@ account_row = RESULT_FIELDS['read_member_accounts']['rows'][0]
 RESULT_FIELDS['read_member_accounts']['members'] = [{
     **names('member_id,member_name,account_tags,account_links_status'),
     **{field: account_row.pop(field) for field in member_fields}}]
-for family in ('read_clan_rosters', 'read_war_attendance'):
+for family in ('read_clan_rosters', 'read_war_participation'):
     RESULT_FIELDS[family]['members'] = [{**names('member_id,member_name,account_tags,membership_status'),
         'leadership': RESULT_FIELDS[family]['rows'][0]['leadership']}]
 RESULT_FIELDS['read_clan_rosters']['rows'][0].pop('leadership')
@@ -137,20 +137,20 @@ RESULT_FIELDS['read_recruitment_pipeline']['source_next_cursor'] = None
 RATIO = names('numerator,denominator,value,display')
 PERFORMANCE = {**names('wars,observed_attacks,measurement_status,accounts'),
                'average_stars': RATIO, 'average_destruction_percent': RATIO, 'triple_rate_percent': RATIO}
-RESULT_FIELDS['read_war_attendance']['rows'][0]['attack_performance'] = {
+RESULT_FIELDS['read_war_participation']['rows'][0]['attack_performance'] = {
     **PERFORMANCE, **names('stars,stars_measured,triples')}
 RESULT_FIELDS['read_member_accounts']['rows'][0]['activity'] = {
     kind: {**names('status,error,cause'), **RESULT_FIELDS[family]['rows'][0]}
-    for kind, family in (('regular_war', 'read_war_attendance'), ('cwl', 'read_war_attendance'),
+    for kind, family in (('regular_war', 'read_war_participation'), ('cwl', 'read_war_participation'),
                          ('ranked', 'read_ranked_activity'))}
 RESULT_FIELDS['read_cwl_results']['rows'][0].update(names('member_id,roster_id,cycle_id,townHallLevel,signed_up_ts'))
 RESULT_FIELDS['read_cwl_results']['rosters'] = [{**names('roster_id,name,clan_code,cycle_id,cycle_key,status,accounts'),
     'source_posts': [names('channel_id,message_id')]}]
 RESULT_FIELDS['read_recruitment_pipeline']['rows'][0].update(
-    war_attendance=RESULT_FIELDS['read_war_attendance']['rows'][0],
+    war_participation=RESULT_FIELDS['read_war_participation']['rows'][0],
     attack_performance={'REG': PERFORMANCE, 'CWL': PERFORMANCE})
 RESULT_FIELDS['read_promotion_cases']['rows'][0].update(review=names('ticket_channel_id,review_channel_id,text'),
-                                                      review_status=None, war_attendance=RESULT_FIELDS['read_war_attendance']['rows'][0])
+                                                      review_status=None, war_participation=RESULT_FIELDS['read_war_participation']['rows'][0])
 RESULT_FIELDS['read_hibernation']['rows'][0]['accounts'][0].update(names(
     'observed_regular_war_attacks_since_start,observed_cwl_attacks_since_start,latest_observed_regular_war_at,latest_observed_cwl_at'))
 
@@ -177,13 +177,13 @@ RESULT_FIELDS['read_conversation_evidence']['rows'][0].update(
 for family in ('read_member_accounts', 'read_member_cohort'):
     RESULT_FIELDS[family]['configured_role_groups'] = ['']
 
-# Only the attendance tool adds family-wide wars; rows other reads share stay as they are.
+# Only the participation tool adds family-wide wars; rows other reads share stay as they are.
 _FAMILY_FIGURES = names('wars,attacks_used,attacks_expected,missed,unconfirmed_opportunities')
-RESULT_FIELDS['read_war_attendance']['rows'] = [{**RESULT_FIELDS['read_war_attendance']['rows'][0], 'family_wars': [{
+RESULT_FIELDS['read_war_participation']['rows'] = [{**RESULT_FIELDS['read_war_participation']['rows'][0], 'family_wars': [{
     **names('player_tag,current_clan_code,in_current_clan_since,previous_family_clan_code,previous_family_clan_last_seen_at'),
     'regular': _FAMILY_FIGURES, 'cwl': _FAMILY_FIGURES, 'combined': _FAMILY_FIGURES,
     'by_clan': [{**names('clan_code'), 'regular': _FAMILY_FIGURES, 'cwl': _FAMILY_FIGURES}]}]}]
-RESULT_FIELDS['read_war_attendance']['family_wars_scope'] = names(
+RESULT_FIELDS['read_war_participation']['family_wars_scope'] = names(
     'status,reason,cause,clan_codes,regular_wars,cwl_wars,lineups_complete,clan_stays,meanings')
 RESULT_FIELDS['read_war_attacks'] = {**COMMON, 'rows': [names(
     'war_id,war_type,war_state,war_end_at,clan_code,opponent_tag,opponent_name,player_tag,player_name,member_id,'
@@ -191,7 +191,7 @@ RESULT_FIELDS['read_war_attacks'] = {**COMMON, 'rows': [names(
     'duration_seconds')], **names('war_type,accounts_without_attacks,members_without_links,ownership_basis,meanings')}
 # How far back the stored wars go, beside the wars each read checked.
 _SPAN = names('first_war_end,last_war_end,wars')
-for _family in ('read_war_attendance', 'read_war_attacks'):
+for _family in ('read_war_participation', 'read_war_attacks'):
     RESULT_FIELDS[_family]['record_span'] = {
         **names('status,cause,accounts_not_listed,meanings'), 'checked': {**_SPAN, **names('period')},
         'recorded': [{**names('war_type'), **_SPAN}],

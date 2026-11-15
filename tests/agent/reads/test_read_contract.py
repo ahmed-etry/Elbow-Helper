@@ -34,7 +34,7 @@ RECENT = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
 # A complete request each read accepts at plan check; reads absent here take {} or
 # generated values for their schema's required fields.
 COMPLETE = {
-    'read_war_attendance': {'war_type': 'REG', 'latest_completed': 1},
+    'read_war_participation': {'war_type': 'REG', 'latest_completed': 1},
     'read_war_attacks': {'war_type': 'both', 'latest_completed': 1},
     'read_member_cohort': {'basis': 'joined_discord'},
     'read_ranked_activity': {'after': START, 'member_ids': [41]},
@@ -51,7 +51,7 @@ COMPLETE = {
 
 # Planner mistakes the plan check refuses before any read runs.
 MISTAKES = {
-    'read_war_attendance': [
+    'read_war_participation': [
         {'war_type': 'REG'}, {'war_type': 'REG', 'season': '2026-09', 'latest_completed': 2},
         {'war_type': 'REG', 'before': END}, {'war_type': 'REG', 'season': 'September'},
         {'war_type': 'REG', 'after': NAIVE}],
@@ -64,7 +64,7 @@ MISTAKES = {
         {'metric': 'ass', 'clan_codes': [CWL_CLAN_CODES[0]], 'history_limit': 2},
         {'metric': 'bonus', 'clan_codes': [CWL_CLAN_CODES[0]], 'history_limit': 3},
         {'metric': 'ass', 'clan_codes': [CWL_CLAN_CODES[0]], 'season': '2026-09', 'latest_completed': 3},
-        {'metric': 'attendance', 'season': '2026-09', 'history_limit': 2},
+        {'metric': 'participation', 'season': '2026-09', 'history_limit': 2},
         {'metric': 'signup_pool', 'season_keys': ['2026-09']}, {'metric': 'assigned_rosters', 'season': '2026-09', 'after': START},
         {'metric': 'mega_ass', 'season_keys': ['2026-09']},
         {'metric': 'league', 'latest_completed': 1}, {'before': END}],
@@ -238,18 +238,18 @@ class InputRuleTests(unittest.TestCase):
                                {'after': START, 'before': END}):
                     self.assertTrue(self.check('read_cwl_results', {
                         'metric': metric, 'clan_codes': ['BEH'], **period}).ok)
-        for metric in ('performance', 'mega_ass', 'attendance'):
+        for metric in ('performance', 'mega_ass', 'participation'):
             with self.subTest(metric=metric):
                 self.assertTrue(self.check('read_cwl_results', {
                     'metric': metric, 'clan_codes': ['BEH'], 'history_limit': 2}).ok)
 
     def test_a_report_continuation_skips_selection_rules(self):
-        self.assertTrue(self.check('read_war_attendance', {'report_id': 'synthetic'}).ok)
+        self.assertTrue(self.check('read_war_participation', {'report_id': 'synthetic'}).ok)
         self.assertTrue(self.check('read_member_cohort', {'report_id': 'synthetic', 'cursor': 'next'}).ok)
 
     def test_a_result_reference_counts_as_given_and_its_value_waits_for_the_run(self):
         reference = {'step': 'earlier', 'path': ['report_id']}
-        planned = step('read_war_attendance', {'war_type': 'REG', 'latest_completed': 1, 'cohort_ref': reference})
+        planned = step('read_war_participation', {'war_type': 'REG', 'latest_completed': 1, 'cohort_ref': reference})
         planned['depends_on'] = ['earlier']
         self.assertTrue(check_step(planned, self.registry).ok)
         planned = step('read_cwl_results', {'metric': 'ass', 'clan_codes': [reference]})

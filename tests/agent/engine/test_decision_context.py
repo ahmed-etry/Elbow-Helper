@@ -148,7 +148,7 @@ class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
                  'arguments': {'mode': 'channel_window', 'channel_id': 91}},
                 {'id': 'second', 'capability': 'read_conversation_evidence',
                  'arguments': {'mode': 'channel_window', 'channel_id': 92}},
-                {'id': 'measure', 'capability': 'read_war_attendance', 'depends_on': ['first', 'second'],
+                {'id': 'measure', 'capability': 'read_war_participation', 'depends_on': ['first', 'second'],
                  'arguments': {'member_ids': [42], 'extra': {'step': 'second', 'path': ['rows']}}}]},
             steps_by_id={}, completed_results={}, read_results={}, result_views={},
             model_results=lambda values: values,

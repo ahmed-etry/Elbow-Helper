@@ -30,7 +30,7 @@ class CwlCoverageRegressionTests(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(metric=metric, period=period):
                     queries = Mock()
                     queries.latest_season.side_effect = AssertionError('An explicit period must not default.')
-                    queries.attendance.return_value = {'war_ids': [], 'rows': [], 'coverage': 'Synthetic period'}
+                    queries.participation.return_value = {'war_ids': [], 'rows': [], 'coverage': 'Synthetic period'}
                     queries.ass_wars.return_value = queries.bonus_wars.return_value = Snapshot()
                     results = CwlResults(queries)
                     arguments = {'metric': metric, 'clan_codes': ['BEH'], **period}
@@ -74,7 +74,7 @@ class CwlCoverageRegressionTests(unittest.IsolatedAsyncioTestCase):
             coverage = next(item for item in combined['clan_seasons'] if item['clan_code'] == 'BES')
             self.assertEqual(coverage['wars'], 2)
             self.assertFalse(coverage['complete'])
-            self.assertTrue(combined['attendance_coverage']['query_complete'])
+            self.assertTrue(combined['participation_coverage']['query_complete'])
             seasons = await tool.handler(context, {'metric': 'performance', 'season_keys': ['2026-09'],
                                                   'clan_codes': ['BEH', 'BES']})
             self.assertEqual(seasons['rows'], combined['rows'])

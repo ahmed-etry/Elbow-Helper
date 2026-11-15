@@ -62,7 +62,7 @@ class RankedContracts(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import patch
         context, _, forbidden = self.context()
         rows = [{'player_tag': '#P0'}, {'player_tag': '#Q0'}]
-        with patch('elbow_helper.agent.reads.account_activity.attendance', AsyncMock(return_value={'rows': []})):
+        with patch('elbow_helper.agent.reads.account_activity.participation', AsyncMock(return_value={'rows': []})):
             result = await account_activity(context, rows, {'after': AFTER, 'before': BEFORE})
         self.assertEqual(rows[0]['activity']['ranked']['observed_attacks']['stars_total'], 5)
         self.assertEqual(rows[1]['activity']['ranked']['status'], 'unknown')

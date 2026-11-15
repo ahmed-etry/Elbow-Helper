@@ -37,7 +37,7 @@ class CompleteEvaluationEvidenceTests(unittest.IsolatedAsyncioTestCase):
             'basis': 'role_holders', 'rows': [{'member_id': 41, 'account_tags': ['#P0']}]}))
         selected = await cohort.handler(context, {})
         results = {}
-        for name in ('read_cwl_results', 'read_war_attendance'):
+        for name in ('read_cwl_results', 'read_war_participation'):
             rows = [{'player_tag': '#P' + str(i), 'ass_score': i / 10, 'attacks_used': i,
                      'war_ids': ['W1', 'W2']} for i in range(70)]
             tool = family_tool(name, 'Selected account measures.', {'cohort_ref': {'type': 'string'}},
@@ -49,8 +49,8 @@ class CompleteEvaluationEvidenceTests(unittest.IsolatedAsyncioTestCase):
         for name in results:
             self.assertEqual(len(written[name]['rows']), 70)
             self.assertEqual(written[name]['rows'][-1]['player_tag'], '#P69')
-        self.assertEqual(written['read_war_attendance']['rows'][-1]['wars_observed'], 2)
-        self.assertNotIn('war_ids', written['read_war_attendance']['rows'][-1])
+        self.assertEqual(written['read_war_participation']['rows'][-1]['wars_observed'], 2)
+        self.assertNotIn('war_ids', written['read_war_participation']['rows'][-1])
         context.state.report_sources.clear()
         denied = await cohort_writer_evidence(context, results)
         self.assertTrue(all('rows' not in value for value in denied.values()))

@@ -73,7 +73,9 @@ def model_view(
     report_id = data.get("report_id")
     paging_fields = PAGING_FIELDS
     if data.get('kind') == 'family':
+        from elbow_helper.agent.reads.evidence import PAGE_FIELDS
         paging_fields = paging_fields | {'kind', 'family', 'requester_id', 'selection', 'returned_rows'}
+        row_fields = {*row_fields, *PAGE_FIELDS} if row_fields else row_fields
     if (summaries is not None and isinstance(report_id, str) and row_fields
             and ("next_offset" in data or "next_cursor" in data) and "error" not in data):
         summary = {key: value for key, value in data.items()

@@ -48,7 +48,7 @@ class NameLookupCoverageTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('evidence_complete', result)
 
     def test_unresolved_step_references_are_not_account_tags(self):
-        result = answer_evidence({'read': {'family': 'read_war_attendance', 'rows': [],
+        result = answer_evidence({'read': {'family': 'read_war_participation', 'rows': [],
             'next_cursor': 'opaque'}}, subjects={'read': {
                 'account_tags': {'from_step': 'accounts', 'path': 'rows.player_tag'}}})['read']
         self.assertEqual(result['row_coverage']['account_tags_not_read'], [])
@@ -57,7 +57,7 @@ class NameLookupCoverageTests(unittest.IsolatedAsyncioTestCase):
         accounts = named_accounts(1)
         accounts['flags'] = {'status': 'failed'}
         result = answer_evidence({'accounts': accounts, 'wars': {
-            'family': 'read_war_attendance', 'rows': []}})
+            'family': 'read_war_participation', 'rows': []}})
         self.assertNotIn('row_coverage', result['wars'])
 
     def test_checked_empty_measure_is_distinct_from_unread_named_accounts(self):
@@ -86,7 +86,7 @@ class NameLookupCoverageTests(unittest.IsolatedAsyncioTestCase):
         payload = named_accounts()
         accounts = family_tool('read_member_accounts', 'Synthetic accounts.', {},
                                AsyncMock(return_value=payload))
-        wars = family_tool('read_war_attendance', 'Synthetic wars.', {
+        wars = family_tool('read_war_participation', 'Synthetic wars.', {
             'account_tags': {'type': 'array', 'items': {'type': 'string'}}}, AsyncMock(return_value={
                 'rows': [{'player_tag': '#P00', 'attacks_used': 3, 'attacks_expected': 4}]}))
         registry = {tool.definition.name: tool for tool in (accounts, wars)}
@@ -111,7 +111,7 @@ class NameLookupCoverageTests(unittest.IsolatedAsyncioTestCase):
             return provider_response(calls=[call('submit_request_plan', _plan([
                 {'id': 'accounts', 'capability': 'read_member_accounts',
                  'arguments': {'limit': 1}, 'depends_on': []},
-                {'id': 'wars', 'capability': 'read_war_attendance',
+                {'id': 'wars', 'capability': 'read_war_participation',
                  'arguments': {'account_tags': ['#P00']}, 'depends_on': ['accounts']}]))])
 
         model = client(provider)

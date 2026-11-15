@@ -4,7 +4,7 @@ import asyncio
 import sqlite3
 
 from elbow_helper.agent.reads.evidence import pick, ranked_view
-from elbow_helper.agent.reads.wars import attendance, period
+from elbow_helper.agent.reads.wars import participation, period
 
 
 HISTORY_KINDS = ('regular_war', 'cwl', 'ranked')
@@ -33,8 +33,8 @@ async def account_activity(context, rows, arguments):
             return {'cause': 'source_unavailable', 'status': 'failed'}
 
     sources = await asyncio.gather(
-        read(attendance, {**selection, 'war_type': 'REG', 'unit': 'account'}),
-        read(attendance, {**selection, 'war_type': 'CWL', 'unit': 'account'}),
+        read(participation, {**selection, 'war_type': 'REG', 'unit': 'account'}),
+        read(participation, {**selection, 'war_type': 'CWL', 'unit': 'account'}),
         read(read_ranked, selection),
     )
     history = {}

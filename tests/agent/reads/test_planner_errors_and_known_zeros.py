@@ -83,11 +83,11 @@ class ReportOwnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_report_of_another_read_names_the_read_that_owns_it(self):
         context = lookup_context([named_member(42, 'Synthetic Pilot')], [('#A0', 'Synthetic account', 42)])
         lookup = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
-        attendance = next(tool for tool in TOOLS if tool.definition.name == 'read_war_attendance')
+        participation = next(tool for tool in TOOLS if tool.definition.name == 'read_war_participation')
         profile = {'#A0': {'status': 'ok', 'data': {'name': 'Synthetic account'}}}
         with patch.object(identity_reads, 'profiles', AsyncMock(return_value=profile)):
             page = await lookup.handler(context, {'member_ids': [42]})
-        result = await attendance.handler(context, {'report_id': page['report_id']})
+        result = await participation.handler(context, {'report_id': page['report_id']})
         self.assertEqual(result['cause'], 'invalid_arguments')
         self.assertIn('read_member_accounts', result['error'])
         self.assertEqual(result['invalid_fields'], ['report_id'])
@@ -114,7 +114,7 @@ class KnownZeroTests(unittest.IsolatedAsyncioTestCase):
                 get_links_for_members=lambda ids: {i: [{'player_tag': '#Y0'}] for i in ids if i == 77}))
 
     async def read(self, context, **arguments):
-        tool = next(tool for tool in TOOLS if tool.definition.name == 'read_war_attendance')
+        tool = next(tool for tool in TOOLS if tool.definition.name == 'read_war_participation')
         return await tool.handler(context, {'war_type': 'CWL', 'clan_codes': ['BEH'], **arguments})
 
     def absent(self, result):

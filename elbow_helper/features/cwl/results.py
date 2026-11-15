@@ -7,7 +7,7 @@ import sqlite3
 
 from elbow_helper.configuration.clans import CLANS, CLAN_ORDER
 from elbow_helper.domain.cwl import SEASON_KEY
-from elbow_helper.domain.war_attendance import aggregate_attendance
+from elbow_helper.domain.war_participation import aggregate_participation
 from .config import CWL_CLAN_CODES
 from .results_summary import cwl_analysis
 
@@ -74,7 +74,7 @@ class CwlResults:
             if not any(arguments.get(key) for key in PERIOD_SETTINGS):
                 return {'error': 'Which season, wars or date window do you want?', 'cause': 'invalid_arguments',
                         'missing_fields': [key for key in PERIOD_SETTINGS if key != 'before']}
-            return self.queries.attendance(
+            return self.queries.participation(
                 clan_codes=arguments.get('clan_codes', list(CLANS)), war_type='CWL',
                 after_ts=int(after.timestamp()) if after else None,
                 before_ts=int(before.timestamp()) if before else None,
@@ -139,7 +139,7 @@ class CwlResults:
                         'clan_seasons': [row for part in parts for row in part.get('clan_seasons', [])],
                         'clan_totals': [row for part in parts for row in part.get('clan_totals', [])],
                         'missing_sources': [row for part in parts for row in part.get('missing_sources', [])],
-                        'attendance_coverage': [part['attendance_coverage'] for part in parts if 'attendance_coverage' in part],
+                        'participation_coverage': [part['participation_coverage'] for part in parts if 'participation_coverage' in part],
                         'unobserved_accounts': sorted(set(arguments.get('account_tags', [])) - {row['player_tag'] for row in rows}),
                         'coverage': [part.get('coverage') for part in parts], 'score_scope': 'separate season results'}
             if metric in ('ass', 'bonus'):
@@ -180,7 +180,7 @@ class CwlResults:
                     data['missing_sources'] = list(data.get('missing_sources', []))
                     if 'error' not in partial:
                         data['seasons'] = tuple(dict.fromkeys((*data.get('seasons', ()), season)))
-                        data['attendance_coverage'] = partial['coverage']
+                        data['participation_coverage'] = partial['coverage']
                         data['clan_seasons'] = list(data.get('clan_seasons', []))
                     for code in missing_clans:
                         if 'error' in partial:
@@ -188,7 +188,7 @@ class CwlResults:
                                 'season': season, 'cause': partial['cause']})
                             continue
                         source_rows = [row for row in partial['rows'] if row['clan_code'] == code]
-                        attendance_rows = aggregate_attendance(source_rows, {}, 'account')
+                        participation_rows = aggregate_participation(source_rows, {}, 'account')
                         war_ids = {row['war_id'] for row in source_rows}
                         war_ids.update(row['war_id'] for row in partial.get('war_aliases', []) if row['clan_code'] == code)
                         scores, scoring_status = {}, 'incomplete_season'
@@ -204,10 +204,10 @@ class CwlResults:
                         season_rows = [dict(row, clan_code=code, season=season,
                             score=scores[row['player_tag']].ass_score if row['player_tag'] in scores else None,
                             rank=scores[row['player_tag']].rank if row['player_tag'] in scores else None,
-                            scoring_status=scoring_status, league=None) for row in attendance_rows]
+                            scoring_status=scoring_status, league=None) for row in participation_rows]
                         rows.extend(season_rows)
                         data['clan_seasons'].append({'clan_code': code, 'season': season, 'wars': len(war_ids),
-                            'accounts': len(attendance_rows), 'complete': False, 'league': None,
+                            'accounts': len(participation_rows), 'complete': False, 'league': None,
                             **({'scoring_status': scoring_status} if scoring_status == 'finished_wars_so_far' else {})})
                         if not season_rows or any(row['score'] is None for row in season_rows):
                             data['missing_sources'].append({'source': 'CWL performance', 'clan_code': code,

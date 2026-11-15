@@ -1,9 +1,10 @@
-"""Individual stored war attacks, selected as war attendance selects wars (synthetic).
+"""Individual stored war attacks, selected as war participation selects wars (synthetic).
 
 Wars are written into a family record. No Discord, Clash or LLM call is made.
 """
 
 from dataclasses import replace
+import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -131,6 +132,22 @@ class WarAttackTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted((row["clan_code"], row["player_tag"], row["opponent_tag"]) for row in result["rows"]),
                          [("BE4", "#Q0", "#PY"), ("BE4", "#Q2", "#PY"), ("BEH", "#P0", "#LQ"), ("BEH", "#P2", "#LQ")])
 
+    async def test_each_war_is_stated_once_per_page(self):
+        from elbow_helper.agent.plan.results import model_result, model_view
+        from elbow_helper.agent.reads.evidence import record_rows
+        # The season's wars, one of them between two family clans: both sides share its war_id.
+        inside = war("warEnded", clans=("#PY", "#LQ"), end="20261025T180000.000Z")
+        inside.update(preparationStartTime="20261023T180000.000Z", startTime="20261024T180000.000Z")
+        await self.record(inside, at=END + 4 * DAY)
+        page = await TOOLS["read_war_attacks"].handler(self.context, {"war_type": "REG", **OCTOBER})
+        # The step runner views the page, then views what it delivers again.
+        view = model_view(model_result(json.loads(json.dumps(model_view(model_result(page))))))
+        wars = {(item["war_id"], item["clan_code"]): item for item in record_rows(view["wars"])}
+        self.assertEqual(len(wars), len({(row["war_id"], row["clan_code"]) for row in page["rows"]}))
+        shown = record_rows(view["rows"])
+        self.assertTrue(all("opponent_name" not in row for row in shown))
+        self.assertEqual([{**row, **wars[(row["war_id"], row["clan_code"])]} for row in shown], page["rows"])
+
     async def test_members_and_accounts_without_attacks(self):
         result = await self.read(war_type="REG", member_ids=[41, 42])
         self.assertEqual({row["player_tag"] for row in result["rows"]}, {"#P0", "#P2"})
@@ -165,18 +182,18 @@ class WarAttackTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                          [{"war_id": "CWL:#R0", "clan_name": "Clan #PY", "opponent_name": "Clan #CU",
                            "end_date": "2026-10-10", "clan_code": "BEH", "causes": ["attacks_incomplete"]}])
 
-    async def test_access_is_refused_as_for_attendance(self):
+    async def test_access_is_refused_as_for_participation(self):
         lost = AsyncMock(side_effect=AgentAccessLost("no access"))
         reader = AsyncMock()
-        for name in ("read_war_attendance", "read_war_attacks"):
+        for name in ("read_war_participation", "read_war_attacks"):
             with self.subTest(read=name), \
                     patch("elbow_helper.agent.reads.snapshots.require_evidence_access", lost), \
                     patch.object(war_attacks, "selected_wars", reader):
                 with self.assertRaises(AgentAccessLost):
                     await TOOLS[name].handler(self.context, {"war_type": "REG", **OCTOBER})
         reader.assert_not_called()
-        # Another member cannot continue the report, as with attendance.
-        for name in ("read_war_attendance", "read_war_attacks"):
+        # Another member cannot continue the report, as with participation.
+        for name in ("read_war_participation", "read_war_attacks"):
             with self.subTest(read=name):
                 first = await TOOLS[name].handler(self.context, {"war_type": "REG", **OCTOBER})
                 other = replace(self.context, member=SimpleNamespace(id=self.context.member.id + 1))

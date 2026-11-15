@@ -58,13 +58,16 @@ def regular_id(war):
 
 def regular_wars_from(*wars):
     """Serve the record's regular wars from these synthetic wars, selected as the record selects them."""
-    async def serve(context, *, clan_codes, after_ts=None, before_ts=None, war_ids=(), latest_completed=None):
+    async def serve(context, *, clan_codes, after_ts=None, before_ts=None, war_ids=(), latest_completed=None,
+                    player_tags=None):
         selected = []
         tags = {CLANS[code].tag for code in clan_codes}
         for view, rows in wars:
             end = view['end_at']
             if view['clan_tag'] not in tags or after_ts is not None and end < after_ts * SECOND or (
                     before_ts is not None and end >= before_ts * SECOND):
+                continue
+            if player_tags is not None and not {row['player_tag'] for row in rows}.intersection(player_tags):
                 continue
             aliases = regular_aliases(view)
             if war_ids and not set(war_ids).intersection(aliases):

@@ -80,7 +80,7 @@ def cohort_review_evidence(evidence, authorized):
         if checked.get('cause') == 'report_unavailable':
             projected[identity] = checked
             continue
-        table = result.get('family') in ('read_cwl_results', 'read_war_attendance',
+        table = result.get('family') in ('read_cwl_results', 'read_war_participation',
             'read_ranked_activity', 'read_clan_rosters', 'read_member_accounts') or (
             result.get('family') == 'read_member_cohort'
             and result.get('basis') in ('clan_rosters', 'role_holders', 'joined_discord', 'selected'))
@@ -106,7 +106,7 @@ async def cohort_writer_evidence(context, evidence, *, snapshots=None):
             continue
         cohort = (result.get('family') == 'read_member_cohort'
                   and result.get('basis') in ('clan_rosters', 'role_holders', 'joined_discord', 'selected'))
-        measures = result.get('family') in ('read_cwl_results', 'read_war_attendance', 'read_ranked_activity')
+        measures = result.get('family') in ('read_cwl_results', 'read_war_participation', 'read_ranked_activity')
         rosters = result.get('family') == 'read_clan_rosters'
         discussion = result.get('family') == 'read_conversation_evidence'
         accounts = result.get('family') == 'read_member_accounts'

@@ -30,8 +30,8 @@ class CohortSelectionRegressionTests(unittest.IsolatedAsyncioTestCase):
         context.guild.get_member = lambda identifier: context.member if identifier == 41 else None
         cohort_tool = next(tool for tool in identity_reads.TOOLS
                            if tool.definition.name == 'read_member_cohort')
-        attendance_tool = next(tool for tool in war_reads.TOOLS
-                               if tool.definition.name == 'read_war_attendance')
+        participation_tool = next(tool for tool in war_reads.TOOLS
+                               if tool.definition.name == 'read_war_participation')
         with patch.object(identity_reads, 'profiles', AsyncMock(return_value=profiles)):
             cohort = await cohort_tool.handler(context, {'basis': 'joined_discord',
                 'town_hall_min': 17, 'ranked_tier_ids': [9]})
@@ -42,7 +42,7 @@ class CohortSelectionRegressionTests(unittest.IsolatedAsyncioTestCase):
                           for tag in ('#P0', '#Q0', '#R0')], 'war_ids': ['#C0'], 'coverage': {}}
         context = with_record(context)
         self.enterContext(patch.object(record_wars, 'regular_wars', AsyncMock(return_value=source)))
-        result = await attendance_tool.handler(context, {'cohort_ref': cohort['report_id'],
+        result = await participation_tool.handler(context, {'cohort_ref': cohort['report_id'],
             'war_type': 'REG', 'season': '2026-09'})
         self.assertEqual([row['player_tag'] for row in result['rows']], ['#P0'])
         self.assertEqual(links.call_count, 1)
@@ -50,7 +50,7 @@ class CohortSelectionRegressionTests(unittest.IsolatedAsyncioTestCase):
         # A member-only snapshot may resolve links; an explicitly empty account
         # selection must stay empty even when new links become available.
         member_only = await cohort_tool.handler(context, {'basis': 'joined_discord'})
-        expanded = await attendance_tool.handler(context, {'cohort_ref': member_only['report_id'],
+        expanded = await participation_tool.handler(context, {'cohort_ref': member_only['report_id'],
             'war_type': 'REG', 'season': '2026-09'})
         self.assertEqual([row['player_tag'] for row in expanded['rows']], ['#Q0', '#R0'])
         self.assertEqual(links.call_count, 2)
@@ -58,7 +58,7 @@ class CohortSelectionRegressionTests(unittest.IsolatedAsyncioTestCase):
         empty = await cohort_tool.handler(context, {'basis': 'joined_discord', 'include_accounts': True})
         self.assertFalse(any(account.get('player_tag') for account in empty['rows'][0]['accounts']))
         links.return_value = {41: [{'player_tag': '#Q0'}]}
-        unexpanded = await attendance_tool.handler(context, {'cohort_ref': empty['report_id'],
+        unexpanded = await participation_tool.handler(context, {'cohort_ref': empty['report_id'],
             'war_type': 'REG', 'season': '2026-09'})
         self.assertEqual(unexpanded['cause'], 'empty_cohort')
         self.assertEqual(links.call_count, 3)

@@ -35,19 +35,19 @@ class WarContracts(WarFixture, unittest.IsolatedAsyncioTestCase):
         )
         self.reads = WarReads(self.store)
         self.context = replace(_context(), account_links=links,
-            cwl_queries=SimpleNamespace(attendance=lambda **kwargs: {
+            cwl_queries=SimpleNamespace(participation=lambda **kwargs: {
                 'rows': [], 'war_ids': [], 'war_aliases': [], 'wars_without_rosters': [], 'coverage': {}}),
             bot=SimpleNamespace(war_reads=self.reads,
                 clash_client=SimpleNamespace(configured=True, get=self.forbidden),
                 llm_client=SimpleNamespace(complete=self.forbidden, get_completion=self.forbidden)))
 
-    async def test_record_selection_and_attendance_keep_exact_account_facts(self):
+    async def test_record_selection_and_participation_keep_exact_account_facts(self):
         await self.record(war('warEnded'), at=END + 90 * SECOND)
         selection = {'clan_codes': ['BEH'], **fixtures.OCTOBER}
         source = await war_reads.selected_wars(self.context, selection, 'REG')
         self.assertEqual([(row['player_tag'], row['attacks_used'], row['attacks_expected'], row['missed'])
                           for row in source['rows']], [('#P0', 1, 2, 1), ('#P2', 1, 2, 1)])
-        result = await war_reads.attendance(self.context, {
+        result = await war_reads.participation_totals(self.context, {
             **selection, 'war_type': 'REG', 'account_tags': ['#P0'], 'unit': 'member'})
         row, = result['rows']
         self.assertEqual((row['account_tags'], row['attacks_expected'], row['missed']), (['#P0'], 2, 1))
@@ -69,7 +69,7 @@ class WarContracts(WarFixture, unittest.IsolatedAsyncioTestCase):
             {'war_type': 'REG', **fixtures.OCTOBER}, account_tags=['#P0'])
         self.assertNotIn('error', result)
         self.assertEqual(rows[0]['attack_performance']['REG']['accounts'], ['#P0'])
-        self.assertEqual(rows[0]['war_attendance']['attacks_expected'], 2)
+        self.assertEqual(rows[0]['war_participation']['attacks_expected'], 2)
         self.forbidden.assert_not_awaited()
 
 
@@ -96,7 +96,7 @@ class WarContracts(WarFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_one_physical_war_has_one_identity_in_member_measurements(self):
         await self.record(war('warEnded', clans=('#PY', '#LQ')), at=END + 90 * SECOND)
-        result = await war_reads.attendance(self.context, {
+        result = await war_reads.participation_totals(self.context, {
             'war_type': 'REG', 'unit': 'member', 'clan_codes': ['BEH', 'BE4'], 'latest_completed': 1})
         self.assertEqual(len(result['war_ids']), 1)
         row, = result['rows']

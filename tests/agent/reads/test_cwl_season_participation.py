@@ -1,4 +1,4 @@
-"""Recent-season attendance keeps complete season units and comparable periods.
+"""Recent-season participation keeps complete season units and comparable periods.
 
 League weeks come from the family record, which holds each war once, so no
 alias can double an opportunity or complete a season.
@@ -28,7 +28,7 @@ def end_of(month, round_number, day=2):
     return int(datetime(2025, month, day, 8, tzinfo=timezone.utc).timestamp()) + round_number * 86400
 
 
-class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
+class SeasonParticipationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.codes = list(CWL_CLAN_NAMES)[:2]
         self.context = await self.build()
@@ -57,7 +57,7 @@ class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
         return replace(_context(), cwl_queries=self.queries)
 
     async def test_recent_seasons_include_all_wars_and_keep_per_clan_totals(self):
-        result = await cwl_results(self.context, {'metric': 'attendance',
+        result = await cwl_results(self.context, {'metric': 'participation',
             'clan_codes': self.codes, 'history_limit': 2})
         self.assertEqual(result['component_seasons'], ['2025-03', '2025-02'])
         self.assertEqual(len(result['clan_totals']), 4)
@@ -72,21 +72,21 @@ class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all((row['missed'], row['attacks_used'], row['attacks_expected']) == (1, 6, 7)
                             for row in result['rows']))
 
-    async def test_attendance_without_a_period_reads_the_latest_completed_season(self):
-        result = await cwl_results(self.context, {'metric': 'attendance', 'clan_codes': self.codes})
+    async def test_participation_without_a_period_reads_the_latest_completed_season(self):
+        result = await cwl_results(self.context, {'metric': 'participation', 'clan_codes': self.codes})
         self.assertEqual(result['component_seasons'], ['2025-03'])
         self.assertEqual(result['period_unit'], 'season')
         self.assertTrue(all(row['wars'] == 7 for row in result['clan_totals']))
 
     async def test_recent_seasons_reject_an_individual_war_selector(self):
-        result = await cwl_results(self.context, {'metric': 'attendance',
+        result = await cwl_results(self.context, {'metric': 'participation',
             'clan_codes': self.codes, 'history_limit': 2, 'latest_completed': 2})
         self.assertEqual(result['cause'], 'invalid_arguments')
 
 
     async def test_a_six_war_season_is_not_complete(self):
         context = await self.build(counts=((2, 7), (3, 6)))
-        result = await cwl_results(context, {'metric': 'attendance', 'clan_codes': self.codes, 'history_limit': 1})
+        result = await cwl_results(context, {'metric': 'participation', 'clan_codes': self.codes, 'history_limit': 1})
         self.assertEqual(result['component_seasons'], ['2025-02'])
 
     async def test_repeat_misses_stay_account_level_even_with_a_shared_member(self):
@@ -94,7 +94,7 @@ class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
         links = Mock()
         links.get_links_by_tags.return_value = {tag: {'discord_user_id': 42} for tag in ('#P0', '#P2')}
         result = await cwl_results(replace(context, account_links=links),
-            {'metric': 'attendance', 'clan_codes': self.codes, 'history_limit': 2})
+            {'metric': 'participation', 'clan_codes': self.codes, 'history_limit': 2})
         missed = {}
         for row in result['rows']:
             self.assertEqual(row['unit'], 'account')
@@ -106,7 +106,7 @@ class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_final_roster_is_reported_without_complete_totals(self):
         context = await self.build(unlisted={(self.codes[0], '#RP0')})
-        result = await cwl_results(context, {'metric': 'attendance', 'clan_codes': self.codes, 'history_limit': 1})
+        result = await cwl_results(context, {'metric': 'participation', 'clan_codes': self.codes, 'history_limit': 1})
         total = next(row for row in result['clan_totals'] if row['clan_code'] == self.codes[0])
         self.assertEqual(total['wars'], 7)
         self.assertFalse(total['totals_complete'])
@@ -118,7 +118,7 @@ class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_season_key_stored_with_a_suffix_stays_reachable(self):
         await self.record.week(self.codes[0], '2026-06-other', [league_war(
             '#UP0', 1, end_of(6, 0, day=20), [member('#P0', used=0)], team_size=1)])
-        result = await cwl_results(self.context, {'metric': 'attendance', 'clan_codes': self.codes[:1],
+        result = await cwl_results(self.context, {'metric': 'participation', 'clan_codes': self.codes[:1],
                                                   'season': '2026-06-other'})
         self.assertEqual(result['war_ids'], ['CWL:#UP0'])
         self.assertEqual(result['clan_totals'][0]['missed'], 1)

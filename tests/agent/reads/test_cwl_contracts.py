@@ -159,7 +159,7 @@ class CollectedCwlContracts(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.queries._history, 'roster_history', side_effect=read):
             self.assertNotIn('error', await cwl_results(self.context, {'metric': 'performance', 'clan_codes': ['BEH']}))
             self.assertNotIn('error', await read_cwl_performance(self.context, {'clan_code': 'BEH'}))
-        with patch.object(self.queries._history, 'attendance', side_effect=sqlite3.OperationalError('locked')):
+        with patch.object(self.queries._history, 'participation', side_effect=sqlite3.OperationalError('locked')):
             result = await cwl_results(self.context, {'metric': 'ass', 'clan_codes': ['BEH'], 'season': '2026-08'})
         self.assertEqual(result['cause'], 'source_unavailable')
 

@@ -25,7 +25,7 @@ MAX_HISTORY_SEASONS = 12
 class CwlHistorySource(Protocol):
     def cache_revision(self) -> str | None: ...
 
-    def attendance(self, **selection) -> dict[str, Any]: ...
+    def participation(self, **selection) -> dict[str, Any]: ...
 
     def account_names(self) -> list[dict[str, str]]: ...
 
@@ -270,9 +270,9 @@ class CwlQueries:
         """Collected group signups, separate from completed-war participants."""
         return self._history.seasonal_cohort(clan_code=clan_code, season=season)
 
-    def attendance(self, **selection):
+    def participation(self, **selection):
         """Read stored league-war participation, including incomplete seasons."""
-        return self._history.attendance(**selection)
+        return self._history.participation(**selection)
 
     def cache_revision(self):
         revision = getattr(self._history, 'cache_revision', None)

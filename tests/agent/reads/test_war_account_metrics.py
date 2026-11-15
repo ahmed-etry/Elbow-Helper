@@ -19,11 +19,11 @@ class WarAccountMetricTests(unittest.IsolatedAsyncioTestCase):
                 'triples': int(stars == 3), 'destruction_total': stars * 30, 'destruction_measured': 1}}
             for tag, stars in (('#P0', 3), ('#Q0', 1))]
         with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'rows': rows, 'war_ids': ['#R0']})):
-            result = await war_reads.attendance(context, {'war_type': 'REG', 'account_tags': list(owners)})
+            result = await war_reads.participation_totals(context, {'war_type': 'REG', 'account_tags': list(owners)})
             by_tag = {row['player_tag']: row for row in result['rows']}
             self.assertEqual(by_tag['#P0']['attack_performance']['stars'], 3)
             self.assertEqual(by_tag['#Q0']['attack_performance']['stars'], 1)
             self.assertIsNone(by_tag['#Y0']['attacks_used'])
             self.assertEqual(by_tag['#Y0']['attack_performance']['average_stars']['denominator'], 0)
-            member_result = await war_reads.attendance(context, {'war_type': 'REG', 'account_tags': list(owners), 'unit': 'member'})
+            member_result = await war_reads.participation_totals(context, {'war_type': 'REG', 'account_tags': list(owners), 'unit': 'member'})
             self.assertEqual({row['member_id'] for row in member_result['rows']}, {81, 82, 83})

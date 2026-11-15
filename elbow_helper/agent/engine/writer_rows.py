@@ -12,11 +12,11 @@ from collections.abc import Mapping
 from elbow_helper.agent.reads.evidence import record_rows
 
 WRITER_ROW_FAMILIES = frozenset({
-    'read_war_attendance', 'read_member_cohort', 'read_member_accounts', 'read_recruitment_pipeline',
+    'read_war_participation', 'read_member_cohort', 'read_member_accounts', 'read_recruitment_pipeline',
     'read_promotion_cases',
 })
 # Measure rows have one fixed set of fields, optional ones aside, so they can share one shape.
-_SHAPED_FAMILIES = frozenset({'read_war_attendance', 'read_member_cohort'})
+_SHAPED_FAMILIES = frozenset({'read_war_participation', 'read_member_cohort'})
 # `members` repeats owner identity for the rows.
 _ROW_FIELDS = ('rows', 'members')
 _RATIO = frozenset({'numerator', 'denominator', 'value', 'display'})
@@ -96,6 +96,9 @@ def _shaped(rows):
 
 def compact_writer_rows(facts, family):
     """Return `facts` with each row list rendered compactly; rows are never dropped."""
+    if 'row_rendering' in facts:
+        # Already rendered by the lookup's own view.
+        return facts
     result = dict(facts)
     notes = {}
     for field in _ROW_FIELDS:

@@ -1,7 +1,7 @@
-"""Compatibility projections for regular and league attendance snapshots.
+"""Compatibility projections for regular and league participation snapshots.
 
 Selection, aliases and compact participation belong to WarReads. This module
-only preserves the agent's retained attendance shape and combines CWL rows.
+only preserves the agent's retained participation shape and combines CWL rows.
 """
 
 from collections import Counter, defaultdict
@@ -36,7 +36,7 @@ def iso(value):
 
 
 def snapshot(source):
-    """The old attendance snapshot shape from the record's wars and lineup rows."""
+    """The old participation snapshot shape from the record's wars and lineup rows."""
     entries = []
     identities = {}
     for view in source['wars']:

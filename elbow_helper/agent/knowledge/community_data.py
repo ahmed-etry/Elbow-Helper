@@ -38,7 +38,7 @@ Read contents (all obey current access and retain source gaps):
 - read_recruitment_pipeline: active tickets/trials/follow-ups; acceptance_history reads
   surviving trial cards, ticket_log reads saved transcript messages and attachment locators.
   [agent/families/workflow_reads.py; agent/families/recruitment_history.py]
-- read_war_attendance: stored completed-war lineups, attacks/misses and per-clan participation.
+- read_war_participation: stored completed-war lineups, attacks/misses and per-clan participation.
 - read_war_attacks: each stored regular and CWL attack with both map positions and Town Halls,
   stars, destruction, order and duration. [agent/reads/war_attacks.py]
 - read_cwl_results: season performance/ASS, leagues or signed-up/assigned account rosters. [features/cwl/results.py]

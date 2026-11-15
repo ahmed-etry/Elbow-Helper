@@ -8,7 +8,7 @@
 | `elbow_helper.core` | Settings, paths, logs, feature loading, and errors no command handled |
 | `elbow_helper.configuration` | Server, channel, role, clan, emoji, timezone, and style values |
 | `elbow_helper.infrastructure.discord` | Shared interaction, view, pagination, embed, and command-group code |
-| `elbow_helper.domain` | Player tags, timezone input, CWL dates, war attendance and war views |
+| `elbow_helper.domain` | Player tags, timezone input, CWL dates, war participation and war views |
 | `elbow_helper.data.collectors` | Collects family data from the Clash API, through the shared client, and from Discord member events |
 | `elbow_helper.data.store` | Family database tables, upgrades and writes |
 | `elbow_helper.data.reads` | Lookups of people, membership, profiles, wars, CWL, ranked battles and raids, and what data is missing |

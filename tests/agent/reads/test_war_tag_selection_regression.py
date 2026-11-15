@@ -34,10 +34,10 @@ class WarTagSelectionTests(unittest.IsolatedAsyncioTestCase):
                 tag: {'discord_user_id': 41} for tag in tags}))
         self.tools = {tool.definition.name: tool for tool in TOOLS}
 
-    async def test_attendance_and_cwl_results_normalize_before_selection_and_retention(self):
+    async def test_participation_and_cwl_results_normalize_before_selection_and_retention(self):
         for name, selection in [
-            ('read_war_attendance', {'war_type': 'CWL', 'latest_completed': 1}),
-            ('read_cwl_results', {'metric': 'attendance', 'latest_completed': 1}),
+            ('read_war_participation', {'war_type': 'CWL', 'latest_completed': 1}),
+            ('read_cwl_results', {'metric': 'participation', 'latest_completed': 1}),
             ('read_cwl_results', {'metric': 'performance', 'season': '2026-09'}),
         ]:
             with self.subTest(name=name, selection=selection):
@@ -51,7 +51,7 @@ class WarTagSelectionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(alternate['resolved_inputs']['account_tags'], ['#P0'])
                 report = self.context.state.reports[alternate['report_id']]
                 self.assertEqual(json.loads(report.payload)['summary']['selection']['account_tags'], ['#P0'])
-        missing = await self.tools['read_war_attendance'].handler(self.context, {
+        missing = await self.tools['read_war_participation'].handler(self.context, {
             'war_type': 'CWL', 'latest_completed': 1, 'account_tags': ['yo']})
         self.assertEqual(missing['rows'][0]['player_tag'], '#Y0')
         # Every checked war has a stored lineup, so an account in none of them is a known zero.

@@ -10,7 +10,7 @@ publishing queue before loading features.
 |---|---|
 | `configuration` | Brown Elbow clans, roles, channels, emoji, and timezones |
 | `core` | Startup, paths, settings, logging, background work, and shutdown |
-| `domain` | Shared rules for tags, timezones, war attendance, and war views |
+| `domain` | Shared rules for tags, timezones, war participation, and war views |
 | `infrastructure` | Clients, file and database helpers, Discord utilities, and exports |
 | `data` | Collecting, saving, and reading family data and workflow history |
 | `features` | Commands, buttons, boards, reports, and each workflow's rules |

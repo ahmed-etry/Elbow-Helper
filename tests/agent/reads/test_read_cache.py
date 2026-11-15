@@ -255,19 +255,19 @@ class StoredCacheTests(unittest.IsolatedAsyncioTestCase):
             record = await LeagueRecord(directory).initialize()
             try:
                 source = record.queries()
-                source.attendance = Mock(wraps=source.attendance)
+                source.participation = Mock(wraps=source.participation)
                 local = replace(_context(), cwl_queries=source, read_cache=ReadCache())
                 # League wars are cached by the family record's revision.
                 args = {'clan_codes': ['BEH'], 'latest_completed': 1}
                 first = await selected_wars(local, args, 'CWL')
                 with patch('elbow_helper.agent.reads.cache.monotonic', return_value=10**10):
                     self.assertEqual(await selected_wars(local, args, 'CWL'), first)
-                self.assertEqual(source.attendance.call_count, 1)
+                self.assertEqual(source.participation.call_count, 1)
                 await record.week('BEH', '2026-09', [league_war('#C0', 1, 100, [member('#P0')], start=2)])
                 await selected_wars(local, args, 'CWL')
                 await record.execute("UPDATE wars SET last_seen_at=101000000 WHERE war_tag='#C0'")
                 await selected_wars(local, args, 'CWL')
-                self.assertEqual(source.attendance.call_count, 3)
+                self.assertEqual(source.participation.call_count, 3)
                 source.performance = Mock(wraps=source.performance)
                 first = await stored_read(local, source, 'performance', season='2026-09')
                 self.assertEqual(await stored_read(local, source, 'performance', season='2026-09'), first)
@@ -420,7 +420,7 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
                 wars = {'rows': [{'player_tag': '#P0', 'war_type': 'REG', 'war_id': 'synthetic',
                     'start_ts': 2, 'end_ts': 10, 'attacks_used': 1, 'final_capture': True}], 'war_ids': ['synthetic'],
                     'coverage': {}}
-                source = SimpleNamespace(cache_revision=lambda: revision[0], attendance=Mock(return_value=wars))
+                source = SimpleNamespace(cache_revision=lambda: revision[0], participation=Mock(return_value=wars))
                 local = with_record(replace(context(), cwl_queries=source,
                     account_links=SimpleNamespace(get_links_for_members=lambda ids: {2: [{'player_tag': '#P0'}]}),
                     examination_queries=SimpleNamespace(case_registrations=lambda: [SimpleNamespace(ticket_channel_id=4)],
@@ -428,9 +428,9 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
                             applicant_member_id=2, workflow_status='open', ticket_channel_id=4)]))),
                     SimpleNamespace(cache_revision=lambda: record_revision[0]))
                 async def performance(nested, rows, selection):
-                    result = await stored_read(nested, nested.cwl_queries, 'attendance', **selection)
+                    result = await stored_read(nested, nested.cwl_queries, 'participation', **selection)
                     for row in rows:
-                        row['war_attendance'] = result['rows']
+                        row['war_participation'] = result['rows']
                     return {'coverage': 'Synthetic nested war read'}
                 tool = next(item for item in workflow_reads.TOOLS if item.definition.name == family)
                 with patch('elbow_helper.agent.reads.snapshots.require_evidence_access', AsyncMock()), \
@@ -455,11 +455,11 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_fresh_activity_selection_rereads_sources_and_preserves_old_snapshot(self):
         revision = ['one']
-        def attendance(**kw):
+        def participation(**kw):
             return {'rows': [{'player_tag': '#P0', 'player_name': 'Synthetic', 'war_id': 'war',
                 'clan_code': 'BES', 'attacks_used': 1 if revision[0] == 'one' else 2,
                 'attacks_expected': 2, 'missed': 1 if revision[0] == 'one' else 0}], 'war_ids': ['war'], 'coverage': {}}
-        source = SimpleNamespace(cache_revision=lambda: revision[0], attendance=Mock(side_effect=attendance))
+        source = SimpleNamespace(cache_revision=lambda: revision[0], participation=Mock(side_effect=participation))
         local = with_record(replace(_context(), cwl_queries=source, read_cache=ReadCache(),
             account_links=SimpleNamespace(get_links_by_tags=lambda tags: {'#P0': {'discord_user_id': 42}})),
             SimpleNamespace(cache_revision=lambda: 'record'))
@@ -479,7 +479,7 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
             fresh = await tool.handler(local, {**selection, 'fresh': True})
         self.assertEqual(fresh['source_versions'], {'cwl_queries': 'corrected', 'war_reads': 'record'})
         self.assertEqual(fresh['rows'][0]['attacks_used'], 2)
-        self.assertEqual(source.attendance.call_count, 2)
+        self.assertEqual(source.participation.call_count, 2)
         self.assertEqual(rosters.await_count, 2)
         self.assertTrue(rosters.call_args.args[0].fresh_reads)
         self.assertEqual(local.state.reports[first['report_id']].payload, retained)
@@ -513,7 +513,7 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
     async def test_superseded_storage_and_cross_asker_reports_have_no_reusable_handle(self):
         revision = ['one']
         source = SimpleNamespace(cache_revision=lambda: revision[0])
-        local, _, _, encoded, _, _ = await self.make_finding('read_war_attendance', source)
+        local, _, _, encoded, _, _ = await self.make_finding('read_war_participation', source)
         self.assertIn('report_id', json.loads(json.loads(retained_finding(local, encoded))['result']))
         revision[0] = 'two'
         for changed in (local, replace(local, member=SimpleNamespace(id=999))):

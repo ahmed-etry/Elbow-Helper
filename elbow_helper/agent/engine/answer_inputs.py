@@ -185,7 +185,7 @@ def _row_read_coverage(result, subject, named_tags):
     # Its explicit selection/unobserved list was checked; other named
     # accounts were never covered by that measure read.
     checked = set() if paged else selected | set(result.get('unobserved_accounts', []))
-    if result.get('family') in ('read_war_attendance', 'read_cwl_results', 'read_ranked_activity'):
+    if result.get('family') in ('read_war_participation', 'read_cwl_results', 'read_ranked_activity'):
         selected.update(named_tags)
     unread = sorted(selected - seen - checked)
     coverage = {}

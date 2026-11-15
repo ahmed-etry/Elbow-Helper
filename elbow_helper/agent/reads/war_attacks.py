@@ -52,7 +52,7 @@ def attack_row(row, codes, owners):
 
 
 async def war_attacks(context, arguments):
-    """The attacks family accounts made in the wars war attendance would select."""
+    """The attacks family accounts made in the wars war participation would select."""
     accounts = await selected_accounts(context, arguments)
     if 'error' in accounts:
         return accounts

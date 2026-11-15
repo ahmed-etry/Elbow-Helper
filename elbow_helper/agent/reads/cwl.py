@@ -34,7 +34,7 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
         },
     }
     pick_wars = (
-        "Select completed CWL wars with read_war_attendance or read_cwl_results; "
+        "Select completed CWL wars with read_war_participation or read_cwl_results; "
         "use the returned war IDs. Rounds 1-7 are one season. "
     )
     # Both feature scorers calculate exactly the selected wars as one result.
