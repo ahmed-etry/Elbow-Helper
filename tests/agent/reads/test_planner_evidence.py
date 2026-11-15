@@ -80,10 +80,15 @@ class PlannerEvidenceTests(unittest.IsolatedAsyncioTestCase):
         channel.permissions_for = lambda actor: discord.Permissions(
             view_channel=actor.id != role.id, read_message_history=True)
         result = await ACCESS_TOOLS[0].handler(context, {'role_names': ['Role A']})
+        actor = result['actors'][0]
+        self.assertEqual(actor['actor_id'], role.id)
+        self.assertIn('ban_members', actor['guild_permissions'])
+        self.assertTrue(actor['role_only'])
         row = result['rows'][0]
-        self.assertFalse(row['view_channel'])
-        self.assertIn('ban_members', row['guild_permissions'])
-        self.assertTrue(row['role_only'])
+        self.assertEqual(row['channel_id'], channel.id)
+        self.assertEqual(row['view_channel'], [False])
+        self.assertEqual(row['read_message_history'], [True])
+        self.assertEqual(result['permission_sets'][row['channel_permissions'][0]], ['read_message_history'])
         self.assertIn('Role-only access does not establish', result['coverage'])
         self.assertIn(channel.id, context.state.source_channels)
         self.assertFalse(context.state.proposed_changes)

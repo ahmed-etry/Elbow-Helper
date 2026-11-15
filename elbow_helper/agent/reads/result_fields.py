@@ -124,7 +124,9 @@ RESULT_FIELDS['read_member_cohort']['activity_coverage'] = {
 RESULT_FIELDS['read_member_cohort']['clans'] = [names(
     'clan_code,name,tag,basis,status,cohort_accounts,included_accounts,excluded_accounts,unknown_filter_accounts,in_game_members,in_game_capacity,open_in_game_slots')]
 RESULT_FIELDS['read_discord_access'] = {**COMMON, 'rows': [names(
-    'channel_id,channel_name,actor_kind,actor_id,actor_name,guild_permissions,channel_permissions,view_channel,read_message_history,role_only')]}
+    'channel_id,channel_name,channel_permissions,view_channel,read_message_history')],
+    'actors': [names('actor_kind,actor_id,actor_name,guild_permissions,role_only')],
+    **names('permission_sets,differing_channel_ids,channels_left_out')}
 
 RESULT_FIELDS.update({
  'read_recruitment_pipeline': {**COMMON, 'rows': [names('member_id,applicant_member_id,ticket_channel_id,workflow_status,start_at,expected_end_at,trial_ended_at,acceptance_decision,finalized,message_id,content,source')]},

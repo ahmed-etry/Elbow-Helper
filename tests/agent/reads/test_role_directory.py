@@ -32,8 +32,8 @@ class RoleDirectoryTests(unittest.IsolatedAsyncioTestCase):
         cohort = await member_cohort(context, {'basis': 'role_holders', 'role_ids': [27]})
         self.assertEqual({r['member_id'] for r in cohort['rows']}, {m.id for m in members if m.roles})
         self.assertEqual(result['roles'][0]['member_count'], len(cohort['rows']))
-        self.assertEqual(result['roles'][0]['members'], [
-            {'member_id': m.id, 'display_name': m.display_name} for m in members if m.roles])
+        # Role search identifies the role; its holders are read once, through the cohort.
+        self.assertNotIn('members', result['roles'][0])
         absent = await find_discord_roles(context, {'query': 'Unknown role'})
         self.assertEqual(absent['matched_count'], 0)
         self.assertTrue(build_agent_tools()['find_discord_roles'].default_visible)
