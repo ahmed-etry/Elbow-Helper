@@ -62,7 +62,7 @@ class ResearchCapacityTests(unittest.IsolatedAsyncioTestCase):
         }
         first = {**_plan([
             {'id': 'accounts', 'capability': 'read_member_accounts',
-             'arguments': {'limit': 1}, 'depends_on': []},
+             'arguments': {}, 'depends_on': []},
             {'id': 'discussion', 'capability': 'read_conversation_evidence',
              'arguments': {'mode': 'channel_window', 'channel_id': 91}, 'depends_on': []}]),
              'assessment': True, 'discussion_channels': [91]}

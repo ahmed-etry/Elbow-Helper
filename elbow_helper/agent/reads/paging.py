@@ -34,6 +34,11 @@ def bound_family_page(payload, limit):
             high = middle - 1
     if fitted is not None:
         return fitted
-    refusal = json.dumps({'error': 'The remaining evidence budget cannot fit a complete report row.',
-        'cause': 'capacity', 'report_id': payload['report_id'], 'offset': offset}, separators=(',', ':'))
-    return refusal if len(refusal) <= limit else '{}'
+    # No row fits this transport page, but the lookup and its saved report succeeded.
+    # Keep its locator when possible; the writer restores rows from the original read.
+    empty = {key: payload[key] for key in ('kind', 'family', 'report_id', 'total_rows',
+             'complete_snapshot', 'view', 'limit') if key in payload}
+    empty.update(rows=[], returned_rows=0, offset=offset,
+                 next_offset=offset if rows else payload.get('next_offset'))
+    content = json.dumps(empty, ensure_ascii=False, separators=(',', ':'))
+    return content if len(content) <= limit else '{}'

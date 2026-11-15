@@ -10,6 +10,7 @@ from typing import Any
 from .checker import _valid_value, step_dependencies
 from .arguments import takes_single_value
 from .results import is_record_table
+from .reference_paths import path_key, valid_path
 
 
 LOGGER = logging.getLogger(__name__)
@@ -29,6 +30,12 @@ class SingleValueReferenceError(ValueError):
 
 
 def _walk(source: Any, path: list[Any]) -> Any:
+    if not valid_path(path):
+        raise TypeError("Invalid result path")
+    return _walk_parts(source, path)
+
+
+def _walk_parts(source: Any, path: list[Any]) -> Any:
     for index, part in enumerate(path):
         if part == "rows" and is_record_table(source):
             continue
@@ -36,9 +43,9 @@ def _walk(source: Any, path: list[Any]) -> Any:
             if not isinstance(source, list):
                 raise TypeError("Only a list can be expanded")
             rest = path[index + 1:]
-            collected = [_walk(item, rest) for item in source]
+            collected = [_walk_parts(item, rest) for item in source]
             return [value for group in collected for value in group] if "*" in rest else collected
-        source = source[part]
+        source = source[path_key(source, part)]
     return source
 
 
@@ -89,6 +96,11 @@ def resolve_arguments(
                         "Choose one value or ask for clarification."
                     )
                 return collected[0]
+            kinds = detail.get('type')
+            if ((kinds == 'array' or isinstance(kinds, list) and 'array' in kinds)
+                    and isinstance(collected, (str, int, float, bool)) and 'items' in detail
+                    and _valid_value(collected, detail['items'])):
+                return [collected]
             return _flatten_scalar_list(collected, detail)
         if isinstance(value, dict):
             properties = detail.get("properties", {})
@@ -157,6 +169,7 @@ async def execute_plan(
     step_errors: Mapping[str, str] | None = None,
     argument_schema: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     step_fields: Mapping[str, tuple[str, ...]] | None = None,
+    step_missing_fields: Mapping[str, tuple[str, ...]] | None = None,
 ) -> dict[str, Mapping[str, Any]]:
     """Run independent steps together and wait for dependencies."""
     if max_concurrency < 1:
@@ -183,6 +196,8 @@ async def execute_plan(
                 "capability": step["capability"],
                 **({"invalid_fields": list(step_fields[step["id"]])}
                    if step["id"] in (step_fields or {}) else {}),
+                **({"missing_fields": list(step_missing_fields[step["id"]])}
+                   if step["id"] in (step_missing_fields or {}) else {}),
                 **({"argument_schema": argument_schema(step)} if argument_schema else {}),
             }
         try:

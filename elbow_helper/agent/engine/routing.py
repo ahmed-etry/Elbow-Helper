@@ -34,6 +34,7 @@ ROUTE_INSTRUCTION = (
     "First distinguish community operations from the game's mechanics. Community policies, "
     "war rules, attack timing and target claims, role duties, bot help and a member's own "
     "accounts or event participation require research, even without a named clan or account. "
+    "ASS and MEGA ASS are this community's CWL scores. "
     "A responsibility involving gameplay is still a community role question. "
     "Requested operational messages are research, even when their subject involves gameplay. "
     "Basic game facts and FAQ about rewards, medals, timers or how features work require research. "

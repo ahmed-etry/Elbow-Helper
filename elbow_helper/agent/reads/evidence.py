@@ -24,6 +24,18 @@ def omit(value, fields):
     return {key: item for key, item in value.items() if key not in fields}
 
 
+MESSAGE_OPTIONAL_COLUMNS = {'reply_to_message_id': None, 'embeds': [], 'attachment_names': []}
+
+
+def message_columns(rows):
+    """One column set for every row, with a reply, embed or attachment column only when a message has one."""
+    kept = [column for column, empty in MESSAGE_OPTIONAL_COLUMNS.items()
+            if any(row.get(column) not in (None, []) for row in rows)]
+    return [{**{key: value for key, value in row.items() if key not in MESSAGE_OPTIONAL_COLUMNS},
+             **{column: row.get(column, MESSAGE_OPTIONAL_COLUMNS[column]) for column in kept}}
+            for row in rows]
+
+
 def name_resolution_view(resolution):
     """Keep selection provenance and only the choices still needing a decision."""
     result = pick(resolution, ('query', 'status', 'look_in', 'found_in'))
@@ -239,13 +251,15 @@ def family_model_view(payload, *, shared_rows=True):
             for member in data['members']:
                 member.pop('roles', None)
     if family == 'read_conversation_evidence' and data.get('mode') == 'channel_window':
-        data.setdefault('message_content_complete', all(row.get('content_complete') for row in rows))
+        data.setdefault('message_content_complete', all(row.get('content_complete', True) for row in rows))
         data.setdefault('attachment_contents_read', False)
-        data['rows'] = [readable_history_row(row) for row in rows]
+        data['rows'] = message_columns([readable_history_row(row) for row in rows])
+    elif family == 'read_conversation_evidence' and len(rows) >= 10:
+        # Search and context pages are tables too, even when only some messages are replies.
+        data['rows'] = message_columns(rows)
     if family == 'read_conversation_evidence':
-        # The jump link is rebuilt from guild, channel and message IDs when an answer cites a message.
-        data['rows'] = [{key: value for key, value in row.items() if key != 'source'}
-                        for row in data['rows']]
+        # The jump link is rebuilt from guild, channel and message at citation time.
+        data['rows'] = [omit(row, ('source',)) for row in data['rows']]
     # Source channels are retained access bookkeeping; nothing the model is told to use reads them.
     data.pop('provenance', None)
     if isinstance(data.get('unknown_accounts'), list):

@@ -474,8 +474,7 @@ and waiting for reply means the trial ended and the member was asked whether the
 and for feedback. It does not await another accept/decline decision. Distinguish that response \
 and later /finalize from acceptance at the start of trial. Verify any claimed posting deadline \
 against an applicable schedule or policy; do not invent a cadence from an old post's age.
-For dated logs, use targeted history text_filter reads and pages, alongside a small context \
-sample if needed. pages increases scanned pages, not the returned text budget; \
+pages increases scanned pages, not the returned text budget; \
 unfiltered chatter fills that budget before older events. Continue with channel_id and cursor \
 only; omit dates/filters to retain the original window. Never change a cursor's scope. \
 For member standing, resolve member -> linked accounts -> profiles and gameplay in the first \

@@ -8,6 +8,7 @@ from typing import Any
 import logging
 import re
 import math
+import json
 
 from ..engine.capability_contract import (
     CapabilityContract,
@@ -21,6 +22,7 @@ from ..reports.tools import (READ_NAME, original_arguments, original_tool,
 from .format import REPLY_CAPABILITIES, output_forms
 from .arguments import argument_errors, schema_variant
 from .input_rules import input_rule_issue
+from .reference_paths import PATH_CONTRACT, valid_path
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,13 +34,15 @@ class PlanCheck:
     step_id: str = ""
     offered: tuple[str, ...] = ()
     step_errors: Mapping[str, str] = field(default_factory=dict)
-    # The fields an input rule names, for one step or per refused step of a plan.
+    # Invalid fields named by an input rule, for one step or per refused step.
     fields: tuple[str, ...] = ()
     step_fields: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    missing_fields: tuple[str, ...] = ()
+    step_missing_fields: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
 
-def _error(message, step_id="", offered=(), fields=()):
-    return PlanCheck(False, message, step_id, offered, fields=fields)
+def _error(message, step_id="", offered=(), fields=(), missing_fields=()):
+    return PlanCheck(False, message, step_id, offered, fields=fields, missing_fields=missing_fields)
 
 
 def _valid_value(
@@ -138,10 +142,23 @@ def step_dependencies(step: Mapping[str, Any]) -> tuple[str, ...]:
 def _reference(value: Any, earlier: set[str]) -> bool:
     return (isinstance(value, dict) and set(value) == {"step", "path"}
             and isinstance(value["step"], str) and value["step"] in earlier
-            and isinstance(value["path"], list)
-            and 1 <= len(value["path"]) <= 8
-            and all(isinstance(part, str) and part or type(part) is int and part >= 0
-                    for part in value["path"]))
+            and valid_path(value["path"]))
+
+
+def _reference_issue(arguments, earlier, step_id):
+    if not isinstance(arguments, dict):
+        return None
+    fields = {"arguments": arguments} if set(arguments) == {"step", "path"} else arguments
+    for argument, value in fields.items():
+        for reference in result_references(value):
+            if not valid_path(reference["path"]):
+                return _error("Invalid result path: " + json.dumps({
+                    "step_id": step_id, "argument": argument, "path": reference["path"],
+                    "expected": PATH_CONTRACT,
+                }, ensure_ascii=False), step_id, fields=(argument,))
+            if not _reference(reference, earlier):
+                return _error("Use a valid result reference to an earlier or completed step.", step_id)
+    return None
 
 
 def bind_report_references(
@@ -200,9 +217,8 @@ def check_step(
     )
     if selected is not None and unsupported_fields(selected, arguments):
         return _error(unsupported_field_error(selected, arguments), step_id)
-    for reference in result_references(arguments):
-        if not _reference(reference, set(dependencies)):
-            return _error("Use a valid result reference to an earlier or completed step.", step_id)
+    if issue := _reference_issue(arguments, set(dependencies), step_id):
+        return issue
     if not valid_arguments(arguments, schema, set(dependencies)):
         issues = argument_errors(arguments, schema, set(dependencies), _valid_value)
         return _error("Invalid arguments: " + "; ".join(issues), step_id)
@@ -212,10 +228,12 @@ def check_step(
             set(dependencies),
         ):
             return _error("Use the fields supported by this report kind.", step_id)
-    issue, fields = input_rule_issue(original_arguments(arguments) if selected else arguments,
-                                     (selected or tool).definition.parameters)
+    issue, fields, missing_fields = input_rule_issue(
+        original_arguments(arguments) if selected else arguments,
+        (selected or tool).definition.parameters,
+    )
     if issue:
-        return _error(issue, step_id, fields=fields)
+        return _error(issue, step_id, fields=fields, missing_fields=missing_fields)
     if validate_scope is not None:
         issue = validate_scope(selected or tool)
         if issue:
@@ -243,6 +261,46 @@ def _mixes_irreversible_changes(steps, registry) -> bool:
         registry[step["capability"]].action_class is ActionClass.IRREVERSIBLE
         and step["capability"] == changes[0]["capability"] for step in changes
     )
+
+
+def _rename_reused_steps(steps, completed, registry):
+    """Give a different operation its own identity before any references are bound."""
+    if not all(isinstance(step, dict) and isinstance(step.get('id'), str) for step in steps):
+        return
+    identities = [step['id'] for step in steps]
+    if len(set(identities)) != len(identities):
+        return  # Duplicate names inside one plan remain a structural error.
+    reserved = set(completed) | set(identities)
+    renamed = {}
+    for step in steps:
+        identity = step['id']
+        previous = completed.get(identity)
+        if (previous is None or not 1 <= len(identity) <= 40
+                or all(step.get(key) == previous.get(key) for key in ('capability', 'arguments'))):
+            continue
+        number = 2
+        while True:
+            suffix = '_' + str(number)
+            candidate = identity[:40 - len(suffix)] + suffix
+            if candidate not in reserved:
+                break
+            number += 1
+        renamed[identity] = candidate
+        reserved.add(candidate)
+    for step in steps:
+        step['id'] = renamed.get(step['id'], step['id'])
+        if isinstance(step.get('depends_on'), list):
+            step['depends_on'] = [renamed.get(dep, dep) if isinstance(dep, str) else dep
+                                  for dep in step['depends_on']]
+        for reference in result_references(step.get('arguments')):
+            if isinstance(reference['step'], str):
+                reference['step'] = renamed.get(reference['step'], reference['step'])
+        tool = registry.get(step.get('capability')) if isinstance(step.get('capability'), str) else None
+        if tool and tool.contract and isinstance(step.get('arguments'), dict):
+            for field_name, kind in tool.contract.entity_fields:
+                value = step['arguments'].get(field_name)
+                if kind == 'family_report' and isinstance(value, str) and value in renamed:
+                    step['arguments'][field_name] = renamed[value]
 
 
 def check_plan(raw, registry, *, completed_steps=None, report_ids=None):
@@ -284,21 +342,26 @@ def check_plan(raw, registry, *, completed_steps=None, report_ids=None):
         if not raw["steps"] and not raw.get("reply"):
             return _error("Supply reply text or capability steps.")
         completed = completed_steps or {}
+        _rename_reused_steps(raw['steps'], completed, registry)
         earlier = set(completed)
         step_ids = earlier | {step["id"] for step in raw["steps"]
                               if isinstance(step, dict) and isinstance(step.get("id"), str)}
-        step_errors, step_fields = {}, {}
+        step_errors, step_fields, step_missing_fields = {}, {}, {}
         after_change = set()
         for key, step in completed.items():
             if registry[step["capability"]].action_class in (
                 ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
             ) or after_change.intersection(step_dependencies(step)):
                 after_change.add(key)
-        for step in raw["steps"]:
-            if not isinstance(step, dict) or not {
-                "id", "capability", "arguments", "depends_on",
-            } <= set(step):
+        for position, step in enumerate(raw["steps"], 1):
+            if not isinstance(step, dict):
                 return _error("Each step needs id, capability, arguments and depends_on.")
+            missing = tuple(key for key in ("id", "capability", "arguments", "depends_on")
+                            if key not in step)
+            if missing:
+                return _error("Each step needs id, capability, arguments and depends_on. "
+                              + json.dumps({"missing_fields": missing}),
+                              step.get("id", str(position)), missing_fields=missing)
             identity = step["id"]
             if isinstance(identity, str) and identity in completed:
                 return _error("Use a new step ID.", identity)
@@ -314,11 +377,8 @@ def check_plan(raw, registry, *, completed_steps=None, report_ids=None):
                 return _error("Depend only on earlier or completed steps.", identity)
             if issue := bind_report_references(step, registry, step_ids, report_ids):
                 return _error(issue, identity)
-            for reference in result_references(step["arguments"]):
-                if not _reference(reference, earlier):
-                    return _error(
-                        "Use a valid result reference to an earlier or completed step.", identity,
-                    )
+            if issue := _reference_issue(step["arguments"], earlier, identity):
+                return issue
             dependencies = step_dependencies(step)
             classification = registry[name].action_class
             depends_on_change = bool(after_change.intersection(dependencies))
@@ -335,6 +395,8 @@ def check_plan(raw, registry, *, completed_steps=None, report_ids=None):
                 step_errors[identity] = checked.error
                 if checked.fields:
                     step_fields[identity] = checked.fields
+                if checked.missing_fields:
+                    step_missing_fields[identity] = checked.missing_fields
             earlier.add(identity)
         if _mixes_irreversible_changes(raw["steps"], registry):
             return _error("Only irreversible changes of the same kind may share a preview.")
@@ -344,7 +406,8 @@ def check_plan(raw, registry, *, completed_steps=None, report_ids=None):
             return _error("Include the selected output capability in the steps.")
         if sum(step["capability"] == "prepare_spreadsheet" for step in raw["steps"]) > 1:
             return _error("Put every table in one spreadsheet as separate sheets.")
-        return PlanCheck(True, step_errors=step_errors, step_fields=step_fields)
+        return PlanCheck(True, step_errors=step_errors, step_fields=step_fields,
+                         step_missing_fields=step_missing_fields)
     except Exception:
         LOGGER.exception("Agent plan check failed unexpectedly")
         return _error("Correct the plan fields and values.")

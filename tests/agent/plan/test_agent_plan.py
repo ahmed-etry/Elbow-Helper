@@ -55,6 +55,20 @@ def _plan_for(name, tool, contract, selected_field=None):
 
 class PlanContractTests(unittest.TestCase):
 
+    def test_incomplete_elders_step_names_each_missing_key_and_uses_position_without_id(self):
+        step = {'id': 'elders', 'capability': 'read_member_cohort', 'arguments': {
+            'basis': 'selected', 'member_ids': [41, 42], 'include_accounts': True,
+            'include_roles': True, 'limit': 100}, 'depends_on': []}
+        for key in step:
+            with self.subTest(key=key):
+                plan = {'goal': 'List elders and their clans', 'effort': 'high', 'output': 'text',
+                        'steps': [{k:v for k,v in step.items() if k != key}]}
+                checked = check_plan(plan, REGISTRY)
+                self.assertFalse(checked.ok)
+                self.assertEqual(checked.step_id, '1' if key == 'id' else 'elders')
+                self.assertEqual(checked.missing_fields, (key,))
+                self.assertIn(key, checked.error)
+
     def test_synthetic_replays_reject_four_missing_dates_and_four_oversized_limits(self):
         for index in range(4):
             for missing_date in (False, True):

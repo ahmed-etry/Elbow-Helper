@@ -415,7 +415,7 @@ for _role_change in ('add_discord_roles', 'remove_discord_roles'):
         'members': [names('member_id,display_name,has_role')]}
 from elbow_helper.agent.reads.result_fields import RESULT_FIELDS as FAMILY_RESULT_FIELDS
 RESULT_FIELDS.update(FAMILY_RESULT_FIELDS)
-RETURN_HINTS = {name: format_returns(shape) for name, shape in RESULT_FIELDS.items()}
+RETURN_HINTS ={name: format_returns(shape) for name, shape in RESULT_FIELDS.items()}
 
 
 def capability_returns(tool) -> str:

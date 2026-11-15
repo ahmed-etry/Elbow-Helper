@@ -4,7 +4,6 @@ import json
 import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition, TextGenerationError
-from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 
 from elbow_helper.agent.safety.access import require_evidence_access
 from ..actions.contracts import ActionClass
@@ -205,6 +204,8 @@ def discussion_ids(results):
         if isinstance(rows, dict):
             rows = [dict(zip(rows['columns'], row)) for row in rows['rows']]
         identifiers.update(row['message_id'] for row in rows if row.get('message_id'))
+        identifiers.update(row['message_id'] for row in record_rows(result.get('message_sources', []))
+                           if row.get('message_id'))
     return identifiers
 
 
@@ -260,18 +261,8 @@ async def select_decision_sources(flow):
     capacity = getattr(session, 'context_window_tokens', None)
     if capacity is not None and projected + 2048 > capacity:
         return []
-    previous = {name: getattr(flow.rounder, name) for name in (
-        'session', 'request_effort', 'pending_calls', 'pending_results', 'unpublished',
-        'partial_content', 'last_allow_tools', 'final_attempted') if hasattr(flow.rounder, name)}
-    previous_estimate = flow.budget.next_input_estimate
-    flow.rounder.session = session
-    flow.rounder.request_effort = AgentReasoningEffort.NONE
-    flow.rounder.pending_calls = flow.rounder.pending_results = ()
-    flow.rounder.unpublished = None
-    flow.budget.next_input_estimate = projected
     try:
-        reply = await flow.rounder.advance(allow_tools=True,
-            reasoning_effort=AgentReasoningEffort.NONE, max_output_tokens=2048)
+        reply = await flow.rounder.isolated(session, projected, allow_tools=True)
         if len(reply.tool_calls) != 1 or reply.tool_calls[0].name != selection_tool.name:
             return []
         selected = json.loads(reply.tool_calls[0].arguments)
@@ -283,10 +274,6 @@ async def select_decision_sources(flow):
         return selected['channel_ids']
     except (ValueError, AgentGracefulEnd, TextGenerationError, TimeoutError):
         return []
-    finally:
-        for name, value in previous.items():
-            setattr(flow.rounder, name, value)
-        flow.budget.next_input_estimate = previous_estimate
 
 
 def _discussion_subjects(flow):

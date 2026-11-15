@@ -21,10 +21,13 @@ PAGING_FIELDS = frozenset({
 })
 
 
+TABLE_MINIMUM_ROWS = 10
+
+
 def is_record_table(value: Any) -> bool:
     """Identify the homogeneous record lists shown as columns and rows to the model."""
     return (
-        isinstance(value, list) and len(value) >= 10
+        isinstance(value, list) and len(value) >= TABLE_MINIMUM_ROWS
         and all(isinstance(item, Mapping) for item in value)
         and all(item.keys() == value[0].keys() for item in value)
     )
@@ -41,6 +44,19 @@ def compact_result(value: Any) -> Any:
                                                   for item in value]}
         return [compact_result(item) for item in value]
     return value
+
+
+def tabulate_messages(data: dict[str, Any]) -> dict[str, Any]:
+    """Message rows that differ only by a reply column share one column set, so a long page is a table.
+
+    A reply column is added only when some message in the page is a reply, as conversation reads already do.
+    """
+    from elbow_helper.agent.reads.evidence import message_columns
+    for field in ("messages", "matches"):
+        rows = data.get(field)
+        if isinstance(rows, list) and len(rows) >= TABLE_MINIMUM_ROWS and all(isinstance(row, Mapping) for row in rows):
+            data = {**data, field: message_columns(rows)}
+    return data
 
 
 def model_view(
@@ -70,6 +86,8 @@ def model_view(
             data["flags"] = dict(data["flags"])
             data["flags"]["limits"] = [value for value in data["flags"].get("limits", ())
                                        if "poll" not in value]
+    if data.get('kind') != 'family':
+        data = tabulate_messages(data)
     report_id = data.get("report_id")
     paging_fields = PAGING_FIELDS
     if data.get('kind') == 'family':

@@ -35,7 +35,7 @@ from elbow_helper.agent.research.threads import _thread_result
 from elbow_helper.agent.features.role_connections.reads import _render_rule
 from elbow_helper.agent.conversation.instructions import TaskInstruction
 from elbow_helper.features.cwl.queries import (
-    CwlAssWarsSnapshot, CwlBonusWarsSnapshot, CwlThreadRegistration,
+    CwlBonusWarsSnapshot, CwlThreadRegistration,
 )
 from elbow_helper.features.help.discovery import ParameterInfo
 from elbow_helper.features.role_connections.queries import RoleConnectionRule
@@ -135,14 +135,6 @@ def fixed_results(seed):
         get_role=lambda _: SimpleNamespace(name="Synthetic role"),
     ))
     rule = synthetic_value(RoleConnectionRule, seed)
-    ass = asdict(synthetic_value(CwlAssWarsSnapshot, seed))
-    ass["players"] = list(ass.pop("rows"))
-    ass["ranking"] = {"account_count": len(ass["players"]), "complete": True, "text": "Synthetic ranking"}
-    ass["attack_sample"] = [{
-        "war_id": "CWL:synthetic", "player_tag": "#P0", "player_name": "Synthetic",
-        "attack_order": 1, "defender_tag": "#P2", "defender_townhall": 18,
-        "defender_map_position": 1, "stars": 3, "destruction": 100, "clan_code": "BEH",
-    }]
     bonus = asdict(synthetic_value(CwlBonusWarsSnapshot, seed))
     bonus["rows"] = list(bonus.pop("summaries"))
     bonus["attack_sample"] = bonus.pop("attacks")
@@ -301,7 +293,7 @@ def fixed_results(seed):
                          "url": "https://synthetic.invalid"}],
             "accessible_count": 1, "omitted_inaccessible_count": 0,
         },
-        "cwl_ass_scores": ass, "cwl_bonus_scores": bonus,
+        "cwl_bonus_scores": bonus,
         "search_approved_knowledge": {"sections": [{"title": "Synthetic", "body": "Synthetic",
                                                     "visibility": "public"}]},
         "read_membership_history": {

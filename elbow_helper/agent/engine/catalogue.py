@@ -1,11 +1,14 @@
 """Explicit specialist discovery; no classification of request prose."""
+from dataclasses import replace
+import json
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from elbow_helper.agent.engine.models import RegisteredAgentTool, AgentCapabilityEffect
+from elbow_helper.agent.engine.models import RegisteredAgentTool, AgentCapabilityEffect, ScopeAudit
 from ..actions.contracts import ActionClass
-from elbow_helper.agent.safety.access import has_lookup_access
+from elbow_helper.agent.safety.access import has_lookup_access, has_reader_access_requirements
 from elbow_helper.agent.reads.sql.query import reader_levels
 from .capability_contract import CapabilityContract
 from ..plan.format import capability_list
+from ..plan.input_rules import RULES
 
 GROUPS = ('changes', 'schedules', 'attachments', 'research_jobs', 'events',
           'achievements', 'transfers', 'settings', 'records', 'action_history')
@@ -221,53 +224,91 @@ def group_for(owner, tool):
     return 'records'
 
 
-def discovery_tool(available, active, on_expand, data_guide=None):
+PAGE_SIZE = 12
+ROLE_CHANGES = ('read_discord_role_change_preview', 'add_discord_roles', 'remove_discord_roles')
+
+
+def disclosed(context, tools):
+    """Split capabilities into those usable here and those withheld from this destination."""
+    selected, withheld = {}, {}
+    for name, tool in tools.items():
+        requirements = tool.contract.required_access if tool.contract else frozenset()
+        if has_lookup_access(context, requirements):
+            selected[name] = tool
+        elif has_reader_access_requirements(context.guild, context.member.id, requirements):
+            # As in command help, acknowledge a destination gap only for
+            # a requester allowed to read it privately. No source details.
+            withheld[name] = {'cause': 'scope_refused', 'available_privately': True}
+    return selected, withheld
+
+
+def group_index(context, available):
+    """List every destination-permitted specialist, including actions, then those withheld here."""
+    # Listing a menu is not evidence that any excluded source was relevant.
+    context = replace(context, state=replace(context.state, scope_audit=ScopeAudit()))
+    selected, withheld = disclosed(context, {name: tool for name, tool in sorted(available.items())
+                                             if not tool.default_visible and tool.specialist_group in GROUPS})
+    lines = [group + ':' + ','.join(names) for group in GROUPS
+             if (names := [name for name, tool in selected.items() if tool.specialist_group == group])]
+    if withheld:
+        lines.append('withheld:' + json.dumps(withheld, separators=(',', ':')))
+    return '\n'.join(lines)
+
+
+def discovery_tool(context, available, active, on_expand, data_guide=None):
     async def open_group(context, arguments):
-        group = arguments['group']
-        if group not in GROUPS:
-            return {'error': 'Choose a listed capability group.', 'cause': 'invalid_arguments'}
-        cursor = arguments.get('cursor', '0')
-        if not isinstance(cursor, str) or not cursor.isdecimal():
-            return {'error': 'Use the returned catalogue cursor.', 'cause': 'invalid_arguments'}
-        selected = {name: tool for name, tool in sorted(available.items())
-                    if name != 'query_bot_data' and tool.specialist_group == group
-                    and (arguments['intent'] == 'prepare_change'
-                         or tool.action_class in (ActionClass.READ, ActionClass.OUTPUT))
-                    and has_lookup_access(context, tool.contract.required_access if tool.contract else frozenset())}
-        role_changes = ('read_discord_role_change_preview', 'add_discord_roles', 'remove_discord_roles')
-        names = sorted(selected, key=lambda name: (name not in role_changes, name)) if group == 'changes' else list(selected)
-        offset = int(cursor)
-        if offset > len(names):
-            return {'error': 'That catalogue cursor is unavailable.', 'cause': 'invalid_arguments'}
-        role_page = group == 'changes' and offset == 0 and any(name in selected for name in role_changes)
-        page_end = sum(name in selected for name in role_changes) if role_page else offset + 12
-        page = {name: selected[name] for name in names[offset:page_end]}
-        if group == 'changes' and offset == 0:
-            # Role discovery and its read-only preview must not depend on the
-            # alphabetical location among unrelated change capabilities.
-            for name in ('find_discord_roles', 'read_discord_members', 'read_discord_role_change_preview',
-                         'add_discord_roles', 'remove_discord_roles'):
-                tool = available.get(name)
-                if tool is not None and (arguments['intent'] == 'prepare_change'
-                        or tool.action_class in (ActionClass.READ, ActionClass.OUTPUT)) and has_lookup_access(
-                            context, tool.contract.required_access if tool.contract else frozenset()):
-                    page[name] = tool
-        data_query = available.get('query_bot_data') if group == 'records' and offset == 0 else None
-        if data_query is not None and has_lookup_access(
-                context, data_query.contract.required_access if data_query.contract else frozenset()):
-            # The data query is the one specialist read without a typed family;
-            # it must not depend on its alphabetical page among the records.
-            page['query_bot_data'] = data_query
+        def offered(tool):
+            return (arguments['intent'] == 'prepare_change'
+                    or tool.action_class in (ActionClass.READ, ActionClass.OUTPUT))
+
+        requested = arguments.get('capabilities')
+        group = arguments.get('group')
+        if requested is not None:
+            selected, withheld = disclosed(context, {name: available[name] for name in requested
+                                                     if name in available})
+            refused = [name for name in requested if name not in selected and name not in withheld]
+            if refused:
+                return {'error': 'Unknown capabilities: ' + ', '.join(refused) + '.',
+                        'cause': 'invalid_arguments', 'capabilities': refused}
+            page = selected
+            page_end = len(page)
+            names = list(page)
+            data_query = page.get('query_bot_data')
+            roles = any(name in ROLE_CHANGES for name in page)
         else:
-            data_query = None
+            if group not in GROUPS:
+                return {'error': 'Choose a listed capability group.', 'cause': 'invalid_arguments'}
+            cursor = arguments.get('cursor', '0')
+            if not isinstance(cursor, str) or not cursor.isdecimal():
+                return {'error': 'Use the returned catalogue cursor.', 'cause': 'invalid_arguments'}
+            selected, withheld = disclosed(context, {name: tool for name, tool in sorted(available.items())
+                                                     if tool.specialist_group == group and offered(tool)})
+            data_query = selected.pop('query_bot_data', None)
+            page, offset, page_end, names = _group_page(context, available, group, selected, cursor, offered)
+            if page is None:
+                return {'error': 'That catalogue cursor is unavailable.', 'cause': 'invalid_arguments'}
+            if offset:
+                data_query = None
+            elif data_query is not None:
+                # The data query is the one specialist read without a typed family;
+                # it must not depend on its alphabetical page among the records.
+                page['query_bot_data'] = data_query
+            roles = group == 'changes' and offset == 0
         active.update(page)
+        guide = (data_guide(reader_levels(context))
+                 if (data_query is not None or 'prepare_spreadsheet' in page) and data_guide is not None else '')
+        context.state.catalogue = replace(context.state.catalogue,
+            opened=context.state.catalogue.opened | page.keys(),
+            withheld={**context.state.catalogue.withheld, **withheld},
+            data_guide=guide or context.state.catalogue.data_guide)
         on_expand()
-        return {'group': group, 'catalogue': capability_list(page),
-                **({'data_guide': data_guide(reader_levels(context))}
-                   if data_query is not None and data_guide is not None else {}),
+        return {**({'capabilities': list(requested)} if requested is not None else {'group': group}),
+                'catalogue': capability_list(page),
+                **({'data_guide': guide} if guide else {}),
+                **({'withheld': withheld} if withheld else {}),
                 **({'roles': [{'role_id': role.id, 'name': role.name} for role in context.guild.roles
                               if not role.is_default()],
-                    'role_preview_path': 'read_discord_role_change_preview'} if group == 'changes' and offset == 0 else {}),
+                    'role_preview_path': 'read_discord_role_change_preview'} if roles else {}),
                 'total_capabilities': len(names),
                 'next_cursor': str(page_end) if page_end < len(names) else None,
                 'instruction': 'These capabilities are now available in the checked request plan. '
@@ -275,9 +316,36 @@ def discovery_tool(available, active, on_expand, data_guide=None):
     return RegisteredAgentTool(AgentToolDefinition('open_capability_group',
         'Open specialist capabilities; changes starts with guild roles and read-only role delta previews.',
         {'type': 'object', 'properties': {
-            'group': {'type': 'string', 'enum': list(GROUPS)},
+            'group': {'type': 'string', 'enum': list(GROUPS), 'description': group_index(context, available)},
+            'capabilities': {'type': 'array', 'items': {'type': 'string', 'minLength': 1},
+                             'minItems': 1, 'maxItems': PAGE_SIZE, 'uniqueItems': True},
             'intent': {'type': 'string', 'enum': ['inspect', 'prepare_change']},
             'cursor': {'type': 'string', 'maxLength': 10}},
-         'required': ['group', 'intent'], 'additionalProperties': False}),
+         'required': ['intent'], 'additionalProperties': False,
+         RULES: [{'needs': ['group', 'capabilities'],
+                  'error': 'Choose a group or named capabilities.'},
+                 {'with': ['cursor'], 'unless': ['capabilities'], 'needs_all': ['group'],
+                  'error': 'Use cursor with group.'}]},
+        usage_note='Named capabilities open for either intent; group and cursor apply only without names. Whole-group inspect offers reads and outputs.'),
         open_group, effect=AgentCapabilityEffect.STATE, contract=CapabilityContract(),
-        returns='catalogue,total_capabilities,next_cursor,roles:[{role_id,name}],role_preview_path')
+        returns='catalogue,total_capabilities,next_cursor,roles:[{role_id,name}],role_preview_path,withheld:{capability:{cause,available_privately}}')
+
+
+def _group_page(context, available, group, selected, cursor, offered):
+    """Page a whole group for browsing; changes opens with its role tools."""
+    names = sorted(selected, key=lambda name: (name not in ROLE_CHANGES, name)) if group == 'changes' else list(selected)
+    offset = int(cursor)
+    if offset > len(names):
+        return None, offset, offset, names
+    role_page = group == 'changes' and offset == 0 and any(name in selected for name in ROLE_CHANGES)
+    page_end = sum(name in selected for name in ROLE_CHANGES) if role_page else offset + PAGE_SIZE
+    page = {name: selected[name] for name in names[offset:page_end]}
+    if group == 'changes' and offset == 0:
+        # Role discovery and its read-only preview must not depend on the
+        # alphabetical location among unrelated change capabilities.
+        for name in ('find_discord_roles', 'read_discord_members', *ROLE_CHANGES):
+            tool = available.get(name)
+            if tool is not None and offered(tool) and has_lookup_access(
+                    context, tool.contract.required_access if tool.contract else frozenset()):
+                page[name] = tool
+    return page, offset, page_end, names

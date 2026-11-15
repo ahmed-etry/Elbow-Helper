@@ -27,7 +27,9 @@ class ModelViewTrimTests(unittest.TestCase):
                     self.assertNotIn('war_ids', view)
                     self.assertNotIn('provenance', view)
                     self.assertEqual(view['wars_checked'], 60)
-                    self.assertTrue(all(row['wars_observed'] == 10 for row in view['rows']))
+                    shared = view.get('row_rendering', {}).get('rows', {}).get('same_on_every_row', {})
+                    self.assertTrue(all(row.get('wars_observed', shared.get('wars_observed')) == 10
+                                        for row in view['rows']))
                     self.assertLess(_size(view), _size(payload))
                     # The retained payload is not mutated.
                     self.assertEqual(len(payload['war_ids']), 60)

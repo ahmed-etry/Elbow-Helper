@@ -28,6 +28,19 @@ HISTORY_PAGE_LIMIT = 25
 INTERACTIVE_HISTORY_PAGE_LIMIT = 100
 HISTORY_MESSAGE_CHARACTER_BUDGET = 12_000
 COMPLETE_HISTORY_CHARACTER_BUDGET = 48_000
+
+
+def discussion_envelope_characters() -> int:
+    """Room a result keeps beyond its rows: what a tool result allows over a plain history read."""
+    from elbow_helper.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
+    return MAX_TOOL_RESULT_CHARACTERS - HISTORY_MESSAGE_CHARACTER_BUDGET
+
+
+def discussion_result_characters() -> int:
+    """The most one discussion chunk may carry: its rows budget plus that envelope."""
+    return COMPLETE_HISTORY_CHARACTER_BUDGET + discussion_envelope_characters()
+
+
 def search_message_text(message, guild) -> str:
     return message_text(SimpleNamespace(
         content=message.content,
@@ -39,7 +52,7 @@ def search_message_text(message, guild) -> str:
 
 async def read_discord_channel_history(
     context: AgentRequestContext,
-    arguments: Mapping[str, Any], *, complete_content: bool = False,
+    arguments: Mapping[str, Any], *, complete_content: bool = False, whole_period: bool = False,
 ) -> Mapping[str, Any]:
     if arguments.get('fresh'):
         context = replace(context, fresh_reads=True)
@@ -50,22 +63,46 @@ async def read_discord_channel_history(
     token = arguments.get("cursor")
     saved = context.state.history_cursors.get(token) if isinstance(token, str) else None
     if saved is not None:
+        # The cursor already holds its period and filters. Repeating them is
+        # harmless; naming different ones contradicts it.
+        clashes = _cursor_clashes(saved, arguments)
+        if clashes:
+            return {"error": (
+                "That continuation cursor does not match this channel history "
+                "period and its filters. Drop " + " and ".join(clashes) + " to continue it."
+            )}
         arguments = {**saved, **arguments}
     pages = arguments.get("pages", 1)
     if type(pages) is not int or not 1 <= pages <= 8:
         return {"error": "Choose between one and eight history pages."}
+    # A conversation period is read whole, as far as the result may carry it.
+    if whole_period and (arguments.get("after") is not None or arguments.get("before") is not None):
+        pages = 8
     result = None
     remaining = COMPLETE_HISTORY_CHARACTER_BUDGET if complete_content else HISTORY_MESSAGE_CHARACTER_BUDGET
+    used = 0
     page_arguments = dict(arguments)
     for _ in range(pages):
+        reserve = getattr(context, "reserve_search_page", None)
+        if whole_period and reserve is not None:
+            # Rows must fit what the request can still carry, or delivery cuts
+            # them and the cursor would skip the cut rows.
+            available = await reserve(used) - discussion_envelope_characters()
+            if available <= 0:
+                if result is None:
+                    return {"error": "The request reached its evidence limit."}
+                result["coverage"]["stopped_at_request_budget"] = True
+                break
+            remaining = min(remaining, available)
         page = await _read_history_page(context, page_arguments, character_budget=remaining,
                                         **({"complete_content": True} if complete_content else {}))
         if "error" in page:
             # Access failures must discard earlier pages, too.
             return page
         batch = page["messages"]
-        remaining -= sum(len(json.dumps(list(readable_history_row(row).values()) if complete_content else row,
-            ensure_ascii=False, separators=(",", ":"))) + 1 for row in batch)
+        characters = sum(_row_characters(row, complete_content) for row in batch)
+        remaining -= characters
+        used += characters
         if result is None:
             result = page
         else:
@@ -88,7 +125,38 @@ async def read_discord_channel_history(
             if key in ("channel_id", "after", "before", "author_id")
         }
     result["coverage"]["pages_scanned"] = _ + 1
+    if whole_period and result["messages"] and not result["coverage"]["reached_requested_start"]:
+        # The oldest message read bounds what is still unread.
+        result["coverage"]["unread_period"] = {
+            "after": result["coverage"]["requested_after"],
+            "before": result["messages"][-1]["timestamp"],
+        }
     return result
+
+
+def _row_characters(row, complete_content):
+    """Size of a row as the model receives it: values only, with the reply column always counted."""
+    if complete_content:
+        row = {**row, "reply_to_message_id": row.get("reply_to_message_id")}
+        row = list(readable_history_row(row).values())
+    return len(json.dumps(row, ensure_ascii=False, separators=(",", ":"))) + 1
+
+
+def _cursor_clashes(saved, arguments):
+    """Arguments that name a different channel, period or author than the cursor was issued for."""
+    clashes = []
+    for key in ("channel_id", "after", "before", "author_id"):
+        if key not in arguments:
+            continue
+        given, issued = arguments[key], saved.get(key)
+        if key in ("after", "before"):
+            try:
+                given, issued = search_date(given), search_date(issued)
+            except (ValueError, TypeError, AttributeError):
+                pass
+        if given != issued:
+            clashes.append(key)
+    return clashes
 
 
 async def _read_history_page(context, arguments, *, character_budget, complete_content=False):
@@ -176,29 +244,39 @@ async def _read_history_page(context, arguments, *, character_budget, complete_c
             scanned_messages += 1
             continue
         content = message.content if complete_content else search_message_text(message, context.guild)
-        entry = {
-            "message_id": message.message_id,
-            "channel_id": channel_id,
-            "channel": getattr(channel, "name", str(channel_id)),
-            "author_id": message.author_id,
-            "author": message.author_name,
-            "timestamp": message.timestamp,
-            "content": content,
-            "content_complete": True,
-            "source": jump_url(context.guild.id, channel_id, message.message_id),
-        }
         if complete_content:
-            entry.update(embeds=readable_embeds(message.embeds),
-                         attachment_names=list(message.attachment_names),
-                         attachment_contents_read=False, content_complete=True,
-                         reply_to_message_id=message.reply_to_message_id)
-        if message.reply_to_message_id is not None:
-            entry["reply_to_message_id"] = message.reply_to_message_id
-        # Complete family chunks use a uniform record shape, encoded as columns
-        # and rows for the model. Budget that readable representation rather
-        # than repeating every JSON field name for every short chat message.
-        entry_characters = len(json.dumps(list(readable_history_row(entry).values()) if complete_content else entry,
-                                          ensure_ascii=False, separators=(",", ":"))) + 1
+            # The channel and content status hold for the whole chunk.
+            entry = {
+                "message_id": message.message_id,
+                "author_id": message.author_id,
+                "author": message.author_name,
+                "timestamp": message.timestamp,
+                "content": content,
+            }
+            if message.reply_to_message_id is not None:
+                entry["reply_to_message_id"] = message.reply_to_message_id
+            if message.embeds:
+                entry["embeds"] = readable_embeds(message.embeds)
+            if message.attachment_names:
+                entry["attachment_names"] = list(message.attachment_names)
+        else:
+            entry = {
+                "message_id": message.message_id,
+                "channel_id": channel_id,
+                "channel": getattr(channel, "name", str(channel_id)),
+                "author_id": message.author_id,
+                "author": message.author_name,
+                "timestamp": message.timestamp,
+                "content": content,
+                "content_complete": True,
+                "source": jump_url(context.guild.id, channel_id, message.message_id),
+            }
+            if message.reply_to_message_id is not None:
+                entry["reply_to_message_id"] = message.reply_to_message_id
+        # Complete family chunks are encoded as columns and rows for the model.
+        # Budget that readable representation rather than repeating every JSON
+        # field name for every short chat message.
+        entry_characters = _row_characters(entry, complete_content)
         if (message_characters + entry_characters > character_budget
                 and (messages or character_budget < HISTORY_MESSAGE_CHARACTER_BUDGET)):
             # Discord pages are newest first. Resume immediately before the

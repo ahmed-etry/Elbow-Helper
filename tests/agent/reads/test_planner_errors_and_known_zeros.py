@@ -28,7 +28,7 @@ class ConflictingOptionsTests(unittest.IsolatedAsyncioTestCase):
         for metric in ('ass', 'bonus'):
             with self.subTest(metric=metric), patch.object(war_reads, 'stored_read', AsyncMock()) as stored:
                 result = await war_reads.cwl_results(self.context(), {'metric': metric, 'clan_codes': codes,
-                    'season': '2025-04', 'latest_completed': 3})
+                    'season_keys': ['2025-04'], 'latest_completed': 3})
                 self.assertEqual(result['cause'], 'invalid_arguments')
                 self.assertIn('Choose one', result['error'])
                 self.assertNotIn('missing_sources', result)
@@ -135,7 +135,7 @@ class KnownZeroTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(present['participation_status'], 'warring')
 
     async def test_a_member_whose_accounts_are_in_no_lineup_is_a_known_zero(self):
-        result = await self.read(await self.database({'#C0', '#C2'}), latest_completed=2, member_ids=[77],
+        result = await self.read(await self.database({'#C0', '#C2'}), season='2026-09', member_ids=[77],
                                  unit='member')
         row = self.absent(result)
         self.assertEqual((row['attacks_used'], row['missed']), (0, 0))
@@ -143,7 +143,7 @@ class KnownZeroTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row['participation_status'], 'not_in_checked_lineups')
 
     async def test_a_war_without_a_lineup_leaves_the_account_unknown(self):
-        result = await self.read(await self.database({'#C0'}), latest_completed=2, account_tags=['#P0', '#Y0'])
+        result = await self.read(await self.database({'#C0'}), season='2026-09', account_tags=['#P0', '#Y0'])
         self.assertEqual([war['war_id'] for war in result['wars_without_rosters']], ['CWL:#C2'])
         row = self.absent(result)
         self.assertIsNone(row['attacks_used'])

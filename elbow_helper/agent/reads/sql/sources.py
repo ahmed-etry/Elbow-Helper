@@ -6,7 +6,7 @@ from elbow_helper.infrastructure.persistence.documents import Document
 from collections.abc import Callable
 import sqlite3
 
-from elbow_helper.configuration.files import ACHIEVEMENTS_DATABASE
+from elbow_helper.configuration.files import ACHIEVEMENTS_DATABASE, FAMILY_DATABASE
 
 
 @dataclass(frozen=True)
@@ -29,6 +29,6 @@ class DataSource:
             return Document(self.path.name, paths.data_root / "workflows.sqlite3")
         if self.alias == "achievements":
             return paths.data_root / ACHIEVEMENTS_DATABASE
-        if self.alias == "family":
+        if self.path == FAMILY_DATABASE:
             return paths.data_root / self.path
         return self.path if self.path.is_absolute() else paths.project_root / self.path

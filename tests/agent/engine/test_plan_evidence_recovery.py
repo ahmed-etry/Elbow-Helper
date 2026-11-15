@@ -45,11 +45,15 @@ class CompleteEvaluationEvidenceTests(unittest.IsolatedAsyncioTestCase):
             page = await tool.handler(context, {'cohort_ref': selected['report_id'], 'limit': 1})
             self.assertEqual(len(page['rows']), 1)
             results[name] = model_result(page)
+            results[name + ' rest'] = model_result(await tool.handler(context, {
+                'report_id': page['report_id'], 'cursor': page['next_cursor']}))
         written = unpack(await cohort_writer_evidence(context, results))
-        for name in results:
+        self.assertEqual(set(written), {'read_cwl_results', 'read_war_participation'})
+        for name in written:
             self.assertEqual(len(written[name]['rows']), 70)
             self.assertEqual(written[name]['rows'][-1]['player_tag'], '#P69')
-        self.assertEqual(written['read_war_participation']['rows'][-1]['wars_observed'], 2)
+        # Equal on every row, so stated once beside the rows.
+        self.assertEqual(written['read_war_participation']['row_rendering']['rows']['same_on_every_row']['wars_observed'], 2)
         self.assertNotIn('war_ids', written['read_war_participation']['rows'][-1])
         context.state.report_sources.clear()
         denied = await cohort_writer_evidence(context, results)

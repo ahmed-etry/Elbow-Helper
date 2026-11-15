@@ -436,16 +436,22 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
         # rich family needs more than one model-sized page.
         from elbow_helper.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
         from elbow_helper.agent.plan.results import model_result, model_view
+        from elbow_helper.agent.research.history import discussion_result_characters
+        # A discussion chunk is read to the size it may carry, so a page cut
+        # here would leave its source cursor skipping the cut rows.
+        page_characters = (discussion_result_characters()
+                           if name == 'read_conversation_evidence' and result.get('mode') == 'channel_window'
+                           else MAX_TOOL_RESULT_CHARACTERS)
         def model_size(value):
             return len(json.dumps(model_view(model_result(value)), ensure_ascii=False,
                                   separators=(',', ':')))
-        if result['rows'] and model_size(result) > MAX_TOOL_RESULT_CHARACTERS:
+        if result['rows'] and model_size(result) > page_characters:
             low, high, kept = 1, len(result['rows']), 0
             while low <= high:
                 middle = (low + high) // 2
                 page = report.page(offset, middle, arguments.get('view', 'rows'))
                 candidate = {**result, **page}
-                if model_size(candidate) <= MAX_TOOL_RESULT_CHARACTERS:
+                if model_size(candidate) <= page_characters:
                     kept = middle
                     low = middle + 1
                 else:
@@ -459,8 +465,8 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
                 result.update(rows=[], returned_rows=0, next_offset=None, next_cursor=None,
                               evidence_projection='complete_requested_file')
             else:
-                return {'error': 'That report row is too large to read here. Choose a narrower projection.',
-                        'cause': 'capacity', 'report_id': report.report_id}
+                from .paging import bound_family_page
+                result = json.loads(bound_family_page(result, page_characters))
         return result
 
     contract = contract or CapabilityContract()

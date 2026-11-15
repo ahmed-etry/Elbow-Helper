@@ -224,7 +224,7 @@ async def conversation_evidence(context, arguments):
         selected.pop('message_id',None); selected.pop('mentions',None); selected.pop('author_id',None)
         if arguments.get('source_cursor'):
             selected['cursor']=arguments['source_cursor']
-        result = await read_discord_channel_history(context, {**selected,'limit':100}, complete_content=True)
+        result = await read_discord_channel_history(context, {**selected,'limit':100}, complete_content=True, whole_period=True)
     if 'error' in result:
         return result
     rows = result.pop('messages', result.pop('matches',[]))

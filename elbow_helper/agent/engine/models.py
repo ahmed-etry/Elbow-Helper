@@ -124,6 +124,13 @@ class ScopeAudit:
 
 
 @dataclass(frozen=True, slots=True)
+class RequestCatalogue:
+    opened: frozenset[str] = frozenset()
+    data_guide: str = ""
+    withheld: dict[str, Mapping[str, Any]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class EvidenceScope:
     destination_id: int
     destination_levels: frozenset[str]
@@ -143,6 +150,7 @@ class AgentTurnState:
     source_access: dict[int, frozenset[str]] = field(default_factory=dict)
     scope: EvidenceScope | None = None
     scope_audit: ScopeAudit = field(default_factory=ScopeAudit)
+    catalogue: RequestCatalogue = field(default_factory=RequestCatalogue)
     private_answer_run: Callable[[], Awaitable[Any]] | None = None
     evidence: list[str] = field(default_factory=list)
     grounding_evidence: dict[str, Any] = field(default_factory=dict)

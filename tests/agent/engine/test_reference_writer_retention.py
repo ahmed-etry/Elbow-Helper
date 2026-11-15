@@ -13,7 +13,7 @@ from tests.agent.engine.test_writer_tables import expand
 
 class ReferenceWriterRetentionTests(unittest.IsolatedAsyncioTestCase):
 
-    async def make_flow(self, mode, rows):
+    async def make_flow(self, mode, rows, arguments=None):
         source = AsyncMock(return_value={'rows': rows, 'mode': mode})
         tool = family_tool('read_community_reference', 'Read selected facts.', {}, source)
         model = CaptureModel(_Session([], []))
@@ -22,7 +22,7 @@ class ReferenceWriterRetentionTests(unittest.IsolatedAsyncioTestCase):
             flow, _ = AgentService(model)._start_flow(question='Summarize the selected reference facts',
                 local_context='', context=_context(), conversation_history='')
         flow.plan = {**_plan([{'id': 'facts', 'capability': 'read_community_reference',
-            'arguments': {'limit': 1}, 'depends_on': []}]), 'finish_after_reads': True}
+            'arguments': arguments or {}, 'depends_on': []}]), 'finish_after_reads': True}
         results = await flow.runner.run(flow.plan)
         flow.completed_results.update(results)
         flow.result_views.update(flow.runner.model_results_for(results))
@@ -36,7 +36,7 @@ class ReferenceWriterRetentionTests(unittest.IsolatedAsyncioTestCase):
                 selected = ([dict(row, workflow='ass_scoring') for row in rows]
                             if mode == 'implementation_reference' else rows)
                 flow, model, source = await self.make_flow(mode, selected)
-                self.assertEqual(len(flow.completed_results['facts']['rows']), 1)
+                self.assertLess(len(flow.completed_results['facts']['rows']), 30)
                 self.assertTrue(await flow._prepare_answer_session())
                 visible = expand(json.loads(model.writer['prompt'].split('\nAvailable evidence:\n')[1]))
                 self.assertEqual(visible['results']['facts']['rows'], rows)
@@ -45,7 +45,7 @@ class ReferenceWriterRetentionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_index_is_navigation_and_does_not_expand_into_a_full_reference(self):
         rows = [{'heading': 'Section ' + str(i)} for i in range(30)]
-        flow, model, _ = await self.make_flow('index', rows)
+        flow, model, _ = await self.make_flow('index', rows, {'limit': 1})
         self.assertTrue(await flow._prepare_answer_session())
         visible = expand(json.loads(model.writer['prompt'].split('\nAvailable evidence:\n')[1]))
         self.assertEqual(visible['results']['facts']['rows'], rows[:1])

@@ -3,6 +3,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.reads import identity_reads, workflow_reads
 from elbow_helper.features.recruitment.queries import RecruitmentQueries
@@ -32,6 +33,23 @@ class WorkflowStatusRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result['rows']), 14)
         self.assertEqual(sum(r['membership_status'] == 'not_in_guild' for r in result['rows']), 13)
         self.assertTrue(all(r['accepted_at'] == '2026-10-01T00:00:00+00:00' for r in result['rows']))
+
+    async def test_trial_accounts_only_read_performance_when_requested(self):
+        context = self.context()
+        arguments = {'stage': 'active_trials', 'include_accounts': True}
+        accounts = {'rows': [{'member_id': 100, 'player_tag': '#P0'}]}
+        with patch.object(workflow_reads, 'active_trial_rows', AsyncMock(return_value={
+                'rows': [{'applicant_member_id': 100}]})), patch.object(
+                identity_reads, 'member_accounts', AsyncMock(return_value=accounts)), patch.object(
+                workflow_reads, 'performance_projection', AsyncMock(return_value={'status': 'complete'})) as performance:
+            result = await workflow_reads.recruitment(context, arguments)
+            self.assertEqual(result['rows'][0]['accounts'], accounts['rows'])
+            self.assertNotIn('performance_coverage', result)
+            performance.assert_not_awaited()
+            selection = {'war_type': 'both', 'latest_completed': 30}
+            result = await workflow_reads.recruitment(context, {**arguments, 'performance': selection})
+            self.assertEqual(result['performance_coverage'], {'status': 'complete'})
+            performance.assert_awaited_once_with(context, result['rows'], selection)
 
     async def test_denied_recruitment_is_an_error_without_an_empty_snapshot(self):
         from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID

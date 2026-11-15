@@ -285,6 +285,11 @@ def merge_tool_state(
             target.state.unkept_reports.update((held & kept) - target.state.reports.keys())
     target.state.unkept_reports.update(local.state.unkept_reports)
     target.state.feedback_lookup_problem |= local.state.feedback_lookup_problem
+    if local.state.catalogue != previous['catalogue']:
+        target.state.catalogue = replace(target.state.catalogue,
+            opened=target.state.catalogue.opened | local.state.catalogue.opened,
+            withheld={**target.state.catalogue.withheld, **local.state.catalogue.withheld},
+            data_guide=local.state.catalogue.data_guide or target.state.catalogue.data_guide)
     target.state.source_channels.update(local.state.source_channels)
     target.state.source_access.update(local.state.source_access)
     target.state.required_access.update(local.state.required_access)
@@ -423,6 +428,11 @@ def _record_size_limit(content: str, limit: int) -> str:
     if not isinstance(payload, dict):
         payload = {}
     payload["truncated"] = True
+    flags = payload.get("flags")
+    if isinstance(flags, dict):
+        # The lookup's flags were set before this cut and would still say complete.
+        payload["flags"] = {**flags, "truncated": True,
+                            "status": "failed" if flags.get("status") == "failed" else "partial"}
 
     # SQL's row count must describe the rows actually delivered, including
     # compact tables nested in final-answer evidence and earlier SQL cuts.

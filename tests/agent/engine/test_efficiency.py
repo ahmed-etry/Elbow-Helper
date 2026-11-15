@@ -6,7 +6,6 @@ from tests.agent.engine.helpers import LegacyCatalogueMixin
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.reads.cwl import ass_ranking
 from elbow_helper.agent.engine.evidence_delta import EvidenceDelta, access_refused
 from elbow_helper.agent.engine.steps import disclosure_issue
 from elbow_helper.agent.engine.registry import build_agent_tools
@@ -24,15 +23,6 @@ def planned(*steps):
 
 def step(identity, capability, arguments=None):
     return {"id": identity, "capability": capability, "arguments": arguments or {}, "depends_on": []}
-
-
-def scores(count=17):
-    result = {"clan_code": "BE1", "seasons": ["2026-10"], "completed_wars": 7,
-            "players": [{"rank": count - index, "rank_total": count, "player_name": f"Account {index}",
-                         "player_tag": f"#P{index}", "ass_score": float(index)} for index in range(count)],
-            "flags": {"status": "complete", "truncated": False}}
-    result["ranking"] = ass_ranking(result["players"])
-    return result
 
 
 class EfficiencyTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
@@ -53,7 +43,7 @@ class EfficiencyTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
 
     async def test_permission_failure_keeps_independent_permitted_research_available(self):
         for payload in ({"error": "The query timed out."}, {"rows": [], "row_count": 0},
-                        {"error": "This needs recruiter access.", "required_access": ["recruiter"]}):
+                        {"error": "This needs recruiter access.", "required_access": ["recruiter"], "cause": "access_denied"}):
             with self.subTest(payload=payload):
                 registry = {"read_value": RegisteredAgentTool(AgentToolDefinition(
                     "read_value", "Read synthetic data.", {"type": "object", "properties": {"page": {"type": "integer"}}}),

@@ -1,8 +1,48 @@
 """Neutral family-record facts available to read-only SQL."""
 
+from contextlib import closing
+import json
+import sqlite3
+
 from elbow_helper.configuration.files import FAMILY_DATABASE
+from elbow_helper.data.reads.core import ReadSnapshot, timestamp
+from elbow_helper.data.reads.coverage import signal
+from elbow_helper.data.reads.profiles import roster_fields
+from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
 from elbow_helper.agent.reads.sql.sources import DataSource
+
+
+def town_hall_snapshot(paths, database_path, readable):
+    if 'town_halls' not in readable or not database_path.is_file():
+        return {}
+    at, rows, rosters = timestamp(), [], {}
+    with closing(sqlite3.connect(database_path.resolve().as_uri() + '?mode=ro', uri=True)) as connection:
+        connection.row_factory = sqlite3.Row
+        with sqlite_transaction(connection):
+            snapshot = ReadSnapshot(connection)
+            accounts = snapshot.execute(
+                "SELECT a.id,a.player_tag,p.value_json,p.observed_at,c.tag AS clan_tag FROM accounts a "
+                "LEFT JOIN player_observations p ON p.account_id=a.id AND p.field_key='townHallLevel' "
+                "AND p.observed_at=(SELECT MAX(observed_at) FROM player_observations "
+                "WHERE account_id=a.id AND field_key='townHallLevel' AND observed_at<=?) "
+                "LEFT JOIN clan_membership m ON m.account_id=a.id AND m.from_at<=? "
+                "AND (m.to_at IS NULL OR m.to_at>?) LEFT JOIN clans c ON c.id=m.clan_id "
+                "WHERE a.first_observed_at<=?", (at, at, at, at))
+            for account in accounts:
+                value = json.loads(account['value_json']) if account['value_json'] is not None else None
+                clan = account['clan_tag']
+                if clan:
+                    if clan not in rosters:
+                        good_at = signal(snapshot, 'clan_roster', clan, at)['last_good_at']
+                        rosters[clan] = (good_at, roster_fields(snapshot, clan, good_at)
+                                         if good_at is not None else {})
+                    good_at, fields = rosters[clan]
+                    member = fields.get(account['player_tag'], {})
+                    if 'townHallLevel' in member and good_at >= (account['observed_at'] or -1):
+                        value = member['townHallLevel']
+                rows.append((account['id'], value))
+    return {'town_halls': ([('account_id', 'INTEGER PRIMARY KEY'), ('townhall', 'INTEGER')], rows)}
 
 
 SOURCES = (
@@ -79,5 +119,13 @@ SOURCES = (
              "This view reads cwl_rounds, wars and war_attacks; do not join rounds again and multiply rows."),
         ),
         config_constant="elbow_helper.configuration.files.FAMILY_DATABASE",
+    ),
+    DataSource(
+        "profiles", FAMILY_DATABASE,
+        tables=(("town_halls", "none",
+                 "One known account's latest observed town hall from its player profile or current clan roster; "
+                 "NULL if unknown. Join account_id=family.accounts.id."),),
+        config_constant="elbow_helper.configuration.files.FAMILY_DATABASE",
+        snapshot=town_hall_snapshot,
     ),
 )

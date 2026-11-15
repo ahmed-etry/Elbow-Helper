@@ -49,6 +49,16 @@ class SqlResultTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('family.war_attacks', guide_view['data_guide'])
         self.assertIn('family.cwl_attacks', guide_view['data_guide'])
         self.assertIn('query_bot_data', flow.registry)
+        system = flow._answer_system(allow_more=True)
+        line = next(line for line in system.splitlines() if line.startswith('query_bot_data:'))
+        self.assertIn(tool.definition.description, line)
+        self.assertIn(' | returns ', line)
+        frame = json.loads(flow._answer_frame({}, allow_more=True, instruction=''))
+        self.assertEqual(frame['catalogue']['data_guide'], guide_view['data_guide'])
+        self.assertEqual(answer_evidence({'guide': guide_view}), {})
+        flow.registry.pop('query_bot_data')
+        self.assertNotIn('data_guide', json.loads(flow._answer_frame({}, allow_more=True, instruction=''))['catalogue'])
+        flow.registry['query_bot_data'] = tool
         plan = _plan([dict(id='summary', capability='query_bot_data', arguments={'sql': 'SELECT 1'},
                            depends_on=[], reason='Synthetic comparison')])
         results = await flow.runner.run(plan)

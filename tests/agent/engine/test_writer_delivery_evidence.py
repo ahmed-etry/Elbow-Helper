@@ -151,6 +151,24 @@ class WriterDeliveryEvidenceTests(unittest.IsolatedAsyncioTestCase):
                 'basis': 'role_holders', 'clan_codes': ['BEH']}, 'depends_on': []}])
         self.assertEqual({r['member_id'] for r in evidence['holders']['rows']}, {41, 42, 43, 44})
 
+    async def test_role_holders_reach_the_writer_with_their_clans_without_include_profile(self):
+        context = _context()
+        elder = SimpleNamespace(id=7001, name='Elder', is_default=lambda: False)
+        homes = {41: ['BEH'], 42: ['BE4', 'BES', 'BE1'], 43: [], 44: ['BEC']}
+        people = [SimpleNamespace(id=i, display_name='Member ' + str(i), bot=False, nick='Nick ' + str(i),
+            joined_at=None, roles=[elder] + [SimpleNamespace(id=CLANS[code].member_role_id, name=code,
+                is_default=lambda: False) for code in codes]) for i, codes in homes.items()]
+        context.guild.members = people
+        tool = next(t for t in identity_reads.TOOLS if t.definition.name == 'read_member_cohort')
+        _, evidence = await self.writer(context, {'read_member_cohort': tool}, [{
+            'id': 'holders', 'capability': 'read_member_cohort',
+            'arguments': {'basis': 'role_holders', 'role_ids': [elder.id]}, 'depends_on': []}])
+        rows = {r['member_id']: r for r in evidence['holders']['rows']}
+        self.assertEqual({key: row['home_clan_codes'] for key, row in rows.items()}, homes)
+        for row in rows.values():
+            for field in ('home_clans', 'nickname', 'participation_clans', 'home_clan_status'):
+                self.assertNotIn(field, row)
+
 
 class ChannelWriterTests(unittest.IsolatedAsyncioTestCase):
     async def test_writer_receives_current_directory_and_omits_inaccessible_channels(self):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 import json
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -13,6 +13,7 @@ from ..actions.contracts import ActionClass
 from ..engine.grounding import GROUNDING_INSTRUCTION
 from ..research.member_provenance import MEMBER_PROVENANCE_INSTRUCTION, ACCOUNT_MEMBER_PROVENANCE_INSTRUCTION
 from elbow_helper.agent.knowledge.community_data import COMMUNITY_DATA_CONTEXT
+from .rule_format import catalogue_rules
 
 
 PLAN_TOOL_NAME = "submit_request_plan"
@@ -135,7 +136,7 @@ REFERENCE_RETURNS = {
     "read_hibernation": "report_id,total_rows,rows:[{member_id,started_ts,accounts}]",
     "read_promotion_cases": "report_id,total_rows,rows:[{applicant_member_id,ticket_channel_id}]",
     "read_community_reference": "report_id,rows:[{section_id,title,body}],selection_complete",
-    "read_conversation_evidence": "report_id,rows:[{message_id,author_id,content,source}],source_next_cursor",
+    "read_conversation_evidence": "report_id,rows:[{message_id,author_id,content}],source_next_cursor",
     "read_ranked_activity": "report_id,total_rows,rows:[{member_id,player_tag,attacks_used}]",
     "read_discord_access": "report_id,actors:[{actor_id,actor_name,actor_kind}],rows:[{channel_id}],differing_channel_ids",
     "find_discord_members": "members:[{member_id,display_name,joined_at}],status",
@@ -189,7 +190,8 @@ def system_instructions(
 
 
 def answer_instructions(registry: Mapping[str, RegisteredAgentTool] | None = None,
-                        *, extra_instructions: Sequence[str] = ()) -> str:
+                        *, extra_instructions: Sequence[str] = (),
+                        opened_capabilities: Collection[str] = ()) -> str:
     """Compose from isolated evidence, retaining checked replanning when allowed."""
     from ..knowledge.answers import CHANNEL_FIRST_INSTRUCTION, MEMBER_REPLY_INSTRUCTION
 
@@ -207,7 +209,8 @@ def answer_instructions(registry: Mapping[str, RegisteredAgentTool] | None = Non
             parts.extend((ACTION_PLANNING_RULES, STANDING_RULE_RULES))
         parts.append("<capabilities>\nArguments: trailing * is required; numeric [min..max] is inclusive; "
                      "array {min..max} counts items. Use listed return paths; reads supply other fields.\n"
-                     + capability_list(registry, include_returns=False, descriptions=False) + "\n</capabilities>")
+                     + capability_list(registry, include_returns=False, descriptions=False,
+                                       opened_capabilities=opened_capabilities) + "\n</capabilities>")
     return "\n\n".join(parts)
 
 
@@ -271,19 +274,21 @@ def output_forms(registry: Mapping[str, RegisteredAgentTool]) -> tuple[str, ...]
 
 
 def capability_list(registry: Mapping[str, RegisteredAgentTool], *, include_returns: bool = True,
-                    descriptions: bool = True) -> str:
+                    descriptions: bool = True, opened_capabilities: Collection[str] = ()) -> str:
     """Return the same compact catalogue for every request."""
     from elbow_helper.agent.reads.snapshots import COMMON
 
     entries = []
+    rule_legend, rule_lines = catalogue_rules(registry)
     common_used = False
     for name in sorted(registry):
         tool = registry[name]
         schema = tool.definition.parameters
+        describe = descriptions or name in opened_capabilities
+        returns = include_returns or name in opened_capabilities
         required = set(schema.get("required", ())) | set(schema.get("x-command-required", ()))
         properties = schema.get('properties', {})
-        family_page = (not include_returns and all(properties.get(key) == detail
-                       for key, detail in COMMON.items()))
+        family_page = not include_returns and all(properties.get(key) == detail for key, detail in COMMON.items())
         common_used |= family_page
         arguments = [
             f"{field}:{_argument(detail)}{'*' if field in required else ''}"
@@ -301,10 +306,12 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool], *, include_retu
             raise ValueError(
                 f"Capability {name} usage note must fit one line within 160 characters"
             )
-        line = (f"{name}: {meaning}" if descriptions else name) + f" | {tool.action_class.value} | " + ",".join(arguments)
-        if note and descriptions:
+        line = (f"{name}: {meaning}" if describe else name) + f" | {tool.action_class.value} | " + ",".join(arguments)
+        if name in rule_lines:
+            line += ' | ' + rule_lines[name]
+        if note and describe:
             line += " | use " + note
-        if tool.returns and include_returns:
+        if tool.returns and returns:
             line += " | returns " + _catalogue_returns(tool, registry)
         elif not include_returns and name in REFERENCE_RETURNS:
             line += " | returns " + REFERENCE_RETURNS[name]
@@ -326,6 +333,13 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool], *, include_retu
     if common_used:
         entries.insert(0, 'Shared +family_page options (optional on every marked capability): '
             + ','.join(f'{field}:{_argument(detail)}' for field, detail in COMMON.items()))
+    if rule_legend:
+        entries.insert(0, rule_legend)
+    discovery = registry.get('open_capability_group')
+    if discovery is not None:
+        index = discovery.definition.parameters['properties']['group'].get('description')
+        if index:
+            entries.append(index)
     return "\n".join(entries)
 
 

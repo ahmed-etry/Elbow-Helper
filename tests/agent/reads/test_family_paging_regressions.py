@@ -8,6 +8,7 @@ from elbow_helper.agent.engine.budgets import ContextBudget
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.steps import PlanRunner
 from elbow_helper.agent.engine.tool_call import bound_tool_result
+from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
 from elbow_helper.agent.reads.snapshots import family_tool
 from elbow_helper.agent.plan.results import model_result, model_view
 from tests.agent.engine.test_agent_plan_flow import _context
@@ -18,6 +19,37 @@ def decode_rows(value):
 
 
 class FamilyPagingRegressionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_saved_participation_survives_an_indivisible_row_or_summary(self):
+        # The live named-member read saved complete rows, then refused its first planner page.
+        expected = [{'member_id': member, 'family_wars': [
+            {'player_tag': f'#P{account}', 'regular': {'attacks_used': 0, 'attacks_expected': 0, 'missed': 0},
+             'cwl': {'attacks_used': 0, 'attacks_expected': 0, 'missed': 0}}
+            for account in range(160)]} for member in range(12)]
+        for summary in ({}, {'record_span': {'accounts': expected}}):
+            async def source(context, arguments):
+                return {'rows': expected, **summary}
+            tool = family_tool('read_war_participation', 'Read participation.', {}, source, whole=True)
+            context = _context()
+            runner = PlanRunner(service=AgentService(None), context=context,
+                registry={tool.definition.name: tool}, command_capabilities={},
+                budget=ContextBudget(None, 8192, 0), rounder=SimpleNamespace(social_route=False))
+            result = await runner.run({'steps': [{'id': 'wars', 'capability': tool.definition.name,
+                                                  'arguments': {}, 'depends_on': []}]})
+            page = result['wars']
+            self.assertNotIn('error', page)
+            self.assertEqual((page['returned_rows'], page['total_rows'], page['next_offset']), (0, 12, 0))
+            view = json.dumps(model_view(model_result(page)), ensure_ascii=False, separators=(',', ':'))
+            bounded = json.loads(bound_tool_result(view, 16000))
+            self.assertEqual((bounded['report_id'], bounded['total_rows'], bounded['returned_rows']),
+                             (page['report_id'], 12, 0))
+            written = await cohort_writer_evidence(context, runner.model_results_for(result),
+                                                   snapshots=runner.report_snapshots)
+            constants = written['wars'].get('row_rendering', {}).get('rows', {}).get('same_on_every_row', {})
+            actual = [{**constants, **row} for row in decode_rows(written['wars']['rows'])]
+            self.assertEqual([row['member_id'] for row in actual], [row['member_id'] for row in expected])
+            for row, wanted in zip(actual, expected):
+                self.assertEqual(decode_rows(row['family_wars']), wanted['family_wars'])
+
     async def test_small_cursor_pages_continue_past_sixteen_dispatches_with_budget_enforced(self):
         expected = [{'member_id': index} for index in range(21)]
         async def source(context, arguments):

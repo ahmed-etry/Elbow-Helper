@@ -4,9 +4,9 @@ A schema lists them under `x-input-rules`; each rule is one dict:
 `when` (field -> allowed values, None meaning absent) and `with` (fields that
 must all be given) limit when it applies, `unless` (fields) skips it, and one
 of `needs` (at least one given), `needs_all`, `only_one`, `forbids`, `within`
-(field -> allowed values) or `aware` (dates that must carry a timezone) states
-it. `error` is the short planner-facing text; `{values}` names rejected values.
-A refusal also names the rule's fields, as a handler's `invalid_fields` would.
+(field -> allowed values) or `aware` (dates that must carry a timezone) states it.
+`error` is the short planner-facing text; `{values}` names rejected values.
+A refusal distinguishes missing rule inputs from invalid supplied fields.
 Every top-level `format: date-time` field must parse, and each `*after` must be
 earlier than its `*before`.
 """
@@ -99,11 +99,13 @@ def without_rules(schema: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in schema.items() if key != RULES}
 
 
-def input_rule_issue(arguments: Mapping[str, Any], schema: Mapping[str, Any]) -> tuple[str, tuple[str, ...]]:
-    """The first rule these arguments break, as planner-facing text and the fields it names."""
+def input_rule_issue(
+    arguments: Mapping[str, Any], schema: Mapping[str, Any],
+) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
+    """Return the first issue's text, invalid fields and missing fields."""
     issue = _date_issue(arguments, schema)
     if issue[0]:
-        return issue
+        return issue[0], issue[1], ()
     for rule in schema.get(RULES, ()):
         if not _applies(rule, arguments):
             continue
@@ -113,5 +115,9 @@ def input_rule_issue(arguments: Mapping[str, Any], schema: Mapping[str, Any]) ->
             # A date that does not parse is reported by its own handler check.
             continue
         if rejected is not None:
-            return rule["error"].replace("{values}", rejected), _fields(rule)
-    return "", ()
+            message = rule["error"].replace("{values}", rejected)
+            if "needs" in rule or "needs_all" in rule:
+                return message, (), tuple(field for field in _fields(rule)
+                                          if not _given(arguments, field))
+            return message, _fields(rule), ()
+    return "", (), ()

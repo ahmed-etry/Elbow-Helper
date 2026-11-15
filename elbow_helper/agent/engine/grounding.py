@@ -71,7 +71,8 @@ def messages_from(evidence, guild_id=None):
     messages = {}
     conflicts = set()
     for row, channel in _walk(evidence, None):
-        if not all(key in row for key in ("message_id", "author_id", "content")):
+        if not all(key in row for key in ("message_id", "author_id")) or (
+                'content' not in row and row.get('citation_only') is not True):
             continue
         identity = str(row["message_id"])
         channel = row.get("channel_id", channel)
@@ -83,12 +84,19 @@ def messages_from(evidence, guild_id=None):
         else:
             continue
         if (not identity.isdigit() or not isinstance(source, str) or not LINK.fullmatch(source)
-                or source.rsplit("/", 1)[-1] != identity or not isinstance(row["content"], str)
+                or source.rsplit("/", 1)[-1] != identity
+                or not (isinstance(row.get('content'), str) or row.get('citation_only') is True)
                 or not str(row["author_id"]).isdigit()):
             continue
-        if identity in messages and any(messages[identity].get(field) != row.get(field)
-                                        for field in ("author_id", "author", "content", "source")):
-            conflicts.add(identity)
+        previous = messages.get(identity)
+        if previous is not None:
+            fields = ('author_id', 'author', 'source')
+            if 'content' in previous and 'content' in row:
+                fields += ('content',)
+            if any(previous.get(field) != row.get(field) for field in fields):
+                conflicts.add(identity)
+            if 'content' in previous and 'content' not in row:
+                continue
         messages[identity] = row
     return {key: value for key, value in messages.items() if key not in conflicts}
 
@@ -99,7 +107,7 @@ def ground_answer(answer, evidence, guild_id=None):
 
     def render(match):
         row = messages.get(match[1])
-        if row is None:
+        if row is None or not isinstance(row.get('content'), str):
             raise GroundingError("message_not_read_this_turn")
         # Escape source Markdown and mentions so source words cannot masquerade
         # as the agent's own prose or create new notification targets.

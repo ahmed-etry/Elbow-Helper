@@ -31,7 +31,7 @@ class MemberFactInputTests(unittest.TestCase):
 
     def test_denial_preserves_actual_roles_without_private_error_text(self):
         projected = answer_evidence({'restricted': {'required_access': ['lead'],
-            'error': 'PRIVATE_ERROR', 'available_privately': True}}, guild=self.guild)
+            'error': 'PRIVATE_ERROR', 'cause': 'access_denied', 'available_privately': True}}, guild=self.guild)
         self.assertEqual(projected['restricted'], {'status': 'denied',
             'reader_roles': [['Officer 0', 'Officer 1']], 'available_privately': True})
 

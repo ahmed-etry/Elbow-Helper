@@ -26,18 +26,18 @@ follow in-game moves or become stale because of them; an account outside its hom
 left or moved. Multiple home roles remain explicit and linked accounts' current clans can
 clarify them. Current account location
 is not historical placement. Utility roles are extra participation: BEW/War Specialist
-means extra wars, not a home placement. [agent/families/identity_reads.py:member_fields;
-agent/families/domain_facts.py:clan_profile; ../configuration/clans.py]
+means extra wars, not a home placement. [../agent/reads/identity_reads.py:member_fields;
+../agent/reads/domain_facts.py:clan_profile; ../configuration/clans.py]
 Read contents (all obey current access and retain source gaps):
 - read_member_cohort: current role holders or join-date members; joined_discord includes
   dates, Member/Trial flags, home roles, Elbow Helper link presence and live account clans.
   accepted_recruitment contains surviving active trials, not historical acceptances.
 - read_member_accounts: linked accounts, Discord owners/home roles and live Clash profiles.
 - read_clan_rosters: current or seasonal account rosters, per-clan counts and live entry settings.
-  [agent/families/identity_reads.py]
+  [../agent/reads/identity_reads.py]
 - read_recruitment_pipeline: active tickets/trials/follow-ups; acceptance_history reads
   surviving trial cards, ticket_log reads saved transcript messages and attachment locators.
-  [agent/families/workflow_reads.py; agent/families/recruitment_history.py]
+  [../agent/reads/workflow_reads.py; ../agent/reads/recruitment_history.py]
 - read_war_participation: stored completed-war lineups, attacks/misses and per-clan participation.
 - read_war_attacks: each stored regular and CWL attack with both map positions and Town Halls,
   stars, destruction, order and duration. [agent/reads/war_attacks.py]
@@ -45,9 +45,9 @@ Read contents (all obey current access and retain source gaps):
 - read_current_war: current lineups and attacks still due. [agent/reads/wars.py]
 - read_ranked_activity: stored ranked attacks with collection gaps. [agent/reads/ranked.py]
 - read_hibernation: active hibernation and observed activity since its start.
-- read_promotion_cases: intake, examiner routing and recorded responses. [agent/families/workflow_reads.py]
+- read_promotion_cases: intake, examiner routing and recorded responses. [../agent/reads/workflow_reads.py]
 - read_community_reference: approved knowledge and sourced clan/role/workflow meanings.
 - read_conversation_evidence: authorized message chunks, causal replies and attachment contents.
-  [agent/families/reference_reads.py]
-- read_discord_access: current role/member permissions and channel access. [agent/families/access_reads.py]
+  [../agent/reads/reference.py]
+- read_discord_access: current role/member permissions and channel access. [../agent/reads/access.py]
 </community_data>"""

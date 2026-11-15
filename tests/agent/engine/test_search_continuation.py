@@ -38,8 +38,12 @@ class SearchContinuationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
         arguments = {"channel_id": 100, "cursor": first["coverage"]["next_cursor"], "limit": 1}
         for changed in ({"channel_id": 200}, {"after": "2026-08-01"}, {"author_id": 2}):
             result = await read_discord_channel_history(context, {**arguments, **changed})
-            self.assertIn("error", result)
+            # The refusal names the argument that contradicts the cursor.
+            self.assertIn("Drop " + next(iter(changed)) + " to continue it", result["error"])
         self.assertEqual(context.message_search.history_page.await_count, 1)
+        # The period the cursor was issued for may be repeated, in another notation.
+        repeated = await read_discord_channel_history(context, {**arguments, "after": "2026-09-01T00:00:00+00:00"})
+        self.assertEqual(repeated["messages"][0]["message_id"], rows[1].message_id)
         second = await read_discord_channel_history(context, arguments)
         self.assertEqual(second["messages"][0]["message_id"], rows[1].message_id)
         self.assertEqual(second["coverage"]["requested_after"], first["coverage"]["requested_after"])

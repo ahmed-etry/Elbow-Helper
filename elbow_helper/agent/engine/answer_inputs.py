@@ -84,15 +84,50 @@ def _coverage(value):
     return projected
 
 
-def read_handles(evidence):
+def available_report_results(evidence, report_ids):
+    """Keep observed pages, but remove locators whose conversation report was evicted."""
+    projected = {}
+    for identity, result in evidence.items():
+        if (isinstance(result, dict) and result.get('report_id')
+                and result['report_id'] not in report_ids and not result.get('error')):
+            result = {key: value for key, value in result.items()
+                      if key not in ('report_id', 'next_offset', 'next_cursor', 'cursor')}
+            result = {**result, 'complete_snapshot': False}
+        projected[identity] = result
+    return projected
+
+
+def read_handles(evidence, arguments=None, *, report_ids=None, results=None):
     """Keep opaque paging handles separate from factual evidence when replanning."""
     handles = {}
     latest_sources = {}
-    for identity, result in evidence.items():
+    for identity in dict.fromkeys([*evidence, *(results or {})]):
+        result = evidence.get(identity, {})
+        original = (results or {}).get(identity, {})
+        if (isinstance(original, dict) and isinstance(result, dict)
+                and original.get('kind') == 'family' and original.get('report_id')
+                and not original.get('error') and result.get('report_id') != original['report_id']):
+            # No planner row/envelope fitted. Paging starts at the requested
+            # offset, not past the raw page the planner never received.
+            result = {**original, 'next_offset': original.get('offset', 0), 'next_cursor': None}
         if not isinstance(result, dict) or result.get("error"):
+            continue
+        if (report_ids is not None and result.get('report_id')
+                and result['report_id'] not in report_ids):
+            source = result.get('selection', (arguments or {}).get(identity, {}))
+            handles[identity] = {'source_next_arguments': {
+                key: deepcopy(value) for key, value in source.items()
+                if key not in ('report_id', 'cursor', 'offset')}}
             continue
         handle = {key: deepcopy(result[key]) for key in ("report_id", "next_offset", "next_cursor")
                   if result.get(key) is not None}
+        if "catalogue" in result and result.get("group") and result.get("next_cursor") is not None:
+            # A capability page has no evidence row; its group and the
+            # arguments of the next page are what a later plan continues.
+            handle["source_next_arguments"] = {
+                **{key: value for key, value in (arguments or {}).get(identity, {}).items()
+                   if key in ("group", "intent")},
+                "group": result["group"], "cursor": result["next_cursor"]}
         coverage = result.get("coverage")
         source_cursor = result.get("source_next_cursor")
         if isinstance(coverage, dict) and "reached_requested_start" in coverage:
@@ -142,10 +177,18 @@ def _limit(result, flags, subject, guild, read):
                        else "needs_input" if needs_input else "unavailable")
     # Denials retain only disclosure-safe access metadata. Their error text
     # can identify a restricted source and is not a failed transport read.
-    if not denied and result.get('execution_status') != 'not_run' and (
-            result.get('error') or flags.get('status') in ('failed', 'refused')):
-        limit['failed_read'] = {'what': result.get('family') or subject.get('capability') or read,
-            'reason': deepcopy(result.get('error') or cause or 'Read failed.')}
+    not_run = result.get('execution_status') == 'not_run'
+    if not denied and (not_run or result.get('error') or flags.get('status') in ('failed', 'refused')):
+        reason = {'what': result.get('family') or subject.get('capability') or read,
+                  'reason': deepcopy(result.get('error') or cause or 'Read failed.')}
+        if cause == 'invalid_arguments':
+            # Refused arguments are corrected from the reason and the fields it names.
+            reason.update({key: list(result[key]) for key in ('invalid_fields', 'missing_fields')
+                           if result.get(key)})
+        # A refusal never ran the read, so it is not a failed read of the data.
+        limit['refused' if not_run else 'failed_read'] = reason
+    elif denied and not_run:
+        limit['refused'] = {'what': subject.get('capability') or read, 'reason': 'access_denied'}
     for key in ("available_privately", "missing_fields", "missing", "subject",
                 "role_change_access", "change_attempted", "confirmation_prepared"):
         if cause == 'invalid_arguments' and key in ('missing_fields', 'missing'):

@@ -175,7 +175,7 @@ class AgentService:
                          if tool.default_visible and name != "find_gif"}
         if family_catalogue:
             full_registry["open_capability_group"] = discovery_tool(
-                specialist_registry, registry, lambda: (session.replace_tools((plan_definition(registry),)),
+                context, specialist_registry, registry, lambda: (session.replace_tools((plan_definition(registry),)),
                                                       setattr(budget, "request_limits", limits.RESEARCH_LIMITS)),
                 self._data_guide.for_levels if self._data_guide else None)
         capability_registry.update(full_registry)
@@ -362,6 +362,7 @@ class AgentService:
             command_capabilities=command_capabilities,
             budget=budget,
             rounder=rounder,
+            session_factory=self._model.create_agent_session,
         )
 
         flow = AnswerFlow(

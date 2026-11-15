@@ -12,7 +12,7 @@ from collections.abc import Mapping
 import json
 import time
 from typing import Any
-from elbow_helper.infrastructure.ai import AgentToolResult
+from elbow_helper.infrastructure.ai import AgentToolResult, TextGenerationError
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext
 from ..actions.contracts import ActionClass, PreparedAction
 from elbow_helper.agent.conversation.wording import ACTION_UNAVAILABLE
@@ -27,6 +27,9 @@ from ..plan.input_rules import without_rules
 from ..plan.results import model_result, model_view
 from . import budgets as limits
 from .lookup_health import lookup_problem
+from .evidence_delta import conversation_notes, conversation_notes_prompt
+from ..reads.snapshots import FamilyReport
+from .rounds import AgentGracefulEnd
 from functools import partial
 from .rounds import ModelRounds
 from .budgets import ContextBudget
@@ -94,10 +97,13 @@ class PlanExecutionState:
     answer_complete: bool = False
     finished: set[str] = dataclass_field(default_factory=set)
     payloads: dict[str, Mapping[str, Any]] = dataclass_field(default_factory=dict)
+    note_results: dict[str, AgentToolResult] = dataclass_field(default_factory=dict)
 
 
 class PlanRunner:
     """Run checked steps and retain bounded evidence for the answer round."""
+
+    def planning_state(self): return {"step_id_scope": "request", "used_step_ids": list(self.completed_steps)}
 
     def __init__(
         self,
@@ -108,6 +114,7 @@ class PlanRunner:
         command_capabilities: Mapping[str, CommandCapability],
         budget: ContextBudget,
         rounder: ModelRounds,
+        session_factory=None,
     ) -> None:
         self.service = service
         self.context = context
@@ -115,6 +122,7 @@ class PlanRunner:
         self.command_capabilities = command_capabilities
         self.budget = budget
         self.rounder = rounder
+        self.session_factory = session_factory
         self.state_lock = asyncio.Lock()
         self.reads = {}
         self.results = {}
@@ -261,6 +269,7 @@ class PlanRunner:
             return {"error": checked.error, "offered": checked.offered,
                     "cause": "invalid_arguments",
                     **({"invalid_fields": list(checked.fields)} if checked.fields else {}),
+                    **({"missing_fields": list(checked.missing_fields)} if checked.missing_fields else {}),
                     "argument_schema": without_rules(self.registry[name].definition.parameters)}
         try:
             scope = compile_capability_call(
@@ -281,6 +290,8 @@ class PlanRunner:
                 'read_conversation_evidence', 'read_discord_channel_history', 'read_conversation_history',
             ):
                 self.discussion_reads = True
+                if self.budget.request_limits == limits.FAMILY_LIMITS:
+                    self.budget.request_limits = limits.RESEARCH_LIMITS
             if self.tool_calls >= limits.MAX_TOOL_CALLS:
                 return {"error": "The request reached its lookup limit."}
             if self.evidence_characters >= self.evidence_limit:
@@ -386,6 +397,16 @@ class PlanRunner:
             payload = json.loads(raw)
         except ValueError:
             payload = {"error": "Invalid lookup result"}
+        raw = None
+        if (self.session_factory is not None and checked['name'] == 'read_conversation_evidence'
+                and payload.get('mode') == 'channel_window' and payload.get('source_next_cursor')
+                and (payload.get('coverage', {}).get('requested_after')
+                     or payload.get('coverage', {}).get('requested_before'))
+                and arguments.get('delivery', 'text') == 'text'
+                and arguments.get('view', 'rows') == 'rows'
+                and not arguments.get('report_id') and not arguments.get('cursor')
+                and not arguments.get('offset')):
+            payload = await self._conversation_period(step, payload, arguments, checked, local, previous, plan_state)
         if payload.get("cause") == "invalid_arguments":
             payload.update(capability=step["capability"], argument_schema=without_rules(tool.definition.parameters))
         if tool.effect is AgentCapabilityEffect.ARTIFACT and "error" not in payload:
@@ -395,6 +416,155 @@ class PlanRunner:
         return await self._record_result(
             step, arguments, checked["scope"], local, previous, payload, checked["contract"], plan_state,
         )
+
+    async def _conversation_period(self, step, payload, arguments, checked, local, previous, plan_state):
+        """Finish a long window in bounded reads, retaining only grounded notes.
+
+        The first read is unchanged. Only a continuation starts a side session.
+        Subsequent complete chunks share one lookup reservation each; their
+        internal Discord pages do not become separate planning operations.
+        """
+        first_id = payload['report_id']
+        template = {key: value for key, value in payload.items() if key not in (
+            'rows', 'flags', 'coverage', 'source_next_cursor', 'returned_rows',
+            'total_rows', 'count', 'next_offset', 'next_cursor', 'offset')}
+        coverage = {**payload['coverage'], **{key: 0 for key in (
+            'scanned_messages_in_window', 'returned_messages', 'scanned_count',
+            'matched_count', 'pages_scanned')}, 'parts': 0}
+        coverage['next_cursor'] = arguments.get('source_cursor')
+        coverage['reached_requested_start'] = False
+        coverage['unread_period'] = {'after': coverage['requested_after'],
+                                    'before': coverage['requested_before']}
+        notes, sources, batch, chunks = [], {}, [], []
+
+        def notes_report(part_notes, part_sources, part_coverage):
+            summary = {**template, 'coverage': part_coverage,
+                'source_next_cursor': part_coverage['next_cursor'], 'notes': part_notes,
+                'message_sources': list(part_sources.values()), 'message_content_complete': False,
+                'count': part_coverage['returned_messages']}
+            summary.pop('report_id', None)
+            return FamilyReport(first_id, local.guild.id, 'read_conversation_evidence',
+                json.dumps({'rows': [], 'summary': summary}, ensure_ascii=False))
+
+        async def reduce_batch():
+            if not batch:
+                return True
+            await require_evidence_access(local)
+            try:
+                reduced, citations = await conversation_notes(self, batch)
+            except (AgentGracefulEnd, TextGenerationError, TimeoutError):
+                return False
+            await require_evidence_access(local)
+            # Do not replace an evidence overflow with trimmed notes. Leave
+            # this entire part unread, with the last completed boundary.
+            next_coverage = dict(coverage)
+            for chunk in chunks:
+                for field in ('scanned_messages_in_window', 'returned_messages', 'scanned_count',
+                              'matched_count', 'pages_scanned'):
+                    next_coverage[field] += chunk.get(field, 0)
+                for field in ('next_cursor', 'reached_requested_start', 'stopped_at_message_budget'):
+                    next_coverage[field] = chunk[field]
+                if 'unread_period' in chunk:
+                    next_coverage['unread_period'] = chunk['unread_period']
+            next_coverage['parts'] += 1
+            if next_coverage['reached_requested_start']:
+                next_coverage.pop('unread_period', None)
+            next_sources = {**sources, **{row['message_id']: row for row in citations}}
+            retained = json.dumps(model_view(model_result(notes_report(
+                notes + reduced, next_sources, next_coverage).page())),
+                ensure_ascii=False, separators=(',', ':'))
+            from ..research.history import discussion_result_characters
+            async with self.state_lock:
+                reservation = plan_state.note_results.get(step['id'])
+                previous_size = len(reservation.content) if reservation else 0
+                other_notes = [value for identity, value in plan_state.note_results.items()
+                               if identity != step['id']]
+                limit = self.budget.result_character_limit([*plan_state.emitted, *other_notes],
+                    pending_call_ids=tuple(item['id'] for item in plan_state.plan['steps']),
+                    maximum=min(discussion_result_characters(),
+                        self.evidence_limit - self.evidence_characters + previous_size))
+                if len(retained) > limit:
+                    return False
+                self.evidence_characters += len(retained) - previous_size
+                plan_state.note_results[step['id']] = AgentToolResult(step['id'], retained)
+            notes.extend(reduced)
+            sources.update(next_sources)
+            coverage.clear()
+            coverage.update(next_coverage)
+            batch.clear()
+            chunks.clear()
+            return True
+
+        try:
+            while True:
+                if 'error' in payload:
+                    if payload.get('cause') == 'access_denied' or payload.get('required_access'):
+                        return payload
+                    await require_evidence_access(local)
+                    await reduce_batch()
+                    break
+                identifier = payload['report_id']
+                # Family paging is transport, not source coverage: review all
+                # rows in the authorized chunk, including rows beyond its page.
+                rows = json.loads(local.state.reports[identifier].payload)['rows']
+                # The pending batch owns these complete rows until its notes
+                # exist; temporary reports need not compete for retention.
+                for field in ('reports', 'report_sources', 'report_access_requirements'):
+                    getattr(local.state, field).pop(identifier, None)
+                payload.pop('rows', None)
+                prompt_size = len(conversation_notes_prompt(self.context.state.request_text, batch + rows))
+                if batch and prompt_size > limits.MAX_DISCUSSION_EVIDENCE_CHARACTERS:
+                    if not await reduce_batch():
+                        break
+                batch.extend(rows)
+                chunks.append(payload['coverage'])
+                cursor = payload['source_next_cursor']
+                if not cursor:
+                    await reduce_batch()
+                    break
+                async with self.state_lock:
+                    can_read = (self.tool_calls < limits.MAX_TOOL_CALLS and (
+                        local.deadline_monotonic is None or time.monotonic()
+                        + limits.TOOL_TIMEOUT_SECONDS + limits.MODEL_ROUND_TIME_RESERVE_SECONDS
+                        + limits.FINAL_ANSWER_TIME_RESERVE_SECONDS
+                        + limits.DELIVERY_TIME_RESERVE_SECONDS < local.deadline_monotonic))
+                    if can_read:
+                        self.tool_calls += 1
+                if not can_read:
+                    await reduce_batch()
+                    break
+
+                async def reserve_chunk(characters):
+                    return limits.MAX_DISCUSSION_EVIDENCE_CHARACTERS - characters
+
+                continuation = {key: value for key, value in arguments.items()
+                                if key not in ('source_cursor', 'limit')}
+                continuation['source_cursor'] = cursor
+                raw = await self.service.execute_tool(name=checked['name'], handler=checked['tool'].handler,
+                    arguments=continuation, capability_scope=checked['scope'],
+                    context=replace(local, reserve_search_page=reserve_chunk),
+                    action_class=checked['tool'].action_class, timeout_seconds=limits.TOOL_TIMEOUT_SECONDS)
+                payload = json.loads(raw)
+                raw = None
+            await require_evidence_access(local)
+        except BaseException:
+            async with self.state_lock:
+                reservation = plan_state.note_results.pop(step['id'], None)
+                if reservation:
+                    self.evidence_characters -= len(reservation.content)
+            raise
+        finally:
+            # Nothing containing a body is published to the request or kept in
+            # report snapshots, even when a side call times out or access ends.
+            batch.clear()
+            for identifier in set(local.state.reports) - set(previous['reports']):
+                for field in ('reports', 'report_sources', 'report_access_requirements'):
+                    getattr(local.state, field).pop(identifier, None)
+        report = notes_report(notes, sources, coverage)
+        local.state.reports[first_id] = report
+        local.state.report_sources[first_id] = frozenset(local.state.source_channels)
+        local.state.report_access_requirements[first_id] = frozenset(local.state.required_access)
+        return report.page()
 
     def _reports_still_needed(self, current, plan_state: PlanExecutionState) -> set[str]:
         """Reports that steps of this plan other than `current` have yet to use."""
@@ -421,16 +591,23 @@ class PlanRunner:
         plan_state: PlanExecutionState,
     ):
         async with self.state_lock:
+            reservation = plan_state.note_results.pop(step['id'], None)
+            if reservation:
+                self.evidence_characters -= len(reservation.content)
             query_data = (step['capability'] == 'query_bot_data'
                           or step['capability'] == 'open_capability_group' and 'data_guide' in payload)
             self.data_query_reads |= query_data
             summaries = {key: values.copy() for key, values in self.sent_summaries.items()}
             structured_content = json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":"))
+            from elbow_helper.agent.research.history import discussion_result_characters
             limit = self.budget.result_character_limit(
-                plan_state.emitted,
+                [*plan_state.emitted, *plan_state.note_results.values()],
                 pending_call_ids=(step["id"],),
                 maximum=min(
                     (limits.MAX_QUERY_RESULT_CHARACTERS if query_data
+                     else discussion_result_characters() if (
+                         payload.get('family') == 'read_conversation_evidence'
+                         and payload.get('mode') == 'channel_window')
                      else limits.MAX_TOOL_RESULT_CHARACTERS),
                     self.evidence_limit - self.evidence_characters,
                 ),
@@ -517,6 +694,7 @@ class PlanRunner:
                 ),
                 step_errors=checked.step_errors,
                 step_fields=checked.step_fields,
+                step_missing_fields=checked.step_missing_fields,
                 parallel=lambda step: self.registry[step["capability"]].effect
                 is AgentCapabilityEffect.READ and self.registry[step["capability"]].action_class
                 is ActionClass.READ,

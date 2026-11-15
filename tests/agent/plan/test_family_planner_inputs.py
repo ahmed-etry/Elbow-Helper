@@ -6,7 +6,10 @@ import unittest
 
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.catalogue import FAMILY_INSTRUCTION
-from elbow_helper.agent.plan.format import plan_definition, system_instructions
+from elbow_helper.agent.plan.format import capability_list, plan_definition, system_instructions
+from elbow_helper.agent.plan.checker import check_plan
+from elbow_helper.agent.plan.input_rules import RULES
+from elbow_helper.agent.plan.rule_format import catalogue_rules, rule_clauses
 from elbow_helper.agent.plan.planning import read_request
 from tests.agent.engine.test_agent_plan_flow import _model_step, _Session
 
@@ -61,6 +64,43 @@ class CatalogueScript(_Session):
 
 class FamilyPlannerInputTests(unittest.IsolatedAsyncioTestCase):
 
+    async def test_cohort_and_cwl_refusals_are_present_in_both_planning_catalogues(self):
+        registry = build_agent_tools()
+        plan = {'goal': 'Read dated donations and CWL scores', 'effort': 'high', 'output': 'text', 'steps': [
+            step('aug', 'read_member_cohort', {'basis': 'clan_rosters', 'clan_role': 'member',
+                'clan_codes': ['BEH'], 'include_activity': True,
+                'after': '2026-08-01T00:00:00+00:00', 'before': '2026-09-01T00:00:00+00:00'}),
+            step('cwl', 'read_cwl_results', {'metric': 'signup_pool', 'latest_completed': 3}),
+        ]}
+        checked = check_plan(plan, registry)
+        self.assertEqual(set(checked.step_errors), {'aug', 'cwl'})
+        selected = {name: registry[name] for name in ('read_member_cohort', 'read_cwl_results')}
+        for descriptions in (True, False):
+            catalogue = capability_list(selected, include_returns=False, descriptions=descriptions)
+            self.assertNotIn('"given_none"', catalogue)
+            self.assertIn('@ without report_id', catalogue)
+            self.assertIn('basis!=role_holders|~->!role_name,!clan_role', catalogue)
+            self.assertIn('metric=signup_pool|assigned_rosters->!(after|before|history_limit|latest_completed|war_ids)',
+                          catalogue)
+        # Every enforced predicate remains represented, including rules on specialist reads.
+        legend, lines = catalogue_rules(registry)
+        for name, tool in registry.items():
+            schema = tool.definition.parameters
+            clauses, covered, guard = rule_clauses(schema)
+            represented = [index for clause in clauses for index in clause.source_rules]
+            self.assertEqual(sorted([*represented, *covered]), list(range(len(schema.get(RULES, ())))))
+            if guard:
+                self.assertTrue(all('report_id' in rule.get('unless', ()) for rule in schema[RULES]))
+            for index in covered:
+                rule = schema[RULES][index]
+                self.assertTrue(rule.get('aware') or rule.get('within'))
+                for field in rule.get('aware', ()):
+                    self.assertEqual(schema['properties'][field].get('format'), 'date-time')
+                for field, values in rule.get('within', {}).items():
+                    self.assertLessEqual(set(schema['properties'][field]['items']['enum']), set(values))
+            for clause in clauses:
+                for fragment in (clause.condition, *clause.effects):
+                    self.assertIn(fragment, lines[name] + legend)
 
     async def test_inspection_and_confirmation_use_distinct_visible_paths(self):
         registry = {name: tool for name, tool in build_agent_tools().items() if tool.default_visible}

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
+import asyncio
 import json
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -582,6 +583,28 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await runner.run_once(), 1)
         advance.assert_awaited_once()
         self.assertEqual(advance.await_args.args[1], scopes[-1].job_id)
+
+    async def test_worker_keeps_polling_after_an_unlisted_error(self):
+        runner = self.runner()
+        runner.poll_seconds = 0.001
+        reached = asyncio.Event()
+
+        async def run_once():
+            if run_once.calls == 0:
+                run_once.calls += 1
+                raise LookupError("poll failed")
+            reached.set()
+            return 0
+
+        run_once.calls = 0
+        runner.run_once = run_once
+        runner.start()
+        try:
+            with self.assertLogs("elbow_helper.agent.research.runner", "ERROR"):
+                await asyncio.wait_for(reached.wait(), 1)
+        finally:
+            runner.cancel()
+            await asyncio.gather(runner._task, return_exceptions=True)
 
     async def start(self):
         return await start_discord_research_job(self.context, {

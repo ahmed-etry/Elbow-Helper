@@ -71,7 +71,7 @@ class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
                 rounder = SimpleNamespace(session=original, request_effort=AgentReasoningEffort.HIGH,
                     pending_calls=('pending plan',), pending_results=(), unpublished=None,
                     partial_content='Existing draft framing', last_allow_tools=True,
-                    advance=AsyncMock(return_value=SimpleNamespace(
+                    isolated=AsyncMock(return_value=SimpleNamespace(
                         content=json.dumps({'channel_ids': selected}) if call_name is None else '',
                         tool_calls=((AgentToolCall('select', call_name,
                             json.dumps({'channel_ids': selected})),) if call_name else ()))))
@@ -89,8 +89,8 @@ class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(rounder.request_effort, AgentReasoningEffort.HIGH)
                 self.assertEqual(flow.budget.next_input_estimate, 300)
                 self.assertNotIn('Existing draft framing', requests[0]['prompt'])
-                self.assertEqual(rounder.advance.await_args.kwargs['reasoning_effort'], AgentReasoningEffort.NONE)
-                self.assertTrue(rounder.advance.await_args.kwargs['allow_tools'])
+                self.assertIs(rounder.isolated.await_args.args[0], navigation)
+                self.assertTrue(rounder.isolated.await_args.kwargs['allow_tools'])
                 self.assertEqual(requests[0]['tools'][0].name, 'select_discussion_sources')
 
 

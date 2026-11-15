@@ -39,8 +39,9 @@ from .role_claims import role_conflicts
 from .unfinished import unfinished_answer
 from .named_replies import named_reply
 from .evidence_delta import EvidenceDelta, access_refused
-from .answer_inputs import answer_evidence, read_handles, bounded_answer_evidence, serialized_answer_evidence
-from .cohort_evidence import cohort_writer_evidence, cohort_review_evidence, restorable_reference
+from .answer_inputs import (answer_evidence, read_handles, available_report_results,
+                            bounded_answer_evidence, serialized_answer_evidence)
+from .cohort_evidence import cohort_writer_evidence, cohort_review_evidence, delivered_whole
 from .assessment import DECISION_ADVICE_INSTRUCTION, DECISION_ANSWER_INSTRUCTION, assessment_limits, deliver_decision_answer, discussion_ids, parse_decision, read_decision_discussions, without_new_choices
 from .account_lists import account_index
 from .recommended_actions import action_catalogue, prepare_recommended_actions
@@ -110,7 +111,7 @@ class AnswerFlow:
         visible = {key: self.result_views[key] for key in results if key in self.result_views}
         self.discussion_message_ids.update(discussion_ids(visible))
         self.context.state.grounding_evidence.update(visible)
-        return visible
+        return available_report_results(visible, self.context.state.reports)
 
     def _direct_capabilities(self):
         return SOCIAL_CAPABILITIES.intersection(self.registry) if self.rounder.social_route else frozenset()
@@ -516,7 +517,8 @@ class AnswerFlow:
                     'It replaces the normal plain reply and private-answer envelope formats. '
                     'After the decision has been composed, later repair instructions may request plain reply text.',
                     self._decision_instruction())
-        return answer_instructions(self.registry if allow_more else None, extra_instructions=extra)
+        return answer_instructions(self.registry if allow_more else None, extra_instructions=extra,
+                                   opened_capabilities=self.context.state.catalogue.opened)
 
     def _answer_frame(self, evidence, *, allow_more, instruction):
         return json.dumps({"request": self.context.state.request_text,
@@ -524,7 +526,18 @@ class AnswerFlow:
             "context": self.answer_context,
             "delivery": delivery_manifest(self.context.state.attachments),
             "composition_constraints": instruction,
-            **({"read_handles": read_handles(evidence)} if allow_more else {}),
+            **({"read_handles": read_handles({**evidence, **self.result_views}, {identity: step.get("arguments", {})
+                                                        for identity, step in self.steps_by_id.items()},
+                                             report_ids=self.context.state.reports,
+                                             results=self.completed_results),
+                "plan_state": self.runner.planning_state()} if allow_more else {}),
+            **({'catalogue': {
+                **({'data_guide': self.context.state.catalogue.data_guide}
+                   if self.context.state.catalogue.data_guide and
+                   ('query_bot_data' in self.registry or 'prepare_spreadsheet' in self.registry) else {}),
+                **({'withheld': self.context.state.catalogue.withheld}
+                   if self.context.state.catalogue.withheld else {}),
+            }} if allow_more else {}),
             "images": [image.label for image in self.answer_images]
             + self.context.state.image_source_status}, ensure_ascii=False)
 
@@ -539,6 +552,9 @@ class AnswerFlow:
         tools = (plan_definition(self.registry),) if allow_more else ()
         evidence = self.model_results(self.completed_results)
         transport = {**self.context.state.grounding_evidence, **evidence}
+        # A planner page's size bound says nothing about the successful saved read.
+        transport.update({identity: result for identity, result in self.completed_results.items()
+                          if delivered_whole(result, 'restore')})
         prompt = self._answer_frame(evidence, allow_more=allow_more, instruction=instruction)
         room = (policy.input_tokens - self.budget.spent_input if policy else 32_000)
         room -= estimate_tokens(system + prompt) + 1024
@@ -921,6 +937,11 @@ class AnswerFlow:
     def _planned_reads_complete(self, results):
         """Finish a declared factual read once its selected evidence is complete."""
         if not self.plan.get('finish_after_reads') or not results:
+            return False
+        if any(step['capability'] == 'open_capability_group' and step['id'] in results
+               for step in self.plan['steps']):
+            # Capabilities opened by this plan reach a planning menu only in
+            # the next round, so planning has not finished.
             return False
         for value in results.values():
             if (value.get('family') == 'read_member_accounts'

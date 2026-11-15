@@ -63,6 +63,91 @@ def writer_payload(options):
 
 
 class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_opened_inventory_keeps_description_and_returns_in_the_next_planning_frame(self):
+        from elbow_helper.agent.engine.registry import build_agent_tools
+        from elbow_helper.agent.plan.checker import check_plan
+
+        tools = build_agent_tools()
+        original = tools['read_member_inventory']
+        source = AsyncMock(return_value={'balance': 215, 'has_ticket': False})
+        registry = {'read_member_inventory': replace(original, handler=source),
+                    'read_member_cohort': tools['read_member_cohort']}
+        seen = []
+        first = _plan([{'id': 'ach', 'capability': 'open_capability_group',
+                        'arguments': {'group': 'achievements', 'intent': 'inspect'}, 'depends_on': []}])
+
+        async def provider(**options):
+            if options['messages'][0]['content'] == ROUTE_INSTRUCTION:
+                return provider_response('research')
+            seen.append(options)
+            if len(seen) == 1:
+                return provider_response(calls=[call('submit_request_plan', first)])
+            if len(seen) == 2:
+                frame, _, evidence = writer_payload(options)
+                self.assertNotIn('ach', evidence)
+                system = options['messages'][0]['content']
+                line = next(line for line in system.splitlines() if line.startswith('read_member_inventory'))
+                self.assertTrue(line.startswith('read_member_inventory: ' + original.definition.description))
+                self.assertIn(' | returns ' + original.returns, line)
+                self.assertNotIn('read_member_cohort: ' + tools['read_member_cohort'].definition.description, system)
+                self.assertEqual(frame['plan_state'], {'step_id_scope': 'request', 'used_step_ids': ['ach']})
+                duplicate = _plan([{'id': 'ach', 'capability': 'read_member_inventory',
+                    'arguments': {'member_id': 41}, 'depends_on': []}])
+                self.assertTrue(check_plan(duplicate, {**registry, 'open_capability_group': original},
+                    completed_steps={'ach': first['steps'][0]}).ok)
+                self.assertEqual(duplicate['steps'][0]['id'], 'ach_2')
+                duplicate['finish_after_reads'] = True
+                return provider_response(calls=[call('submit_request_plan', duplicate)])
+            return provider_response('Inventory checked.')
+
+        model = client(provider)
+        try:
+            with patch('elbow_helper.agent.engine.service.build_agent_tools', return_value=registry):
+                await AgentService(model).answer(question='how many coins do I have and do I have a ticket',
+                                                local_context='', context=_context())
+        finally:
+            await model.close()
+        self.assertEqual(len(seen), 3)
+        source.assert_awaited_once()
+
+    async def test_group_opened_beside_a_finished_read_gets_a_planning_round_with_its_lookups(self):
+        from elbow_helper.agent.engine.registry import build_agent_tools
+
+        tools = build_agent_tools()
+        knowledge = AsyncMock(return_value={'mode': 'sections', 'selection_complete': True, 'rows': [
+            {'title': 'Transfer queue', 'body': 'Use /transfer request to join a destination queue.'}]})
+        registry = {'read_community_reference': replace(tools['read_community_reference'], handler=knowledge),
+                    'read_pending_transfer_requests': tools['read_pending_transfer_requests']}
+        first = _plan([
+            {'id': 'queue', 'capability': 'open_capability_group',
+             'arguments': {'group': 'transfers', 'intent': 'inspect'}, 'depends_on': []},
+            {'id': 'knowledge', 'capability': 'read_community_reference',
+             'arguments': {'reference_kind': 'knowledge', 'titles': ['Transfer queue']}, 'depends_on': []}])
+        first['finish_after_reads'] = True
+        seen = []
+
+        async def provider(**options):
+            if options['messages'][0]['content'] == ROUTE_INSTRUCTION:
+                return provider_response('research')
+            seen.append(options)
+            if len(seen) == 1:
+                return provider_response(calls=[call('submit_request_plan', first)])
+            return provider_response('Queue checked.')
+
+        model = client(provider)
+        try:
+            with patch('elbow_helper.agent.engine.service.build_agent_tools', return_value=registry):
+                await AgentService(model).answer(question="who's waiting to transfer into BEH",
+                                                local_context='', context=_context())
+        finally:
+            await model.close()
+        knowledge.assert_awaited_once()
+        self.assertEqual(len(seen), 2)
+        self.assertTrue(seen[1].get('tools'))
+        self.assertTrue(any(line.startswith('read_pending_transfer_requests: ' + registry[
+            'read_pending_transfer_requests'].definition.description)
+            for line in seen[1]['messages'][0]['content'].splitlines()))
+
     async def test_channel_clan_policy_uses_current_host_heading_and_keeps_unreadable_rule_unknown(self):
         from elbow_helper.agent.reads.reference import TOOLS
         from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
@@ -212,7 +297,11 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_whole_request_goal_keeps_research_going_after_identity_lookup(self):
+        from elbow_helper.agent.reads.snapshots import FamilyReport
         requests, writers = [], []
+        context = _context()
+        context.state.reports['sample:one'] = FamilyReport('sample:one', context.guild.id, 'read_sample',
+            json.dumps({'rows': [{'member_id': 52}], 'summary': {'requester_id': context.member.id}}))
         goal = "Show Lyra's regular war history."
         source = AsyncMock(side_effect=[{"rows": [{"member_id": 52}], "report_id": "sample:one", "next_offset": 1},
                                         {"rows": [{"member_id": 52, "war_type": "REG", "wars": 3, "wins": 2}]}])
@@ -266,7 +355,7 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
         try:
             with patch("elbow_helper.agent.engine.service.build_agent_tools", return_value=registry):
                 answer = await AgentService(model).answer(question=goal,
-                    local_context="", context=_context())
+                    local_context="", context=context)
             self.assertEqual(answer, "Lyra joined three regular wars and won two.")
             self.assertEqual(len(requests), 4)
             self.assertEqual(len(writers), 2)
@@ -345,6 +434,7 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_writer_preserves_access_missing_input_and_failed_read_reasons(self):
         cases = (
             ({"error": "Lead access is required.", "required_access": ["lead"],
+              "cause": "access_denied",
               "available_privately": False},
              {"status": "denied", "reader_roles": [[]], "available_privately": False}),
             ({"error": "This channel cannot disclose that material.", "cause": "access_denied",

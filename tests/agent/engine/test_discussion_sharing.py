@@ -76,15 +76,14 @@ class AuthorizedDiscussionSharingTests(unittest.IsolatedAsyncioTestCase):
             for i in range(1, 16)]
         source = AsyncMock(side_effect=[discussion(rows[:12]), discussion(rows[7:], complete=True)])
         tool = family_tool('read_conversation_evidence', 'Read discussion.', {}, source)
-        first = await tool.handler(context, {'limit': 1})
-        second = await tool.handler(context, {'limit': 1})
+        first = await tool.handler(context, {})
+        second = await tool.handler(context, {})
         evidence = {'first': first, 'second': second}
         raw = {key: report.payload for key, report in context.state.reports.items()}
         restored = await cohort_writer_evidence(context, evidence)
         self.assertEqual(len(expand(restored)['first']['rows']), 15)
         self.assertEqual(len(messages_from(restored, context.guild.id)), 15)
         self.assertEqual({key: report.payload for key, report in context.state.reports.items()}, raw)
-        self.assertEqual(len(first['rows']), 1)
         async def authorize(local, identity):
             return identity != second['report_id']
         with patch('elbow_helper.agent.engine.cohort_evidence.authorize_report',

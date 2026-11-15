@@ -70,7 +70,7 @@ class LookupCorrectionTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCa
         error = json.loads(session.calls[1][0][0].content)["results"]["members"]
         self.assertEqual(error["cause"], "invalid_arguments")
         # The plan check refuses it now and names every field that can select members.
-        self.assertLessEqual({"member_ids", "role_ids", "sort"}, set(error["invalid_fields"]))
+        self.assertLessEqual({"member_ids", "role_ids", "sort"}, set(error["missing_fields"]))
         self.assertIn("member_ids", error["argument_schema"]["properties"])
 
 
@@ -103,7 +103,8 @@ class LookupCorrectionTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCa
                     await AgentService(_Model(session)).answer(question="Analyze these member lookups.", local_context="", context=context)
                     feedback = json.loads(session.calls[1][0][0].content)["results"]
                     self.assertEqual(feedback["fix"]["cause"], "invalid_arguments")
-                    self.assertTrue(feedback["fix"]["invalid_fields"])
+                    fields = "missing_fields" if capability == "read_discord_members" else "invalid_fields"
+                    self.assertTrue(feedback["fix"][fields])
                     self.assertTrue(feedback["fix"]["argument_schema"]["properties"])
                     self.assertEqual(feedback["kept"]["items"][0]["data"]["leagueTier"]["name"], "Dragon League 30")
                     self.assertEqual(len(session.calls), 3)

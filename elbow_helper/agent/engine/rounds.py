@@ -74,6 +74,46 @@ class ModelRounds:
         self.capability_context = None
         self.capability_session = None
         self.capabilities_checked = False
+        self.isolated_lock = asyncio.Lock()
+
+    async def isolated(self, session, projected, *, allow_tools=False, max_output_tokens=2048):
+        """Run an independent read with the same usage, deadline and request budget.
+
+        A separate rounder keeps pending plans and answer drafts out of the side
+        session. Serialize admission and accounting, including concurrent reads.
+        """
+        async with self.isolated_lock:
+            policy = self.budget.request_limits
+            # The independent reader's input is not the final writer input.
+            # Reserve the parent session and answer, rather than charging a
+            # second copy of this raw part as the final synthesis.
+            if (not self.budget.can_continue_tools(projected, result_reserve=8192)
+                    or self.budget.request_output_limit(projected, allow_tools=True) < max_output_tokens
+                    or policy is not None and (
+                        self.budget.spent_rounds >= policy.rounds - 1 - policy.answer_repair_rounds
+                        or self.budget.spent_input + projected + (self.budget.final_input_estimate
+                            if self.budget.final_input_estimate is not None else self.budget.next_input_estimate)
+                        + 8192 > policy.input_tokens)):
+                raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED)
+            previous_estimate = self.budget.next_input_estimate
+            previous_reserve = self.budget.output_reserve
+            deadline = self.context.deadline_monotonic
+            side_context = (replace(self.context,
+                deadline_monotonic=deadline - limits.FINAL_ANSWER_TIME_RESERVE_SECONDS)
+                if deadline is not None and not allow_tools else self.context)
+            side = ModelRounds(context=side_context, budget=self.budget, usage=self.usage,
+                               session=session, request_id=self.request_id)
+            side.rounds = self.rounds
+            side.request_effort = AgentReasoningEffort.NONE
+            side.results_available = True
+            self.budget.next_input_estimate = projected
+            try:
+                return await side.advance(allow_tools=allow_tools,
+                    reasoning_effort=AgentReasoningEffort.NONE, max_output_tokens=max_output_tokens)
+            finally:
+                self.rounds = side.rounds
+                self.budget.next_input_estimate = previous_estimate
+                self.budget.output_reserve = previous_reserve
 
     async def advance(self, results=(), **kwargs):
         if (self.capability_context is not None and self.capability_session is not self.session
