@@ -22,6 +22,11 @@ from .views import RaffleHubView
 
 RAFFLE_HUB_HTTP_RETRY_DELAYS_SECONDS = (1.0, 2.0, 5.0)
 RAFFLE_COLLECTION_CONTACT = "<@327057918992187395>"
+RAFFLE_DRAW_META_KEYS = ("last_winner_month", "raffle_hub_state", "raffle_hub_month")
+RAFFLE_WINNER_COLUMNS = "id, month_key, user_id, drawn_at, draw_type, reroll_of, is_active"
+# rowid is the id column of the real table, so restored rows keep their ids.
+RAFFLE_TRANSACTION_COLUMNS = "rowid, user_id, amount, type, reason, actor_id, created_at"
+RAFFLE_TRANSACTION_FILTER = "type IN ('raffle_win', 'raffle_reroll') AND reason IN (?, ?)"
 
 
 class AchievementRaffleMixin:
@@ -105,6 +110,7 @@ class AchievementRaffleMixin:
         )
         if not ok:
             return False, info
+        before = info
         winner_mentions = ", ".join(f"<@{uid}>" for uid in winners)
         reward = await self._retry_db_operation(self._get_meta, f"reward_{month_key}")
         reward_text = reward.strip() if isinstance(reward, str) and reward.strip() else "Prize not set"
@@ -112,16 +118,23 @@ class AchievementRaffleMixin:
             f"Congratulations, {winner_mentions}! You won this month's raffle prize: **{reward_text}**. "
             f"Contact {RAFFLE_COLLECTION_CONTACT} to collect it."
         )
-        await post(announcement)
+        try:
+            await post(announcement)
+        except Exception:
+            # Winners nobody was told about must not stay drawn; the draw can be run again.
+            await self._retry_db_operation(self._undo_raffle_draw_internal, month_key, before)
+            raise
         await self.update_raffle_hub_message()
         return True, announcement
 
     async def reroll_raffle_winners(self, guild_id: int, post):
+        month_key = self._month_key()
         ok, winners, info = await self._retry_db_operation(
             self._raffle_reroll_internal, guild_id,
         )
         if not ok:
             return False, info
+        before = info
         winner_mentions = ", ".join(f"<@{winner_id}>" for winner_id in winners)
         result_label = "New result" if len(winners) == 1 else "New results"
         embed = discord.Embed(
@@ -130,7 +143,12 @@ class AchievementRaffleMixin:
             color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
             timestamp=datetime.now(timezone.utc),
         )
-        await post(embed)
+        try:
+            await post(embed)
+        except Exception:
+            # A redraw nobody was told about must not replace the winners members were told.
+            await self._retry_db_operation(self._undo_raffle_reroll_internal, month_key, before)
+            raise
         await self.update_raffle_hub_message()
         return True, embed
 
@@ -581,15 +599,28 @@ class AchievementRaffleMixin:
         winners = random.sample(eligible, winners_count)
         drawn_at = int(datetime.now(timezone.utc).timestamp())
         cursor.execute(
+            f'SELECT {RAFFLE_WINNER_COLUMNS} FROM raffle_winners WHERE month_key = ?',
+            (month_key,),
+        )
+        before_winners = [tuple(row) for row in cursor.fetchall()]
+        cursor.execute(
+            f"SELECT {RAFFLE_TRANSACTION_COLUMNS} FROM coin_transactions "
+            f"WHERE {RAFFLE_TRANSACTION_FILTER}",
+            (f"raffle_{month_key}", f"raffle_{month_key}_reroll"),
+        )
+        before_transactions = [tuple(row) for row in cursor.fetchall()]
+        before = {
+            "winners": before_winners,
+            "transactions": before_transactions,
+            "meta": {key: await self._get_meta(cursor, key)
+                     for key in RAFFLE_DRAW_META_KEYS},
+        }
+        cursor.execute(
             'DELETE FROM raffle_winners WHERE month_key = ?',
             (month_key,),
         )
         cursor.execute(
-            """
-            DELETE FROM coin_transactions
-            WHERE type IN ('raffle_win', 'raffle_reroll')
-              AND reason IN (?, ?)
-            """,
+            f"DELETE FROM coin_transactions WHERE {RAFFLE_TRANSACTION_FILTER}",
             (f"raffle_{month_key}", f"raffle_{month_key}_reroll"),
         )
         for winner in winners:
@@ -608,7 +639,27 @@ class AchievementRaffleMixin:
                 (winner, f"raffle_{month_key}", drawn_at),
             )
         await self._set_raffle_hub_state_internal(cursor, "ended", month_key)
-        return True, winners, "ok"
+        return True, winners, before
+
+    async def _undo_raffle_reroll_internal(self, cursor, month_key: int, before: dict):
+        cursor.execute('DELETE FROM raffle_winners WHERE month_key = ?', (month_key,))
+        cursor.execute(
+            f"DELETE FROM coin_transactions WHERE {RAFFLE_TRANSACTION_FILTER}",
+            (f"raffle_{month_key}", f"raffle_{month_key}_reroll"),
+        )
+        cursor.executemany(
+            f"INSERT INTO raffle_winners ({RAFFLE_WINNER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            before["winners"],
+        )
+        cursor.executemany(
+            f"INSERT INTO coin_transactions ({RAFFLE_TRANSACTION_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            before["transactions"],
+        )
+        for key, value in before["meta"].items():
+            if value is None:
+                await self._delete_meta(cursor, key)
+            else:
+                await self._set_meta(cursor, key, value)
 
 
     async def _raffle_history_internal(self, cursor, month_key: int):
@@ -640,6 +691,8 @@ class AchievementRaffleMixin:
 
         winners = random.sample(eligible, winners_count)
         drawn_at = int(datetime.now(timezone.utc).timestamp())
+        before = {key: await self._get_meta(cursor, key)
+                  for key in RAFFLE_DRAW_META_KEYS}
         for winner in winners:
             cursor.execute(
                 '''
@@ -661,7 +714,20 @@ class AchievementRaffleMixin:
             current_reward = (await self._get_meta(cursor, f"reward_{current_month_key}") or "").strip()
             if not current_reward:
                 await self._set_raffle_hub_state_internal(cursor, "ended", target_month_key)
-        return True, winners, "ok"
+        return True, winners, before
+
+    async def _undo_raffle_draw_internal(self, cursor, month_key: int, before: dict):
+        # Only an undrawn month can be drawn, so every winner row of the month came from this draw.
+        cursor.execute('DELETE FROM raffle_winners WHERE month_key = ?', (month_key,))
+        cursor.execute(
+            "DELETE FROM coin_transactions WHERE type = 'raffle_win' AND reason = ?",
+            (f"raffle_{month_key}",),
+        )
+        for key, value in before.items():
+            if value is None:
+                await self._delete_meta(cursor, key)
+            else:
+                await self._set_meta(cursor, key, value)
 
     async def _raffle_clear_internal(self, cursor, clear_tickets: bool):
         month_key = self._month_key()

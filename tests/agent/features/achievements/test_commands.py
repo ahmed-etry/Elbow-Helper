@@ -3,6 +3,9 @@ import sqlite3
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
+
+import discord
+
 from elbow_helper.features.achievements.raffle import AchievementRaffleMixin
 from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.features.achievements.commands import achievement_adapters
@@ -31,7 +34,7 @@ class _Raffle(AchievementRaffleMixin):
                 user_id INTEGER, amount INTEGER, type TEXT, reason TEXT,
                 actor_id INTEGER, created_at INTEGER
             );
-            CREATE TABLE economy_meta (key TEXT, value TEXT);
+            CREATE TABLE economy_meta (key TEXT PRIMARY KEY, value TEXT);
             INSERT INTO raffle_tickets VALUES (24117, 7), (24117, 8);
             INSERT INTO economy_meta VALUES ('reward_24117', 'Prize'),
                                             ('winners_24117', '1');
@@ -53,6 +56,9 @@ class _Raffle(AchievementRaffleMixin):
     async def _set_meta(self, cursor, key, value):
         cursor.execute("INSERT OR REPLACE INTO economy_meta VALUES (?, ?)", (key, value))
 
+    async def _delete_meta(self, cursor, key):
+        cursor.execute("DELETE FROM economy_meta WHERE key = ?", (key,))
+
     async def _set_raffle_hub_state_internal(self, cursor, state, month_key):
         return None
 
@@ -63,6 +69,72 @@ class _Raffle(AchievementRaffleMixin):
 
 
 class RaffleDrawCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_draw_whose_announcement_fails_is_not_left_drawn(self):
+        members = {member_id: SimpleNamespace(id=member_id) for member_id in (7, 8)}
+        channel = SimpleNamespace(id=9, mention="<#9>", send=AsyncMock(
+            side_effect=discord.HTTPException(SimpleNamespace(status=500, reason="down"), "down")))
+        guild = SimpleNamespace(id=1, me=SimpleNamespace(id=5), get_member=members.get,
+                                get_channel_or_thread=lambda _: channel)
+        channel.guild = guild
+        channel.permissions_for = lambda _: SimpleNamespace(view_channel=True, send_messages=True)
+        workflow = _Raffle(guild)
+        context = SimpleNamespace(bot=SimpleNamespace(get_cog=lambda _: workflow), guild=guild,
+                                  member=SimpleNamespace(id=4),
+                                  source_message=SimpleNamespace(channel=channel))
+        count = "SELECT COUNT(*) FROM raffle_winners"
+        try:
+            with self.assertRaises(discord.HTTPException):
+                await run_raffle_draw(context, {})
+            self.assertEqual(workflow.connection.execute(count).fetchone()[0], 0)
+            self.assertEqual(workflow.connection.execute(
+                "SELECT COUNT(*) FROM coin_transactions WHERE type = 'raffle_win'").fetchone()[0], 0)
+            self.assertIsNone(workflow.connection.execute(
+                "SELECT value FROM economy_meta WHERE key = 'last_winner_month'").fetchone())
+            workflow.update_raffle_hub_message.assert_not_awaited()
+            channel.send.side_effect = None
+            await run_raffle_draw(context, {})
+            self.assertEqual(workflow.connection.execute(count).fetchone()[0], 1)
+            self.assertIn("Congratulations", channel.send.await_args.args[0])
+        finally:
+            workflow.connection.close()
+
+    async def test_a_reroll_whose_announcement_fails_keeps_the_announced_winners(self):
+        members = {member_id: SimpleNamespace(id=member_id) for member_id in (7, 8)}
+        channel = SimpleNamespace(id=9, mention="<#9>", send=AsyncMock())
+        guild = SimpleNamespace(id=1, me=SimpleNamespace(id=5), get_member=members.get,
+                                get_channel_or_thread=lambda _: channel)
+        channel.guild = guild
+        channel.permissions_for = lambda _: SimpleNamespace(view_channel=True, send_messages=True)
+        workflow = _Raffle(guild)
+        context = SimpleNamespace(bot=SimpleNamespace(get_cog=lambda _: workflow), guild=guild,
+                                  member=SimpleNamespace(id=4),
+                                  source_message=SimpleNamespace(channel=channel))
+
+        def saved():
+            return [workflow.connection.execute(query).fetchall() for query in (
+                "SELECT * FROM raffle_winners ORDER BY id",
+                "SELECT rowid, * FROM coin_transactions ORDER BY rowid",
+                "SELECT * FROM economy_meta ORDER BY key",
+            )]
+
+        try:
+            await run_raffle_draw(context, {})
+            announced = saved()
+            self.assertEqual(len(announced[0]), 1)
+            reroll_posts = channel.send.await_count
+            hub_updates = workflow.update_raffle_hub_message.await_count
+            channel.send.side_effect = discord.HTTPException(
+                SimpleNamespace(status=500, reason="down"), "down")
+            with self.assertRaises(discord.HTTPException):
+                await run_raffle_reroll(context, {})
+            self.assertEqual(saved(), announced)
+            self.assertEqual(workflow.update_raffle_hub_message.await_count, hub_updates)
+            channel.send.side_effect = None
+            await run_raffle_reroll(context, {})
+            self.assertEqual(channel.send.await_count, reroll_posts + 2)
+        finally:
+            workflow.connection.close()
+
     async def test_draw_and_reroll_preview_and_post_through_feature(self):
         actor = SimpleNamespace(id=4)
         bot_member = SimpleNamespace(id=5)
