@@ -46,6 +46,13 @@ from .queries import RoleConnectionQueries, invalid_connection_indexes
 LOGGER = logging.getLogger(__name__)
 
 
+def _log_role_change_failure(member: discord.Member, role: discord.Role, add: bool, exc: Exception) -> None:
+    LOGGER.warning(
+        "Could not %s role %s for member %s: %s",
+        "add" if add else "remove", role.id, member.id, exc,
+    )
+
+
 class RoleConnections(commands.Cog):
     def __init__(self, bot: commands.Bot, *, initial_state=None):
         self.bot = bot
@@ -238,7 +245,8 @@ class RoleConnections(commands.Cog):
                 await member.add_roles(role, reason="Apply role connections")
             else:
                 await member.remove_roles(role, reason="Apply role connections")
-        except (discord.Forbidden, discord.HTTPException):
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            _log_role_change_failure(member, role, add, exc)
             return False
         return True
 
@@ -276,8 +284,8 @@ class RoleConnections(commands.Cog):
                 elif not should_have and has_role:
                     await member.remove_roles(role, reason=reason)
                     removed += 1
-            except (discord.Forbidden, discord.HTTPException):
-                continue
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                _log_role_change_failure(member, role, should_have, exc)
         return added, removed
 
     async def post_connections_message(self, channel: discord.TextChannel) -> discord.Message:

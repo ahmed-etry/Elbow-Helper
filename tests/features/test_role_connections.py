@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import discord
+
 from elbow_helper.features.role_connections.builder import ConditionBuilderView
 from elbow_helper.features.role_connections.config import PERSISTENCE_ERROR_MESSAGE
 from elbow_helper.features.role_connections.cog import RoleConnections
@@ -106,6 +108,30 @@ class RoleConnectionValidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((added, removed), (0, 0))
         member.add_roles.assert_not_awaited()
         member.remove_roles.assert_not_awaited()
+
+
+class RoleChangeFailureTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_role_that_cannot_be_changed_is_logged(self) -> None:
+        refused = discord.Forbidden(MagicMock(status=403), "Missing Permissions")
+        role = SimpleNamespace(id=10)
+        member = SimpleNamespace(
+            id=77, roles=[],
+            guild=SimpleNamespace(get_role=MagicMock(return_value=role)),
+            add_roles=AsyncMock(side_effect=refused),
+            remove_roles=AsyncMock(side_effect=refused),
+        )
+        cog = object.__new__(RoleConnections)
+        cog.state = {"connections": [_connection("a", 10)]}
+        logger = "elbow_helper.features.role_connections.cog"
+
+        with self.assertLogs(logger, level="WARNING") as logged:
+            self.assertFalse(await cog.apply_role_connection_change(member, role, add=True))
+        self.assertIn("Could not add role 10 for member 77", logged.output[0])
+
+        with self.assertLogs(logger, level="WARNING") as logged:
+            added, removed = await cog._apply_connections_to_member(member, reason="test")
+        self.assertEqual((added, removed), (0, 0))
+        self.assertIn("Could not add role 10 for member 77", logged.output[0])
 
 
 class RoleConnectionPersistenceTests(unittest.IsolatedAsyncioTestCase):
