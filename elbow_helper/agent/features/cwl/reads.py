@@ -9,8 +9,12 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.safety.access import accessible_message_channel, require_evidence_access
 from elbow_helper.agent.engine.models import AgentRequestContext, RegisteredAgentTool
+from elbow_helper.agent.plan.input_rules import RULES
 from elbow_helper.agent.reads.cwl import cwl_scoring_tools, read_cwl_performance, read_cwl_performance_report
 
+
+# A season was read and history_limit silently dropped when both were given.
+PERFORMANCE_RULES = [{"only_one": ["season", "history_limit"], "error": "Choose season or history_limit, not both."}]
 
 USAGE_NOTES = {
     "read_cwl_performance": (
@@ -55,7 +59,8 @@ def cwl_tools() -> tuple[RegisteredAgentTool, ...]:
     return tuple(RegisteredAgentTool(AgentToolDefinition(
         name=name, description=description,
         parameters={"type": "object", "properties": properties,
-                    "required": list(required), "additionalProperties": False},
+                    "required": list(required), "additionalProperties": False,
+                    **({RULES: PERFORMANCE_RULES} if name == "read_cwl_performance" else {})},
         usage_note=USAGE_NOTES.get(name, ""),
     ), handler,
         contract=TOOL_CONTRACTS[name],

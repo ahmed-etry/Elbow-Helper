@@ -6,6 +6,7 @@ from elbow_helper.features.cwl.results import CwlResults
 from elbow_helper.agent.reads.snapshots import family_tool, IDS, TAGS, DATE
 from elbow_helper.agent.reads.clash import read_clash
 from elbow_helper.agent.reads.cache import stored_read
+from .signups import LEAGUE_MONTHS_ONLY, WAR_SELECTORS as ROSTER_WAR_SELECTORS, cwl_rosters
 from .wars import participation_totals, current_war, period, selected_wars, single_selection, war_participation
 from .war_attacks import war_attacks
 from .war_measures import clan_participation, participation_status
@@ -42,13 +43,21 @@ ATTACK_RULES = (*PARTICIPATION_RULES,
 CWL_RULES = (*WINDOW_RULES,
     {'when': {'metric': ['ass', 'bonus']}, 'forbids': ['history_limit'],
      'error': 'ASS and bonus do not support history_limit. Use season (YYYY-MM) for one season, including the running one, season_keys for several seasons, or war_ids, latest_completed or after/before for part of a season.'},
-    {'when': {'metric': ['ass', 'bonus', 'participation']}, 'only_one': [*WAR_SELECTORS, 'history_limit'],
-     'error': ONE_SELECTION},
+    *({'when': {'metric': ['ass', 'bonus', 'participation']},
+       'only_one': [*rule['only_one'], 'history_limit'], 'error': ONE_SELECTION} for rule in SELECTION_RULES),
+    # Performance is the default metric, so an absent metric is checked too. A season may be
+    # narrowed to its newest finished wars with latest_completed; every other pair conflicts.
+    {'when': {'metric': ['performance', None]}, 'error': ONE_SELECTION,
+     'only_one': ['season', 'season_keys', 'war_ids', 'after', 'history_limit']},
+    {'when': {'metric': ['performance', None]}, 'error': ONE_SELECTION,
+     'only_one': ['latest_completed', 'season_keys', 'war_ids', 'after', 'history_limit']},
+    {'when': {'delivery': [None, 'text', 'csv']}, 'forbids': ['sheet_by'],
+     'error': 'sheet_by applies only with delivery=xlsx.'},
     {'when': {'metric': ['ass', 'bonus']}, 'needs': ['clan_codes'], 'error': 'Which clan should I score?'},
     {'when': {'metric': ['ass', 'bonus']}, 'within': {'clan_codes': list(CWL_CLAN_CODES)},
      'error': 'Not CWL clans: {values}.'},
-    {'when': {'metric': ['signup_pool', 'assigned_rosters']}, 'forbids': HISTORICAL,
-     'error': 'Current roster cycles do not support historical selectors.'},
+    {'when': {'metric': ['signup_pool', 'assigned_rosters']}, 'forbids': list(ROSTER_WAR_SELECTORS),
+     'error': LEAGUE_MONTHS_ONLY},
     {'when': {'metric': ['mega_ass']}, 'forbids': ['season_keys'],
      'error': 'Choose the MEGA ASS history depth rather than separate season scores.'},
     {'when': {'metric': ['mega_ass', 'league']}, 'forbids': ['after', 'before', 'war_ids', 'latest_completed'],
@@ -76,7 +85,6 @@ async def cwl_results(context, arguments):
     if arguments.get('after') and not arguments.get('before'):
         arguments = {**arguments, 'before': context.source_message.created_at.isoformat()}
     if metric in ('signup_pool', 'assigned_rosters'):
-        from .signups import cwl_rosters
         return await cwl_rosters(context, arguments)
     if metric == 'league':
         return await cwl_leagues(context, arguments)
@@ -103,7 +111,7 @@ async def cwl_results(context, arguments):
 async def cwl_leagues(context, arguments):
     codes = arguments.get('clan_codes', [])
     league_rows = await current_leagues(context, codes or list(CLANS))
-    if not any(arguments.get(key) for key in ('season', 'season_keys', 'after', 'before', 'war_ids', 'latest_completed')):
+    if not any(arguments.get(key) for key in ('season', 'season_keys', 'history_limit', 'after', 'before', 'war_ids', 'latest_completed')):
         return {'rows': league_rows, 'current_clan_leagues': league_rows, 'metric': 'league',
                 'coverage': 'Current clan profile league labels; participation is not inferred.'}
     if context.cwl_queries is None:
@@ -136,15 +144,16 @@ TOOLS = (
       'cohort_ref': {'type': 'string', 'minLength': 1, 'maxLength': 32}}, war_attacks, required=('war_type',),
      rules=ATTACK_RULES,
      usage_note='Select the period as for read_war_participation.', whole=True),
- family_tool('read_cwl_results', 'Read current CWL signup/assigned rosters, season results, ASS, bonus and clan leagues.',
+ family_tool('read_cwl_results', 'Read CWL signup/assigned rosters, season results, ASS, bonus and clan leagues.',
      {**SELECTION, 'metric': {'type': 'string', 'enum': ['signup_pool', 'assigned_rosters', 'performance', 'participation', 'ass', 'mega_ass', 'bonus', 'league'],
-                           'description': 'Use league without a historical selector for current clan CWL league labels. The participation metric is CWL participation and defaults to the latest completed season; performance defaults to three seasons.'},
+       'description': 'Use league without a historical selector for current clan CWL league labels. The participation metric is CWL participation and defaults to the latest completed season; performance defaults to three seasons.'},
       'top_n': {'type': 'integer', 'minimum': 1, 'maximum': 500},
       'history_limit': {'type': 'integer', 'minimum': 1, 'maximum': 12,
-                        'description': 'Recent completed seasons for participation, performance or MEGA ASS. Counts seasons, not wars. Use alone without another period selector.'}, 'account_tags': TAGS,
+                        'description': 'Recent completed seasons for participation, performance, MEGA ASS or league. Counts seasons, not wars. Use alone without another period selector.'}, 'account_tags': TAGS,
       'sheet_by': {'type': 'string', 'enum': ['clan_code']},
       'cohort_ref':{'type':'string','minLength':1,'maxLength':32}}, cwl_results, rules=CWL_RULES,
-     usage_note='history_limit counts seasons; latest_completed counts wars. ASS/bonus accept multiple clan_codes; latest per clan. For a tab per clan: sheet_by=clan_code.'),
+     usage_note='history_limit: seasons; latest_completed: wars. ASS/bonus: multiple clans, latest per clan; ASS projects to seven attacks. Clan tabs: sheet_by=clan_code.',
+     whole=True),
  family_tool('read_current_war', 'Read current war state and unused attacks for family clans.',
      {'clan_codes': CLANS_INPUT, 'account_tags': TAGS,
       'include_roster': {'type': 'boolean'}, 'include_attacks': {'type': 'boolean'}}, current_war, whole=True),

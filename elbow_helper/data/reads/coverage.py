@@ -144,7 +144,6 @@ def war_signal(connection, kind, scope, at):
     key = ("war_source", kind, scope, at)
     if key in cache:
         return cache[key]
-    cadence = WAR_CADENCES[kind]
     state = connection.execute("SELECT * FROM war_collection_state WHERE source_kind=? AND scope_id=?",
                                (kind, scope)).fetchone()
     failures = [{"at": row["fetched_at"] or row["started_at"], "status": row["error_code"] or row["status"],
@@ -152,6 +151,45 @@ def war_signal(connection, kind, scope, at):
         "SELECT * FROM collection_items WHERE source_kind=? AND scope_id=? AND status='failed' "
         "AND COALESCE(fetched_at,started_at)<=? ORDER BY COALESCE(fetched_at,started_at) DESC,id DESC LIMIT ?",
         (kind, scope, at, MAX_PAGE + 1))][::-1]
+    result = war_source_status(kind, scope, at, state, failures)
+    if kind == "war_log":
+        checkpoint = json.loads(state["checkpoint_json"]) if state else {}
+        result["log_limits"] = {"history_complete": bool(checkpoint.get("history_complete")),
+                                "api_history_limit": bool(checkpoint.get("api_history_limit")),
+                                "backfill_pending": "after" in checkpoint}
+    if kind in {"current_war", "war_log"}:
+        conflicts = war_conflicts(connection, scope)
+        result["identity_conflicts"] = conflicts[:MAX_PAGE]
+        result["truncated"] |= len(conflicts) > MAX_PAGE
+    cache[key] = result
+    return result
+
+
+def cwl_signals(connection, clans, war_tags, at):
+    """Read league source states and bounded failure histories as sets."""
+    requested = [("cwl_group", clan) for clan in clans] + [("cwl_war", tag) for tag in war_tags]
+    keys = json.dumps(requested)
+    states = {(row["source_kind"], row["scope_id"]): row for row in connection.execute(
+        "SELECT s.* FROM war_collection_state s JOIN json_each(?) k "
+        "ON s.source_kind=json_extract(k.value,'$[0]') AND s.scope_id=json_extract(k.value,'$[1]')", (keys,))}
+    failures = {}
+    for row in connection.execute(
+            "SELECT * FROM (SELECT i.*,ROW_NUMBER() OVER (PARTITION BY source_kind,scope_id "
+            "ORDER BY COALESCE(fetched_at,started_at) DESC,i.id DESC) AS position "
+            "FROM collection_items i JOIN json_each(?) k ON i.source_kind=json_extract(k.value,'$[0]') "
+            "AND i.scope_id=json_extract(k.value,'$[1]') WHERE status='failed' "
+            "AND COALESCE(fetched_at,started_at)<=?) WHERE position<=? "
+            "ORDER BY source_kind,scope_id,position DESC", (keys, at, MAX_PAGE + 1)):
+        failures.setdefault((row["source_kind"], row["scope_id"]), []).append({
+            "at": row["fetched_at"] or row["started_at"], "status": row["error_code"] or row["status"],
+            "http_status": row["http_status"]})
+    return {(kind, scope): war_source_status(kind, scope, at, states.get((kind, scope)),
+                                            failures.get((kind, scope), [])) for kind, scope in requested}
+
+
+def war_source_status(kind, scope, at, state, failures):
+    """Describe already-read source evidence, shared by single and set reads."""
+    cadence = WAR_CADENCES[kind]
     attempted = state is not None and state["last_attempt_at"] is not None
     last_good, outcome = (state["last_success_at"], state["last_outcome"]) if attempted else (None, None)
     # A source the collector stopped visiting stays due; a failing one moves on.
@@ -168,16 +206,6 @@ def war_signal(connection, kind, scope, at):
               "gaps": [{"after": state["next_due_at"] + cadence, "before": at, "cause": "overdue"}] if overdue else [],
               "failures": failures[-MAX_PAGE:], "cadence_us": cadence, "truncated": len(failures) > MAX_PAGE,
               "privacy_redacted": False, "continuous_state_known": False, "scope_basis": "war_source_status"}
-    if kind == "war_log":
-        checkpoint = json.loads(state["checkpoint_json"]) if state else {}
-        result["log_limits"] = {"history_complete": bool(checkpoint.get("history_complete")),
-                                "api_history_limit": bool(checkpoint.get("api_history_limit")),
-                                "backfill_pending": "after" in checkpoint}
-    if kind in {"current_war", "war_log"}:
-        conflicts = war_conflicts(connection, scope)
-        result["identity_conflicts"] = conflicts[:MAX_PAGE]
-        result["truncated"] |= len(conflicts) > MAX_PAGE
-    cache[key] = result
     return result
 
 

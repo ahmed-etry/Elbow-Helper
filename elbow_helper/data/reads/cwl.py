@@ -7,9 +7,10 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.persistence.revisions import sqlite_revision
 
 from ..store.api_fields import unpack
+from ..store.war_completeness import war_side_coverages
 from .core import MAX_SELECTORS, RecordReads, placeholders, tags, timestamp
-from .coverage import envelope, war_side_coverage, war_signal
-from .wars import clan_tags, cwl_round_known, member_rows, war_view
+from .coverage import cwl_signals, envelope, war_signal
+from .wars import clan_tags, cwl_round_known, final_participation, participation_rows, war_view
 
 LEAGUE_PATH = "/warLeague/name"
 STATES = ("preparation", "inWar", "warEnded")
@@ -50,7 +51,7 @@ class CwlReads(RecordReads):
 
     # League weeks ------------------------------------------------------------------------------
 
-    async def weeks(self, clans, *, seasons=None, war_tags=None, ended=True, details=True, as_of=None):
+    async def weeks(self, clans, *, seasons=None, war_tags=None, ended=True, details=True, as_of=None, player_tags=None):
         """The clans' league weeks, oldest first, each with its wars in round order.
 
         ``seasons`` keeps weeks with these stored season keys; ``war_tags`` keeps
@@ -58,11 +59,16 @@ class CwlReads(RecordReads):
         without one is left out. ``details`` adds stored members, attacks and participation.
         """
         selected = None if war_tags is None else set(tags(war_tags))
+        subject = None if player_tags is None else tuple(normalize_player_tag(tag) for tag in player_tags)
+        if subject is not None and None in subject:
+            raise ValueError('Invalid Clash tag')
         return await self._read(self._weeks, clan_tags(clans), None if seasons is None else set(seasons),
-                                selected, bool(ended), bool(details), timestamp(as_of))
+                                selected, bool(ended), bool(details), timestamp(as_of), subject)
 
-    def _weeks(self, connection, clans, seasons, selected, ended, details, at):
+    def _weeks(self, connection, clans, seasons, selected, ended, details, at, player_tags):
         weeks = {}
+        season_where = "" if seasons is None else " AND s.season_key IN (SELECT value FROM json_each(?))"
+        args = (*clans, at) if seasons is None else (*clans, at, json.dumps(sorted(seasons)))
         for row in connection.execute(
                 "SELECT s.id AS season_id,s.season_key,s.league_name,s.final_at AS season_final_at,"
                 "s.group_metadata_json,src.clan_tag AS family_tag,r.round_no,w.id AS record_id,w.war_tag,w.state,"
@@ -74,8 +80,25 @@ class CwlReads(RecordReads):
                 "JOIN war_sides o ON o.war_id=w.id AND o.clan_tag=src.clan_tag "
                 "JOIN war_sides x ON x.war_id=w.id AND x.side!=o.side "
                 f"WHERE src.clan_tag IN ({placeholders(clans)}) AND w.type='CWL' AND w.first_seen_at<=? "
-                "ORDER BY s.id,src.clan_tag,r.round_no,w.end_at,w.war_tag", (*clans, at)):
+                f"{season_where} "
+                "AND (? IS NULL OR EXISTS (SELECT 1 FROM war_members m WHERE m.war_id=w.id AND m.side=o.side "
+                "AND m.player_tag IN (SELECT value FROM json_each(?)))) "
+                "ORDER BY s.id,src.clan_tag,r.round_no,w.end_at,w.war_tag",
+                (*args, None if player_tags is None else json.dumps(player_tags), json.dumps(player_tags))):
             weeks.setdefault((row["season_id"], row["family_tag"]), []).append(row)
+        refs = list(connection.execute(
+            "SELECT s.id AS season_id,s.season_key,src.clan_tag,r.round_no,r.war_tag,w.id AS war_id,w.first_seen_at,"
+            "o.war_id AS own_war_id FROM cwl_season_sources src JOIN cwl_seasons s ON s.id=src.season_id "
+            "JOIN cwl_rounds r ON r.season_id=s.id LEFT JOIN wars w ON w.war_tag=r.war_tag "
+            "LEFT JOIN war_sides o ON o.war_id=w.id AND o.clan_tag=src.clan_tag "
+            f"WHERE src.clan_tag IN ({placeholders(clans)}){season_where}",
+            clans if seasons is None else (*clans, json.dumps(sorted(seasons)))))
+        sources = cwl_signals(connection, clans, sorted({ref["war_tag"] for ref in refs}), at)
+        coverages = war_side_coverages(connection, {
+            row["record_id"] for rows in weeks.values() for row in rows
+            if (not ended or row["state"] == "warEnded") and (selected is None or row["war_tag"] in selected)})
+        known_rounds = {(ref["season_id"], ref["round_no"], ref["clan_tag"]) for ref in refs
+                        if ref["own_war_id"] is not None and ref["first_seen_at"] <= at}
         result = []
         for (season_id, clan), rows in weeks.items():
             first = rows[0]
@@ -96,31 +119,25 @@ class CwlReads(RecordReads):
                 continue
             wars = [dict(row) for row in kept]
             for war in wars:
-                war["coverage"] = war_side_coverage(connection, war["record_id"], clan)
-                war["source_coverage"] = envelope([war_signal(connection, "cwl_war", war["war_tag"], at)], at=at)
+                war["coverage"] = coverages[war["record_id"], clan]
+                war["source_coverage"] = envelope([sources["cwl_war", war["war_tag"]]], at=at)
             if details:
                 self._details(connection, wars, clan)
             result.append({"season_id": season_id, "season_key": key, "label": label, "league_name": league,
                            "clan_tag": clan, "final": first["season_final_at"] is not None,
                            "legacy": bool(legacy), "rounds": len({row["round_no"] for row in rows}), "wars": wars})
         result.sort(key=lambda week: (max(war["end_at"] for war in week["wars"]), week["clan_tag"], week["season_key"]))
-        signals = [war_signal(connection, "cwl_group", clan, at) for clan in clans]
+        signals = [sources["cwl_group", clan] for clan in clans]
         missing = []
-        for ref in connection.execute(
-                "SELECT s.id AS season_id,s.season_key,src.clan_tag,r.round_no,r.war_tag,w.id AS war_id,w.first_seen_at,"
-                "o.war_id AS own_war_id "
-                "FROM cwl_season_sources src JOIN cwl_seasons s ON s.id=src.season_id "
-                "JOIN cwl_rounds r ON r.season_id=s.id LEFT JOIN wars w ON w.war_tag=r.war_tag "
-                "LEFT JOIN war_sides o ON o.war_id=w.id AND o.clan_tag=src.clan_tag "
-                f"WHERE src.clan_tag IN ({placeholders(clans)})", clans):
+        for ref in refs:
             if seasons is not None and ref["season_key"] not in seasons or selected is not None and ref["war_tag"] not in selected:
                 continue
-            source = war_signal(connection, "cwl_war", ref["war_tag"], at)
+            source = sources["cwl_war", ref["war_tag"]]
             if source["observed"].get("unrelated"):
                 continue
             if ref["war_id"] is not None and ref["first_seen_at"] <= at and ref["own_war_id"] is None:
                 continue
-            if ref["own_war_id"] is None and cwl_round_known(connection, ref["season_id"], ref["round_no"], ref["clan_tag"], at):
+            if ref["own_war_id"] is None and (ref["season_id"], ref["round_no"], ref["clan_tag"]) in known_rounds:
                 continue
             signals.append(source)
             if ref["war_id"] is None or ref["first_seen_at"] > at:
@@ -152,12 +169,76 @@ class CwlReads(RecordReads):
                 "SELECT * FROM war_attacks WHERE war_id IN (SELECT value FROM json_each(?)) "
                 "AND COALESCE(json_extract(extra_json,'$.stub'),0)=0 ORDER BY war_id,attack_order", (ids,)):
             attacks[attack["war_id"]].append(dict(attack))
+        measured = defaultdict(list)
+        for rows in attacks.values():
+            for attack in rows:
+                measured[attack["attacker_member_id"]].append(attack)
         for war in wars:
             war["members"] = members[war["record_id"]]
             war["attacks"] = attacks[war["record_id"]]
-            war["participation"] = member_rows(
-                connection, {"id": war["record_id"], "type": "CWL", "state": war["state"], "end_at": war["end_at"]},
-                clan, war["coverage"])
+            lineup = []
+            for member in war["members"]:
+                if member["side"] != war["own_side"]:
+                    continue
+                hits = measured[member["id"]]
+                lineup.append({**member, "measured": len(hits),
+                               "stars": sum(hit["stars"] or 0 for hit in hits),
+                               "triples": sum(hit["stars"] == 3 for hit in hits),
+                               "destruction": sum(hit["destruction"] or 0 for hit in hits)})
+            war["participation"] = participation_rows(
+                {"id": war["record_id"], "type": "CWL", "state": war["state"], "end_at": war["end_at"]},
+                clan, war["coverage"], sorted(lineup, key=lambda row: row["player_tag"]), war["own_extra"])
+
+    async def selected_participation_rows(self, wars, *, player_tags=None):
+        """Selected accounts' participation, with whole-lineup evidence kept for each war."""
+        selected = None if player_tags is None else tags(player_tags)
+        return await self._read(self._selected_participation_rows, wars, selected)
+
+    @staticmethod
+    def _selected_participation_rows(connection, wars, selected):
+        keys = json.dumps([[war["id"], war["clan_tag"]] for war in wars])
+        facing = ("WITH facing AS (SELECT s.* FROM war_sides s JOIN json_each(?) k "
+                  "ON s.war_id=json_extract(k.value,'$[0]') AND s.clan_tag=json_extract(k.value,'$[1]')) ")
+        totals = {(row["war_id"], row["clan_tag"]): dict(row) for row in connection.execute(
+            facing + "SELECT s.war_id,s.clan_tag,s.extra_json,COUNT(m.id) AS members,"
+            "COALESCE(SUM(m.attacks_expected IS NULL OR m.attacks_used IS NULL),0) AS missing_counts,"
+            "COALESCE(SUM(m.attacks_used),0) AS used,"
+            "COALESCE(SUM(m.attacks_used<m.attacks_expected),0) AS unspent "
+            "FROM facing s LEFT JOIN war_members m ON m.war_id=s.war_id AND m.side=s.side "
+            "GROUP BY s.war_id,s.clan_tag", (keys,))}
+        args = (keys,) if selected is None else (keys, json.dumps(selected))
+        where = "" if selected is None else " WHERE m.player_tag IN (SELECT value FROM json_each(?))"
+        members = defaultdict(list)
+        for row in connection.execute(
+                facing + "SELECT m.*,s.clan_tag,COUNT(a.attack_order) AS measured,"
+                "COALESCE(SUM(CASE WHEN typeof(a.stars)='integer' AND a.stars BETWEEN 0 AND 3 THEN a.stars END),0) AS stars,"
+                "SUM(typeof(a.stars)='integer' AND a.stars BETWEEN 0 AND 3) AS stars_measured,"
+                "COALESCE(SUM(a.stars=3),0) AS triples,"
+                "COALESCE(SUM(CASE WHEN typeof(a.destruction) IN ('integer','real') "
+                "AND a.destruction BETWEEN 0 AND 100 THEN a.destruction END),0) AS destruction,"
+                "SUM(typeof(a.destruction) IN ('integer','real') AND a.destruction BETWEEN 0 AND 100) AS destruction_measured "
+                "FROM facing s JOIN war_members m ON m.war_id=s.war_id AND m.side=s.side "
+                "LEFT JOIN war_attacks a ON a.war_id=m.war_id AND (a.attacker_member_id=m.id OR "
+                "a.attacker_member_id IS NULL AND json_extract(a.extra_json,'$.attacker_tag')=m.player_tag) "
+                "AND COALESCE(json_extract(a.extra_json,'$.stub'),0)=0" + where +
+                " GROUP BY s.clan_tag,m.id ORDER BY m.player_tag", args):
+            members[row["war_id"], row["clan_tag"]].append(dict(row))
+        result = {}
+        for war in wars:
+            key = war["id"], war["clan_tag"]
+            total, lineup = totals[key], members[key]
+            rows = participation_rows(
+                {**war, "type": "CWL"},
+                key[1], war["coverage"], lineup, total["extra_json"], total)
+            for row, member in zip(rows, lineup):
+                row["performance"] = {"attacks": member["measured"], "stars": member["stars"],
+                    "stars_measured": member["stars_measured"], "triples": member["triples"],
+                    "destruction_total": member["destruction"], "destruction_measured": member["destruction_measured"]}
+            final = final_participation(war["state"], war["coverage"], total, total["extra_json"])
+            result[key] = {"rows": rows, "has_roster": bool(total["members"]),
+                           "unproven": bool(total["members"] and (total["missing_counts"] or
+                               war["state"] != "warEnded" or not final and total["unspent"]))}
+        return result
 
     # War IDs ------------------------------------------------------------------------------------
 

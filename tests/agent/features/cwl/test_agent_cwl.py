@@ -51,6 +51,7 @@ def _snapshot(count=30):
 
 class _Queries:
     result_snapshot = CwlQueries.result_snapshot
+    results = CwlQueries.results
 
     def __init__(self):
         self.snapshot = _snapshot()
@@ -137,15 +138,15 @@ class AgentCwlTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
 
     async def _ass_result_sheet_builds_workbook(self, *, wrapped):
         registry = build_agent_tools()
-        registry = {name: registry[name] for name in ("cwl_ass_scores", "prepare_spreadsheet")}
+        registry = {name: registry[name] for name in ("read_cwl_results", "prepare_spreadsheet")}
         plan = {
             "goal": "Synthetic season scores", "effort": "low", "output": "prepare_spreadsheet",
             "steps": [
-                {"id": "scores", "capability": "cwl_ass_scores", "depends_on": [],
-                 "arguments": {"clan_code": "BE1", "war_ids": ["CWL:#WAR"]}},
+                {"id": "scores", "capability": "read_cwl_results", "depends_on": [],
+                 "arguments": {"metric": "ass", "clan_codes": ["BE1"], "war_ids": ["CWL:#WAR"]}},
                 {"id": "workbook", "capability": "prepare_spreadsheet", "depends_on": ["scores"],
                  "arguments": {"title": "Synthetic season", "sheets": [{
-                     "name": "Scores", "rows_from": {"step": "scores", "path": ["players"]},
+                     "name": "Scores", "rows_from": {"step": "scores", "path": ["rows"]},
                      "columns": [{"field": "player_name", "heading": "Account"},
                                  {"field": "ass_score", "heading": "ASS"}],
                  }]}},
@@ -172,7 +173,7 @@ class AgentCwlTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
             self.assertEqual(answer, "Synthetic workbook ready")
             self.assertEqual(len(session.calls), 2)
             results = json.loads(session.calls[1][0][0].content)["results"]
-            player = results["scores"]["players"][0]
+            player = results["scores"]["rows"][0]
             self.assertTrue(results["workbook"]["attachment_prepared"])
             workbook = load_workbook(BytesIO(self.context.state.attachments[0].data))
             try:
@@ -206,7 +207,8 @@ class AgentCwlTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         self.context = replace(self.context, cwl_queries=queries)
         plan = {"goal": "Synthetic scores", "effort": "low", "output": "text", "steps": [{
             "id": "scores", "capability": capability, "depends_on": [],
-            "arguments": {"clan_code": "BEH", "war_ids": war_ids},
+            "arguments": ({"metric": "ass", "clan_codes": ["BEH"], "war_ids": war_ids}
+                          if capability == "read_cwl_results" else {"clan_code": "BEH", "war_ids": war_ids}),
         }]}
         session = _Session([
             _model_step(plan), AgentStep("Synthetic scores ready", (), AgentUsage()),
@@ -220,12 +222,14 @@ class AgentCwlTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer, "Synthetic scores ready")
         record = json.loads(self.context.state.evidence[0])
         payload = json.loads(record["result"])
-        self.assertEqual(next(iter(payload)), row_field)
+        if capability != "read_cwl_results":
+            self.assertEqual(next(iter(payload)), row_field)
         self.assertEqual(payload["completed_wars"], 56)
         self.assertEqual(set(payload["resolved_war_ids"]), set(war_ids))
         self.assertEqual(len(payload[row_field]), 30)
-        self.assertEqual(len(payload["attack_sample"]), 56 * 30)
-        self.assertTrue(all(row["attacks" if row_field == "players" else "attack_count"] == 56
+        if capability != "read_cwl_results":
+            self.assertEqual(len(payload["attack_sample"]), 56 * 30)
+        self.assertTrue(all(row["attacks" if capability == "read_cwl_results" else "attack_count"] == 56
                             for row in payload[row_field]))
         view = model_view(payload)
         content = json.dumps(view, ensure_ascii=False, default=str, separators=(",", ":"))
@@ -234,21 +238,22 @@ class AgentCwlTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         bounded_view = json.loads(bounded)
         self.assertEqual(bounded_view[row_field], view[row_field])
         self.assertNotIn("result_excerpt", bounded_view)
-        self.assertLess(len(bounded_view["attack_sample"]["rows"]), 56 * 30)
         result = json.loads(session.calls[1][0][0].content)["results"]["scores"]
         self.assertEqual(result[row_field], bounded_view[row_field])
+        if capability == "read_cwl_results":
+            # The scores come back whole, not cut to make room for per-attack records.
+            self.assertNotIn("attack_sample", result)
+            self.assertEqual(content, bounded)
+            self.assertEqual(result["flags"]["status"], "complete")
+            self.assertFalse(result["flags"]["truncated"])
+            return
+        self.assertLess(len(bounded_view["attack_sample"]["rows"]), 56 * 30)
         self.assertEqual(result["flags"]["status"], "partial")
         self.assertTrue(result["flags"]["truncated"])
-        if capability == "cwl_ass_scores":
-            self.assertEqual(result["ranking"], payload["ranking"])
-            self.assertEqual(result["ranking"]["account_count"], 30)
-            self.assertTrue(result["ranking"]["complete"])
-            for player in payload["players"]:
-                self.assertIn(player["player_tag"], result["ranking"]["text"])
         self.assertFalse(record["result_complete"])
 
     async def test_ass_keeps_all_30_player_scores_when_56_wars_exceed_the_result_limit(self):
-        await self._assert_large_selection_keeps_scores("cwl_ass_scores", "players")
+        await self._assert_large_selection_keeps_scores("read_cwl_results", "rows")
 
     async def test_bonus_keeps_all_30_player_scores_when_56_wars_exceed_the_result_limit(self):
         await self._assert_large_selection_keeps_scores("cwl_bonus_scores", "rows")

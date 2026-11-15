@@ -55,7 +55,8 @@ class CwlResults:
             if (after is None) != (before is None) or after is not None and before <= after:
                 raise ValueError('Choose a complete date window with its end after its start.')
             if sum(bool(arguments.get(key)) for key in PERIOD_SETTINGS
-                   if key not in ('after', 'before')) + (after is not None) > 1:
+                   if key not in ('after', 'before')) + (after is not None) - bool(
+                       arguments.get('season') and arguments.get('latest_completed')) > 1:
                 raise ValueError('Choose one season selection, war selection or date window.')
             for season in arguments.get('season_keys', []) or ([arguments['season']] if arguments.get('season') else []):
                 if not isinstance(season, str) or re.fullmatch(SEASON_KEY, season) is None:
@@ -80,7 +81,9 @@ class CwlResults:
                 before_ts=int(before.timestamp()) if before else None,
                 season=arguments.get('season'), war_ids=arguments.get('war_ids', ()),
                 **{key: arguments[key] for key in ('season_keys', 'history_limit', 'latest_completed')
-                   if arguments.get(key)})
+                   if arguments.get(key)},
+                **({'player_tags': arguments['account_tags']} if arguments.get('account_tags')
+                   and arguments.get('latest_completed') else {}))
         except ValueError as error:
             return {'error': str(error), 'cause': 'invalid_arguments'}
         except (OSError, sqlite3.Error):
@@ -140,7 +143,9 @@ class CwlResults:
                         'clan_totals': [row for part in parts for row in part.get('clan_totals', [])],
                         'missing_sources': [row for part in parts for row in part.get('missing_sources', [])],
                         'participation_coverage': [part['participation_coverage'] for part in parts if 'participation_coverage' in part],
-                        'unobserved_accounts': sorted(set(arguments.get('account_tags', [])) - {row['player_tag'] for row in rows}),
+                        # League rows belong to clans, so no account goes unobserved in them.
+                        **({} if metric == 'league' else {'unobserved_accounts': sorted(
+                            set(arguments.get('account_tags', [])) - {row['player_tag'] for row in rows})}),
                         'coverage': [part.get('coverage') for part in parts], 'score_scope': 'separate season results'}
             if metric in ('ass', 'bonus'):
                 if len(clan) != 1:
@@ -166,17 +171,29 @@ class CwlResults:
             else:
                 if arguments.get('after') or arguments.get('before') or arguments.get('war_ids') or arguments.get('latest_completed'):
                     return {'error': 'Choose ASS or bonus for an explicit subset of wars.', 'cause': 'invalid_arguments'}
+                history_limit = arguments.get('history_limit', 3)
                 snapshot = self.snapshot('performance',
-                    history_limit=arguments.get('history_limit', 3), season=arguments.get('season'),
+                    history_limit=history_limit, season=arguments.get('season'),
                     clan_code=clan[0] if len(clan) == 1 else None)
                 data = asdict(snapshot)
                 rows = [row for row in data.pop('rows') if not clan or row['clan_code'] in clan]
                 season = arguments.get('season')
                 complete_groups = {(row['season'], row['clan_code']) for row in rows}
-                missing_clans = [code for code in clan or list(CLANS)
-                                 if season and (season, code) not in complete_groups]
-                if missing_clans:
-                    partial = self.selection({**arguments, 'clan_codes': missing_clans})
+                requested = {season: clan or list(CLANS)} if season else {}
+                default_account_history = (metric == 'performance' and arguments.get('account_tags')
+                    and not any(arguments.get(key) for key in PERIOD_SETTINGS))
+                if default_account_history:
+                    for code in clan or CWL_CLAN_CODES:
+                        if code not in CWL_CLAN_CODES:
+                            continue
+                        latest = self.queries.latest_season(clan_code=code)
+                        if latest is not None:
+                            requested.setdefault(latest, []).append(code)
+                for season, codes in requested.items():
+                    missing_clans = [code for code in codes if (season, code) not in complete_groups]
+                    if not missing_clans:
+                        continue
+                    partial = self.selection({**arguments, 'season': season, 'clan_codes': missing_clans})
                     data['missing_sources'] = list(data.get('missing_sources', []))
                     if 'error' not in partial:
                         data['seasons'] = tuple(dict.fromkeys((*data.get('seasons', ()), season)))
@@ -212,6 +229,8 @@ class CwlResults:
                         if not season_rows or any(row['score'] is None for row in season_rows):
                             data['missing_sources'].append({'source': 'CWL performance', 'clan_code': code,
                                 'season': season, 'cause': 'incomplete_season' if war_ids else 'missing_history'})
+                if default_account_history:
+                    data['seasons'] = tuple(sorted(data.get('seasons', ()), reverse=True))
                 if metric == 'mega_ass':
                     unique = {}
                     for row in rows:
@@ -220,6 +239,13 @@ class CwlResults:
                                  row.get('multi_season_rank') or 0, row['player_tag']))
             if arguments.get('sheet_by') == 'clan_code' and len(clan) == 1:
                 rows = [dict(row, clan_code=clan[0]) for row in rows]
+            if metric == 'league':
+                # The season league belongs to the clan, not to each account's scores.
+                leagues = [{key: row[key] for key in ('clan_code', 'season', 'league')}
+                           for row in data.get('clan_seasons', []) if not clan or row['clan_code'] in clan]
+                return {**{key: value for key, value in data.items() if key != 'clan_seasons'},
+                        'rows': leagues[:arguments['top_n']] if arguments.get('top_n') else leagues,
+                        'metric': metric, 'ranked_population': len(leagues)}
             full_count = len(rows)
             rows = [row for row in rows if not arguments.get('account_tags') or row['player_tag'] in arguments['account_tags']]
             unobserved = sorted(set(arguments.get('account_tags', [])) - {row['player_tag'] for row in rows})

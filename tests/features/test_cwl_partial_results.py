@@ -70,6 +70,18 @@ class CwlPartialResultsTests(unittest.IsolatedAsyncioTestCase):
         selected = await self.read(season=SEASON, account_tags=['#P0'])
         self.assertEqual(selected['missing_sources'], result['missing_sources'])
 
+    async def test_default_account_performance_includes_the_latest_unfinished_season(self):
+        await self.week(season='2026-10', finished=7)
+        await self.week(prefix='Q')
+        explicit = await self.read(season=SEASON, account_tags=['#P2'])
+        result = await asyncio.to_thread(self.queries.results, metric='performance', account_tags=['#P2'])
+        self.assertEqual(result['seasons'][0], SEASON)
+        self.assertEqual([row for row in result['rows'] if row['season'] == SEASON], explicit['rows'])
+        self.assertIsNotNone(result['rows'][0]['score'])
+        self.assertEqual(result['rows'][0]['scoring_status'], 'finished_wars_so_far')
+        summary = next(row for row in result['clan_seasons'] if row['season'] == SEASON)
+        self.assertFalse(summary['complete'])
+
     async def test_no_finished_wars_preserves_missing_history_without_scoring(self):
         await self.week(finished=0)
         with patch.object(self.queries, 'ass_wars', side_effect=AssertionError('No finished wars')):

@@ -164,7 +164,7 @@ def plain_member_row(item, data, family, selection):
     return item
 
 
-def family_model_view(payload):
+def family_model_view(payload, *, shared_rows=True):
     """Keep every selected identity and computed metric; full detail stays retained."""
     data = dict(payload)
     if 'row_rendering' in data:
@@ -328,6 +328,15 @@ def family_model_view(payload):
         data['wars'] = list(wars.values())
         data['rows'] = [omit(row, ATTACK_WAR_FIELDS) for row in rows]
     if family == 'read_cwl_results':
+        # State exact shared season/league/profile values once in every step view.
+        # Retained rows and exports keep their original fields.
+        if shared_rows and len(data['rows']) > 1:
+            shared = {key: data['rows'][0][key] for key in ('season', 'clan_code', 'league', 'profile_key')
+                      if key in data['rows'][0] and all(key in row and row[key] == data['rows'][0][key]
+                                                       for row in data['rows'][1:])}
+            if shared:
+                data['row_defaults'] = {**data.get('row_defaults', {}), **shared}
+                data['rows'] = [omit(row, shared) for row in data['rows']]
         # Retain computed full-selection analysis for final composition without
         # growing every transport page's fixed header with a second full table.
         for field in CWL_ANALYSIS_FIELDS:

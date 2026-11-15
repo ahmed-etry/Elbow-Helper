@@ -17,6 +17,7 @@ from elbow_helper.features.cwl.config import CWL_CLAN_NAMES
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.agent.reads import war_tools as war_reads
 from elbow_helper.agent.reads.war_tools import cwl_results
+from elbow_helper.agent.plan.input_rules import input_rule_issue
 from tests.agent.engine.test_agent_plan_flow import _context
 from tests.agent.reads.record_stub import with_record
 from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
@@ -82,6 +83,16 @@ class SeasonParticipationTests(unittest.IsolatedAsyncioTestCase):
         result = await cwl_results(self.context, {'metric': 'participation',
             'clan_codes': self.codes, 'history_limit': 2, 'latest_completed': 2})
         self.assertEqual(result['cause'], 'invalid_arguments')
+
+    async def test_latest_completed_wars_within_a_season(self):
+        arguments = {'clan_codes': self.codes[:1], 'season': '2025-03', 'war_type': 'CWL',
+                     'unit': 'account', 'latest_completed': 4}
+        tool = next(tool for tool in war_reads.TOOLS if tool.definition.name == 'read_war_participation')
+        self.assertEqual(input_rule_issue(arguments, tool.definition.parameters)[0], '')
+        result = await tool.handler(self.context, arguments)
+        self.assertNotIn('error', result)
+        self.assertEqual(set(result['war_ids']), {'CWL:#RP' + key for key in '9PYL'})
+        self.assertEqual(result['rows'][0]['attacks_expected'], 4)
 
 
     async def test_a_six_war_season_is_not_complete(self):

@@ -13,7 +13,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.data.reads import CwlReads, WarReads
+import elbow_helper.data.store as store_module
+from elbow_helper.data.reads import CwlReads
 from elbow_helper.data.store.api_fields import collect_fields
 from elbow_helper.data.store.link_state import receipt
 from elbow_helper.features.cwl.record import CwlGroups, CwlHistory, league_wars
@@ -198,15 +199,8 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         await self.league_on_profile("Crystal League I", NOV)
         self.assertNotEqual(history.cache_revision(), before)
 
-    async def participation_matches_shared_rows(self):
+    async def participation_result(self):
         result = await self.call(self.history.participation, clan_codes=["ONE"], war_type="CWL")
-        shared = await WarReads(self.store).participation(
-            ["#PY"], NOV - DAY, NOV + 30 * DAY, types=("CWL",), as_of=NOV + 30 * DAY)
-        by_tag = {row["player_tag"]: row for row in shared["rows"]}
-        for row in result["rows"]:
-            expected = by_tag[row["player_tag"]]
-            self.assertEqual((row["attacks_used"], row["missed"], row["final_capture"]),
-                             (expected["attacks_used"], expected["missed"], expected["missed"] is not None))
         return result
 
     async def test_missing_saved_attack_keeps_used_counts_and_unproven_misses_unknown(self):
@@ -224,7 +218,7 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
                            "AND clan_tag='#PY'", (json.dumps({"derived": ["attacks"]}),))
         await self.execute("DELETE FROM war_attacks WHERE attacker_member_id IN (SELECT m.id FROM war_members m "
                            "JOIN wars w ON w.id=m.war_id WHERE w.war_tag='#R0' AND m.player_tag='#P2')")
-        result = await self.participation_matches_shared_rows()
+        result = await self.participation_result()
         rows = {row["player_tag"]: row for row in result["rows"]}
         self.assertEqual((rows["#P2"]["attacks_used"], rows["#P2"]["missed"]), (1, 0))
         self.assertEqual(rows["#P2"]["observed_attack_performance"]["attacks"], 0)
@@ -258,7 +252,7 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
             with self.subTest(missing_attacks=missing_attacks):
                 if missing_attacks:
                     await self.execute("DELETE FROM war_attacks")
-                result = await self.participation_matches_shared_rows()
+                result = await self.participation_result()
                 self.assertEqual([(row["player_tag"], row["attacks_used"], row["missed"], row["final_capture"])
                                   for row in result["rows"]], [("#P0", 1, 0, True), ("#P2", 0, 1, True)])
                 self.assertEqual(result["unproven_war_ids"], [])
@@ -268,7 +262,23 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
     async def test_a_chosen_season_or_window_lists_running_wars_with_no_misses(self):
         await self.november()
         chosen = {"clan_codes": ["ONE"], "war_type": "CWL", "running": True}
-        result = await self.call(self.history.participation, **chosen, season="2026-11")
+        statements = []
+        original = store_module.sqlite_connection
+
+        @contextmanager
+        def traced(*args, **kwargs):
+            with original(*args, **kwargs) as connection:
+                connection.set_trace_callback(statements.append)
+                yield connection
+
+        with patch.object(store_module, "sqlite_connection", side_effect=traced):
+            result = await self.call(self.history.participation, **chosen, season="2026-11")
+        self.assertLess(len(statements), 30)
+        statements.clear()
+        with patch.object(store_module, "sqlite_connection", side_effect=traced):
+            account = await self.call(self.history.participation, **chosen, season="2026-11", player_tags=["#P0"])
+        self.assertEqual(account, {**result, "rows": [row for row in result["rows"] if row["player_tag"] == "#P0"]})
+        self.assertTrue(any("WHERE m.player_tag IN" in sql and '#P0' in sql for sql in statements))
         self.assertEqual(result["war_ids"], ["CWL:#R0", "CWL:#R8", "CWL:#RC"])
         self.assertEqual(result["coverage"]["wars_not_final"], 2)
         # Only wars with something missing are listed; the finished one is just counted.

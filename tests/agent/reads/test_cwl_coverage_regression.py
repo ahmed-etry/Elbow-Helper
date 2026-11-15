@@ -38,7 +38,8 @@ class CwlCoverageRegressionTests(unittest.IsolatedAsyncioTestCase):
                     self.assertNotIn('error', results.selection(arguments))
                     self.assertNotIn('error', results.read(arguments))
                     queries.latest_season.assert_not_called()
-                    conflicting = {'latest_completed': 1} if 'season' in period else {'season': '2026-10'}
+                    # season with latest_completed is one request; war_ids conflicts with every other period.
+                    conflicting = {'season': '2026-10'} if 'war_ids' in period else {'war_ids': ['other']}
                     self.assertEqual(results.validate_selection({**arguments, **conflicting})['cause'],
                                      'invalid_arguments')
 

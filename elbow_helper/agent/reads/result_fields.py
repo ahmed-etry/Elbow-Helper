@@ -50,6 +50,10 @@ RESULT_FIELDS['read_war_participation']['clan_participation'] = [{
        for status in ('warring', 'joined_without_attacking', 'unknown')}}]
 RESULT_FIELDS['read_cwl_results']['current_clan_leagues'] = [
     {**names('clan_code,status,observed_at,season_league,basis'), 'current_league': names('id,name')}]
+RESULT_FIELDS['read_cwl_results'].update(names(
+    'clan_code,seasons,resolved_war_ids,resolved_rounds,completed_wars,league,profile_key,profile_label,difficulty_weight,missed_mode,scoring_status,coverage_status'))
+RESULT_FIELDS['read_cwl_results']['rows'][0].update(names(
+    'townhall,wars,stars,average_destruction,average_target_position,average_target_distance,average_defensive_position,projected_stars,missed_stars,missed_adjustment,difficulty_adjustment'))
 RESULT_FIELDS['read_member_accounts']['rows'][0].update(names('nickname,war_stars,observed_at,donations'))
 RESULT_FIELDS['read_member_accounts'].update(
     history_reads={kind: names('read_ran,status,after,before,error,cause,coverage,history_coverage')
@@ -144,7 +148,7 @@ RESULT_FIELDS['read_member_accounts']['rows'][0]['activity'] = {
     for kind, family in (('regular_war', 'read_war_participation'), ('cwl', 'read_war_participation'),
                          ('ranked', 'read_ranked_activity'))}
 RESULT_FIELDS['read_cwl_results']['rows'][0].update(names('member_id,roster_id,cycle_id,townHallLevel,signed_up_ts'))
-RESULT_FIELDS['read_cwl_results']['rosters'] = [{**names('roster_id,name,clan_code,cycle_id,cycle_key,status,accounts'),
+RESULT_FIELDS['read_cwl_results']['rosters'] = [{**names('roster_id,name,clan_code,cycle_id,season,status,accounts'),
     'source_posts': [names('channel_id,message_id')]}]
 RESULT_FIELDS['read_recruitment_pipeline']['rows'][0].update(
     war_participation=RESULT_FIELDS['read_war_participation']['rows'][0],

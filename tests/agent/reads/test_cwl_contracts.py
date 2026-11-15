@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, patch
 
 from tests.agent.engine.test_agent_plan_flow import _context
 from elbow_helper.agent.features.cwl.reads import read_cwl_performance, read_cwl_performance_report
-from elbow_helper.agent.reads.cwl import cwl_ass_scores, cwl_bonus_scores
-from elbow_helper.agent.reads.war_tools import cwl_results
+from elbow_helper.agent.reads.cwl import cwl_bonus_scores
+from elbow_helper.agent.reads.war_tools import TOOLS, cwl_results
 from elbow_helper.agent.reads.identity_reads import seasonal_tags
 from elbow_helper.agent.reads.clash import read_clash
 from elbow_helper.agent.reads.cache import ReadCache
@@ -47,20 +47,19 @@ class CwlContracts(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.forbidden.assert_not_called()
 
-    async def test_rounds_one_to_seven_match_season_but_a_subset_keeps_its_sample(self):
+    async def test_rounds_one_to_seven_match_season_and_a_subset_scores_only_its_wars(self):
         season = await read_cwl_performance(self.context, {'season': '2026-08', 'clan_code': 'BEH'})
-        whole = await cwl_ass_scores(self.context, {'clan_code': 'BEH',
+        whole = await cwl_results(self.context, {'metric': 'ass', 'clan_codes': ['BEH'],
             'war_ids': [f'war-{day}' for day in range(1, 8)]})
-        part = await cwl_ass_scores(self.context, {'clan_code': 'BEH', 'war_ids': ['war-2', 'war-4']})
+        part = await cwl_results(self.context, {'metric': 'ass', 'clan_codes': ['BEH'], 'war_ids': ['war-2', 'war-4']})
         self.assertEqual(whole['resolved_rounds'], tuple(range(1, 8)))
-        self.assertEqual(whole['players'][0]['ass_score'], season['players'][0]['score'])
+        self.assertEqual(whole['rows'][0]['ass_score'], season['players'][0]['score'])
         self.assertEqual((whole['completed_wars'], part['completed_wars']), (7, 2))
-        self.assertEqual(part['players'][0]['projected_stars'], 21)
-        self.assertEqual(len(part['attack_sample']), 2)
+        self.assertEqual(part['rows'][0]['projected_stars'], 21)
 
     async def test_bonus_uses_the_same_wars_and_retains_its_distinct_settings_and_evidence(self):
         args = {'clan_code': 'BEH', 'war_ids': ['war-2', 'war-4']}
-        ass = await cwl_ass_scores(self.context, args)
+        ass = await cwl_results(self.context, {'metric': 'ass', 'clan_codes': ['BEH'], 'war_ids': args['war_ids']})
         bonus = await cwl_bonus_scores(self.context, args)
         self.assertEqual(ass['resolved_war_ids'], bonus['resolved_war_ids'])
         self.assertFalse(bonus['ass_distinction']['is_ass'])
@@ -83,11 +82,12 @@ class CwlContracts(unittest.IsolatedAsyncioTestCase):
     async def test_missing_setup_and_bad_score_ids_are_failures_not_empty_results(self):
         missing = replace(self.context, cwl_queries=None)
         for handler, arguments in ((read_cwl_performance, {}),
-                (cwl_ass_scores, {'clan_code': 'BEH', 'war_ids': ['missing']}),
+                (cwl_results, {'metric': 'ass', 'clan_codes': ['BEH'], 'war_ids': ['missing']}),
                 (cwl_bonus_scores, {'clan_code': 'BEH', 'war_ids': ['missing']})):
             self.assertIn('error', await handler(missing, arguments))
-        for handler in (cwl_ass_scores, cwl_bonus_scores):
-            result = await handler(self.context, {'clan_code': 'BEH', 'war_ids': ['missing']})
+        for handler, args in ((cwl_results, {'metric': 'ass', 'clan_codes': ['BEH']}),
+                              (cwl_bonus_scores, {'clan_code': 'BEH'})):
+            result = await handler(self.context, {**args, 'war_ids': ['missing']})
             self.assertIn('Unknown CWL war IDs', result['error'])
         self.queries._bonus_config = None
         self.assertIn('error', await cwl_bonus_scores(self.context,
@@ -140,13 +140,47 @@ class CollectedCwlContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum(row['selected_accounts'] for row in partial['selected_group_metrics']), 4)
         self.assertEqual(partial['missing_sources'], [])
 
+    async def test_season_league_returns_clan_leagues_without_account_performance(self):
+        from elbow_helper.agent.reads import war_tools
+        profile = {'items': [{'tag': CLANS['BEH'].tag, 'status': 'ok', 'data': {'warLeague': {'name': 'Synthetic league'}}}]}
+        with patch.object(war_tools, 'read_clash', AsyncMock(return_value=profile)):
+            result = await cwl_results(self.context, {'metric': 'league', 'clan_codes': ['BEH'],
+                                                      'season': '2026-08'})
+        self.assertEqual(result['rows'], [{'clan_code': 'BEH', 'season': '2026-08',
+                                          'league': 'Champion League II'}])
+        self.assertEqual(result['current_clan_leagues'][0]['current_league']['name'], 'Synthetic league')
+
+    async def test_league_over_season_keys_returns_clan_leagues(self):
+        # A recorded call asked one clan's leagues for listed seasons and the lookup failed.
+        from elbow_helper.agent.reads import war_tools
+        profile = {'items': [{'tag': CLANS['BEH'].tag, 'status': 'ok', 'data': {'warLeague': {'name': 'Synthetic league'}}}]}
+        with patch.object(war_tools, 'read_clash', AsyncMock(return_value=profile)):
+            result = await cwl_results(self.context, {'metric': 'league', 'clan_codes': ['BEH'],
+                                                      'season_keys': ['2026-08']})
+        self.assertEqual(result['rows'], [{'clan_code': 'BEH', 'season': '2026-08',
+                                          'league': 'Champion League II'}])
+
+    async def test_step_view_states_shared_season_league_and_profile_once_without_losing_rows(self):
+        from copy import deepcopy
+        from elbow_helper.agent.plan.results import model_view
+        from elbow_helper.agent.reads.evidence import record_rows
+        tool = next(tool for tool in TOOLS
+                    if tool.definition.name == 'read_cwl_results')
+        result = await tool.handler(self.context, {'clan_codes': ['BEH'], 'season': '2026-08'})
+        original = deepcopy(result['rows'])
+        view = model_view(result)
+        self.assertEqual(view['row_defaults'], {'season': '2026-08', 'clan_code': 'BEH',
+                                              'league': 'Champion League II', 'profile_key': original[0]['profile_key']})
+        restored = [{**view['row_defaults'], **row} for row in record_rows(view['rows'])]
+        self.assertEqual(restored, original)
+        self.assertEqual(result['rows'], original)
+
     async def test_each_score_surface_refuses_wrong_clan_unfinished_and_unknown_ids(self):
         for key, error in (('CWL:#CQ0', 'another clan'), ('CWL:#C8', 'Unfinished'), ('#UNKNOWN', 'Unknown')):
-            for metric, legacy in (('ass', cwl_ass_scores), ('bonus', cwl_bonus_scores)):
+            for metric in ('ass', 'bonus'):
                 with self.subTest(key=key, metric=metric):
                     typed = await cwl_results(self.context, {'metric': metric, 'clan_codes': ['BEH'],
                         'war_ids': [key]})
-                    old = await legacy(self.context, {'clan_code': 'BEH', 'war_ids': [key]})
                     self.assertIn(error, typed['error'])
                     self.assertEqual(typed['error'], old['error'])
 
@@ -170,11 +204,11 @@ class CollectedCwlContracts(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.queries._history, 'scoring_wars', side_effect=score):
             self.assertNotIn('error', await cwl_results(self.context,
                 {'metric': 'performance', 'clan_codes': ['BES'], 'season': '2026-08'}))
-            for metric, legacy in (('ass', cwl_ass_scores), ('bonus', cwl_bonus_scores)):
+            for metric in ('ass', 'bonus'):
                 self.assertNotIn('error', await cwl_results(self.context,
                     {'metric': metric, 'clan_codes': ['BEH'], 'war_ids': ['CWL:#CP0']}))
-                self.assertNotIn('error', await legacy(self.context,
-                    {'clan_code': 'BEH', 'war_ids': ['CWL:#CP0']}))
+            self.assertNotIn('error', await cwl_bonus_scores(self.context,
+                {'clan_code': 'BEH', 'war_ids': ['CWL:#CP0']}))
 
     async def test_record_corrections_invalidate_the_shared_result_before_top_n(self):
         queries = self.record.queries()

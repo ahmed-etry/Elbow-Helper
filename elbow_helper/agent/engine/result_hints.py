@@ -4,7 +4,7 @@ from elbow_helper.features.achievements.queries import AchievementProgressRow
 from elbow_helper.features.clan_reporting.queries import MissingElderRow
 from elbow_helper.features.clan_transfers.queries import PendingTransferRequest
 from elbow_helper.features.cwl.queries import (
-    CwlAssWarsSnapshot, CwlBonusWarsSnapshot, CwlClanSeasonSummary, CwlPerformanceRow,
+    CwlBonusWarsSnapshot, CwlClanSeasonSummary, CwlPerformanceRow,
     CwlThreadRegistration,
 )
 from elbow_helper.features.event_stats.queries import EventScheduleRow
@@ -190,13 +190,6 @@ REPORT_FIELDS = {
     "csv_import": CSV_REPORT, "xlsx_import": XLSX_REPORT, "text_import": TEXT_REPORT,
 }
 
-ASS = result_fields(CwlAssWarsSnapshot)
-ASS["players"] = ASS.pop("rows")
-ASS["ranking"] = names("account_count,complete,text")
-ASS["attack_sample"] = [names(
-    "war_id,player_tag,player_name,attack_order,defender_tag,defender_townhall,"
-    "defender_map_position,stars,destruction,clan_code"
-)]
 BONUS = result_fields(CwlBonusWarsSnapshot)
 BONUS["rows"] = BONUS.pop("summaries")
 BONUS["attack_sample"] = BONUS.pop("attacks")
@@ -322,7 +315,7 @@ RESULT_FIELDS = {
         **names("accessible_count,omitted_inaccessible_count"),
         "threads": [{**result_fields(CwlThreadRegistration), "url": ""}],
     },
-    "cwl_ass_scores": ASS, "cwl_bonus_scores": BONUS,
+    "cwl_bonus_scores": BONUS,
     "read_my_cwl_placement": names("text"), "read_my_cwl_channels": names("text"),
     "read_my_examiner_profile": {
         **names("panel_channel_id,registered,profile_complete"),
