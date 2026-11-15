@@ -92,13 +92,15 @@ def snapshot(source):
                 'basis': BASIS}}
 
 
-async def regular_wars(context, *, clan_codes, after_ts=None, before_ts=None, war_ids=(), latest_completed=None):
+async def regular_wars(context, *, clan_codes, after_ts=None, before_ts=None, war_ids=(), latest_completed=None,
+                       player_tags=None):
     """Project the shared selection without implementing a second selector."""
     source = await war_reads(context).regular_selection(
         [CLANS[code].tag for code in clan_codes],
         after=None if after_ts is None else after_ts * SECOND,
         before=None if before_ts is None else before_ts * SECOND,
-        war_ids=war_ids, latest_completed=latest_completed, as_of=read_core.now_us())
+        war_ids=war_ids, latest_completed=latest_completed, as_of=read_core.now_us(),
+        **({'player_tags': player_tags} if player_tags is not None else {}))
     return snapshot(source)
 
 

@@ -94,17 +94,19 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.record(payload, kind="cwl_war", scope=war_tag, at=ts(payload["endTime"]) * SECOND + 90 * SECOND)
 
     async def participation(self, arguments):
-        return await war_reads.participation(self.context, arguments)
+        return await war_reads.participation_totals(self.context, arguments)
 
     async def test_participation_counts_each_recorded_war_and_keeps_coverage(self):
         await self.both_wars()
-        arguments = {"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER}
+        arguments = {"war_type": "REG", "clan_codes": ["BEH"], "season": "2026-10"}
         new = await self.participation(arguments)
         wars = [old_id(war("warEnded")), old_id(later_war())]
         self.assertEqual(comparable(new), {"#P0": (wars, 2, 4, 2, 0, "warring", 6, 2, 2),
                                            "#P2": (wars, 2, 4, 2, 0, "warring", 6, 2, 2)})
         self.assertEqual(new["war_ids"], wars)
-        self.assertEqual((new["clan_totals"][0]["wars"], new["clan_totals"][0]["missed"]), (2, 4))
+        self.assertEqual(new["clan_totals"], [{"clan_code": "BEH", "season": "2026-10",
+            "wars": 2, "accounts": 2, "attacks_used": 4, "attacks_expected": 8,
+            "missed": 4, "totals_complete": True}])
         coverage = new["coverage"]
         self.assertEqual((coverage["source"], coverage["regular_wars_not_checked_for_friendly"],
                           coverage["friendly_wars_not_counted"], coverage["wars_not_final"]),
@@ -119,11 +121,11 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.both_wars()
         context = replace(self.context, bot=None)
         for kind in ("REG", "both"):
-            result = await war_reads.participation(context, {"war_type": kind, "clan_codes": ["BEH"], **OCTOBER})
+            result = await war_reads.participation_totals(context, {"war_type": kind, "clan_codes": ["BEH"], **OCTOBER})
             self.assertEqual(result["cause"], "missing_setup")
         self.assertEqual((await war_reads.current_war(context, {"clan_codes": ["BEH"]}))["cause"], "missing_setup")
         # League wars come through the CWL queries.
-        self.assertNotIn("error", await war_reads.participation(context, {"war_type": "CWL", "clan_codes": ["BEH"],
+        self.assertNotIn("error", await war_reads.participation_totals(context, {"war_type": "CWL", "clan_codes": ["BEH"],
                                                                        **OCTOBER}))
 
     async def test_known_zero_stays_zero_and_a_missing_lineup_leaves_it_unknown(self):
