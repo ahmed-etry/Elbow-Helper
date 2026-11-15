@@ -25,7 +25,10 @@ class AccountWriterCompletenessTests(unittest.IsolatedAsyncioTestCase):
             AsyncMock(return_value={'rows': rows, 'members': members}))
         page = await tool.handler(context, {'include_roles': True, 'include_profile': True, 'limit': 1})
         self.assertEqual(len(page['rows']), 1)
-        evidence = await cohort_writer_evidence(context, {'accounts': model_result(page)})
+        rest = await tool.handler(context, {'report_id': page['report_id'], 'cursor': page['next_cursor']})
+        evidence = await cohort_writer_evidence(context, {'accounts': model_result(page),
+                                                          'rest': model_result(rest)})
+        self.assertNotIn('rest', evidence)
         projected = answer_evidence(evidence, guild=context.guild)
         written = unpack(json.loads(bounded_answer_evidence(projected, 20_000)))['results']['accounts']
         self.assertEqual([r['player_tag'] for r in written['rows']], [r['player_tag'] for r in rows])

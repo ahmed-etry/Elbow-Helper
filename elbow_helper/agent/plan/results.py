@@ -17,7 +17,7 @@ LIMIT_FIELDS = frozenset({
 
 
 PAGING_FIELDS = frozenset({
-    "report_id", "offset", "limit", "cursor", "next_offset", "next_cursor", "flags",
+    "report_id", "offset", "limit", "view", "cursor", "next_offset", "next_cursor", "flags",
 })
 
 

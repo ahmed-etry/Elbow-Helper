@@ -98,21 +98,57 @@ def cohort_review_evidence(evidence, authorized):
     return projected
 
 
+def exported_whole(result):
+    """The step asked for the whole file, which holds every row; its manifest is the evidence."""
+    return (result.get('evidence_projection') == 'complete_requested_file'
+            and result.get('artifact_status') == 'complete' and not result.get('rows'))
+
+
+def requested_spans(context, evidence, snapshots):
+    """The rows each restored step asked for. Steps that page through one report share one copy:
+    overlapping or adjacent pages go to the first of those steps, the others map to None.
+    A continuation page is restored with its report even though its view repeats no summary."""
+    restored = {result.get('report_id') for result in evidence.values()
+                if isinstance(result, dict) and result.get('report_id') and delivered_whole(result, 'restore')}
+    pages = {}
+    for identity, result in evidence.items():
+        if (not isinstance(result, dict) or result.get('report_id') not in restored
+                or exported_whole(result)):
+            continue
+        identifier = result.get('report_id')
+        report = context.state.reports.get(identifier) or (snapshots or {}).get(identifier, (None,))[0]
+        rows = report.requested_rows(result) if isinstance(report, FamilyReport) else None
+        if rows is not None:
+            pages.setdefault(identifier, []).append((identity, *rows))
+    spans = {}
+    for steps in pages.values():
+        order = {identity: index for index, (identity, _, _) in enumerate(steps)}
+        merged = []
+        for identity, start, end in sorted(steps, key=lambda step: step[1:]):
+            if merged and start <= merged[-1][2]:
+                merged[-1][0].append(identity)
+                merged[-1][2] = max(merged[-1][2], end)
+            else:
+                merged.append([[identity], start, end])
+        for identities, start, end in merged:
+            first = min(identities, key=order.get)
+            spans.update({identity: (start, end) if identity == first else None for identity in identities})
+    return spans
+
+
 async def cohort_writer_evidence(context, evidence, *, snapshots=None):
-    """Restore complete authorized cohorts and their dependent measure tables."""
+    """Restore what each authorized step asked for, whole beyond the page shown between steps."""
     projected = dict(evidence)
     populations = {}
     roster_signatures = {}
+    spans = requested_spans(context, evidence, snapshots)
     for identity, result in evidence.items():
         if not isinstance(result, dict):
             continue
-        cohort = (result.get('family') == 'read_member_cohort'
-                  and result.get('basis') in ('clan_rosters', 'role_holders', 'joined_discord', 'selected'))
-        measures = result.get('family') in ('read_cwl_results', 'read_war_participation', 'read_ranked_activity')
+        cohort = result.get('family') == 'read_member_cohort'
         rosters = result.get('family') == 'read_clan_rosters'
         discussion = result.get('family') == 'read_conversation_evidence'
-        accounts = result.get('family') == 'read_member_accounts'
-        if not (cohort or measures or accounts or rosters or discussion or restorable_reference(result)):
+        if not delivered_whole(result, 'restore') and identity not in spans:
             continue
         identifier = result.get('report_id')
         report = context.state.reports.get(identifier)
@@ -130,13 +166,22 @@ async def cohort_writer_evidence(context, evidence, *, snapshots=None):
             projected[identity] = {'error': 'That cohort is no longer available here.',
                                    'cause': 'report_unavailable'}
             continue
-        count = report.manifest()['total_rows']
-        if (result.get('evidence_projection') == 'complete_requested_file'
-                and result.get('artifact_status') == 'complete' and not result.get('rows')):
+        if exported_whole(result):
             # The reader has prepared the whole requested file. Its manifest
             # and earlier findings suffice for an export-only continuation.
             continue
-        page = report.page(limit=max(1, count))
+        if identity in spans and spans[identity] is None:
+            # An earlier step's restore holds these rows of the same report.
+            projected.pop(identity, None)
+            continue
+        # The restored page states what it holds, as the step's own page did.
+        if identity in spans:
+            start, end = spans[identity]
+            page = report.page(start, max(1, end - start))
+            if page['next_offset'] is not None:
+                page['limit'] = end - start
+        else:
+            page = {**report.page(view=result.get('view', 'rows')), 'view': result.get('view', 'rows')}
         if rosters:
             signature = json.dumps({'rows': page['rows'], 'clans': page.get('clans')},
                                    sort_keys=True, ensure_ascii=False)
@@ -153,7 +198,7 @@ async def cohort_writer_evidence(context, evidence, *, snapshots=None):
         # account table must preserve successful files and failed exports alike.
         page.update({key: result[key] for key in ('artifact', 'artifact_status', 'artifact_note')
                      if key in result})
-        view = family_model_view(model_result(page))
+        view = family_model_view(model_result(page), shared_rows=False)
         if report.family == 'read_cwl_results':
             view.update({field: page[field] for field in CWL_ANALYSIS_FIELDS if field in page})
         if discussion and isinstance(view.get('rows'), list):

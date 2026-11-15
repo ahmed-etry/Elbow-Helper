@@ -100,7 +100,7 @@ RESULT_FIELDS['read_member_accounts']['unknown_accounts'] = [names('member_id,pl
 RESULT_FIELDS['read_clan_rosters']['clans'] = [names('clan_code,name,tag,basis,season,status,cohort_accounts,included_accounts,excluded_accounts,unknown_filter_accounts,in_game_members,in_game_capacity,capacity_basis,open_in_game_slots,town_halls')]
 RESULT_FIELDS['read_clan_rosters']['clans'][0]['entry_settings'] = names(
     'type,join_method,type_meaning,requiredTownhallLevel,requiredTrophies,requiredBuilderBaseTrophies')
-RESULT_FIELDS['read_member_cohort']['rows'][0].update(names('accepted_at,selection_status'))
+RESULT_FIELDS['read_member_cohort']['rows'][0].update(names('accepted_at,selection_status,home_clan_codes'))
 RESULT_FIELDS['read_member_cohort'].update(names('selected_role_ids'))
 RESULT_FIELDS['read_member_cohort']['rows'][0].update(
     **names('donations,membership_status'),

@@ -144,7 +144,7 @@ class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
         rows = [{'member_id': 1000 + i, 'player_tag': '#P' + str(i), 'player_name': f'Player {i}',
             'attacks_used': i, 'missed': i % 3, 'totals_complete': True,
-            'war_ids': ['war-' + str(j) + '-' + 'x' * 80 for j in range(10)]} for i in range(54)]
+            'war_ids': ['war-' + str(j) + '-' + 'x' * 80 for j in range(10)]} for i in range(600)]
         source = AsyncMock(return_value={'rows': rows, 'war_ids': ['war-' + str(j) for j in range(10)],
             'coverage': {'historical_collection_complete': False}})
         tool = family_tool('read_war_participation', 'Read war participation.', {}, source)
@@ -154,15 +154,15 @@ class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):
             flow, _ = AgentService(model)._start_flow(question='Compare the whole war cohort',
                 local_context='', context=context, conversation_history='')
         results = await flow.runner.run(_plan([{'id': 'wars', 'capability': 'read_war_participation',
-            'arguments': {'limit': 16}, 'depends_on': []}]))
-        self.assertEqual(len(results['wars']['rows']), 16)
+            'arguments': {}, 'depends_on': []}]))
+        self.assertLess(len(results['wars']['rows']), 600)
         flow.completed_results.update(results)
         flow.result_views.update(flow.runner.model_results_for(results))
         self.assertTrue(await flow._prepare_answer_session(allow_more=True))
         evidence = unpack(json.loads(model.writer['prompt'].split('\nAvailable evidence:\n', 1)[1]))
         visible = evidence['results']['wars']
-        self.assertEqual(len(visible['rows']), 54)
-        self.assertEqual([row['attacks_used'] for row in visible['rows']], list(range(54)))
+        self.assertEqual(len(visible['rows']), 600)
+        self.assertEqual([row['attacks_used'] for row in visible['rows']], list(range(600)))
         self.assertEqual(visible['row_rendering']['rows']['same_on_every_row']['wars_observed'], 10)
         self.assertNotIn('evidence_complete', visible)
         self.assertFalse(visible['coverage']['historical_collection_complete'])
@@ -183,8 +183,8 @@ class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):
             flow, _ = AgentService(model)._start_flow(question='Compare the selected ranked accounts',
                 local_context='', context=_context(), conversation_history='')
         results = await flow.runner.run(_plan([{'id': 'ranked', 'capability': 'read_ranked_activity',
-            'arguments': {'limit': 1}, 'depends_on': []}]))
-        self.assertEqual(len(results['ranked']['rows']), 1)
+            'arguments': {}, 'depends_on': []}]))
+        self.assertLess(len(results['ranked']['rows']), 200)
         flow.completed_results.update(results)
         flow.result_views.update(flow.runner.model_results_for(results))
         with patch('elbow_helper.agent.engine.budgets.MAX_EVIDENCE_CHARACTERS', 3000):

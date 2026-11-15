@@ -29,16 +29,15 @@ class FamilyAnswerRegressionTests(unittest.IsolatedAsyncioTestCase):
 
         tool = family_tool('read_member_accounts', 'Read account identities.', {}, source)
         first = await tool.handler(context, {'limit': 1})
+        rest = await tool.handler(context, {'report_id': first['report_id'], 'cursor': first['next_cursor']})
         evidence = await cohort_writer_evidence(context, {
             'failed': model_result({'error': 'Source unavailable.', 'cause': 'source_unavailable',
                                    'rows': [{'player_tag': '#Y0', 'player_name': 'Unverified'}]}),
-            'good': model_result(first), 'repeat': model_result(first)})
+            'good': model_result(first), 'rest': model_result(rest)})
         written = json.loads(bounded_answer_evidence(answer_evidence(evidence), 20_000))['results']
-        for identity in ('good', 'repeat'):
-            records = written[identity]['rows']
-            decoded = expand(records)
-            self.assertEqual(decoded, rows)
-            self.assertFalse(written[identity]['coverage']['historical_collection_complete'])
+        self.assertEqual(expand(written['good']['rows']), rows)
+        self.assertFalse(written['good']['coverage']['historical_collection_complete'])
+        self.assertNotIn('rest', written)
         self.assertNotIn('rows', written['failed'])
         self.assertEqual(written['failed']['status'], 'unavailable')
 

@@ -43,11 +43,13 @@ class JoinCohortEvidenceTests(unittest.IsolatedAsyncioTestCase):
         plain = answer_evidence({'joins': family_model_view(
             {**result, 'family': 'read_member_cohort', 'selection': selection})})['joins']
         for row in plain['rows']:
-            # Join date and family roles define a join cohort; home clans wait for include_profile.
+            # Join date and family roles define a join cohort; clans come as codes, names with include_profile.
             self.assertIn('joined_at', row)
             self.assertIn('family_membership_roles', row)
             self.assertNotIn('home_clans', row)
             self.assertNotIn('home_clan_basis', row)
+        self.assertEqual({row['member_id']: sorted(row['home_clan_codes']) for row in plain['rows']},
+                         {1: ['BE1'], 2: ['BEH', 'BES'], 3: ['BEM'], 4: []})
         self.assertIn('configured non-utility Discord clan member roles', plain['home_clan_basis'])
         self.assertEqual(len(plain['rows']), 4)
         visible = answer_evidence({'joins': family_model_view({**result, 'family': 'read_member_cohort',

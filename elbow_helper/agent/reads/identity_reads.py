@@ -418,6 +418,12 @@ async def clan_rosters(context, arguments, people=None):
             'clans': summaries, 'coverage': 'seasonal cohorts and current in-game rosters have distinct bases'}
 
 
+def joined_order(row, field, reverse):
+    """A row's place by its join or acceptance date; unknown dates last."""
+    return (row.get(field) is None,
+            (-1 if reverse else 1) * datetime.fromisoformat(row[field]).timestamp() if row.get(field) else 0)
+
+
 async def member_cohort(context, arguments):
     basis = arguments['basis']
     if arguments.get('role_name') and basis != 'role_holders':
@@ -515,11 +521,9 @@ async def member_cohort(context, arguments):
                      'unknown_date' if (after or before) and joined is None else 'selected',
                      **({'accepted_at': accepted.get(identifier)}
                      if basis == 'accepted_recruitment' else {})})
-    reverse = arguments.get('sort') == 'newest_first'
     sort_field = 'accepted_at' if basis == 'accepted_recruitment' else 'joined_at'
-    rows.sort(key=lambda row: (row.get(sort_field) is None,
-        (-1 if reverse else 1) * datetime.fromisoformat(row[sort_field]).timestamp() if row.get(sort_field) else 0,
-        row['member_id']))
+    rows.sort(key=lambda row: (*joined_order(row, sort_field, arguments.get('sort') == 'newest_first'),
+                               row['member_id']))
     account_count, unknown_accounts_total = None, 0
     if basis in ('joined_discord', 'selected') or arguments.get('include_accounts') or arguments.get('include_activity') or any(key in arguments for key in ACCOUNT_FILTERS):
         if selected_accounts is not None:
@@ -555,6 +559,9 @@ async def member_cohort(context, arguments):
         if any(key in arguments for key in ACCOUNT_FILTERS):
             rows = [row for row in rows if any(account.get('player_tag') for account in row['accounts'])]
         account_count = sum(bool(account.get('player_tag')) for row in rows for account in row['accounts'])
+    for row in rows:
+        # Short form of the member's home clans: what a row carries when the full clans are not shown.
+        row['home_clan_codes'] = [clan['clan_code'] for clan in row['home_clans']]
     performance = None
     if arguments.get('performance'):
         scope = ({'account_tags': {account['player_tag'] for row in rows
@@ -657,7 +664,8 @@ TOOLS = (
       'name': {'type': 'string', 'minLength': 1, 'maxLength': 100,
                'description': 'One name; requires look_in. Returns matching_members with linked account names and tags or game account candidates with owners. Ambiguity authorizes no actions or pings. Alternative to other selectors.'}}, member_accounts,
      rules=ACCOUNT_RULES,
-     usage_note='look_in: game for in-game names/data; discord for server person (messages, activity, roles, Discord ID); on no match, other side is searched.'),
+     usage_note='look_in: game for in-game names/data; discord for server person (messages, activity, roles, Discord ID); on no match, other side is searched.',
+     whole=True),
  family_tool('read_clan_rosters', 'Read every selected clan roster, TH distribution, capacity and donations.',
      {'clan_codes': CLANS_INPUT, 'basis': ROSTER_BASIS,
       'season': {'type': 'string', 'maxLength': 20}, **ACCOUNT_FILTERS,

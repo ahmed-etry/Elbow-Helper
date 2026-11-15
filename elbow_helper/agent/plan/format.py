@@ -130,7 +130,7 @@ REFERENCE_RETURNS = {
     "read_current_war": "report_id,rows:[{clan_code,members:[{player_tag}]}]",
     "read_member_accounts": "report_id,total_rows,name_resolutions:[{query,status,look_in,found_in,matching_members:[{member_id,member_name,account_links_status,accounts:[{player_tag,player_name}]}],candidates:[{player_tag,player_name,member_id,member_name,membership_status}],selected_accounts:[{player_tag,member_id}]}],members:[{member_id,member_name,account_tags,home_clans,roles,leadership,home_role_checks}],history_reads,rows:[{member_id,player_tag,activity:{regular_war,cwl,ranked}}]",
     "read_clan_rosters": "report_id,total_rows,rows:[{clan_code,player_tag,member_id}],clans:[{clan_code,entry_settings:{type,requiredTownhallLevel,requiredTrophies,requiredBuilderBaseTrophies}}]",
-    "read_member_cohort": "report_id,total_rows,selected_role_ids,selection_window,rows:[{member_id,joined_at,family_membership_roles,has_elbow_helper_links,home_clans,accounts:[{player_tag,clan,profile_status}]}],activity_coverage",
+    "read_member_cohort": "report_id,total_rows,selected_role_ids,selection_window,rows:[{member_id,joined_at,family_membership_roles,has_elbow_helper_links,home_clans,home_clan_codes,accounts:[{player_tag,clan,profile_status}]}],activity_coverage",
     "read_recruitment_pipeline": "report_id,total_rows,source_next_cursor,rows:[{member_id,ticket_channel_id,accepted_clan_codes,acceptance_decision,accounts}]",
     "read_hibernation": "report_id,total_rows,rows:[{member_id,started_ts,accounts}]",
     "read_promotion_cases": "report_id,total_rows,rows:[{applicant_member_id,ticket_channel_id}]",

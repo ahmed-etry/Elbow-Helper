@@ -3,7 +3,6 @@
 import asyncio
 from contextlib import contextmanager
 import json
-import time
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -26,7 +25,9 @@ class RequestClock:
     """Advance the event loop's real timeout machinery without wall-clock waits."""
 
     def __init__(self):
-        self.started = self.now = time.monotonic()
+        # A whole-second origin keeps every sum and difference exact; the machine's own
+        # clock reads in milliseconds, so deadlines computed from it differ in the last bit.
+        self.started = self.now = 1_000_000.0
 
     @property
     def elapsed(self):

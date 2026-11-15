@@ -1,5 +1,6 @@
 """Unread account pages and unrequested measures remain unknown to the writer."""
 from copy import deepcopy
+import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -78,7 +79,9 @@ class NameLookupCoverageTests(unittest.IsolatedAsyncioTestCase):
         page = model_result(await tool.handler(context, {'limit': 1}))
         self.assertEqual(len(answer_evidence({'accounts': page})['accounts']
                              ['row_coverage']['account_tags_not_read']), 13)
-        restored = await cohort_writer_evidence(context, {'accounts': page})
+        rest = model_result(await tool.handler(context, {'report_id': page['report_id'],
+                                                         'cursor': page['next_cursor']}))
+        restored = await cohort_writer_evidence(context, {'accounts': page, 'rest': rest})
         written = answer_evidence(restored)['accounts']
         self.assertNotIn('row_coverage', written)
         self.assertNotIn('evidence_complete', written)
@@ -154,7 +157,7 @@ class NameLookupCoverageTests(unittest.IsolatedAsyncioTestCase):
                 return provider_response(final)
             return provider_response(calls=[call('submit_request_plan', _plan([
                 {'id': 'accounts', 'capability': 'read_member_accounts',
-                 'arguments': {'limit': 1}, 'depends_on': []},
+                 'arguments': {}, 'depends_on': []},
                 {'id': 'wars', 'capability': 'read_war_participation',
                  'arguments': {'account_tags': ['#P00']}, 'depends_on': ['accounts']}]))])
 

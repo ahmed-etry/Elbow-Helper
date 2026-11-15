@@ -190,9 +190,13 @@ def plain_member_row(item, data, family, selection):
         # One copy on the view; it was identical on every row.
         data.setdefault('home_clan_basis', basis)
     roster = family == 'read_member_cohort' and selection.get('basis') == 'clan_rosters'
+    kept = set()
     if not selection.get('include_profile'):
         kept = cohort_profile_fields(selection) if family == 'read_member_cohort' else set()
         item = omit(item, set(MEMBER_PROFILE_FIELDS) - kept)
+    if selection.get('include_profile') or 'home_clans' in kept:
+        # A cohort row carries its clans as codes only where the full clans are not on it.
+        item.pop('home_clan_codes', None)
     if isinstance(item.get('accounts'), list) and not roster:
         item['accounts'] = [omit(account, account_profile_drops(selection)) for account in item['accounts']]
     if not selection.get('include_roles') and selection.get('basis') != 'role_holders':
@@ -313,7 +317,7 @@ def family_model_view(payload, *, shared_rows=True):
             projected.append(item)
             if family == 'read_member_cohort' and data.get('activity_coverage'):
                 projected[-1] = pick(item, ('member_id', 'member_name', 'membership_status',
-                    'home_clans', 'home_clan_status', 'home_clan_basis', 'leadership', 'roles', 'accounts', 'account_tags', 'account_names', 'clan_codes',
+                    'home_clans', 'home_clan_codes', 'home_clan_status', 'home_clan_basis', 'leadership', 'roles', 'accounts', 'account_tags', 'account_names', 'clan_codes',
                     'donations', 'war_status', 'wars_observed', 'attacks_used',
                     'attacks_expected', 'missed', 'attack_completion_percent',
                     'war_totals_complete', 'discord_activity_status', 'last_active_day', 'active_streak_days', 'lifetime_messages'))

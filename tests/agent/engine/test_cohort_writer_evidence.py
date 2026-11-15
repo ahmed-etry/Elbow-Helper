@@ -5,9 +5,12 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence, cohort_review_evidence
 from elbow_helper.agent.engine.service import AgentService
+from elbow_helper.agent.plan.results import model_result
 from elbow_helper.agent.reads.cohort_activity import activity_fields
+from elbow_helper.agent.reads.evidence import record_rows
 from elbow_helper.agent.reads.snapshots import family_tool
 from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -60,7 +63,7 @@ class CohortWriterTests(unittest.IsolatedAsyncioTestCase):
                                                   snapshots={identifier: snapshot})
         self.assertNotIn('rows', denied['roster'])
 
-    async def test_ranked_snapshot_restores_every_account_and_rechecks_authorization(self):
+    async def test_ranked_pages_read_in_turn_restore_every_account_once_and_recheck_authorization(self):
         context = _context()
         rows = [{'player_tag': f'#P{i}', 'player_name': f'Player {i}',
                  'attacks_used': i, 'attacks_available': i + 1,
@@ -70,7 +73,9 @@ class CohortWriterTests(unittest.IsolatedAsyncioTestCase):
                            AsyncMock(return_value={'rows': rows}))
         result = await tool.handler(context, {'limit': 5})
         self.assertEqual(len(result['rows']), 5)
-        restored = await cohort_writer_evidence(context, {'ranked': result})
+        rest = await tool.handler(context, {'report_id': result['report_id'], 'cursor': result['next_cursor']})
+        restored = await cohort_writer_evidence(context, {'ranked': result, 'rest': rest})
+        self.assertNotIn('rest', restored)
         table = restored['ranked']['rows']
         complete = [dict(zip(table['columns'], row)) for row in table['rows']]
         self.assertEqual([{key: row[key] for key in rows[0]} for row in complete], rows)
@@ -78,6 +83,44 @@ class CohortWriterTests(unittest.IsolatedAsyncioTestCase):
                    AsyncMock(return_value=False)):
             denied = await cohort_writer_evidence(context, {'ranked': result})
         self.assertNotIn('rows', denied['ranked'])
+
+    async def test_roster_count_reaches_the_answer_as_clan_numbers_without_accounts(self):
+        context = _context()
+        codes = ['BEH', 'BE4', 'BES', 'BE1', 'BEM', 'BEC', 'BEE', 'BEP', 'BEW']
+        rows = [{'clan_code': codes[i % 9], 'player_tag': f'#P{i}', 'player_name': f'Account {i}',
+                 'member_id': 1000 + i % 167, 'member_name': f'Member {i % 167}', 'townHallLevel': 15}
+                for i in range(267)]
+        members = [{'member_id': 1000 + i, 'member_name': f'Member {i}', 'membership_status': 'present',
+                    'account_tags': [f'#P{i}']} for i in range(167)]
+        clans = [{'clan_code': code, 'in_game_members': 30 + index, 'in_game_capacity': 50,
+                  'open_in_game_slots': 20 - index, 'town_halls': {'15': 30 + index},
+                  'ownership': {'linked_accounts': 30, 'owners': [{'member_id': 1000, 'accounts': 3}]}}
+                 for index, code in enumerate(codes)]
+        tool = family_tool('read_clan_rosters', 'Read roster.', {'clan_codes': {'type': 'array'}},
+                           AsyncMock(return_value={'rows': rows, 'members': members, 'clans': clans}))
+        result = await tool.handler(context, {'clan_codes': codes, 'view': 'count'})
+        restored = await cohort_writer_evidence(context, {'rosters': model_result(result)})
+        facts = answer_evidence(restored, guild=context.guild)['rosters']
+        self.assertEqual(facts['total_rows'], 267)
+        self.assertEqual(facts['rows'], [])
+        self.assertEqual(facts['members'], [])
+        self.assertEqual([(clan['clan_code'], clan['in_game_members'], clan['in_game_capacity'])
+                          for clan in record_rows(facts['clans'])],
+                         [(code, 30 + index, 50) for index, code in enumerate(codes)])
+
+    async def test_newest_join_with_limit_reaches_the_answer_as_that_row_and_the_total(self):
+        context = _context()
+        rows = [{'member_id': 1000 + i, 'member_name': f'Member {i}', 'membership_status': 'present',
+                 'joined_at': f'2026-11-{14 - i // 40:02d}T00:00:{i % 60:02d}+00:00'} for i in range(535)]
+        tool = family_tool('read_member_cohort', 'Read member facts.', {
+            'basis': {'type': 'string'}, 'sort': {'type': 'string'}},
+            AsyncMock(return_value={'basis': 'joined_discord', 'rows': rows}))
+        result = await tool.handler(context, {'basis': 'joined_discord', 'sort': 'newest_first', 'limit': 1})
+        restored = await cohort_writer_evidence(context, {'members': model_result(result)})
+        facts = answer_evidence(restored, guild=context.guild)['members']
+        self.assertEqual(facts['total_rows'], 535)
+        self.assertEqual([(row['member_id'], row['joined_at']) for row in record_rows(facts['rows'])],
+                         [(1000, rows[0]['joined_at'])])
 
     async def flow(self, source):
         context, model = _context(), WriterModel()
@@ -90,10 +133,10 @@ class CohortWriterTests(unittest.IsolatedAsyncioTestCase):
             flow, _ = AgentService(model)._start_flow(question='Review all member activity.',
                 local_context='', context=context, conversation_history='')
         results = await flow.runner.run(_plan([{'id': 'activity', 'capability': 'read_member_cohort',
-            'arguments': {'basis': 'clan_rosters', 'view': 'count'}, 'depends_on': []}]))
+            'arguments': {'basis': 'clan_rosters'}, 'depends_on': []}]))
         flow.completed_results.update(results)
         flow.result_views.update(flow.runner.model_results_for(results))
-        self.assertEqual(results['activity']['rows'], [])
+        self.assertLess(len(record_rows(flow.result_views['activity']['rows'])), 203)
         self.assertEqual(results['activity']['total_rows'], 203)
         self.assertTrue(await flow._prepare_answer_session())
         writer = unpack(json.loads(model.writer['prompt'].split('\nAvailable evidence:\n', 1)[1]))

@@ -114,7 +114,7 @@ FAMILY_INSTRUCTION = (
     'read_member_accounts, read_member_cohort and read_recruitment_pipeline accounts return trial or '
     'member status, join date, home clans and clan role only with include_profile=true, and leagues, '
     'trophies, donations and career war stars only with include_standing=true '
-    '(a cohort selected by join date or clan keeps those it selected by). '
+    '(a cohort selected by join date or clan keeps those it selected by; every cohort row has home_clan_codes). '
     'For home clan, read_member_accounts and read_member_cohort (with it) '
     'expose home_clans from configured Discord clan member roles. Use those roles, not an account\'s in-game clan, '
     'CWL assignment or roster rank. Multiple home roles remain explicit; do not choose a '

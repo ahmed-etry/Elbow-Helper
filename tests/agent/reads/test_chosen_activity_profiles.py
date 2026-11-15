@@ -39,7 +39,7 @@ class ChosenActivityProfileTests(unittest.IsolatedAsyncioTestCase):
                    AsyncMock(return_value={'rows': wars})):
             result = await tool.handler(context, {'basis': 'selected', 'cohort_ref': selection['report_id'],
                 'include_activity': True, 'performance': {'war_type': 'REG'},
-                'after': '2025-12-01T00:00:00+00:00', 'view': 'count'})
+                'after': '2025-12-01T00:00:00+00:00'})
         self.assertNotIn('error', result)
         snapshot = json.loads(context.state.reports[result['report_id']].payload)
         rows = snapshot['rows']

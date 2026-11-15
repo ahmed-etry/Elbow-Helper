@@ -94,6 +94,17 @@ class FamilyReport:
                 'next_cursor': self.cursor(next_offset) if next_offset is not None else None,
                 'complete_snapshot': True}
 
+    def requested_rows(self, result):
+        """The rows [start, end) a step's page asked for: from its offset up to its own limit, else to
+        the last row; None for a count or tags view. The size bound on the page shown between steps
+        never narrows it."""
+        if result.get('view', 'rows') != 'rows':
+            return None
+        total = self.manifest()['total_rows']
+        offset, limit = result.get('offset'), result.get('limit')
+        start = min(offset, total) if type(offset) is int and offset >= 0 else 0
+        return start, min(total, start + limit) if type(limit) is int and limit >= 1 else total
+
     def cursor(self, offset):
         summary = json.loads(self.payload)['summary']
         return family_cursor(self.report_id, summary.get('requester_id'),
@@ -374,6 +385,11 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
             context.state.report_access_requirements[report.report_id] = frozenset(context.state.required_access)
         delivery = arguments.get('delivery', 'text')
         model_page = report.page(offset, limit, arguments.get('view', 'rows'))
+        # What the step asked for, so the answer step reads that page and not the cut one below.
+        if arguments.get('view', 'rows') != 'rows':
+            model_page['view'] = arguments['view']
+        if 'limit' in arguments:
+            model_page['limit'] = limit
         artifact = None
         if delivery != 'text':
             if delivery not in ('csv', 'xlsx'):

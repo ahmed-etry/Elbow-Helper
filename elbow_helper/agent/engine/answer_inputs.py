@@ -50,7 +50,7 @@ def bounded_answer_evidence(evidence, token_room, character_limit=64_000):
 # These fields describe how to obtain/present evidence, not domain facts.
 _NAVIGATION = frozenset({
     "report_id", "family", "schema_version", "requester_id", "provenance", "source_next_cursor", "source_versions",
-    "selection", "resolved_inputs", "offset", "next_offset", "next_cursor",
+    "selection", "resolved_inputs", "offset", "limit", "view", "next_offset", "next_cursor",
     "returned_rows", "complete_snapshot", "flags", "argument_schema",
     "capability", "detail_projection", "collection_limits", "coverage_note",
     "member_limits", "store_status", "reused_result", "reused_sections", "instruction",
