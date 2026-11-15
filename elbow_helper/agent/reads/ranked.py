@@ -114,7 +114,10 @@ async def read_ranked(context, arguments, *, selection_maximum=200, starts=None)
             tags = sorted({row['player_tag'] for row in roster['rows'] if row.get('player_tag')})
             if not tags:
                 return {'error': 'That clan account cohort is not available.', 'cause': 'source_unavailable'}
-            roster_coverage = roster['clans']
+            # Which accounts each clan contributed and on what basis. Admission settings, the clan
+            # profile and owner lists belong to the roster read and say nothing about ranked activity.
+            roster_coverage = [{key: clan[key] for key in COVERAGE_FIELDS if key in clan}
+                               for clan in roster['clans']]
             request = checked_request({**{key: value for key, value in arguments.items() if key != 'clan_tags'},
                                        'account_tags': tags}, MAX_ACCOUNTS)
             if isinstance(request, dict):
@@ -128,7 +131,7 @@ async def read_ranked(context, arguments, *, selection_maximum=200, starts=None)
     if stored.get('next_offset') is not None:
         return {'error': 'Choose a smaller ranked account cohort; the complete selection exceeds capacity.',
                 'cause': 'capacity'}
-    rows = []
+    rows, battle_rows = [], {}
     for raw in stored['accounts']:
         account = account_view(raw)
         battles = account.pop('battles', [])
@@ -153,7 +156,9 @@ async def read_ranked(context, arguments, *, selection_maximum=200, starts=None)
                 'ranked_log_gaps_since_start': [{**gap, 'after': max(gap['after'], after.isoformat())}
                     for gap in row['log_coverage']['gaps'] if gap['before'] > after.isoformat()] if activity_known else None}
         if request.detail:
-            row['battles'] = selected_battles
+            # One row per battle, so a month of battles pages like any other rows.
+            battle_rows[account['player_tag']] = [{'player_tag': account['player_tag'], **battle}
+                                                  for battle in selected_battles]
         if request.mode != 'ranked_and_legend' or starts:
             dates = {}
             for battle in selected_battles:
@@ -163,7 +168,8 @@ async def read_ranked(context, arguments, *, selection_maximum=200, starts=None)
         rows.append(row)
     rows.sort(key=lambda row: (row.get('selection_rank') is None, row.get('selection_rank') or 0, row['player_tag']))
     result = {'after': request.after.isoformat(), 'before': request.before.isoformat(),
-              'rows': rows, 'total_accounts': stored['total_accounts'],
+              'rows': [item for row in rows for item in (row, *battle_rows.get(row['player_tag'], ()))],
+              'total_accounts': stored['total_accounts'],
               'unobserved_selections': stored['unobserved_selections'], 'complete': True,
               'coverage_complete': stored['coverage_complete'], 'source': 'family_record',
               'bases': stored['bases'], 'limitations': list(LIMITATIONS), 'membership_coverage': roster_coverage}

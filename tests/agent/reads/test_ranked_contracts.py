@@ -35,7 +35,7 @@ class RankedContracts(unittest.IsolatedAsyncioTestCase):
         context, _, forbidden = self.context()
         result = await read_ranked(context, {'member_ids': [41], 'after': AFTER, 'before': BEFORE,
                                                   'include_battles': True})
-        row = result['rows'][0]
+        row, *battles, unread = result['rows']
         attacks = row['observed_attacks']
         self.assertEqual((attacks['battles'], attacks['stars_total'], attacks['triples']), (3, 5, 1))
         self.assertEqual(attacks['average_stars'], {
@@ -43,8 +43,9 @@ class RankedContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(attacks['average_destruction_percent']['display'], '66.67')
         self.assertEqual(attacks['triple_rate_percent']['display'], '33.33')
         self.assertEqual(row['observed_defenses']['stars_total'], 1)
-        self.assertEqual(len(row['battles']), 4)
-        self.assertIsNone(result['rows'][1]['observed_attacks'])
+        self.assertEqual([battle['player_tag'] for battle in battles], ['#P0'] * 4)
+        self.assertEqual(unread['player_tag'], '#Q0')
+        self.assertIsNone(unread['observed_attacks'])
         self.assertFalse(result['source_complete'])
         forbidden.assert_not_awaited()
 
@@ -53,8 +54,9 @@ class RankedContracts(unittest.IsolatedAsyncioTestCase):
         context, _, forbidden = self.context()
         before = datetime(2026, 10, 3, tzinfo=timezone.utc)
         result = await stored_ranked(context, {'#P0': DAY_TWO / 1_000_000 - 1}, before)
-        self.assertEqual(len(result['#P0']['battles']), 4)
-        self.assertEqual(result['#P0']['battles'][0]['battle_at'], '2026-10-02T00:00:00+00:00')
+        self.assertEqual(result['#P0']['activity_since']['observed_ranked_attacks_since_start'], 3)
+        self.assertEqual(result['#P0']['activity_since']['latest_observed_ranked_attack_at'],
+                         '2026-10-02T00:00:00+00:00')
         self.assertEqual(result['#Q0']['log_coverage']['status'], 'never_read')
         forbidden.assert_not_awaited()
 
@@ -62,7 +64,7 @@ class RankedContracts(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import patch
         context, _, forbidden = self.context()
         rows = [{'player_tag': '#P0'}, {'player_tag': '#Q0'}]
-        with patch('elbow_helper.agent.reads.account_activity.participation', AsyncMock(return_value={'rows': []})):
+        with patch('elbow_helper.agent.reads.account_activity.participation_totals', AsyncMock(return_value={'rows': []})):
             result = await account_activity(context, rows, {'after': AFTER, 'before': BEFORE})
         self.assertEqual(rows[0]['activity']['ranked']['observed_attacks']['stars_total'], 5)
         self.assertEqual(rows[1]['activity']['ranked']['status'], 'unknown')

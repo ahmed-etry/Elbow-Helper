@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.reads import ranked as reads
+from elbow_helper.configuration.clans import CLANS
 from tests.agent.engine.test_agent_plan_flow import _context
 
 
@@ -47,14 +48,28 @@ class RankedFamilyTests(unittest.IsolatedAsyncioTestCase):
         return replace(_context(), bot=SimpleNamespace(ranked_reads=SimpleNamespace(window=window))), window
 
     async def test_seasonal_clan_activity_uses_community_accounts_not_parked_members(self):
-        roster = {'rows': [{'player_tag': '#Q0'}], 'clans': [{'clan_code': 'BE4', 'basis': 'league_group_cohort'}]}
+        clan = {'clan_code': 'BE4', 'name': 'Synthetic', 'tag': CLANS['BE4'].tag, 'basis': 'league_group_cohort',
+                'season': '2026-11', 'status': 'league_group_cohort', 'observed_at': None, 'cohort_accounts': 1,
+                'included_accounts': 1, 'excluded_accounts': 0, 'unknown_filter_accounts': 0}
+        # The roster read also describes the clan itself; none of that is about ranked activity.
+        roster = {'rows': [{'player_tag': '#Q0'}], 'clans': [{
+            **clan, 'entry_settings': {'type': 'open'}, 'profile': {'purpose': 'Synthetic'},
+            'ownership': {'owners': [{'member_id': 41}]}, 'town_halls': {'16': 1}, 'in_game_members': 1}]}
         context, window = self.context(stored([account('#Q0')]))
         with patch('elbow_helper.agent.reads.identity_reads.clan_rosters', AsyncMock(return_value=roster)) as source:
-            result = await reads.read_ranked(context, {'clan_tags': ['BE4'], 'after': AFTER, 'before': BEFORE})
+            result = await reads.read_ranked(context, {'clan_tags': [CLANS['BE4'].tag], 'after': AFTER, 'before': BEFORE})
         self.assertEqual([row['player_tag'] for row in result['rows']], ['#Q0'])
         self.assertEqual(source.call_args.args[1]['basis'], 'community')
         self.assertEqual(window.call_args.args, ('account_tags', ['#Q0']))
-        self.assertEqual(result['membership_coverage'], roster['clans'])
+        self.assertEqual(result['membership_coverage'], [clan])
+
+    async def test_season_and_membership_basis_are_refused_for_clans_that_ignore_them(self):
+        context, window = self.context(stored([account('#Q0')]))
+        plain = next(clan for clan in CLANS.values() if not clan.cwl_only)
+        for option in ({'season': '2026-11'}, {'membership_basis': 'current_in_game'}):
+            result = await reads.read_ranked(context, {'clan_tags': [plain.tag], 'after': AFTER, 'before': BEFORE, **option})
+            self.assertEqual(result['cause'], 'invalid_arguments')
+        window.assert_not_awaited()
 
 
     async def test_stored_battles_give_metrics_and_an_unread_log_stays_unknown(self):
@@ -63,12 +78,15 @@ class RankedFamilyTests(unittest.IsolatedAsyncioTestCase):
                                           account('#P1', status='never_read')]))
         result = await reads.read_ranked(context, {'member_ids':[41],'after':AFTER,'before':BEFORE,
                                                        'include_battles': True})
-        rows = {row['player_tag']: row for row in result['rows']}
+        rows = {row['player_tag']: row for row in result['rows'] if 'battle_at' not in row}
         self.assertEqual(rows['#P0']['observed_attacks']['battles'], 1)
         self.assertEqual(rows['#P0']['observed_attacks']['average_stars']['numerator'], 3)
         self.assertEqual(rows['#P0']['observed_defenses']['stars_total'], 1)
         self.assertEqual(rows['#P0']['watch_status'], 'partial')
-        self.assertEqual(rows['#P0']['battles'][0]['battle_at'], '2026-10-02T00:00:00+00:00')
+        # Each battle is its own row, straight after its account's row.
+        self.assertEqual([(row['player_tag'], row.get('battle_at')) for row in result['rows']], [
+            ('#P0', None), ('#P0', '2026-10-02T00:00:00+00:00'), ('#P0', '2026-10-02T00:00:00+00:00'),
+            ('#P1', None)])
         self.assertFalse(rows['#P0']['historical_counts_complete'])
         self.assertIsNone(rows['#P1']['observed_attacks'])
         self.assertIsNone(rows['#P1']['attacks_used'])

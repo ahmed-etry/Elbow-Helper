@@ -47,7 +47,7 @@ class CompactRankedRegressionTests(RankedRecordFixture, unittest.IsolatedAsyncio
         self.assertNotIn('truncated_collections', visible)
         self.assertEqual(result, original)
         retained = json.loads(self.context.state.reports[result['report_id']].payload)
-        self.assertEqual(len(retained['rows'][0]['battles']), 90)
+        self.assertEqual(len([item for item in retained['rows'] if 'battle_at' in item]), 90)
         self.assertFalse(self.context.state.attachments)
 
     async def test_an_account_whose_log_was_never_read_remains_unknown(self):

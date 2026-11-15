@@ -1,7 +1,7 @@
 """Registration of the single ranked agent read."""
 from elbow_helper.agent.reads.snapshots import family_tool, IDS, TAGS, DATE
 from .projections import COHORT_REF
-from .ranked import read_ranked, SELECTOR_ERROR
+from .ranked import read_ranked, SELECTOR_ERROR, SEASON_ERROR
 from .ranked_measures import METRICS, MODES
 
 TOOLS = (family_tool('read_ranked_activity','Read collected ranked activity, complete account cohorts and collection gaps.',
@@ -15,5 +15,7 @@ TOOLS = (family_tool('read_ranked_activity','Read collected ranked activity, com
     rules=({'needs': ['member_ids', 'account_tags', 'clan_tags', 'cohort_ref'], 'error': SELECTOR_ERROR},
            {'only_one': ['member_ids', 'account_tags', 'clan_tags'], 'error': SELECTOR_ERROR},
            {'with': ['cohort_ref'], 'forbids': ['member_ids'], 'error': SELECTOR_ERROR},
-           {'with': ['metric'], 'needs': ['direction'], 'error': 'Choose a supported battle measure.'}),
-    usage_note='Choose metric, direction and mode for numbers. detail retains battle evidence. Counts include losses; gaps stay unknown. UTC, end exclusive; no live gap fill.'),)
+           {'with': ['metric'], 'needs': ['direction'], 'error': 'Choose a supported battle measure.'},
+           {'unless': ['clan_tags'], 'forbids': ['season', 'membership_basis'], 'error': SEASON_ERROR}),
+    usage_note='Choose metric, direction and mode for numbers. detail adds a row per battle. Counts include losses; gaps stay unknown. UTC, end exclusive; no live gap fill.',
+    whole=True),)

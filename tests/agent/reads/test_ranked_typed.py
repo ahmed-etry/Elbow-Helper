@@ -51,8 +51,10 @@ class RankedTypedTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result['resolved_selection']['mode'], mode)
                 row = result['rows'][0]
                 self.assertEqual(row['attacks_used'], attacks)
+                battles = [item for item in result['rows'] if item['player_tag'] == row['player_tag'] and 'battle_at' in item]
+                self.assertTrue(battles)
                 self.assertTrue(all(b['payload']['battleType'].upper() in
-                    (('RANKED', 'LEGEND') if mode == 'ranked_and_legend' else (mode.upper(),)) for b in row['battles']))
+                    (('RANKED', 'LEGEND') if mode == 'ranked_and_legend' else (mode.upper(),)) for b in battles))
                 if mode != 'ranked_and_legend':
                     self.assertEqual(row['daily'][0]['attacks_used'], attacks)
                 self.assertIsNone(row['attacks_available'])

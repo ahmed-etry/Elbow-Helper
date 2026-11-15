@@ -19,7 +19,7 @@ class RankedLongWindowTests(RankedRecordFixture, unittest.IsolatedAsyncioTestCas
         self.assertNotIn('error', result)
         row = result['rows'][0]
         self.assertEqual(row['attacks_used'], 4)
-        self.assertEqual(len(row['battles']), 4)
+        self.assertEqual([item['player_tag'] for item in result['rows'][1:]], ['#P0'] * 4)
         self.assertEqual(row['observed_attacks']['battles'], 4)
         self.assertFalse(row['historical_counts_complete'])
         self.assertEqual(row['watch_status'], 'never_read')  # Every battle predates the first read.

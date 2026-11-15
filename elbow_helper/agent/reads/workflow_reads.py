@@ -25,7 +25,7 @@ async def stored_ranked(context, starts, before):
     if after >= before:
         return {}
     result = await read_ranked(context, {'account_tags': sorted(starts), 'after': after.isoformat(),
-                                       'before': before.isoformat(), 'detail': 'detail'},
+                                       'before': before.isoformat()},
                                selection_maximum=10_000, starts=starts)
     return {row['player_tag']: row for row in result.get('rows', [])}
 

@@ -92,6 +92,34 @@ def ranked_view(row):
     return result
 
 
+RANKED_RATES = ('average_stars', 'average_destruction_percent', 'triple_rate_percent')
+
+
+def ranked_measure_view(row):
+    """ranked_view with each rate once, as its display value.
+
+    A rate's numerator and denominator are the totals on the same measure, and its
+    selection is the read's mode and direction, so neither repeats on every row.
+    The view may be applied to its own output."""
+    result = ranked_view(row)
+    for field in ('observed_attacks', 'observed_defenses'):
+        metric = row.get(field)
+        if not isinstance(metric, dict):
+            continue
+        measure = pick(metric, ('battles', 'stars_total', 'triples', 'missing_stars',
+                                'missing_destruction', 'destruction_total'))
+        for rate in RANKED_RATES:
+            value = metric.get(rate)
+            if isinstance(value, dict):
+                value = value.get('display')
+            if value is not None:
+                measure[rate] = value
+        measure['observed_range'] = (metric['observed_range'] if 'observed_range' in metric
+                                     else result[field]['observed_range'])
+        result[field] = measure
+    return result
+
+
 def participation_view(clans, rows):
     """Page identity lists with their measure rows; counts retain their scope."""
     tags = {tag for row in rows for tag in (
@@ -231,9 +259,10 @@ def family_model_view(payload, *, shared_rows=True):
                     'home_placement_eligibility_basis', 'operational_status', 'operational_cwl_only',
                     'membership_basis', 'has_placeholders', 'town_hall_min', 'town_hall_max'))
     if family == 'read_ranked_activity':
-        if selection.get('detail') != 'detail':
-            data['rows'] = [ranked_view(row) for row in rows]
-            data['detail_projection'] = 'All selected account metrics; battle payloads and daily poll detail remain in the retained report.'
+        # Either option makes battle rows, which keep their own fields.
+        if selection.get('detail') != 'detail' and not selection.get('include_battles'):
+            data['rows'] = [ranked_measure_view(row) for row in rows]
+            data['detail_projection'] = 'All selected account metrics; daily poll detail remains in the retained report.'
         mode = data.get('resolved_selection', {}).get('mode', 'ranked_and_legend')
         data['ranked_modes'] = {'ranked_and_legend': ['RANKED', 'LEGEND'],
                                 'ranked': ['RANKED'], 'legend': ['LEGEND']}[mode]
