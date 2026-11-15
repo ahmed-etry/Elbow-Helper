@@ -584,10 +584,7 @@ class AnswerFlow:
         if review_only:
             evidence = answer_evidence(review_evidence, guild=self.context.guild, subjects=subjects)
             evidence.update(supplementary)
-        complete_measures = any(result.get('family') in (
-            'read_cwl_results', 'read_war_participation', 'read_ranked_activity', 'read_clan_rosters',
-            'read_member_cohort', 'read_member_accounts') or restorable_reference(result)
-            for result in self.completed_results.values())
+        complete_measures = any(delivered_whole(result, 'uncapped') for result in self.completed_results.values())
         bounded = bounded_answer_evidence(evidence, room,
             None if complete_measures and not review_only else self.runner.evidence_limit)
         prompt += "\nAvailable evidence:\n" + bounded
@@ -947,13 +944,7 @@ class AnswerFlow:
             if value.get('next_offset') is not None or value.get('next_cursor') is not None:
                 # These complete snapshots are restored and authorized again
                 # at the writer boundary. Other source pages still need reads.
-                restored = (value.get('family') in (
-                    'read_war_participation', 'read_cwl_results', 'read_ranked_activity',
-                    'read_member_accounts', 'read_clan_rosters')
-                    or value.get('family') == 'read_member_cohort'
-                    and value.get('basis') in ('clan_rosters', 'role_holders', 'joined_discord')
-                    or restorable_reference(value))
-                if value.get('complete_snapshot') is not True or not restored:
+                if value.get('complete_snapshot') is not True or not delivered_whole(value, 'finishes'):
                     return False
         return True
 

@@ -236,6 +236,27 @@ class WarAttackTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                     refused = await TOOLS[name].handler(other, {"report_id": first["report_id"]})
                 self.assertEqual(refused["cause"], "report_unavailable")
 
+    async def test_a_plan_that_finishes_after_reads_gives_the_answer_every_attack(self):
+        from elbow_helper.agent.engine.answer_inputs import answer_evidence
+        from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
+        from elbow_helper.agent.engine.flow import AnswerFlow
+        from elbow_helper.agent.plan.results import model_result
+        from elbow_helper.agent.reads.evidence import record_rows
+        # Live 15 Nov: one clan, both war types, this month; the page held 106 of 133 attacks.
+        arguments = {"clan_codes": ["BEH"], "war_type": "both", **OCTOBER}
+        with patch("elbow_helper.agent.engine.budgets.MAX_TOOL_RESULT_CHARACTERS", 4000):
+            page = await TOOLS["read_war_attacks"].handler(self.context, arguments)
+        self.assertEqual(page.get("total_rows"), 6, page)
+        self.assertLess(page["returned_rows"], 6)
+        self.assertIsNotNone(page["next_cursor"])
+        plan = {"finish_after_reads": True, "steps": [
+            {"id": "attacks", "capability": "read_war_attacks", "arguments": arguments, "depends_on": []}]}
+        self.assertTrue(AnswerFlow._planned_reads_complete(SimpleNamespace(plan=plan), {"attacks": page}))
+        written = await cohort_writer_evidence(self.context, {"attacks": model_result(page)})
+        facts = answer_evidence(written)["attacks"]
+        self.assertEqual(len(record_rows(facts["rows"])), 6)
+        self.assertNotIn("row_coverage", facts)
+
     async def test_the_tool_pages_and_exports_every_attack(self):
         tool = TOOLS["read_war_attacks"]
         first = await tool.handler(self.context, {"war_type": "both", **OCTOBER, "limit": 4})

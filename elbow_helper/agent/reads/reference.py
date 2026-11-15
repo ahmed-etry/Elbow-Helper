@@ -3,7 +3,7 @@ import asyncio
 from dataclasses import replace
 import discord
 from elbow_helper.agent.knowledge.store import VISIBILITIES
-from elbow_helper.agent.reads.snapshots import family_tool, IDS, DATE
+from elbow_helper.agent.reads.snapshots import family_tool, Whole, IDS, DATE
 from elbow_helper.agent.safety.access import READ_ACCESS_ROLE_SETS, has_reader_access_requirements, require_lookup_access, accessible_message_channel, require_evidence_access
 from ..files.attachment_tools import list_supported_attachments, import_text_attachment
 from ..files.attachments import attachment_metadata
@@ -253,12 +253,18 @@ CONVERSATION_RULES = (
      'error': 'Use channel_id or channel_ids, not both.'},
     {'when': {'mode': ['channel_window']}, 'needs_all': ['channel_id'], 'error': 'Which channel should I read?'})
 
+def selected_facts(result):
+    """Selected facts are writer evidence; an index still needs source reads."""
+    return result.get('mode') in ('sections', 'domain_facts', 'implementation_reference')
+
+
 TOOLS = (
  family_tool('read_community_reference','Read sourced clan, role and workflow facts, approved headings or complete reference sections.',
     {'reference_kind':{'type':'string','enum':['knowledge','clans','roles','workflows','bot_workflows']},
      'clan_codes':CLANS_INPUT,
      'titles':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','maxLength':200}},
-     'section_ids':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','minLength':64,'maxLength':64}}}, community_reference),
+     'section_ids':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','minLength':64,'maxLength':64}}}, community_reference,
+    whole=Whole(selected_facts, selected_facts, selected_facts)),
  family_tool('read_conversation_evidence','Search full messages or read discussion chunks, causal replies and attachments.',
     {'mode':{'type':'string','enum':['reply','replay','reply_chain','message_window','channel_window','search','author_mentions','attachments']},
      'projection': {'type': 'string', 'enum': ['messages', 'attachment_text', 'media', 'extract_entities']},
@@ -275,5 +281,6 @@ TOOLS = (
      'pages': {'type': 'integer', 'minimum': 1, 'maximum': 8,
                'description': 'Read consecutive complete search or history pages before semantic review, within the shared evidence budget.'}}, conversation_evidence,
     rules=CONVERSATION_RULES,
-    usage_note='Use search with any filter: query, author_ids, mentions, channels or dates. Omit channels for server-wide search. Continue source_next_cursor with same filters.'),
+    usage_note='Use search with any filter: query, author_ids, mentions, channels or dates. Omit channels for server-wide search. Continue source_next_cursor with same filters.',
+    whole=Whole(uncapped=False, finishes=False)),
 )

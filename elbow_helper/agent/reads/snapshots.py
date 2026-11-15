@@ -234,7 +234,27 @@ UNKEPT_REPORT = {'error': 'That report was too large to keep while later reads r
                           'Narrow its members, clans or period.', 'cause': 'capacity'}
 
 
-def family_tool(name, description, properties, reader, *, required=(), rules=(), contract=None, usage_note=None):
+@dataclass(frozen=True, slots=True)
+class Whole:
+    """How a family's saved report reaches the answer step whole, not as pages.
+
+    Each use is True, False, or a test on the read's result: `restore` puts the saved rows
+    in the answer step, `uncapped` lifts its character ceiling, `finishes` ends a planned read
+    that has more pages."""
+    restore: object = True
+    uncapped: object = True
+    finishes: object = True
+
+
+# A lookup joins by declaring `whole=`; the engine reads this one table wherever it needs the answer.
+WHOLE_FAMILIES = {}
+
+
+def family_tool(name, description, properties, reader, *, required=(), rules=(), contract=None, usage_note=None,
+                whole=None):
+    if whole:
+        WHOLE_FAMILIES[name] = whole if isinstance(whole, Whole) else Whole()
+
     async def handle(context, arguments):
         await require_evidence_access(context)
         offset, limit = arguments.get('offset', 0), arguments.get('limit', 500)

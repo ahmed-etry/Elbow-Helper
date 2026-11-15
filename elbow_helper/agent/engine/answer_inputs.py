@@ -190,9 +190,12 @@ def _row_read_coverage(result, subject, named_tags):
     unread = sorted(selected - seen - checked)
     coverage = {}
     if paged or unread:
-        coverage['row_coverage'] = {'status': 'partial' if rows else 'not_read',
-            'rows_read': len(rows),
-            'rows_not_read': max(0, total - len(rows)) if isinstance(total, int) else None,
+        # A complete snapshot read every row; the rows past this page are saved, only not shown here.
+        saved = paged and result.get('complete_snapshot') is True and isinstance(total, int)
+        coverage['row_coverage'] = {'status': 'partial' if rows or saved else 'not_read',
+            **({'rows_read': total, 'rows_shown': len(rows)} if saved else {
+                'rows_read': len(rows),
+                'rows_not_read': max(0, total - len(rows)) if isinstance(total, int) else None}),
             'account_tags_not_read': unread}
     if paged:
         coverage['evidence_complete'] = False

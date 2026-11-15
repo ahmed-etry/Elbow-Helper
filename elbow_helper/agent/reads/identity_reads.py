@@ -8,7 +8,7 @@ import time
 from elbow_helper.configuration.clans import CLANS, CLAN_ORDER
 from elbow_helper.configuration.roles import MEMBER_ROLE_ID, TRIAL_ROLE_ID
 from elbow_helper.domain.player_tags import normalize_player_tag
-from elbow_helper.agent.reads.snapshots import family_tool, IDS, TAGS, DATE
+from elbow_helper.agent.reads.snapshots import family_tool, Whole, IDS, TAGS, DATE
 from elbow_helper.agent.reads.war_tools import CLANS_INPUT, WINDOW_RULES
 from elbow_helper.agent.reads.projections import ACCOUNT_FILTERS, COHORT_REF, PERFORMANCE, account_matches, cohort_selection, performance_projection, unknown_account_filter, unknown_account_data
 from elbow_helper.agent.safety.access import require_evidence_access
@@ -646,7 +646,8 @@ TOOLS = (
       'include_war_stars':{'type':'boolean', 'description':
           'Optional lifetime war stars; requires a player-profile read per account. Use war participation for recent activity.'},
       'sort':{'type':'string','enum':['town_hall','clan','donations','war_stars']}}, clan_rosters,
-     usage_note='Default basis is home assignment by Discord role; current_in_game lists who is in game now. exclude_leadership drops leadership owners and alts.'),
+     usage_note='Default basis is home assignment by Discord role; current_in_game lists who is in game now. exclude_leadership drops leadership owners and alts.',
+     whole=True),
  family_tool('read_member_cohort', 'Read named Discord role holders, clan assignments, join dates, trials or roster activity.',
      {'basis': {'type': 'string', 'enum': ['joined_discord', 'role_holders', 'accepted_recruitment', 'clan_rosters', 'selected']},
       'roster_basis': ROSTER_BASIS,
@@ -674,5 +675,7 @@ TOOLS = (
       'sort': {'type': 'string', 'enum': ['oldest_first', 'newest_first']}}, member_cohort, required=('basis',),
      rules=COHORT_RULES,
      contract=CapabilityContract(retained_fields=('cohort_ref',)),
-     usage_note='selected: member_ids or read_member_accounts cohort_ref. include_activity reads stored Discord counters; after adds selected-account war activity.'),
+     usage_note='selected: member_ids or read_member_accounts cohort_ref. include_activity reads stored Discord counters; after adds selected-account war activity.',
+     whole=Whole(restore=lambda result: result.get('basis') in ('clan_rosters', 'role_holders', 'joined_discord', 'selected'),
+                 finishes=lambda result: result.get('basis') in ('clan_rosters', 'role_holders', 'joined_discord'))),
 )

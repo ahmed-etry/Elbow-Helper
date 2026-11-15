@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.engine.answer_inputs import answer_evidence
+from elbow_helper.agent.engine.budgets import FAMILY_LIMITS
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
 from elbow_helper.agent.engine.routing import ROUTE_INSTRUCTION
 from elbow_helper.agent.engine.service import AgentService
@@ -81,6 +82,49 @@ class NameLookupCoverageTests(unittest.IsolatedAsyncioTestCase):
         written = answer_evidence(restored)['accounts']
         self.assertNotIn('row_coverage', written)
         self.assertNotIn('evidence_complete', written)
+
+    async def test_an_answer_forced_after_a_refused_plan_is_told_the_unshown_rows_were_read(self):
+        # Live 15 Nov: 133 rows read and saved, one page shown, a plan for the rest refused by the
+        # plan check, and no research round left for its correction.
+        rows = [{'player_tag': '#P%03d' % index, 'stars': index % 4, 'note': 'n' * 150} for index in range(133)]
+        tool = family_tool('read_test_family', 'Synthetic saved rows.', {}, AsyncMock(return_value={'rows': rows}))
+        registry = {'read_test_family': tool}
+        requests = []
+
+        async def provider(**options):
+            requests.append(options)
+            if options['messages'][0]['content'] == ROUTE_INSTRUCTION:
+                return provider_response('research')
+            if len(requests) == 2:
+                return provider_response(calls=[call('submit_request_plan', {**_plan([
+                    {'id': 'rows', 'capability': 'read_test_family', 'arguments': {}, 'depends_on': []}],
+                    effort='high'), 'finish_after_reads': True})])
+            if len(requests) == 3:
+                handle =json.loads(options['messages'][1]['content'].split('\nAvailable evidence:\n')[0])
+                cursor = handle['read_handles']['rows']
+                return provider_response(calls=[call('submit_request_plan', {**_plan([
+                    {'id': 'rest', 'capability': 'read_test_family', 'arguments': {
+                        'report_id': cursor['report_id'], 'cursor': cursor['next_cursor']}, 'depends_on': []}],
+                    effort='medium'), 'finish_after_reads': True})])
+            return provider_response('Synthetic answer.')
+
+        model = client(provider)
+        try:
+            with patch('elbow_helper.agent.engine.service.build_agent_tools', return_value=registry), \
+                    patch('elbow_helper.agent.engine.budgets.RESEARCH_LIMITS', FAMILY_LIMITS):
+                answer = await AgentService(model).answer(question='Synthetic star pace.',
+                                                          local_context='', context=_context())
+        finally:
+            await model.close()
+        self.assertEqual(answer, 'Synthetic answer.')
+        self.assertEqual(len(requests), 4)
+        forced = requests[3]
+        self.assertIn('No further research is available', json.dumps(forced['messages'], default=str))
+        _, _, evidence = writer_payload(forced)
+        coverage = unpack(evidence)['rows']['row_coverage']
+        self.assertEqual(coverage['rows_read'], 133)
+        self.assertLess(coverage['rows_shown'], 133)
+        self.assertNotIn('rows_not_read', coverage)
 
     async def test_writer_input_keeps_all_named_accounts_and_marks_unread_wars(self):
         payload = named_accounts()

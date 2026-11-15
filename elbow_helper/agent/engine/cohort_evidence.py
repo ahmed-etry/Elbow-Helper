@@ -2,17 +2,19 @@
 import json
 from dataclasses import replace
 
-from elbow_helper.agent.reads.snapshots import FamilyReport
+from elbow_helper.agent.reads.snapshots import FamilyReport, WHOLE_FAMILIES
 from elbow_helper.agent.reads.evidence import family_model_view, record_rows
 from elbow_helper.features.cwl.results_summary import CWL_ANALYSIS_FIELDS
 from ..reports.tools import authorize_report
 from ..plan.results import compact_result, model_result
 
 
-def restorable_reference(result):
-    """Selected facts are writer evidence; an index still needs source reads."""
-    return (result.get('family') == 'read_community_reference'
-            and result.get('mode') in ('sections', 'domain_facts', 'implementation_reference'))
+def delivered_whole(result, use):
+    """Whether this read's saved report is delivered whole for `use` (restore, uncapped or finishes):
+    the lookup's own declaration."""
+    declared = WHOLE_FAMILIES.get(result.get('family'))
+    rule = getattr(declared, use, False)
+    return rule(result) if callable(rule) else bool(rule)
 
 
 def share_discussion_rows(evidence):
