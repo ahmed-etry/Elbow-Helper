@@ -154,14 +154,6 @@ class PeopleReads(RecordReads):
             rows.append({"member_id": identifier, "stays": stays, "last_message": last})
         return {"rows": rows, "coverage": envelope([signal(connection, "discord_scan", None, at)], at=at)}
 
-    async def owners(self, player_tags, as_of=None):
-        return await self._read(self._owners, tags(player_tags), timestamp(as_of))
-
-    @staticmethod
-    def _owners(connection, selected, at):
-        rows = [ownership(connection, tag, at) for tag in selected]
-        return {"rows": rows, "coverage": envelope([signal(connection, "account_links", "current", at)], at=at)}
-
     async def accounts(self, member_ids, as_of=None, *, limit=200, offset=0):
         """Page ownership rows; every requested member appears on every page.
 

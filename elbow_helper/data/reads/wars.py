@@ -523,32 +523,6 @@ class WarReads(RecordReads):
         result["coverage"] = window_coverage(connection, clans, types, after, before, at, checked, result["truncated"])
         return result
 
-    async def participation(self, clans, after, before, *, types=REGULAR, player_tags=None, group_by="account",
-                            time_field="end_at", states=None, as_of=None, limit=200, offset=0):
-        """Per account per war in wars ended in [after, before); or grouped by owner at as_of."""
-        pagination(limit, offset)
-        if group_by not in ("account", "owner"):
-            raise ValueError("Expected account or owner grouping")
-        selected = None if player_tags is None else tags(player_tags)
-        return await self._read(self._participation, clan_tags(clans), *window(after, before), war_types(types),
-                                selected, group_by, *selection(time_field, states), timestamp(as_of), limit, offset)
-
-    @staticmethod
-    def _participation(connection, clans, after, before, types, selected, group_by, time_field, states, at, limit, offset):
-        rows, checked = [], []
-        for war, clan, time, basis in select_wars(connection, clans, after, before, types, at, time_field, states):
-            coverage = war_side_coverage(connection, war["id"], clan)
-            checked.append((war, clan, coverage))
-            rows.extend({**row, "state": war["state"], "time": time, "time_basis": basis}
-                        for row in member_rows(connection, war, clan, coverage)
-                        if selected is None or row["player_tag"] in selected)
-        if group_by == "owner":
-            rows = by_owner(connection, rows, at)
-        result = page(rows[offset:offset + limit + 1], limit, offset)
-        result.update(group_by=group_by, ownership_basis="owner at as_of" if group_by == "owner" else None,
-                      coverage=window_coverage(connection, clans, types, after, before, at, checked, result["truncated"]))
-        return result
-
     async def attacks(self, clans, after, before, *, types=REGULAR, player_tags=None, direction="attacks",
                       time_field="end_at", states=None, as_of=None, limit=200, offset=0):
         """Attack detail with both town halls; defenses are the opponent's attacks on the clan.

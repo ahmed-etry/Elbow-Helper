@@ -79,7 +79,6 @@ class FreshStartupTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await service.read_links(), {})
             self.assertTrue((await PeopleReads(store).current_links(100))["coverage"]["complete"])
             await service.upsert_link(**row(), at=200)
-            self.assertTrue((await PeopleReads(store).owners(["#P0"], 10**12))["coverage"]["complete"])
             before = await store.call(lambda c: tuple(c.iterdump()))
 
             def refuse(c):
