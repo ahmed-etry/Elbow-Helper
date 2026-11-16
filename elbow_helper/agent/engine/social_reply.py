@@ -2,20 +2,23 @@
 
 import json
 import logging
+import re
 from dataclasses import replace
+
+import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition, AgentToolResult, TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.agent.safety.access import require_evidence_access
 from ..plan.checker import PlanCheck, check_plan, valid_arguments
 from ..plan.results import result_handler
-from ..research.member_provenance import member_target_issue
+from ..research.member_provenance import member_target_issue, request_reply_author_id
 from elbow_helper.agent.conversation.wording import FAILURE_MESSAGE
 from ..discord_actions.gif_library import ITEM_BY_ID, catalogue_text, channel_used_items
 from ..discord_actions.meme_usage import recent_memes, select_meme
 from ..discord_actions.gifs import gif_tools
 from .rounds import AgentGracefulEnd
-from .social_members import social_member_identity
+from .social_members import REPLIED_MEMBER_INSTRUCTION, social_member_identity
 
 
 LOGGER = logging.getLogger(__name__)
@@ -244,6 +247,7 @@ async def read_social_reply(flow):
     identity_checked = False
     identity_query = None
     recipient = None
+    replied_member = None
     for attempt in range(3):
         step = await social_advance(flow, pending, continuation_instruction=continuation)
         if step is None:
@@ -284,6 +288,15 @@ async def read_social_reply(flow):
                             identity_query = choice["member_query"].strip().casefold()
                             if choice.get("address_member"):
                                 recipient = identity["member"]["member_id"]
+                                if recipient == request_reply_author_id(flow.context):
+                                    # Their message is here: the reply to it, text or GIF, is the one ping.
+                                    flow.context.state.reply_to = flow.context.source_message.reference.message_id
+                                    flow.context.state.ping_author = True
+                                    replied_member = recipient
+                                    replied_name = discord.utils.escape_mentions(discord.utils.escape_markdown(
+                                        str(identity["member"].get("display_name") or "")))
+                                    recipient = None
+                                    identity = {**identity, "instruction": REPLIED_MEMBER_INSTRUCTION}
                             pending = (AgentToolResult(call.call_id, json.dumps(identity, ensure_ascii=False)),)
                             continuation = identity["instruction"] + " " + SOCIAL_REPLY_INSTRUCTION
                             continue
@@ -326,6 +339,10 @@ async def read_social_reply(flow):
             text = plan.get("reply", "")
             if recipient is not None and f"<@{recipient}>" not in text and f"<@!{recipient}>" not in text:
                 text = f"<@{recipient}> {text}"
+            if replied_member is not None:
+                # The reply already pings them; a written mention would ping twice.
+                text = re.sub(rf"^\s*<@!?{replied_member}>\s*", "", text)
+                text = re.sub(rf"<@!?{replied_member}>", replied_name, text)
             if flow.context.state.gif_url:
                 flow.context.state.gif_fallback_text = text
                 return "", None
