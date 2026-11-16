@@ -406,7 +406,7 @@ def clash_tools():
     return (RegisteredAgentTool(
         AgentToolDefinition(
             "read_clash",
-            "Read Clash clans, wars, profiles and raw latest logs; use read_ranked_activity for history.",
+            "Read Clash clans/wars/profiles/logs; capital_raids: clan tags, dated weekends, member attacks/loot.",
             {
                 "type": "object",
                 "properties": {
@@ -437,7 +437,7 @@ def clash_tools():
                          "forbids": ["order", "offset", "after", "before"],
                          "error": "Use order, offset and dates for battle logs only."}],
             },
-            usage_note="Use resolved tags, never placeholder values; fields overrides detail. War/CWL facts: external clans only. CWL-only clans need a CWL cohort first.",
+            usage_note="Resolved tags, no placeholders; fields overrides detail. Ranked history: read_ranked_activity. War/CWL: external clans only. CWL-only: CWL cohort first.",
         ),
         read_clash,
         contract=CapabilityContract(),
