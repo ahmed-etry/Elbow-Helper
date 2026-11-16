@@ -215,7 +215,7 @@ async def read_clash(context, arguments):
     normalized = []
     for value in tags:
         clan = (
-            CLANS.get(value.upper())
+            CLANS.get(value.upper().removeprefix('#'))
             if isinstance(value, str) and kind not in ("player", "battle_log", "cwl_war") else None
         )
         tag = normalize_player_tag(clan.tag if clan else value)

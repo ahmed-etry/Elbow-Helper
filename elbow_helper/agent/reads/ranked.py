@@ -55,7 +55,7 @@ def checked_request(arguments, selection_maximum):
     else:
         normalized = []
         for value in values:
-            clan = CLANS.get(value.upper()) if isinstance(value, str) and selector == 'clan_tags' else None
+            clan = CLANS.get(value.upper().removeprefix('#')) if isinstance(value, str) and selector == 'clan_tags' else None
             tag = normalize_player_tag(clan.tag if clan else value)
             if tag is None:
                 return invalid_arguments('Use valid Clash tags or family clan codes.', selector)
