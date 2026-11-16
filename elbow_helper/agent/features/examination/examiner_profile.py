@@ -122,7 +122,7 @@ async def _workflow(context: AgentRequestContext, *, post: bool = True):
     else:
         channel = await accessible_message_channel(context, EXAMINATION_PANEL_THREAD)
         if channel is None:
-            raise ActionRefused("That examiner panel is not accessible here.")
+            raise ActionRefused("That examiner panel is not accessible here.", cause="access_denied")
         context.state.source_channels.add(channel.id)
     return workflow, channel
 

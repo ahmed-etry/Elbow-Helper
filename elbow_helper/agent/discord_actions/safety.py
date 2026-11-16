@@ -141,13 +141,13 @@ def check_post_access(channel: Any, member: Any, bot_member: Any) -> None:
     for actor in (member, bot_member):
         allowed = channel.permissions_for(actor)
         if not getattr(allowed, permission, False):
-            raise DiscordActionRefused("Both you and the bot need access to post there.")
+            raise DiscordActionRefused("Both you and the bot need access to post there.", cause="access_denied")
 
 
 def check_view_access(channel: Any, member: Any, bot_member: Any) -> None:
     for actor in (member, bot_member):
         if actor is None or not channel.permissions_for(actor).view_channel:
-            raise DiscordActionRefused("Both you and the bot need access to view that channel.")
+            raise DiscordActionRefused("Both you and the bot need access to view that channel.", cause="access_denied")
 
 
 def check_raw_role(role: Any, guild: Any, bot_member: Any,
@@ -157,7 +157,7 @@ def check_raw_role(role: Any, guild: Any, bot_member: Any,
         raise DiscordActionRefused("An integration manages that role.")
     current = guild.get_member(requester.id)
     if current is None or not getattr(current.guild_permissions, "manage_roles", False):
-        raise DiscordActionRefused("Changing roles requires Manage Roles permission.")
+        raise DiscordActionRefused("Changing roles requires Manage Roles permission.", cause="access_denied")
     if not _below_requester(role.position, guild, requester):
         raise DiscordActionRefused("That role is above your top role.")
     for permission in POWERFUL_PERMISSIONS:
@@ -172,7 +172,7 @@ def check_raw_nickname(member: Any, bot_member: Any, *, guild: Any, requester: A
     check_member(member, bot_member, guild=guild, requester=requester)
     current = guild.get_member(requester.id)
     if current is None or not getattr(current.guild_permissions, "manage_nicknames", False):
-        raise DiscordActionRefused(ACTION_UNAVAILABLE)
+        raise DiscordActionRefused(ACTION_UNAVAILABLE, cause="access_denied")
     if (member.id != requester.id
             and (member.id == getattr(guild, "owner_id", None)
                  or not _below_requester(member.top_role.position, guild, requester))):

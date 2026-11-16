@@ -11,7 +11,7 @@ from typing import Any
 
 import discord
 
-from elbow_helper.agent.safety.access import READ_ACCESS_ROLE_SETS, ACCESS_VIEW_AUDIT_LOG, KNOWN_ACCESS_REQUIREMENTS, has_reader_access_requirements
+from elbow_helper.agent.safety.access import READ_ACCESS_ROLE_SETS, ACCESS_VIEW_AUDIT_LOG, KNOWN_ACCESS_REQUIREMENTS, has_reader_access_requirements, reader_clearance
 from elbow_helper.agent.engine.models import AgentRequestContext, EvidenceScope
 from elbow_helper.configuration import channels as channel_ids
 from elbow_helper.configuration.roles import MEMBERS
@@ -172,8 +172,7 @@ def _member_access_failure(guild, member_id, requirements):
 
 
 def member_clearance(guild, member_id):
-    return frozenset(level for level in KNOWN_ACCESS_REQUIREMENTS
-                     if has_reader_access_requirements(guild, member_id, {level}))
+    return reader_clearance(guild, member_id)
 
 
 async def _thread_member_ids(thread, cache):

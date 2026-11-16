@@ -218,11 +218,11 @@ async def prepare_post(context: AgentRequestContext,
                 id=reply.id, author=reply.author, content=reply.content, jump_url=reply.jump_url,
             )
     except DiscordActionRefused as error:
-        return {"error": str(error)}
+        return error.result()
     try:
         attachment = await resolve_post_attachment(context, arguments)
     except DiscordActionRefused as error:
-        return {"error": str(error)}
+        return error.result()
     parts = outgoing_parts(arguments["text"], attachment=attachment)
     if not parts:
         return {"error": "The message has no text."}
@@ -426,7 +426,7 @@ async def prepare_edit(context: AgentRequestContext,
         post_mentions(context, arguments, arguments["text"])
         member_labels = await mentioned_member_labels(context.guild, arguments["text"])
     except DiscordActionRefused as error:
-        return {"error": str(error)}
+        return error.result()
     if len(arguments["text"]) > 2000:
         return {"error": "One edited message must fit Discord's message limit."}
     context.state.proposed_changes.append(_edit_action(
@@ -529,7 +529,7 @@ async def prepare_delete(context: AgentRequestContext,
             context, arguments["channel_id"], arguments["message_id"],
         )
     except DiscordActionRefused as error:
-        return {"error": str(error)}
+        return error.result()
     before = message.content
 
     async def recheck() -> bool:

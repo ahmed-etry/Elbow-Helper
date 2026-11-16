@@ -69,7 +69,7 @@ def guard(context, *permissions, channel=None, bot_permissions=None):
         if missing:
             labels = ", ".join(permission_name(name, channel=channel is not None)
                                for name in missing)
-            raise DiscordActionRefused(f"{subject} {labels} in {place}.")
+            raise DiscordActionRefused(f"{subject} {labels} in {place}.", cause="access_denied")
     return requester, bot
 
 
@@ -104,9 +104,9 @@ def check_grants(context, granted, *, channel=None):
                                for name in missing)
             subject = "You cannot grant" if actor is requester else "The bot needs"
             if actor is requester:
-                raise DiscordActionRefused(f"{subject} these permissions: {labels}.")
+                raise DiscordActionRefused(f"{subject} these permissions: {labels}.", cause="access_denied")
             place = channel.mention if channel is not None else "this server"
-            raise DiscordActionRefused(f"{subject} {labels} in {place}.")
+            raise DiscordActionRefused(f"{subject} {labels} in {place}.", cause="access_denied")
 
 
 async def queue(context, action):

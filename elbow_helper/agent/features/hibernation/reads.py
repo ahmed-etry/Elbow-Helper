@@ -57,7 +57,7 @@ async def read_active_hibernation(
     if context.hibernation_queries is None:
         return {"error": "Hibernation status evidence is not available."}
     if await accessible_message_channel(context, HIBERNATION_LOG) is None:
-        return {"error": "Hibernation status evidence is not accessible from this conversation."}
+        return {"error": "Hibernation status evidence is not accessible from this conversation.", "cause": "access_denied"}
     try:
         snapshot = context.hibernation_queries.active_snapshot()
     except ValueError:

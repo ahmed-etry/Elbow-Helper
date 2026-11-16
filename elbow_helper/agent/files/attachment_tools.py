@@ -167,7 +167,7 @@ async def import_csv_attachment(
         getattr(getattr(source, "guild", None), "id", None) != context.guild.id
         or await accessible_message_channel(context, source.channel.id) is None
     ):
-        return {"error": "That attachment source is no longer accessible."}
+        return {"error": "That attachment source is no longer accessible.", "cause": "access_denied"}
     context.state.source_channels.add(source.channel.id)
     try:
         report = await acquire_csv_attachment(
@@ -213,7 +213,7 @@ async def import_xlsx_attachment(
         getattr(getattr(source, "guild", None), "id", None) != context.guild.id
         or await accessible_message_channel(context, source.channel.id) is None
     ):
-        return {"error": "That attachment source is no longer accessible."}
+        return {"error": "That attachment source is no longer accessible.", "cause": "access_denied"}
     context.state.source_channels.add(source.channel.id)
     try:
         report = await acquire_xlsx_attachment(
@@ -273,7 +273,7 @@ async def import_text_attachment(
         getattr(getattr(source, "guild", None), "id", None) != context.guild.id
         or await accessible_message_channel(context, source.channel.id) is None
     ):
-        return {"error": "That attachment source is no longer accessible."}
+        return {"error": "That attachment source is no longer accessible.", "cause": "access_denied"}
     context.state.source_channels.add(source.channel.id)
     try:
         report = await acquire_text_attachment(

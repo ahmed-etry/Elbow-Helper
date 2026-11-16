@@ -87,7 +87,7 @@ async def read_accessible_examination_cases(
         return {
             "error": (
                 "Examination case status is not accessible from this conversation."
-            )
+            ), "cause": "access_denied",
         }
     selected_ticket_id = arguments.get("ticket_channel_id")
     if selected_ticket_id is not None and (
@@ -115,7 +115,7 @@ async def read_accessible_examination_cases(
         ):
             accessible_ids.append(registration.ticket_channel_id)
     if selected_ticket_id is not None and not accessible_ids:
-        return {"error": "That examination case is not accessible."}
+        return {"error": "That examination case is not accessible.", "cause": "access_denied"}
     try:
         snapshot = context.examination_queries.case_snapshot(
             ticket_channel_ids=tuple(accessible_ids),

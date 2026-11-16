@@ -121,7 +121,15 @@ def _has_role_requirements(guild, member_id, requirements, role_sets):
     member = guild.get_member(member_id)
     if member is None:
         return False
-    role_ids = {role.id for role in getattr(member, "roles", ())}
+    return _member_meets(guild, member, _role_ids(member), requirements, role_sets)
+
+
+def _role_ids(member):
+    """A member's roles are rebuilt and sorted on every access, so read them once."""
+    return {role.id for role in getattr(member, "roles", ())}
+
+
+def _member_meets(guild, member, role_ids, requirements, role_sets):
     if ACCESS_VIEW_AUDIT_LOG in requirements:
         for actor in (member, guild.me):
             if actor is None or not getattr(
@@ -132,6 +140,16 @@ def _has_role_requirements(guild, member_id, requirements, role_sets):
                for level in requirements if level != ACCESS_VIEW_AUDIT_LOG)
 
 
+def reader_clearance(guild, member_id):
+    """Every access level the member currently clears, from one read of their roles."""
+    member = guild.get_member(member_id)
+    if member is None:
+        return frozenset()
+    role_ids = _role_ids(member)
+    return frozenset(level for level in KNOWN_ACCESS_REQUIREMENTS
+                     if _member_meets(guild, member, role_ids, {level}, READ_ACCESS_ROLE_SETS))
+
+
 def lookup_level(level: str):
     """Check a new read locally, then retain its access with the evidence."""
     def decorate(handler):
@@ -139,13 +157,13 @@ def lookup_level(level: str):
         async def read(context, arguments):
             await require_evidence_access(context)
             if not has_lookup_access(context, {level}):
-                return {"error": f"This needs {level} access.", "required_access": [level]}
+                return {"error": f"This needs {level} access.", "required_access": [level], "cause": "access_denied"}
             previous = dict(context.state.reports)
             result = await handler(context, arguments)
             if not has_lookup_access(context, {level}):
                 context.state.reports.clear()
                 context.state.reports.update(previous)
-                return {"error": f"This needs {level} access.", "required_access": [level]}
+                return {"error": f"This needs {level} access.", "required_access": [level], "cause": "access_denied"}
             if "error" not in result:
                 context.state.required_access.add(level)
                 for report_id, report in context.state.reports.items():

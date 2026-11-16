@@ -34,7 +34,7 @@ async def advance_discord_research_job(
     if scope is None:
         return {"error": "That research job is not available in this conversation."}
     if await accessible_message_channel(context, scope.source_channel_id) is None:
-        return {"error": "The research source is no longer accessible."}
+        return {"error": "The research source is no longer accessible.", "cause": "access_denied"}
     context.state.source_channels.add(scope.source_channel_id)
     await require_evidence_access(context)
     try:

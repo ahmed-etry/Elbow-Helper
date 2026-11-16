@@ -36,7 +36,7 @@ class LookupAccessTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.agent.engine.tool_call.require_evidence_access", new=AsyncMock()):
             result = await AgentService.execute_tool(name="synthetic", handler=handler, arguments={},
                 capability_scope={"required_access": ["core"]}, context=context)
-        self.assertEqual(json.loads(result), {"error": ACTION_UNAVAILABLE, "required_access": ["core"]})
+        self.assertEqual(json.loads(result), {"error": ACTION_UNAVAILABLE, "required_access": ["core"], "cause": "access_denied"})
         handler.assert_not_awaited()
         with patch("elbow_helper.agent.engine.tool_call.require_evidence_access",
                    new=AsyncMock(side_effect=AgentAccessLost())):

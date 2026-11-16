@@ -112,8 +112,6 @@ async def prepare_reactivation_close(context: AgentRequestContext,
     if owner is not None:
         check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
     before = channel.overwrites_for(owner).send_messages if owner is not None else None
-    if before is False:
-        return {"status": "no_change"}
     message_id = channel.last_message_id
     lines = [ACTION_TICKET_CLOSE_LINE.format(channel=channel.mention)]
     if owner is not None:

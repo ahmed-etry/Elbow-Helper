@@ -82,6 +82,7 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
         result, touched = self.query("SELECT * FROM second.accounts", levels=set())
         self.assertEqual(result, {
             "error": "This needs lead access.", "required_access": ["lead"],
+            "cause": "access_denied",
         })
         self.assertFalse(touched)
 

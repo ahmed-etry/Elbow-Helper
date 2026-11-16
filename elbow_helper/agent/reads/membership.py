@@ -24,5 +24,5 @@ def membership_tools():
             "offset": {"type": "integer", "minimum": 0, "default": 0},
             "limit": {"type": "integer", "minimum": 1, "maximum": 25, "default": 25},
         }, "required": ["after"], "additionalProperties": False},
-        usage_note="Max 90 days of family clan stays. First observed is not first-ever membership; returns require earlier observations inside bounds.",
+        usage_note="First observed is not first-ever membership; returns require earlier observations inside bounds.",
     ), read_membership_history, contract=CapabilityContract()),)

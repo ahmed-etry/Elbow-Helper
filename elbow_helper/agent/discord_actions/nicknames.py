@@ -77,7 +77,7 @@ async def prepare_nickname(context: AgentRequestContext,
         member = await resolve_member(context.guild, arguments["member_id"])
         check_raw_nickname(member, context.guild.me, requester=context.member, guild=context.guild)
     except DiscordActionRefused as error:
-        return {"error": str(error)}
+        return error.result()
     after = arguments.get("nickname")
     if member.nick == after:
         return {"status": "no_change"}

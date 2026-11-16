@@ -84,7 +84,7 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
         if alias.lower() == "state" and table in states:
             level = states[table].level
         if level and level != "none" and level not in levels:
-            return {"error": f"This needs {level} access.", "required_access": [level]}, set()
+            return {"error": f"This needs {level} access.", "required_access": [level], "cause": "access_denied"}, set()
     touched = set()
     read_tables = set()
     denied = set()
@@ -139,6 +139,7 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
                     return {
                         "error": f"This needs {source.level} access.",
                         "required_access": [source.level],
+                        "cause": "access_denied",
                     }, set()
                 try:
                     doc = source.resolve(paths).read_text(encoding="utf-8")
@@ -272,6 +273,7 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
             return {
                 "error": "This needs " + ", ".join(sorted(denied)) + " access.",
                 "required_access": sorted(denied),
+                "cause": "access_denied",
             }, set()
         if time.monotonic() >= deadline:
             return {"error": "The query took too long. Narrow it or aggregate."}, set()
@@ -330,6 +332,7 @@ async def query_context(context, sql, params=None, max_rows=DEFAULT_QUERY_ROWS):
         return {
             "error": "This needs " + ", ".join(sorted(touched)) + " access.",
             "required_access": sorted(touched),
+            "cause": "access_denied",
         }
     if "error" not in result or "available_schema" in result:
         context.state.required_access.update(touched)

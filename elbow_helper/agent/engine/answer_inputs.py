@@ -162,8 +162,7 @@ def read_handles(evidence, arguments=None, *, report_ids=None, results=None):
 def _limit(result, flags, subject, guild, read):
     """Use typed failure metadata, never classify or rewrite error prose."""
     cause = result.get("cause")
-    denied = (bool(result.get("required_access")) or cause == "access_denied"
-              or "access_denied" in flags.get("limits", ()))
+    denied = cause in ("access_denied", "scope_refused")
     needs_input = cause != 'invalid_arguments' and (
         result.get("status") == "needs_input" or bool(result.get("missing_fields"))
         or cause == "needs_input")

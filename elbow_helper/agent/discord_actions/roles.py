@@ -151,7 +151,7 @@ async def _prepare_roles(context: AgentRequestContext, arguments: Mapping[str, A
                 check_member_role_ownership(context, role, member)
                 selected.append(member)
     except DiscordActionRefused as error:
-        return {"error": str(error), 'cause': 'ineligible',
+        return {"error": str(error), 'cause': error.cause or 'ineligible',
                 'role_change_access': role_change_access(context),
                 'change_attempted': False, 'confirmation_prepared': False}
     await require_evidence_access(context)

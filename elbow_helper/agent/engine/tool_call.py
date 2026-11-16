@@ -55,7 +55,7 @@ async def execute_tool(
             if not has_lookup_access(context, required_access):
                 outcome = "refused"
                 return json.dumps({"error": ACTION_UNAVAILABLE,
-                                   "required_access": sorted(required_access)})
+                                   "required_access": sorted(required_access), "cause": "access_denied"})
         async with asyncio.timeout(timeout_seconds):
             payload = await handler(context, arguments)
         if not isinstance(payload, Mapping):
@@ -63,9 +63,7 @@ async def execute_tool(
         refused_here = (context.state.scope_audit.private_candidates - private_before
                         or any("access:" + level in context.state.scope_audit.private_candidates
                                for level in payload.get("required_access", ())))
-        denied = (payload.get('cause') in ('scope_refused', 'access_denied')
-                  or payload.get('required_access')
-                  or 'access_denied' in payload.get('flags', {}).get('limits', ()))
+        denied = payload.get('cause') in ('scope_refused', 'access_denied')
         if refused_here and denied and "error" in payload:
             payload = {**payload, "available_privately": True}
         failed = "error" in payload or payload.get("flags", {}).get("status") == "failed"
@@ -92,11 +90,12 @@ async def execute_tool(
         outcome = "refused"
         restore_tool_state(context, snapshot)
         return json.dumps({"error": str(error), "required_access": sorted(error.requirements),
+                           "cause": "access_denied",
                            "available_privately": bool(context.state.scope_audit.private_candidates)})
     except ActionRefused as error:
         outcome = "refused"
         restore_tool_state(context, snapshot)
-        return error_result(str(error))
+        return json.dumps(error.result(), ensure_ascii=False)
     except CapabilityBindError:
         outcome = "unbound_source"
         restore_tool_state(context, snapshot)

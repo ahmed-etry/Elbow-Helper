@@ -103,7 +103,7 @@ async def _parent(context: AgentRequestContext, channel_id: int,
     permission = "create_private_threads" if private else "create_public_threads"
     for actor in (context.member, context.guild.me):
         if not getattr(channel.permissions_for(actor), permission, False):
-            raise DiscordActionRefused("Both you and the bot need permission to create that thread.")
+            raise DiscordActionRefused("Both you and the bot need permission to create that thread.", cause="access_denied")
     return channel
 
 
@@ -114,7 +114,7 @@ async def prepare_create_thread(context: AgentRequestContext,
         parent = await _parent(context, arguments["parent_channel_id"],
                                private=bool(arguments.get("private", False)))
     except DiscordActionRefused as error:
-        return {"error": str(error)}
+        return error.result()
     if isinstance(parent, discord.ForumChannel) and not arguments.get("initial_message"):
         return {"error": "A forum thread needs its opening message."}
     if isinstance(parent, discord.TextChannel) and arguments.get("initial_message"):
@@ -237,7 +237,7 @@ async def prepare_update_thread(context: AgentRequestContext,
                 arguments["operation"], arguments.get("name"),
             )
         except DiscordActionRefused as error:
-            return {"error": str(error)}
+            return error.result()
         verb = ACTION_THREAD_ACTIONS[arguments["operation"]][0]
         try:
             label = earlier_result_label(context.state.proposed_changes, reference)
@@ -271,7 +271,7 @@ async def prepare_update_thread(context: AgentRequestContext,
             arguments["operation"], arguments.get("name"),
         )
     except DiscordActionRefused as error:
-        return {"error": str(error)}
+        return error.result()
     before = getattr(thread, field)
     if before == after:
         return {"status": "no_change"}
@@ -372,7 +372,7 @@ async def prepare_thread_members(context: AgentRequestContext,
                     requester=context.member, guild=context.guild)
                 selected.append(member)
         except DiscordActionRefused as error:
-            return {"error": str(error)}
+            return error.result()
         for member in selected:
             async def bind(results: Mapping[str, Mapping[str, Any]],
                            member_id: int = member.id) -> PreparedAction:
@@ -413,7 +413,7 @@ async def prepare_thread_members(context: AgentRequestContext,
             if (member_id in present) != add:
                 selected.append(member_id)
     except DiscordActionRefused as error:
-        return {"error": str(error)}
+        return error.result()
     for member_id in selected:
         context.state.proposed_changes.append(_thread_member_action(
             context, thread.id, member_id, add=add, before=not add,

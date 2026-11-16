@@ -54,9 +54,7 @@ class ResearchJobRunner:
         while True:
             try:
                 await self.run_once()
-            except asyncio.CancelledError:
-                raise
-            except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error):
+            except Exception:
                 LOGGER.exception("Agent research worker poll failed")
             await asyncio.sleep(self.poll_seconds)
 

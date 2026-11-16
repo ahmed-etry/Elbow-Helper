@@ -93,7 +93,7 @@ async def read_accessible_support_tickets(
         if channel is not None:
             accessible.append(channel)
     if selected_channel_id is not None and not accessible:
-        return {"error": "That support ticket is not accessible."}
+        return {"error": "That support ticket is not accessible.", "cause": "access_denied"}
     try:
         snapshot = context.support_queries.metadata_snapshot(tuple(accessible))
         if {row.channel_id for row in snapshot.tickets} != {

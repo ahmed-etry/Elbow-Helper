@@ -89,7 +89,7 @@ async def read_active_recruitment_trials(
         if (selected_channel is None
                 or getattr(selected_channel, "category_id", None) != RECRUITMENT_TICKET_CATEGORY
                 or getattr(selected_channel, "type", None) != discord.ChannelType.text):
-            return {"error": "That recruitment trial is not accessible."}
+            return {"error": "That recruitment trial is not accessible.", "cause": "access_denied"}
     try:
         registrations = tuple(
             row for row in context.recruitment_queries.active_trial_registrations()

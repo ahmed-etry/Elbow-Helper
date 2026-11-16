@@ -16,5 +16,5 @@ class AccessRefusalTests(unittest.IsolatedAsyncioTestCase):
             patch("elbow_helper.agent.safety.access.has_reader_access_requirements", return_value=False),
         ):
             result = await lookup_level("lead")(handler)(context, {})
-        self.assertEqual(result, {"error": "This needs lead access.", "required_access": ["lead"]})
+        self.assertEqual(result, {"error": "This needs lead access.", "required_access": ["lead"], "cause": "access_denied"})
         handler.assert_not_awaited()

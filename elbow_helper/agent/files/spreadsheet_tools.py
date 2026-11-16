@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
+from ..actions.contracts import ActionRefused
 from elbow_helper.agent.safety.access import require_evidence_access
 from elbow_helper.agent.reads.sql.query import query_context
 from .workbooks import render_workbook_bytes
@@ -172,6 +173,8 @@ async def prepare_spreadsheet(
                 raise ValueError("The complete report spreadsheet exceeds its export limit")
             return {"error": "The export is too large; narrow the query."}
         spreadsheet = AgentSpreadsheet(arguments["title"], tuple(sheets))
+    except ActionRefused as error:
+        return error.result()
     except (KeyError, TypeError, ValueError) as error:
         return {"error": str(error)}
     if has_reports:
@@ -211,7 +214,7 @@ async def _report_sheet(context, specification) -> AgentSpreadsheetSheet:
         or not sources <= context.state.source_channels
         or not requirements <= (context.state.required_access | context.state.knowledge_title_access)
     ):
-        raise ValueError("That report is not authorized in this conversation")
+        raise ActionRefused("That report is not authorized in this conversation", cause="access_denied")
     context.state.required_access.update(requirements)
     return await asyncio.to_thread(
         materialize_report_table, report, name=name,

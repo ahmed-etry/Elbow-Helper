@@ -42,6 +42,13 @@ class ActionClass(StrEnum):
 class ActionRefused(ValueError):
     """An expected action refusal whose message may be shown to a member."""
 
+    def __init__(self, message: str, *, cause: str | None = None):
+        super().__init__(message)
+        self.cause = cause
+
+    def result(self) -> dict[str, Any]:
+        return {"error": str(self), **({"cause": self.cause} if self.cause else {})}
+
 
 @dataclass(frozen=True, slots=True)
 class ChangePreview:

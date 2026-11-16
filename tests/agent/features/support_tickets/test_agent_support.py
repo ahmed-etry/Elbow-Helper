@@ -147,6 +147,7 @@ class AgentSupportToolTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(result, {
                     "error": "That support ticket is not accessible.",
+                    "cause": "access_denied",
                 })
                 self.assertEqual(self.context.state.source_channels, set())
                 self.assertEqual(self.context.state.reports, {})

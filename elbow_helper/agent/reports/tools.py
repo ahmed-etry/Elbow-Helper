@@ -197,10 +197,13 @@ def replace_report_tools(tools: Sequence[RegisteredAgentTool]) -> tuple[Register
         if tool.definition.name in replaced:
             continue
         description = tool.definition.description
+        usage_note = tool.definition.usage_note
         for previous in REPORT_READERS.values():
             description = description.replace(previous, READ_NAME)
-        if description != tool.definition.description:
-            tool = replace(tool, definition=replace(tool.definition, description=description))
+            usage_note = usage_note.replace(previous, READ_NAME)
+        if description != tool.definition.description or usage_note != tool.definition.usage_note:
+            tool = replace(tool, definition=replace(tool.definition, description=description,
+                                                    usage_note=usage_note))
         retained.append(tool)
     routed = (_tool(READ_NAME, readers),) if readers else ()
     return (*retained, *routed)

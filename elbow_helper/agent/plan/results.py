@@ -118,8 +118,6 @@ def _flag(value: Any) -> str:
         return "expired"
     if "timed out" in text:
         return "timeout"
-    if "not accessible" in text or "not authorized" in text or "permission" in text or "cannot access" in text:
-        return "access_denied"
     if "named source" in text or "other sources" in text or "filter this read" in text:
         return "source_out_of_scope"
     if "time window" in text or "period" in text and "outside" in text:

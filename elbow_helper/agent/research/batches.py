@@ -310,7 +310,7 @@ async def _load_scoped_jobs(
         scopes.append(scope)
     for scope in scopes:
         if await accessible_message_channel(context, scope.source_channel_id) is None:
-            return None, {"error": "A research source is no longer accessible."}
+            return None, {"error": "A research source is no longer accessible.", "cause": "access_denied"}
         context.state.source_channels.add(scope.source_channel_id)
     await require_evidence_access(context)
     jobs = []

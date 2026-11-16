@@ -12,13 +12,13 @@ import discord
 from elbow_helper.agent.safety.access import accessible_message_channel, message_channel_unavailable
 from elbow_helper.agent.engine.models import AgentRequestContext
 from elbow_helper.agent.engine.validation import bounded_int, bounded_text
+from .dates import search_date
 from .history import (
     SEARCH_RESULT_LIMIT,
     COMPLETE_HISTORY_CHARACTER_BUDGET,
     HISTORY_MESSAGE_CHARACTER_BUDGET,
     cursor_state,
     search_cursor,
-    search_date,
     request_message_boundary,
     searchable_channel_ids,
     jump_url,

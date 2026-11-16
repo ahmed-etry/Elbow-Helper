@@ -55,15 +55,15 @@ def dm_recipients(context, identifiers):
 
 
 async def deliver_dms(context, identifiers, text, attachment=None, *,
-                      view_factory=None, recipient_allowed=None):
+                      view_factory=None, recipient_allowed=None, on_error=None):
     delivery = context.state.direct_messages
     async with delivery.lock:
         return await _deliver_dms(context, identifiers, text, attachment, delivery,
-                                 view_factory, recipient_allowed)
+                                 view_factory, recipient_allowed, on_error)
 
 
 async def _deliver_dms(context, identifiers, text, attachment, delivery,
-                       view_factory, recipient_allowed):
+                       view_factory, recipient_allowed, on_error=None):
     if recipient_allowed is not None:
         identifiers = [identifier for identifier in identifiers
                        if await recipient_allowed(identifier)]
@@ -110,6 +110,8 @@ async def _deliver_dms(context, identifiers, text, attachment, delivery,
                         file.close()
         except discord.HTTPException as error:
             delivered = False
+            if on_error is not None:
+                on_error(error)
             LOGGER.info("Agent DM was not delivered: member=%s code=%s", member.id, error.code)
             if error.code not in (50007, 50278):
                 LOGGER.warning(

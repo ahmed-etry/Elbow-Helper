@@ -173,14 +173,14 @@ async def _watcher_destination(context, values, destination, registry_factory) -
                     continue
                 source = await accessible_message_channel(context, identifier)
                 if source is None:
-                    raise ActionRefused("That source cannot be shared in this channel.")
+                    raise ActionRefused("That source cannot be shared in this channel.", cause="access_denied")
                 sources[identifier] = source
     if values.get("deliver_to") == "dm":
         return
     if not await can_show(destination, sources, levels, context.guild,
                           examination_queries=getattr(context, "examination_queries", None),
                           thread_members=getattr(context, "disclosure_thread_members", None)):
-        raise ActionRefused("That source cannot be shared in this channel.")
+        raise ActionRefused("That source cannot be shared in this channel.", cause="access_denied")
 
 
 def _evidence_label(context: AgentRequestContext, name: str, value: Any) -> str | None:

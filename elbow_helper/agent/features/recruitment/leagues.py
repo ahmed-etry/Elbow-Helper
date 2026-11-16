@@ -21,7 +21,7 @@ async def read_cohort_leagues(context, arguments):
             or report.guild_id != context.guild.id):
         return {"error": "That recruitment or join report is not available."}
     if not await authorize_report(context, report_id):
-        return {"error": "That recruitment or join report is not accessible."}
+        return {"error": "That recruitment or join report is not accessible.", "cause": "access_denied"}
     try:
         after, before = search_date(arguments.get("after")), search_date(arguments.get("before"))
         offset, limit = arguments.get("offset", 0), arguments.get("limit", 200)

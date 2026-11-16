@@ -21,7 +21,7 @@ async def set_reply_target(context, arguments):
         ):
             raise DiscordActionRefused(issue)
     except DiscordActionRefused as error:
-        return {"error": str(error)}
+        return error.result()
     await require_evidence_access(context)
     context.state.source_channels.add(channel.id)
     context.state.reply_to = arguments["message_id"]
