@@ -568,8 +568,8 @@ def standing_tools(
             "replace_id": {"type": "string"},
         }, "required": ["kind", "schedule"]},
         usage_note=(
-            "Requests need fixed values in scope_text, variable fields and target limits. "
-            "Watchers need fresh reads, condition and repeat choice."
+            "Channel reminders ping member_ids. Requests: fixed values in scope_text, variable fields, target limits. "
+            "Watchers: fresh reads, condition, repeat choice."
         ),
     )
     listing = AgentToolDefinition(
