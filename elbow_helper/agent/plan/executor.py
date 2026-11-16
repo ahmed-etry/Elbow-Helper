@@ -29,6 +29,36 @@ class SingleValueReferenceError(ValueError):
     """A collection cannot supply an unambiguous single argument value."""
 
 
+class MalformedReferenceError(ValueError):
+    """A reference-like argument did not use the reference object shape."""
+
+
+def reference_shape_issue(value, detail, field="arguments", *, array_item=False):
+    if detail.get("x-result-list"):
+        return None
+    kind = detail.get("type")
+    scalar = kind in ("string", "integer", "number", "boolean")
+    malformed = (
+        isinstance(value, str) and value.startswith("$ref:") and (array_item or kind == "array")
+        or isinstance(value, dict) and set(value) != {"step", "path"}
+        and bool(set(value) & {"step", "path", "$ref"}) and (scalar or kind == "array")
+    )
+    if malformed:
+        return field, (f'{field} must use a result reference with exactly "step" and "path": '
+                       '{"step": "<id>", "path": [...]}.')
+    if isinstance(value, dict) and set(value) != {"step", "path"}:
+        for name, item in value.items():
+            if issue := reference_shape_issue(item, detail.get("properties", {}).get(name, {}),
+                                             name if field == "arguments" else f"{field}.{name}"):
+                return issue
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            if issue := reference_shape_issue(item, detail.get("items", {}), f"{field}[{index}]",
+                                             array_item=kind == "array"):
+                return issue
+    return None
+
+
 def _walk(source: Any, path: list[Any]) -> Any:
     if not valid_path(path):
         raise TypeError("Invalid result path")
@@ -71,6 +101,8 @@ def resolve_arguments(
     arguments: Mapping[str, Any], results: Mapping[str, Mapping[str, Any]],
     *, schema: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if issue := reference_shape_issue(arguments, schema or {}):
+        raise MalformedReferenceError(issue[1])
     def resolve(value, detail, field="arguments", *, expand=False):
         reference = isinstance(value, dict) and set(value) == {"step", "path"}
         if not reference and "anyOf" in detail and "type" not in detail:
@@ -210,7 +242,7 @@ async def execute_plan(
                            step["id"], error.step_id, error.path)
             return step["id"], {"error": "A required earlier result is unavailable.",
                                 "execution_status": "not_run"}
-        except SingleValueReferenceError as error:
+        except (SingleValueReferenceError, MalformedReferenceError) as error:
             return step["id"], {
                 "error": str(error), "cause": "invalid_arguments",
                 "execution_status": "not_run",

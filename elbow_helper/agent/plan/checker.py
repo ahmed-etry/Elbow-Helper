@@ -211,6 +211,9 @@ def check_step(
     references = {field: value for field, value in arguments.items()
                   if has_reference(value)}
     schema = tool.definition.parameters
+    from .executor import reference_shape_issue
+    if issue := reference_shape_issue(arguments, schema):
+        return _error(issue[1], step_id, fields=(issue[0].split("[", 1)[0],))
     selected = (
         original_tool(registry, capability, arguments)
         if capability == READ_NAME else None
