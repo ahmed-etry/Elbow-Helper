@@ -102,6 +102,15 @@ class FamilyPlannerInputTests(unittest.IsolatedAsyncioTestCase):
                 for fragment in (clause.condition, *clause.effects):
                     self.assertIn(fragment, lines[name] + legend)
 
+
+    def test_cwl_default_period_is_visible_where_the_planner_reads_it(self):
+        # A leader asked for one member's CWL reports; the planner, seeing no default, chose a war count.
+        registry = build_agent_tools()
+        catalogue = capability_list(registry, include_returns=False, descriptions=False,
+                                    opened_capabilities=['read_cwl_results'])
+        line = next(line for line in catalogue.splitlines() if line.startswith('read_cwl_results'))
+        self.assertIn('No period: 3 ended seasons, +latest for account performance', line)
+
     async def test_inspection_and_confirmation_use_distinct_visible_paths(self):
         registry = {name: tool for name, tool in build_agent_tools().items() if tool.default_visible}
         plan = plans()['role_preview']
