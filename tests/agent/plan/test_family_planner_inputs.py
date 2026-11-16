@@ -111,6 +111,13 @@ class FamilyPlannerInputTests(unittest.IsolatedAsyncioTestCase):
         line = next(line for line in catalogue.splitlines() if line.startswith('read_cwl_results'))
         self.assertIn('No period: 3 ended seasons, +latest for account performance', line)
 
+    def test_planner_sees_where_a_named_members_whole_account_list_is(self):
+        # "X and all his alts": the plan chained rows.*.player_tag, which held only the name-matched accounts.
+        catalogue = capability_list(build_agent_tools(), include_returns=False, descriptions=True)
+        line = next(line for line in catalogue.splitlines() if line.startswith('read_member_accounts'))
+        self.assertIn('account_tags(all linked)', line)
+        self.assertIn('rows(matched accounts only):', line)
+
     async def test_inspection_and_confirmation_use_distinct_visible_paths(self):
         registry = {name: tool for name, tool in build_agent_tools().items() if tool.default_visible}
         plan = plans()['role_preview']

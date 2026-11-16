@@ -72,6 +72,25 @@ class NameLookupCoverageTests(unittest.IsolatedAsyncioTestCase):
         complete = answer_evidence({'cwl': empty})['cwl']
         self.assertNotIn('row_coverage', complete)
 
+    async def test_named_owners_other_linked_accounts_are_unread_not_absent(self):
+        # Two in-game names matched two of one member's four accounts; the CWL read got only those two.
+        accounts = named_accounts(1)
+        accounts['members'][0]['account_tags'] += ['#Q00', '#Q01']
+        resolution = accounts['name_resolutions'][0]
+        accounts['name_resolutions'] = [{**resolution, 'query': account['player_name'],
+            'selected_accounts': [account]} for account in resolution['selected_accounts']]
+        cwl = {'family': 'read_cwl_results', 'rows': [
+                   {'player_tag': '#P00', 'season': '2026-10'}, {'player_tag': '#P01', 'season': '2026-10'}],
+               'total_rows': 2, 'selection': {'account_tags': ['#P00', '#P01']}, 'unobserved_accounts': []}
+        context = _context()
+        evidence = {}
+        for identity, payload in (('accounts', accounts), ('cwl', cwl)):
+            tool = family_tool(payload['family'], 'Synthetic read.', {}, AsyncMock(return_value=payload))
+            evidence[identity] = model_result(await tool.handler(context, {}))
+        restored = await cohort_writer_evidence(context, evidence)
+        result = answer_evidence(restored)['cwl']
+        self.assertEqual(result['row_coverage']['account_tags_not_read'], ['#Q00', '#Q01'])
+
     async def test_authorized_restoration_clears_unread_identity_pages(self):
         context = _context()
         payload = named_accounts()

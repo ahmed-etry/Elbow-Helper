@@ -247,13 +247,21 @@ def _row_read_coverage(result, subject, named_tags):
 def answer_evidence(evidence, *, subjects=None, guild=None):
     """Keep facts, actual coverage and verified limits; exclude read guidance."""
     projected = {}
-    named_tags = {account['player_tag'] for result in evidence.values()
-                  if isinstance(result, dict) and result.get('family') == 'read_member_accounts'
-                  and not result.get('error')
-                  and result.get('flags', {}).get('status') not in ('failed', 'refused')
-                  for resolution in record_rows(result.get('name_resolutions', []))
-                  for account in record_rows(resolution.get('selected_accounts', []))
-                  if account.get('player_tag')}
+    named_tags = set()
+    for result in evidence.values():
+        if not (isinstance(result, dict) and result.get('family') == 'read_member_accounts'
+                and not result.get('error')
+                and result.get('flags', {}).get('status') not in ('failed', 'refused')):
+            continue
+        selected = [account for resolution in record_rows(result.get('name_resolutions', []))
+                    for account in record_rows(resolution.get('selected_accounts', []))]
+        selected_tags = {account['player_tag'] for account in selected if account.get('player_tag')}
+        named_tags.update(selected_tags)
+        # A named account's owner is shown with every linked account; a measure read
+        # that left some of them out did not read them.
+        named_tags.update(tag for member in record_rows(result.get('members', []))
+                          if selected_tags.intersection(member.get('account_tags', []))
+                          for tag in member.get('account_tags', []) if isinstance(tag, str))
     for identity, result in evidence.items():
         if not isinstance(result, dict):
             continue
