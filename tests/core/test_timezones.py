@@ -34,6 +34,11 @@ class CommunityTimezoneTests(unittest.TestCase):
     def setUp(self) -> None:
         self.summer = datetime(2026, 7, 26, 12, 0, tzinfo=timezone.utc)
 
+    def test_library_rejected_timezone_inputs_are_invalid(self):
+        for name in ('/etc', '../x', 'a/../b', 'x' * 10000):
+            with self.subTest(name=name[:20]):
+                self.assertIsNone(canonical_timezone_name(name))
+
 
     def test_display_uses_the_offset_at_the_requested_instant(self) -> None:
         winter = datetime(2026, 1, 15, 12, 0, tzinfo=UTC)

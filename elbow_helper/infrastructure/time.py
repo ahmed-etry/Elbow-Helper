@@ -32,9 +32,12 @@ def resolve_timezone(zone_name: str) -> tzinfo | None:
     if zone_name.startswith(("UTC+", "UTC-")):
         return None
     try:
-        return ZoneInfo(zone_name)
-    except ZoneInfoNotFoundError:
-        return dateutil_tz.gettz(zone_name)
+        try:
+            return ZoneInfo(zone_name)
+        except ZoneInfoNotFoundError:
+            return dateutil_tz.gettz(zone_name)
+    except (ValueError, OSError):
+        return None
 
 
 def format_utc_offset(
