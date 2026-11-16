@@ -78,11 +78,28 @@ class MembershipReadTests(unittest.IsolatedAsyncioTestCase):
         # The earlier stay counts only from the history bound.
         self.assertEqual(event["prior_membership_observed_at"], "2026-10-01T00:00:00+00:00")
 
+    async def test_november_membership_can_look_back_to_january(self):
+        arrived = int(datetime(2026, 11, 3, tzinfo=timezone.utc).timestamp() * 1_000_000)
+        self.account("#P0", stay(self.codes[0], arrived, arrived + HOUR))
+        result = await read_membership_history(self.context, {
+            "after": "2026-11-01T00:00:00+00:00",
+            "history_after": "2026-01-01T00:00:00+00:00",
+        })
+        self.assertEqual([row["player_tag"] for row in result["events"]], ["#P0"])
+        self.assertEqual(self.reads.movements.await_args.kwargs["after"],
+                         int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp() * 1_000_000))
+
     async def test_refused_windows_unreadable_and_oversized_records_are_explicit(self):
-        result = await read_membership_history(self.context, {**self.arguments, "history_after": "2025-01-01"})
-        self.assertEqual(result["cause"], "invalid_arguments")
-        for extra in ({"limit": 26}, {"before": "bad"}, {"clan_codes": ["NOPE"]}):
-            self.assertIn("error", await read_membership_history(self.context, {**self.arguments, **extra}))
+        # Each refusal names the one cause that applied, not every rule at once.
+        for extra, refusal in (
+                ({"before": "bad"}, "Use ISO dates in order: history_after, then after, then before."),
+                ({"history_after": "2026-10-03"}, "Use ISO dates in order: history_after, then after, then before."),
+                ({"clan_codes": ["NOPE"]}, "Choose up to 20 valid clan codes."),
+                ({"limit": 26}, "Use an offset of 0 or more and a limit of 1..25.")):
+            arguments = {key: value for key, value in {**self.arguments, **extra}.items() if value is not None}
+            self.assertEqual(await read_membership_history(self.context, arguments),
+                             {"error": refusal, "cause": "invalid_arguments"})
+        self.reads.movements.assert_not_awaited()
         empty = await read_membership_history(self.context, self.arguments)
         self.assertEqual((empty["events"], empty["coverage"]["observed_after"]), ([], None))
         self.reads.movements = AsyncMock(side_effect=OSError("synthetic outage"))

@@ -102,6 +102,7 @@ async def read_missing_elder_accounts(
     if not accessible:
         return {
             "error": "No selected clan leadership source is accessible.",
+            "cause": "access_denied",
             "omitted_inaccessible_clan_codes": omitted,
         }
     try:

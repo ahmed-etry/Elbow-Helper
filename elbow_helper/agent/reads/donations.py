@@ -105,6 +105,16 @@ def summed(group, prefix=''):
         account[prefix + name] for account in group if account[prefix + name] is not None) for name in FIGURES}}
 
 
+def averages(group, prefix=''):
+    totals = summed(group, prefix) if group else {prefix + 'coverage': 'N',
+                                                **dict.fromkeys((prefix + name for name in FIGURES))}
+    known = sum(account[prefix + 'coverage'] != 'N' for account in group)
+    return {'coverage': totals[prefix + 'coverage'], 'known_account_count': known,
+            'unknown_account_count': len(group) - known,
+            **{name: totals[prefix + name] for name in FIGURES},
+            **{'average_' + name: totals[prefix + name] / known if known else None for name in FIGURES}}
+
+
 async def donation_history(context, arguments):
     if getattr(getattr(context, 'bot', None), 'activity_reads', None) is None:
         return {'error': 'Stored donations are not available.', 'cause': 'missing_setup'}
@@ -152,6 +162,13 @@ async def donation_history(context, arguments):
             **{key: row[key] for key in (*FIGURES, 'coverage')},
             **{key: row[key] for key in ('clan_donations', 'clan_donations_received', 'clan_coverage')
                if present is not None}}))
+    clan_totals = []
+    if present is not None:
+        for index, (label, begin, end) in enumerate(windows):
+            group = [account for position, account in accounts if position == index]
+            clan_totals.append({**({'month': label} if by_month else {}),
+                'after': begin.isoformat(), 'before': end.isoformat(), 'account_count': len(group),
+                'whole_period': averages(group), 'selected_clans': averages(group, 'clan_')})
     unit = arguments.get('unit', 'account')
     if unit == 'member':
         groups = {}
@@ -173,6 +190,7 @@ async def donation_history(context, arguments):
                            for label, begin, end in windows]} if by_month else {}),
             'account_count': len(tags), 'population': CLAN_POPULATION if present is not None else POPULATION,
             'basis': BASIS, 'coverage': COVERAGE,
+            **({'clan_totals': clan_totals, 'average_basis': AVERAGE_BASIS} if present is not None else {}),
             **({'clan_basis': 'Clan figures use only clan-roster samples and count the first value after a clan '
                 'change in full; clan_coverage describes polling in the selected clans.'} if present is not None else {}),
             'ownership_basis': 'current bot links; historical ownership unknown',

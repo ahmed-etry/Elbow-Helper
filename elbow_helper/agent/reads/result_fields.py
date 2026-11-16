@@ -127,7 +127,11 @@ RESULT_FIELDS['read_donation_history'] = {**COMMON, 'rows': [names(
     'month,player_tag,player_name,member_id,member_name,account_tags,donations,donations_received,coverage,'
     'clan_donations,clan_donations_received,clan_coverage')],
     'months': [names('month,after,before')],
-    **names('unit,after,before,account_count,population,basis,clan_basis,ownership_basis,unlinked_member_ids')}
+    'clan_totals': [{**names('month,after,before,account_count'),
+        **{basis: names('donations,donations_received,average_donations,average_donations_received,'
+                        'coverage,known_account_count,unknown_account_count')
+           for basis in ('whole_period', 'selected_clans')}}],
+    **names('unit,after,before,account_count,population,basis,clan_basis,average_basis,ownership_basis,unlinked_member_ids')}
 RESULT_FIELDS['read_discord_access'] = {**COMMON, 'rows': [names(
     'channel_id,channel_name,channel_permissions,view_channel,read_message_history')],
     'actors': [names('actor_kind,actor_id,actor_name,guild_permissions,role_only')],
