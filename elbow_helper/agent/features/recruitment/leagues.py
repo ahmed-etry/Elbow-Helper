@@ -4,7 +4,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from elbow_helper.agent.safety.access import require_evidence_access
 from elbow_helper.agent.reads.people import stored_profiles, standing_rows, league_key
-from elbow_helper.agent.research.history import search_date
+from elbow_helper.agent.research.dates import search_date
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.reports.tools import authorize_report

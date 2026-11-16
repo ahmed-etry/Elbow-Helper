@@ -20,6 +20,7 @@ from elbow_helper.agent.conversation.text import message_text
 from elbow_helper.agent.engine.validation import bounded_int
 from elbow_helper.agent.engine.validation import positive_int
 from .history_cache import history_page
+from .dates import search_date, message_time
 
 
 SEARCH_RESULT_LIMIT = 25
@@ -172,7 +173,7 @@ async def _read_history_page(context, arguments, *, character_budget, complete_c
     try:
         after = search_date(arguments.get("after"))
         before = search_date(arguments.get("before"))
-        effective_before = before or _request_time(context)
+        effective_before = before or message_time(context)
         if after is not None and after >= effective_before:
             raise ValueError("Invalid history period")
     except ValueError:
@@ -422,22 +423,6 @@ def request_message_boundary(context: AgentRequestContext) -> int:
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=timezone.utc)
     return discord.utils.time_snowflake(created_at.astimezone(timezone.utc))
-
-
-def _request_time(context: AgentRequestContext) -> datetime:
-    created_at = getattr(context.source_message, "created_at", None)
-    if not isinstance(created_at, datetime):
-        raise ValueError("Missing Discord request time")
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
-    return created_at.astimezone(timezone.utc)
-
-
-def search_date(value: Any) -> datetime | None:
-    if value is None:
-        return None
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
 
 
 async def find_discord_channels(context: AgentRequestContext, arguments: Mapping[str, Any]) -> Mapping[str, Any]:

@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 
 from elbow_helper.configuration.channels import TRIAL_LIST, TICKETS_LOG
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.research.history import read_discord_channel_history, search_date
+from elbow_helper.agent.research.history import read_discord_channel_history
+from elbow_helper.agent.research.dates import search_date
 
 
 def mention_id(value, prefix):

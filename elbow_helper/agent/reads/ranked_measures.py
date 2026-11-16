@@ -4,7 +4,7 @@ from collections import defaultdict
 from decimal import Decimal
 import math
 
-from ..research.history import search_date
+from ..research.dates import search_date
 
 METRICS = ('average_stars', 'triple_rate_percent', 'average_destruction_percent')
 MODES = {'ranked_and_legend': ('RANKED', 'LEGEND'), 'ranked': ('RANKED',), 'legend': ('LEGEND',)}

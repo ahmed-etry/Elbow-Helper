@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 SCAN_RETRY_COUNT = 5
 SCAN_RETRY_DELAY_SECONDS = 2.0

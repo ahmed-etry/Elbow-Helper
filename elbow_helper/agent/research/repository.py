@@ -414,5 +414,3 @@ __all__ = [
     "DiscordResearchJob", "ResearchJobBusy", "ResearchJobConflict",
     "ResearchJobRepository", "ResearchJobScope",
 ]
-
-__all__ = ["ResearchJobRepository", "ResearchJobBusy", "ResearchJobConflict"]

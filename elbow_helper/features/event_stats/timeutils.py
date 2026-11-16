@@ -1,4 +1,4 @@
-﻿"""Time helpers and recurring event windows for event stats."""
+"""Time helpers and recurring event windows for event stats."""
 
 from __future__ import annotations
 

@@ -10,7 +10,7 @@ from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationError
 from elbow_helper.agent.safety.access import require_evidence_access
-from ..research.history import search_date
+from ..research.dates import search_date
 from elbow_helper.agent.engine.validation import invalid_arguments
 from elbow_helper.agent.reads.cache import source_revision
 from .ranked_measures import METRICS, MODES, account_measures, cohort_measure

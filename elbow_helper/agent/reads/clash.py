@@ -15,7 +15,7 @@ from elbow_helper.agent.safety.access import require_evidence_access
 from elbow_helper.agent.engine import budgets
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.engine.models import RegisteredAgentTool
-from elbow_helper.agent.research.history import search_date
+from elbow_helper.agent.research.dates import search_date
 from elbow_helper.agent.engine.validation import invalid_arguments
 from elbow_helper.agent.plan.input_rules import RULES
 from elbow_helper.agent.reads.battle_logs import select_battles

@@ -14,7 +14,7 @@ from elbow_helper.data.links.service import LinkConflict
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationError
 from elbow_helper.agent.safety.access import require_evidence_access
 from elbow_helper.agent.reads.cache import stored_read
-from ..research.history import search_date
+from ..research.dates import search_date
 
 
 @dataclass(frozen=True)

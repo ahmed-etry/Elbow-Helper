@@ -1,4 +1,4 @@
-﻿"""Slash command handlers for clan transfers."""
+"""Slash command handlers for clan transfers."""
 
 from __future__ import annotations
 

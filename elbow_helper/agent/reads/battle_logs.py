@@ -1,6 +1,6 @@
 """Chronological selections from the API's rolling battle log."""
 
-from elbow_helper.agent.research.history import search_date
+from elbow_helper.agent.research.dates import search_date
 
 
 def battle_date(row):
