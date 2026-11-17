@@ -1,6 +1,6 @@
 """Typed completed-war participation, CWL scoring and current-war evidence."""
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.domain.cwl import SEASON_KEY
+from elbow_helper.domain.cwl import SCORED_WARS_LIMIT, SEASON_KEY
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
 from elbow_helper.features.cwl.results import CwlResults
 from elbow_helper.agent.reads.snapshots import family_tool, IDS, TAGS, DATE
@@ -53,6 +53,9 @@ CWL_RULES = (*WINDOW_RULES,
      'only_one': ['latest_completed', 'season_keys', 'war_ids', 'after', 'history_limit']},
     {'when': {'delivery': [None, 'text', 'csv']}, 'forbids': ['sheet_by'],
      'error': 'sheet_by applies only with delivery=xlsx.'},
+    {'when': {'metric': ['ass', 'bonus'], 'latest_completed': list(range(
+        SCORED_WARS_LIMIT + 1, SELECTION['latest_completed']['maximum'] + 1))}, 'forbids': ['latest_completed'],
+     'error': f'ASS and bonus score at most {SCORED_WARS_LIMIT} wars at once; choose fewer.'},
     {'when': {'metric': ['ass', 'bonus']}, 'needs': ['clan_codes'], 'error': 'Which clan should I score?'},
     {'when': {'metric': ['ass', 'bonus']}, 'within': {'clan_codes': list(CWL_CLAN_CODES)},
      'error': 'Not CWL clans: {values}.'},

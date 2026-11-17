@@ -6,7 +6,7 @@ import re
 import sqlite3
 
 from elbow_helper.configuration.clans import CLANS, CLAN_ORDER
-from elbow_helper.domain.cwl import SEASON_KEY
+from elbow_helper.domain.cwl import SEASON_KEY, CwlWarSelectionError
 from elbow_helper.domain.war_participation import aggregate_participation
 from .config import CWL_CLAN_CODES
 from .results_summary import cwl_analysis
@@ -264,5 +264,9 @@ class CwlResults:
                     'unobserved_accounts': unobserved,
                     'rank_scope': 'selected clan, season and completed wars before account filtering',
                     'coverage': 'stored completed CWL wars; missing seasons remain unknown'}
+        except CwlWarSelectionError as error:
+            # Too many wars or a war ID that cannot be scored: the selection is to change, the data is there.
+            return {'error': str(error), 'cause': 'invalid_arguments',
+                    'invalid_fields': [key for key in PERIOD_SETTINGS if arguments.get(key)] or ['war_ids']}
         except (ValueError, RuntimeError, OSError, sqlite3.Error) as error:
             return {'error': str(error), 'cause': 'source_unavailable'}

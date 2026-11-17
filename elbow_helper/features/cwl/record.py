@@ -21,7 +21,7 @@ import sqlite3
 from typing import Any, Iterable
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.domain.cwl import is_cwl_window
+from elbow_helper.domain.cwl import SCORED_WARS_LIMIT, CwlWarSelectionError, is_cwl_window
 from elbow_helper.domain.war_views import board_payload, war_entry
 
 from elbow_helper.infrastructure.discord.war_boards import coc_time_to_datetime
@@ -226,8 +226,9 @@ class CwlHistory:
 
     def scoring_wars(self, clan_code: str, war_ids: list[str]) -> list[dict[str, Any]]:
         """Exactly these ended wars of the clan; any other ID is refused with why."""
-        if not 1 <= len(war_ids) <= 56 or any(not isinstance(key, str) or not key for key in war_ids):
-            raise ValueError("Expected 1..56 war IDs")
+        if (not 1 <= len(war_ids) <= SCORED_WARS_LIMIT
+                or any(not isinstance(key, str) or not key for key in war_ids)):
+            raise CwlWarSelectionError(f"Expected 1..{SCORED_WARS_LIMIT} war IDs")
         tag = self.tags[clan_code]
         resolved = self._run(self.reads.resolve(war_ids))["matches"]
         own_tags = [war["war_tag"] for wars in resolved.values() for war in wars
@@ -255,7 +256,7 @@ class CwlHistory:
             if values:
                 errors.append(label + ": " + ", ".join(values))
         if errors:
-            raise ValueError("; ".join(errors) + ".")
+            raise CwlWarSelectionError("; ".join(errors) + ".")
         return self._bonus_shape(own)
 
     def roster_history(self, history_limit: int | None, *, season: str | None = None,

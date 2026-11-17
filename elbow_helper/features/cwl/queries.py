@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import re
 from typing import Any, Protocol
 
-from elbow_helper.domain.cwl import SEASON_KEY
+from elbow_helper.domain.cwl import SCORED_WARS_LIMIT, SEASON_KEY, CwlWarSelectionError
 
 from .config import CLAN_NAME_TO_CODE, CWL_CLAN_NAMES, CWL_CLAN_TAGS
 from .roster.analysis import (
@@ -379,13 +379,13 @@ class CwlQueries:
     def _chosen_wars(self, clan_code: str, war_ids: list[str]) -> list[dict[str, Any]]:
         if clan_code not in CWL_CLAN_NAMES:
             raise ValueError("Invalid CWL clan code")
-        if (not isinstance(war_ids, (list, tuple)) or not 1 <= len(war_ids) <= 56
+        if (not isinstance(war_ids, (list, tuple)) or not 1 <= len(war_ids) <= SCORED_WARS_LIMIT
                 or any(not isinstance(key, str) or not key.strip() or len(key) > 100
                        for key in war_ids)):
-            raise ValueError("Choose between 1 and 56 CWL war IDs.")
+            raise CwlWarSelectionError(f"Choose between 1 and {SCORED_WARS_LIMIT} CWL war IDs.")
         keys = [key.strip().removeprefix("CWL:") for key in war_ids]
         if any(not key for key in keys) or len(set(keys)) != len(keys):
-            raise ValueError("CWL war IDs must be unique and nonempty.")
+            raise CwlWarSelectionError("CWL war IDs must be unique and nonempty.")
         return self._history.scoring_wars(clan_code, keys)
 
     def ass_wars(self, *, clan_code: str, war_ids: list[str]) -> CwlAssWarsSnapshot:

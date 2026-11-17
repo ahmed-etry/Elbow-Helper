@@ -11,6 +11,12 @@ from datetime import datetime, timezone
 
 # A season key: the league's month, with an optional stored suffix.
 SEASON_KEY = r"\d{4}-(0[1-9]|1[0-2])(-[a-z]+)?"
+# One ASS or bonus scoring covers at most eight full seasons of a clan's wars.
+SCORED_WARS_LIMIT = 56
+
+
+class CwlWarSelectionError(ValueError):
+    """Wars chosen for scoring that the scorer refuses: a wrong argument, not missing data."""
 
 
 def is_cwl_window(reference: datetime | None = None) -> bool:

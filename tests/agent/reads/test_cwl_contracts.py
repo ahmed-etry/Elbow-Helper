@@ -182,7 +182,24 @@ class CollectedCwlContracts(unittest.IsolatedAsyncioTestCase):
                     typed = await cwl_results(self.context, {'metric': metric, 'clan_codes': ['BEH'],
                         'war_ids': [key]})
                     self.assertIn(error, typed['error'])
-                    self.assertEqual(typed['error'], old['error'])
+                    if metric == 'bonus':
+                        old = await cwl_bonus_scores(self.context, {'clan_code': 'BEH', 'war_ids': [key]})
+                        self.assertEqual(typed['error'], old['error'])
+
+    async def test_scoring_refusals_are_wrong_arguments_and_the_war_limit_is_stated(self):
+        # ASS over 57 wars and an unknown war ID both came back as a data outage.
+        from elbow_helper.agent.plan.checker import check_plan
+        from elbow_helper.agent.plan.format import capability_list
+        unknown = await cwl_results(self.context, {'metric': 'ass', 'clan_codes': ['BEH'],
+                                                   'war_ids': ['#UNKNOWN']})
+        self.assertEqual((unknown['cause'], unknown['invalid_fields']), ('invalid_arguments', ['war_ids']))
+        registry = {tool.definition.name: tool for tool in TOOLS}
+        plan = {'goal': 'Score wars', 'effort': 'low', 'output': 'text', 'steps': [{
+            'id': 'ass', 'capability': 'read_cwl_results', 'depends_on': [],
+            'arguments': {'metric': 'ass', 'clan_codes': ['BEH'], 'latest_completed': 57}}]}
+        self.assertEqual(check_plan(plan, registry).step_errors['ass'],
+                         'ASS and bonus score at most 56 wars at once; choose fewer.')
+        self.assertIn('latest_completed=57|58', capability_list(registry, include_returns=False))
 
     async def test_io_and_scorers_run_off_the_event_loop_and_failures_remain_explicit(self):
         main_thread = threading.get_ident()
