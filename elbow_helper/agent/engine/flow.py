@@ -943,6 +943,9 @@ class AnswerFlow:
             # Capabilities opened by this plan reach a planning menu only in
             # the next round, so planning has not finished.
             return False
+        if any(self.result_views.get(identity, value).get('omitted_field_reads')
+               for identity, value in results.items()):
+            return False
         for value in results.values():
             if (value.get('family') == 'read_member_accounts'
                     and value.get('selection', {}).get('after')):

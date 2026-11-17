@@ -9,6 +9,7 @@ from dataclasses import fields, replace
 from datetime import datetime, timezone
 from collections.abc import Collection, Mapping, Sequence
 import json
+import re
 import time
 from typing import Any
 from elbow_helper.infrastructure.ai import AgentToolResult
@@ -396,7 +397,7 @@ async def discard_unpublished_results(
     ]
 
 
-def bound_tool_result(content: str, limit: int) -> str:
+def bound_tool_result(content: str, limit: int, *, arguments: Mapping[str, Any] | None = None) -> str:
     if limit < 2:
         return ""
     if len(content) <= limit:
@@ -410,7 +411,7 @@ def bound_tool_result(content: str, limit: int) -> str:
         family = bound_family_page(payload, limit)
         if family is not None:
             return family
-    clash = _clash_size_limit(content, limit)
+    clash = _clash_size_limit(content, limit, arguments=arguments)
     if clash is not None:
         return clash
     return _record_size_limit(content, limit)
@@ -522,7 +523,7 @@ def _record_size_limit(content: str, limit: int) -> str:
     return encode()
 
 
-def _clash_size_limit(content: str, limit: int) -> str | None:
+def _clash_size_limit(content: str, limit: int, *, arguments: Mapping[str, Any] | None = None) -> str | None:
     """Do not expose an arbitrary JSON excerpt as part of a Clash dataset."""
     try:
         payload = json.loads(content)
@@ -544,9 +545,22 @@ def _clash_size_limit(content: str, limit: int) -> str | None:
             return {key: records(item) for key, item in value.items()}
         return [records(item) for item in value] if isinstance(value, list) else value
 
+    def collapse(counts):
+        """One count per collection path: per-row notes must not use up the allowance."""
+        combined = {}
+        for path, count in counts.items():
+            key = re.sub(r"/\d+(?=/|$)", "/*", path)
+            total = combined.setdefault(key, {"returned_rows": 0, "total_rows": 0})
+            total["returned_rows"] += count.get("returned_rows", 0)
+            total["total_rows"] += count.get("total_rows", 0)
+        return combined
+
     bounded = records(deepcopy(payload))
     target = bounded
     items = target.get("items", [])
+    for item in items:
+        if isinstance(item.get("row_counts"), dict):
+            item["row_counts"] = collapse(item["row_counts"])
     totals = [{"tag": item["tag"], "status": item["status"], "collections": {
         path: {"returned_rows": 0, "total_rows": count["total_rows"]}
         for path, count in item.get("row_counts", {}).items()
@@ -559,6 +573,13 @@ def _clash_size_limit(content: str, limit: int) -> str | None:
     target["flags"]["limits"] = sorted(set(target["flags"].get("limits", ())) | {"evidence_size_limit"})
 
     def encode():
+        paths = sorted({'.'.join(part for part in path.split('/') if part and part != '*')
+                        for item in items for path in item.get('omitted_fields', ())})
+        if paths and arguments is not None:
+            target['omitted_field_reads'] = [
+                {'capability': 'read_clash', 'arguments': {**arguments, 'fields': paths[start:start + 40]}}
+                for start in range(0, len(paths), 40)
+            ]
         return json.dumps(compact_result(bounded), ensure_ascii=False, separators=(",", ":"))
 
     def project(item, projected, mode):
@@ -566,29 +587,83 @@ def _clash_size_limit(content: str, limit: int) -> str | None:
         missing = omitted_fields(original, projected)
         item.update(data=projected, projection=mode, truncated=True)
         item["omitted_fields"] = sorted(set(item.get("omitted_fields", ())) | set(missing))
-        counts = collection_counts(projected, original)
+        counts = collapse(collection_counts(projected, original))
         item["row_counts"] = {path: {
             "returned_rows": 1 if path == "/" else counts.get(path, {}).get("returned_rows", 0),
             "total_rows": count["total_rows"],
         } for path, count in item.get("row_counts", {}).items()}
 
-    # Full profiles can be large. Keep every completed account's compact facts
-    # before considering a smaller page. Missing fields are explicit, never an
-    # arbitrary JSON excerpt passed off as a complete profile.
-    for item in items:
-        original = item.get("data")
-        if item.get("status") == "ok" and isinstance(original, dict):
-            projected = summary(live.get("kind"), original)
-            if projected != original:
-                project(item, projected, "summary")
-    target["projection"] = "summary"
-    encoded = encode()
-    if len(encoded) <= limit:
-        return encoded
+    def fit_rows(mode):
+        """Keep the same number of leading rows in every account's collections."""
+        kept = [(item, item["data"], dict(item.get("row_counts", {})), deepcopy(item.get("coverage")))
+                for item in items if item.get("status") == "ok" and isinstance(item.get("data"), dict)]
+
+        def cut(value, count):
+            if isinstance(value, list):
+                return [cut(row, count) for row in value[:count]]
+            if isinstance(value, dict):
+                return {key: cut(child, count) for key, child in value.items()}
+            return value
+
+        def longest(value):
+            if isinstance(value, list):
+                return max([len(value), *(longest(row) for row in value)])
+            if isinstance(value, dict):
+                return max([0, *(longest(child) for child in value.values())])
+            return 0
+
+        def apply(count):
+            for item, data, counts, coverage in kept:
+                item.update(data=data, row_counts=counts)
+                project(item, cut(data, count), mode)
+                if isinstance(coverage, dict) and type(coverage.get("returned_rows")) is int:
+                    # A selected battle page shows fewer rows; the rest stay readable by offset.
+                    shown = min(count, coverage["returned_rows"])
+                    item["coverage"] = {**{key: value for key, value in coverage.items()
+                                           if key != "returned_range" or shown == coverage["returned_rows"]},
+                                        "returned_rows": shown,
+                                        **({"selection_complete": False,
+                                            "next_offset": coverage.get("offset", 0) + shown}
+                                           if shown < coverage["returned_rows"] else {})}
+
+        low, high, best = 0, max([0, *(longest(data) for _, data, _, _ in kept)]), None
+        while low <= high:
+            middle = (low + high) // 2
+            apply(middle)
+            if len(encode()) <= limit:
+                best, low = middle, middle + 1
+            else:
+                high = middle - 1
+        if best is None:
+            apply(0)
+            return None
+        apply(best)
+        return encode()
+
+    # Fields the plan selected are the evidence it asked for: cut rows, never
+    # swap them for the general summary.
+    if live.get("projection") == "fields":
+        encoded = fit_rows("fields")
+        if encoded is not None and len(encoded) <= limit:
+            return encoded
+    else:
+        # Full profiles can be large. Keep every completed account's compact facts
+        # before considering a smaller page. Missing fields are explicit, never an
+        # arbitrary JSON excerpt passed off as a complete profile.
+        for item in items:
+            original = item.get("data")
+            if item.get("status") == "ok" and isinstance(original, dict):
+                projected = summary(live.get("kind"), original)
+                if projected != original:
+                    project(item, projected, "summary")
+        target["projection"] = "summary"
+        encoded = encode()
+        if len(encoded) <= limit:
+            return encoded
 
     # Preserve the league/count facts of the entire cohort when even summaries
     # are too large. Do not lose a zero-trophy account's ranked league.
-    if live.get("kind") in ("player", "clan"):
+    if live.get("kind") in ("player", "clan") and live.get("projection") != "fields":
         keys = ("tag", "name", "townHallLevel", "role", "leagueTier", "league", "trophies", "bestTrophies") \
             if live["kind"] == "player" else (
                 "tag", "name", "members", "memberList.tag", "memberList.townHallLevel",
@@ -609,6 +684,7 @@ def _clash_size_limit(content: str, limit: int) -> str | None:
     target["row_counts"] = totals
     target["omitted_fields"] = ["/items/*/data"]
     best = encode()
+    fitted = 0
     for index, item in enumerate(items):
         target["items"].append(item)
         target["next_tags"] = [row["tag"] for row in items[index + 1:]]
@@ -616,7 +692,18 @@ def _clash_size_limit(content: str, limit: int) -> str | None:
         encoded = encode()
         if len(encoded) > limit:
             break
-        best = encoded
+        best, fitted = encoded, index + 1
+    if fitted == 0 and live.get("projection") != "fields":
+        # Not even one account fits whole: fewer rows from every account still
+        # answer more than an empty page.
+        for key in ("total_accounts", "next_tags", "row_counts", "omitted_fields"):
+            target.pop(key, None)
+        target["items"] = items
+        encoded = fit_rows(target.get("projection", "summary"))
+        if encoded is not None and len(encoded) <= limit:
+            return encoded
+        target.update(items=[], total_accounts=len(items), next_tags=[item["tag"] for item in items],
+                      row_counts=totals, omitted_fields=["/items/*/data"])
     if len(best) <= limit:
         return best
     # Large batches can exhaust the allowance with per-account collection
@@ -632,6 +719,7 @@ def _clash_size_limit(content: str, limit: int) -> str | None:
         "flags": target["flags"], "read_statuses": target["read_statuses"],
         "next_tags": [item["tag"] for item in items], "returned_rows": 0, "total_rows": total_rows,
         "omitted_fields": ["/items/*/data"], "omitted_collection_counts": combined_counts,
+        **({'omitted_field_reads': target['omitted_field_reads']} if target.get('omitted_field_reads') else {}),
     }
     encoded = json.dumps(minimal, ensure_ascii=False, separators=(",", ":"))
     if len(encoded) <= limit:

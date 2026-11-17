@@ -628,7 +628,7 @@ class PlanRunner:
                 row_fields={field for field, value in payload.items() if isinstance(value, list)},
             )
             model_content = json.dumps(view, ensure_ascii=False, default=str, separators=(",", ":"))
-            content = bound_tool_result(model_content, limit)
+            content = bound_tool_result(model_content, limit, arguments=arguments)
             bounded = json.loads(content) if content else {}
             family_page = (bounded.get('kind') == 'family' and bounded.get('report_id') == payload.get('report_id')
                            and not bounded.get('truncated') and 'error' not in bounded)

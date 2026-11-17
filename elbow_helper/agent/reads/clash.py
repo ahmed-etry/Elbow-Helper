@@ -437,7 +437,7 @@ def clash_tools():
                          "forbids": ["order", "offset", "after", "before"],
                          "error": "Use order, offset and dates for battle logs only."}],
             },
-            usage_note="Resolved tags, no placeholders; fields overrides detail. Ranked history: read_ranked_activity. War/CWL: external clans only. CWL-only: CWL cohort first.",
+            usage_note="Resolved tags; full may summarize to fit; fields selects paths over detail. History: read_ranked_activity. War/CWL: external clans only. CWL-only: cohort first.",
         ),
         read_clash,
         contract=CapabilityContract(),

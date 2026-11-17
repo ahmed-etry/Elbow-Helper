@@ -344,9 +344,9 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(projected['stats']['rows'][0]['activity'], activity)
             self.assertEqual(await cohort_selection(context, result['report_id'], 'account_tags'),
                              {'account_tags': ['#P0']})
-            self.assertTrue(AnswerFlow._planned_reads_complete(SimpleNamespace(plan=plan), {'stats': result}))
+            self.assertTrue(AnswerFlow._planned_reads_complete(SimpleNamespace(plan=plan, result_views={}), {'stats': result}))
             profile_only = {key: value for key, value in result.items() if key != 'history_reads'}
-            self.assertFalse(AnswerFlow._planned_reads_complete(SimpleNamespace(plan=plan), {'stats': profile_only}))
+            self.assertFalse(AnswerFlow._planned_reads_complete(SimpleNamespace(plan=plan, result_views={}), {'stats': profile_only}))
 
     async def test_failed_history_keeps_other_observations_and_empty_is_not_zero(self):
         from elbow_helper.agent.reads import ranked as ranked_reads

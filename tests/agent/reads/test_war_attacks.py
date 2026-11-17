@@ -251,7 +251,7 @@ class WarAttackTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(page["next_cursor"])
         plan = {"finish_after_reads": True, "steps": [
             {"id": "attacks", "capability": "read_war_attacks", "arguments": arguments, "depends_on": []}]}
-        self.assertTrue(AnswerFlow._planned_reads_complete(SimpleNamespace(plan=plan), {"attacks": page}))
+        self.assertTrue(AnswerFlow._planned_reads_complete(SimpleNamespace(plan=plan, result_views={}), {"attacks": page}))
         written = await cohort_writer_evidence(self.context, {"attacks": model_result(page)})
         facts = answer_evidence(written)["attacks"]
         self.assertEqual(len(record_rows(facts["rows"])), 6)
