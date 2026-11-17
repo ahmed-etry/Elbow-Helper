@@ -40,10 +40,13 @@ Read contents (all obey current access and retain source gaps):
   [../agent/reads/workflow_reads.py; ../agent/reads/recruitment_history.py]
 - read_war_participation: stored completed-war lineups, attacks/misses and per-clan participation.
 - read_war_attacks: each stored regular and CWL attack with both map positions and Town Halls,
-  stars, destruction, order and duration. [agent/reads/war_attacks.py]
-- read_cwl_results: season performance/ASS, leagues or signed-up/assigned account rosters. [features/cwl/results.py]
-- read_current_war: current lineups and attacks still due. [agent/reads/wars.py]
-- read_ranked_activity: stored ranked attacks with collection gaps. [agent/reads/ranked.py]
+  stars, destruction, order and duration. [../agent/reads/war_attacks.py]
+- read_cwl_results: season performance/ASS, leagues or signed-up/assigned account rosters. [cwl/results.py]
+- read_current_war: current lineups and attacks still due. [../agent/reads/wars.py]
+- read_ranked_activity: stored ranked attacks with collection gaps. [../agent/reads/ranked.py]
+- read_clash kind=battle_log: items.armyShareCode returns named army counts, hero pets/equipment and clan castle parts; unknown IDs stay explicit; recent rolling history only. [../agent/reads/clash.py]
+- read_donation_history: stored donations and received over a period, with sample coverage.
+  [../agent/reads/donations.py]
 - read_hibernation: active hibernation and observed activity since its start.
 - read_promotion_cases: intake, examiner routing and recorded responses. [../agent/reads/workflow_reads.py]
 - read_community_reference: approved knowledge and sourced clan/role/workflow meanings.

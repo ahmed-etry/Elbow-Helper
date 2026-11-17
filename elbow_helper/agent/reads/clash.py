@@ -8,6 +8,7 @@ import sqlite3
 import time
 
 from elbow_helper.configuration.clans import CLANS
+from elbow_helper.domain.armies import decode_army
 from elbow_helper.domain.player_tags import normalize_player_tag, encode_clash_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
@@ -338,6 +339,10 @@ async def read_clash(context, arguments):
                         else summary(kind, payload)
                     ),
                 }
+                if kind == "battle_log":
+                    for battle in items[index]["data"].get("items", []):
+                        if "armyShareCode" in battle:
+                            battle["armyShareCode"] = decode_army(battle["armyShareCode"])
                 if seasonal_members:
                     items[index]["data"].pop("members", None)
                     items[index]["data"].pop("memberList", None)
