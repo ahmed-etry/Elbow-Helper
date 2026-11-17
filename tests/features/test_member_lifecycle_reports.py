@@ -93,6 +93,42 @@ class MemberLifecycleViewTests(unittest.IsolatedAsyncioTestCase):
         await restarted.startup()
         self.assertEqual(restarted.state, cog.state)
 
+    async def test_review_offers_only_current_applicants_and_reports_close_when_none_remain(self) -> None:
+        # A 31 Oct report still offered a member who had since been accepted.
+        from elbow_helper.features.member_lifecycle import views
+        applicant_role = object()
+        accepted = SimpleNamespace(id=1, display_name="Accepted", roles=[], joined_at=None)
+        waiting = SimpleNamespace(id=2, display_name="Waiting", roles=[applicant_role],
+                                  joined_at=datetime.now(timezone.utc))
+        class FakeTextChannel:
+            send = AsyncMock()
+            fetch_message = AsyncMock(return_value=SimpleNamespace(edit=AsyncMock()))
+
+        channel = FakeTextChannel()
+        guild = SimpleNamespace(members=[accepted, waiting], get_channel=lambda _channel_id: channel,
+                                get_role=lambda _role_id: applicant_role,
+                                get_member={1: accepted, 2: waiting}.get)
+        events = MemoryEventsStore()
+        self.addCleanup(events.close)
+        cog = Owner()
+        cog.lifecycle_state = LifecycleState(events)
+        await cog.lifecycle_state.startup()
+        await cog.lifecycle_state.change(lambda connection, state: state["applicant_reports"].update(
+            {"42": {"applicant_ids": [1, 2], "created_iso": "x", "active": True}}) or ())
+        cog.bot = SimpleNamespace(wait_until_ready=AsyncMock(), get_guild=lambda _guild_id: guild)
+        cog._refresh_ticket_log_index = AsyncMock()
+        interaction = SimpleNamespace(user=SimpleNamespace(guild_permissions=SimpleNamespace(kick_members=True)),
+                                      guild=guild, response=SimpleNamespace(send_message=AsyncMock()))
+        with patch.object(views, "send_bound_view", AsyncMock()) as sent:
+            await ApplicantCleanupView(cog, 42).cleanup(interaction)
+        self.assertEqual(sent.await_args.kwargs["view"].applicants, [(2, "Waiting")])
+
+        waiting.roles = []
+        with patch.object(reports.discord, "TextChannel", FakeTextChannel):
+            await ReportsMixin.applicant_linger_scan.coro(cog)
+        self.assertFalse(cog.state["applicant_reports"]["42"]["active"])
+        channel.fetch_message.assert_awaited_once_with(42)
+
     async def test_cleanup_ui_presents_a_review_before_removal(self) -> None:
         report_view = ApplicantCleanupView(None, 42)
         review_button = report_view.children[0]

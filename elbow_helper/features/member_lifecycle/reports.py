@@ -21,6 +21,25 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ReportsMixin:
+    async def close_applicant_report(self, report_message_id: int, guild: discord.Guild) -> None:
+        """Close an overdue-applicant report and disable its button."""
+        key = str(report_message_id)
+
+        def close(connection, state):
+            report = state["applicant_reports"].get(key)
+            if not report or not report.get("active"):
+                return None
+            report["active"] = False
+            return ()
+        await self.lifecycle_state.change(close)
+        try:
+            channel = guild.get_channel(OVERSEEING_TERRACE)
+            if channel and isinstance(channel, discord.TextChannel):
+                message = await channel.fetch_message(report_message_id)
+                await message.edit(view=ApplicantCleanupView(self, report_message_id, disabled=True))
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            LOGGER.debug("Failed to disable applicant cleanup view for %s", report_message_id)
+
     def _load_last_run(self, state_key: str, now: datetime, *, fallback_days: int) -> datetime:
         last_iso = self.state.get(state_key)
         if not last_iso:
@@ -141,6 +160,13 @@ class ReportsMixin:
             joined_at = (member.joined_at or now).replace(tzinfo=timezone.utc)
             if joined_at <= cutoff:
                 lingering.append((member, joined_at, (now - joined_at).days))
+
+        # A report closes once nobody on it is still an applicant.
+        applicant_ids = {member.id for member in members if applicant_role in member.roles}
+        for key, report in list(self.state.get("applicant_reports", {}).items()):
+            listed = {int(value) for value in report.get("applicant_ids", []) if str(value).isdigit()}
+            if report.get("active") and not listed & applicant_ids:
+                await self.close_applicant_report(int(key), guild)
 
         current_overdue_ids = {member.id for member, _, _ in lingering}
         previous_overdue_ids: set[int] = set()

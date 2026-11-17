@@ -10,8 +10,8 @@ from elbow_helper.infrastructure.discord.pagination import NEXT_PAGE_LABEL
 from elbow_helper.infrastructure.discord.pagination import PREV_PAGE_LABEL
 from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
-from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.configuration.guild import GUILD_ID
+from elbow_helper.configuration.roles import APPLICANT_ROLE_ID
 
 if TYPE_CHECKING:
     from .cog import MemberLifecycle
@@ -161,23 +161,7 @@ class ApplicantCleanupSelectView(BaseTimeoutView):
             except (discord.Forbidden, discord.HTTPException):
                 continue
 
-        report_key = str(self.report_message_id)
-
-        def close_report(connection, state):
-            report = state["applicant_reports"].get(report_key)
-            if not report:
-                return None
-            report["active"] = False
-            return ()
-        await self.cog.lifecycle_state.change(close_report)
-
-        try:
-            channel = guild.get_channel(OVERSEEING_TERRACE)
-            if channel and isinstance(channel, discord.TextChannel):
-                message = await channel.fetch_message(self.report_message_id)
-                await message.edit(view=ApplicantCleanupView(self.cog, self.report_message_id, disabled=True))
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            LOGGER.debug("Failed to disable applicant cleanup view for %s", self.report_message_id)
+        await self.cog.close_applicant_report(self.report_message_id, guild)
 
         try:
             self.stop()
@@ -208,7 +192,7 @@ class ApplicantCleanupView(BaseTimeoutView):
         report = self.cog.state.get("applicant_reports", {}).get(str(self.report_message_id))
         if not report or not report.get("active"):
             await interaction.response.send_message(
-                "This report has expired. Open a new overdue-applicant report to continue.",
+                "This report is closed. A new one is posted when applicants go overdue.",
                 ephemeral=True,
             )
             return
@@ -222,15 +206,18 @@ class ApplicantCleanupView(BaseTimeoutView):
             return
 
         applicant_ids = report.get("applicant_ids", [])
+        applicant_role = guild.get_role(APPLICANT_ROLE_ID)
         applicants: list[tuple[int, str]] = []
         for uid in applicant_ids:
             member = guild.get_member(int(uid))
-            if not member:
+            # Only people who are still applicants when the button is pressed.
+            if not member or applicant_role is None or applicant_role not in member.roles:
                 continue
             applicants.append((member.id, member.display_name))
 
         if not applicants:
             await interaction.response.send_message("No overdue applicants were found.", ephemeral=True)
+            await self.cog.close_applicant_report(self.report_message_id, guild)
             return
 
         view = ApplicantCleanupSelectView(self.cog, self.report_message_id, applicants)
