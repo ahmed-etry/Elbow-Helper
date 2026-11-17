@@ -106,7 +106,7 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
         self.action = PreparedAction(
             "synthetic_change", {"target": 20},
             ChangePreview(
-                ("Change target",), AsyncMock(return_value=True), summary="Synthetic change",
+                ("Change target",), AsyncMock(return_value=True), summary="Change synthetic target",
                 details=(SECRET,), detail_sources=frozenset({20}),
                 detail_access=frozenset({ACCESS_LEAD}),
             ),
@@ -222,5 +222,5 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
         await prepare_preview(self.context)
         preview = preview_text(self.context.state.proposed_changes)
         self.assertNotIn(SECRET, preview)
-        self.assertIn("Synthetic change", preview)
+        self.assertIn("Change synthetic target", preview)
         self.assertIn(ACTION_PREVIEW_DETAILS_HIDDEN, preview)

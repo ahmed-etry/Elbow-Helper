@@ -92,6 +92,7 @@ ACTION_PROGRESS_VERBS = {
     "Redraw": "Redrawing", "Refresh": "Refreshing", "Register": "Registering",
     "Remove": "Removing", "Reopen": "Reopening", "Request": "Requesting", "Review": "Reviewing",
     "Save": "Saving", "Schedule": "Scheduling", "Send": "Sending", "Set": "Setting",
+    "Show": "Showing", "Hide": "Hiding",
     "Start": "Starting", "Undo": "Undoing", "Unlink": "Unlinking", "Update": "Updating",
 }
 

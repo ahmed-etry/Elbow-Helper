@@ -59,6 +59,27 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
         await undo.run()
         self.assertTrue(current.show_clan)
 
+    async def test_show_and_hide_signup_controls_can_report_progress(self):
+        # After Confirm the run shows the label's progress form; Show and Hide had none.
+        from elbow_helper.agent.conversation.wording import action_progress_status
+        for operation, hidden in (("show", True), ("hide", False)):
+            with self.subTest(operation=operation):
+                roster = SimpleNamespace(id=17, guild_id=1, name="War", status="open", buttons_hidden=hidden,
+                                         active_cycle_id=3, role_id=None, reset_on_open=False)
+                workflow = SimpleNamespace(roster_management_state=AsyncMock(return_value={
+                    "roster": roster, "account_count": 0, "member_ids": (), "posts": ()}))
+                guild = SimpleNamespace(id=1, me=object())
+                context = register_requester(SimpleNamespace(private_pass=True,
+                    bot=SimpleNamespace(get_cog=lambda name: workflow),
+                    guild=guild, member=object(), state=AgentTurnState()))
+                tool = next(tool for tool in roster_management_tools()
+                            if tool.definition.name == "set_roster_state")
+                with patch('elbow_helper.agent.features.rosters.management.require_evidence_access',
+                           new_callable=AsyncMock):
+                    result = await tool.handler(context, {"roster_id": 17, "operation": operation})
+                self.assertEqual(result["status"], "confirmation_required")
+                summary = context.state.proposed_changes[0].preview.summary
+                self.assertTrue(action_progress_status(summary).endswith(" roster signup controls"))
     async def test_clear_previews_members_and_posts_before_calling_feature(self):
         roster = SimpleNamespace(
             id=17, guild_id=1, name="War", status="open", buttons_hidden=False,

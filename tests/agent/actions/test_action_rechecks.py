@@ -18,4 +18,4 @@ class ActionRecheckTests(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(await preview.recheck())
                 self.assertTrue(any("Traceback" in line for line in logs.output))
                 check.assert_awaited_once()
-                self.assertIs(replace(preview, summary="Synthetic").recheck, preview.recheck)
+                self.assertIs(replace(preview, summary="Update synthetic").recheck, preview.recheck)

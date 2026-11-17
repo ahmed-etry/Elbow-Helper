@@ -9,7 +9,9 @@ import logging
 from typing import Any
 import discord
 
-from elbow_helper.agent.conversation.wording import ACTION_AUDIT_REASON, ACTION_PREVIEW_BLANK, ACTION_UNAVAILABLE
+from elbow_helper.agent.conversation.wording import (
+    ACTION_AUDIT_REASON, ACTION_PREVIEW_BLANK, ACTION_PROGRESS_VERBS, ACTION_UNAVAILABLE,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -65,6 +67,9 @@ class ChangePreview:
     def __post_init__(self) -> None:
         if not (self.lines or self.summary) or not callable(self.recheck) or self.count < 1:
             raise ValueError("A change needs a preview and a precondition")
+        if self.summary and self.summary.partition(" ")[0] not in ACTION_PROGRESS_VERBS:
+            # The run shows this label's progress form; a label without one could never run.
+            raise ValueError(f"Action label {self.summary!r} has no progress form")
         object.__setattr__(self, "recheck", _guard_recheck(self.recheck))
         for name in ("lines", "details"):
             object.__setattr__(self, name, tuple(
