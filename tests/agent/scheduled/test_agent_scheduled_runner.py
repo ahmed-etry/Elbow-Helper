@@ -280,6 +280,21 @@ class ScheduledRunnerTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn(ACTION_STANDING_RUN_FAILED.format(
                         kind=ACTION_STANDING_REQUEST_NAME), self.channel.send.await_args.args[0])
 
+    async def test_failed_one_time_request_runs_after_resume(self):
+        # A one-time saved request failed; Resume left it active but never due again.
+        identifier = self._due_once()
+        self.run_request.return_value = ScheduledResult(action_run={"status": "failed"})
+        await self._tick()
+        row = self.repository.standing(kind="request", identifier=identifier)
+        self.assertEqual((row["status"], row["next_run_at"]), ("paused", 1))
+        self.assertTrue(self.repository.set_standing_status(
+            kind="request", identifier=identifier, requester_id=2, status="active"))
+        self.run_request.reset_mock()
+        self.run_request.return_value = ScheduledResult(action_run={"status": "completed"})
+        await self._tick()
+        self.run_request.assert_awaited_once()
+        self.assertEqual(self.repository.standing(kind="request", identifier=identifier)["status"], "completed")
+
     async def test_watcher_completes_after_first_alert(self):
         identifier = self.repository.create_standing(
             kind="watcher",

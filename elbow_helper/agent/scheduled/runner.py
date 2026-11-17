@@ -393,7 +393,8 @@ class ScheduledRunner:
             runs_completed=rule["rule"].get("runs_completed", 0) + int(run_completed),
         )
         next_at = upcoming[0].timestamp() if upcoming else None
-        if status == "active" and next_at is None:
+        if status in ("active", "paused") and next_at is None:
+            # A rule kept or paused after a failed run still owes that run, so Resume can run it.
             next_at = rule["next_run_at" if kind != "watcher" else "next_check_at"]
         if status is None:
             status = "active" if next_at is not None else "completed"
