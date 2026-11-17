@@ -82,7 +82,16 @@ class AchievementTrackingMixin:
     async def cleanup_database(self):
         """Clean up stats/achievement rows for users who left the server."""
         guild = self.bot.get_guild(self.GUILD_ID)
-        if not guild:
+        if not guild or guild.unavailable:
+            return
+        if not guild.chunked:
+            try:
+                await guild.chunk(cache=True)
+            except (discord.ClientException, discord.HTTPException, asyncio.TimeoutError):
+                pass
+        if not guild.chunked:
+            # An incomplete member list would delete members who are still in the server.
+            self.logger.warning("Achievement cleanup skipped: the server's member list is incomplete")
             return
         current_member_ids = {member.id for member in guild.members}
         await asyncio.to_thread(self._cleanup_departed_members, current_member_ids)

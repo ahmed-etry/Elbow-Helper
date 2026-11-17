@@ -87,7 +87,7 @@ class AchievementCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.tracking = _Tracking()
         self.tracking.db_path = self.path
         self.tracking.logger = logging.getLogger("test.achievement_cleanup")
-        self.guild = SimpleNamespace(members=[SimpleNamespace(id=1)])
+        self.guild = SimpleNamespace(members=[SimpleNamespace(id=1)], chunked=True, unavailable=False)
         self.tracking.bot = SimpleNamespace(get_guild=lambda _: self.guild)
         with closing(DATABASE.connect(self.path)) as connection, connection:
             connection.execute("INSERT INTO achievements(id,name,description) VALUES ('synthetic','Synthetic','Synthetic')")
@@ -130,6 +130,22 @@ class AchievementCleanupTests(unittest.IsolatedAsyncioTestCase):
             connection.execute("DROP TRIGGER refuse_delete")
         await self.tracking.cleanup_database()
         self.assertEqual(self.members_in("user_stats"), [(1,)])
+
+    async def test_incomplete_member_list_skips_cleanup_and_keeps_present_members(self):
+        # Member 2 is still in the server but missing from a member list that was not fully loaded.
+        self.guild.chunked = False
+        self.guild.chunk = AsyncMock(side_effect=asyncio.TimeoutError())
+        with self.assertLogs(self.tracking.logger, level="WARNING"):
+            await self.tracking.cleanup_database()
+        self.assertEqual(self.members_in("user_stats"), [(1,), (2,)])
+        self.assertEqual(self.members_in("user_achievements"), [(1,), (2,)])
+
+        async def load(cache):
+            self.guild.members.append(SimpleNamespace(id=2))
+            self.guild.chunked = True
+        self.guild.chunk = AsyncMock(side_effect=load)
+        await self.tracking.cleanup_database()
+        self.assertEqual(self.members_in("user_stats"), [(1,), (2,)])
 
     async def test_unavailable_database_is_logged_without_deleting_rows(self):
         with (
