@@ -470,7 +470,7 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
                 value="\n".join(lines) if lines else "No events set up yet.",
                 inline=False,
             )
-        embed.set_footer(text="**Create** adds a one-time event. **Manage** edits an existing event.")
+        embed.set_footer(text="Create adds a one-time event. Manage edits an existing event.")
         return embed
 
     def build_event_list_embed(self, guild: discord.Guild | None, page: int = 0) -> discord.Embed:
