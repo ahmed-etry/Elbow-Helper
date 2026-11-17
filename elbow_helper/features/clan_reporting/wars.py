@@ -72,6 +72,11 @@ class ClanReportingWarMixin:
         if status == "waiting":
             return False
         log_available = status == "available"
+        summaries = self.state.setdefault("war_summaries", {})
+        summary_months = self.state.setdefault("war_summary_month_by_clan", {})
+        month_key = month_start.strftime("%Y-%m")
+        if not log_available and summaries.get(clan_code) and summary_months.get(clan_code) == month_key:
+            return False
         total = wins + losses + ties
         month_label = month_start.strftime("%B %Y")
 
@@ -98,7 +103,6 @@ class ClanReportingWarMixin:
                 LOGGER.warning("Skipping monthly war summary for %s because chart rendering is unavailable", clan_code)
                 return False
 
-        summaries = self.state.setdefault("war_summaries", {})
         old_message_id = summaries.get(clan_code)
         if old_message_id:
             old_message = await self._fetch_message(thread, old_message_id)
@@ -117,6 +121,7 @@ class ClanReportingWarMixin:
             return False
 
         summaries[clan_code] = new_message.id
+        summary_months[clan_code] = month_key
         await asyncio.to_thread(save_state, self.state)
         return log_available
 

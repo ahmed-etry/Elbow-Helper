@@ -284,6 +284,14 @@ class RecordedMonthlyWarSummaryTests(SummaryHarness, WarFixture, unittest.Isolat
         await self.run_loop()
         notice_id = self.manager.state["war_summaries"]["BE4"]
         self.manager = self.new_manager()
+
+        await self.run_loop()
+
+        self.threads["BE4"].send.assert_awaited_once()
+        self.threads["BES"].send.assert_awaited_once()
+        self.manager._fetch_message.assert_not_awaited()
+        self.assert_completed("BEH")
+        self.assertIsNone(self.manager.state["last_summary_month"])
         entry = log_entry("#GR", "20260920T180000.000Z", "win")
         entry["clan"].update(tag="#LQ", name="Clan #LQ")
         await self.record_log(page(entry), scope="#LQ", at=READ_TIME + HOUR)
@@ -291,8 +299,25 @@ class RecordedMonthlyWarSummaryTests(SummaryHarness, WarFixture, unittest.Isolat
         await self.run_loop()
 
         self.manager._fetch_message.assert_any_await(self.threads["BE4"], notice_id)
+        self.manager._fetch_message.return_value.delete.assert_awaited_once()
+        self.assertEqual(self.threads["BE4"].send.await_count, 2)
         self.chart.assert_called_once_with("BE4", "September 2026", 1, 0, 0)
         self.assertEqual(self.manager.state["last_summary_month_by_clan"]["BE4"], "2026-09")
+
+        # The untracked clan stays unavailable, but gets a fresh notice next month.
+        next_notice_id = self.manager.state["war_summaries"]["BES"]
+        self.clock.now.return_value = datetime(2026, 11, 1, 8, tzinfo=timezone.utc)
+        await self.run_loop()
+
+        self.manager._fetch_message.assert_any_await(self.threads["BES"], next_notice_id)
+        self.assertEqual(self.threads["BES"].send.await_count, 2)
+        self.assertEqual(self.description("BES"), "The war log isn't available.")
+        self.assertNotIn("BES", self.manager.state["last_summary_month_by_clan"])
+        self.manager = self.new_manager()
+        await self.run_loop()
+
+        self.assertEqual(self.threads["BES"].send.await_count, 2)
+        self.manager._fetch_message.assert_not_awaited()
 
     async def test_log_read_before_the_month_ended_waits_for_a_later_read(self):
         await self.record_log(september_log(), at=api_time("20260930T200000.000Z"))
