@@ -10,5 +10,6 @@ CONNECTIONS_PER_PAGE = 4
 SCAN_PREVIEW_PER_PAGE = 3
 SELECTOR_PAGE_SIZE = 25
 INVALID_DEPENDENCY_MESSAGE = "A role connection cannot depend on itself."
+NO_CONDITION_MESSAGE = "A connection needs at least one condition."
 PERSISTENCE_ERROR_MESSAGE = "That role connection couldn't be saved."
 

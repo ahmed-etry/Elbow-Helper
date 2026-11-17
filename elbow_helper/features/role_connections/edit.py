@@ -18,7 +18,6 @@ from elbow_helper.infrastructure.discord.pagination import NEXT_PAGE_LABEL
 from elbow_helper.infrastructure.discord.pagination import PREV_PAGE_LABEL
 from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
-from .config import INVALID_DEPENDENCY_MESSAGE
 from .config import PERSISTENCE_ERROR_MESSAGE
 from .config import SELECTOR_PAGE_SIZE
 from .formatting import _conditions_summary
@@ -263,12 +262,13 @@ class TargetRoleEditSelect(discord.ui.RoleSelect):
             return
         candidate = copy.deepcopy(connection)
         candidate["target_role_id"] = role_id
-        if not self._parent_view.cog.connection_change_is_valid(
+        issue = self._parent_view.cog.connection_issue(
             candidate,
             replacing_id=self._parent_view.conn_id,
-        ):
+        )
+        if issue:
             await interaction.response.send_message(
-                INVALID_DEPENDENCY_MESSAGE,
+                issue,
                 ephemeral=True,
             )
             return
@@ -333,12 +333,13 @@ class RoleListAddSelect(discord.ui.RoleSelect):
             condition = {key: role_id}
             if condition not in target:
                 target.append(condition)
-        if not self._parent_view.cog.connection_change_is_valid(
+        issue = self._parent_view.cog.connection_issue(
             candidate,
             replacing_id=self._parent_view.conn_id,
-        ):
+        )
+        if issue:
             await interaction.response.send_message(
-                INVALID_DEPENDENCY_MESSAGE,
+                issue,
                 ephemeral=True,
             )
             return
@@ -383,6 +384,10 @@ class RoleListRemoveSelect(discord.ui.Select):
         connection[self._parent_view.list_name] = [
             condition for condition in target if condition.get(key) not in role_ids
         ]
+        issue = self._parent_view.cog.connection_issue(connection, replacing_id=self._parent_view.conn_id)
+        if issue:
+            await interaction.response.send_message(issue, ephemeral=True)
+            return
         try:
             updated = await asyncio.to_thread(self._parent_view.cog.replace_connection, self._parent_view.conn_id, connection)
         except (OSError, TypeError):

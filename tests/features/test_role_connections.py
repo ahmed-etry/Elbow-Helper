@@ -51,6 +51,45 @@ class RoleConnectionValidationTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    async def test_removing_the_last_condition_saves_nothing_and_says_so(self) -> None:
+        # A connection with no condition matches every member and would give its role to everyone.
+        from elbow_helper.features.role_connections.config import NO_CONDITION_MESSAGE
+        cog = object.__new__(RoleConnections)
+        cog.state = {"connections": [_connection("role-a", 10, has=(20,))]}
+        cog._replace_connections = MagicMock()
+        select = SimpleNamespace(values=["20"], _parent_view=SimpleNamespace(
+            cog=cog, conn_id="role-a", list_name="all", kind="has"))
+        interaction = SimpleNamespace(response=SimpleNamespace(send_message=AsyncMock(), edit_message=AsyncMock()))
+        with patch.object(RoleConnections, "role_connection_state",
+                          lambda self, conn_id: _connection("role-a", 10, has=(20,))):
+            await RoleListRemoveSelect.callback(select, interaction)
+        interaction.response.send_message.assert_awaited_once_with(NO_CONDITION_MESSAGE, ephemeral=True)
+        cog._replace_connections.assert_not_called()
+        self.assertFalse(cog.connection_change_is_valid({"id": "role-a", "target_role_id": 10, "all": [], "any": []},
+                                                        replacing_id="role-a"))
+
+    async def test_changing_target_of_old_empty_rule_reports_missing_condition(self) -> None:
+        from elbow_helper.features.role_connections.config import NO_CONDITION_MESSAGE
+
+        connection = _connection("role-a", 10)
+        cog = object.__new__(RoleConnections)
+        cog.state = {"connections": [connection]}
+        cog.replace_connection = MagicMock()
+        select = SimpleNamespace(
+            values=[SimpleNamespace(id=30)],
+            _parent_view=SimpleNamespace(cog=cog, conn_id="role-a"),
+        )
+        interaction = SimpleNamespace(response=SimpleNamespace(
+            send_message=AsyncMock(), edit_message=AsyncMock(),
+        ))
+
+        await TargetRoleEditSelect.callback(select, interaction)
+
+        interaction.response.send_message.assert_awaited_once_with(NO_CONDITION_MESSAGE, ephemeral=True)
+        interaction.response.edit_message.assert_not_awaited()
+        cog.replace_connection.assert_not_called()
+        self.assertEqual(cog.state, {"connections": [_connection("role-a", 10)]})
+
     def test_one_way_dependency_is_accepted(self) -> None:
         cog = object.__new__(RoleConnections)
         cog.state = {
@@ -196,7 +235,7 @@ class RoleConnectionPersistenceTests(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(
                     cog=SimpleNamespace(
                         new_connection_id=MagicMock(return_value="role-a"),
-                        connection_change_is_valid=MagicMock(return_value=True),
+                        connection_issue=MagicMock(return_value=None),
                         add_connection=add_connection,
                     ),
                     target_role_id=10,
@@ -234,7 +273,7 @@ class RoleConnectionPersistenceTests(unittest.IsolatedAsyncioTestCase):
                             get_connection=MagicMock(
                                 return_value=_connection("role-a", 10)
                             ),
-                            connection_change_is_valid=MagicMock(return_value=True),
+                            connection_issue=MagicMock(return_value=None),
                             replace_connection=update_target,
                         ),
                         conn_id="role-a",
@@ -256,7 +295,7 @@ class RoleConnectionPersistenceTests(unittest.IsolatedAsyncioTestCase):
                             get_connection=MagicMock(
                                 return_value=_connection("role-a", 10)
                             ),
-                            connection_change_is_valid=MagicMock(return_value=True),
+                            connection_issue=MagicMock(return_value=None),
                             replace_connection=add_roles,
                         ),
                         conn_id="role-a",
@@ -278,8 +317,9 @@ class RoleConnectionPersistenceTests(unittest.IsolatedAsyncioTestCase):
                     _parent_view=SimpleNamespace(
                         cog=SimpleNamespace(
                             role_connection_state=MagicMock(
-                                return_value=_connection("role-a", 10, has=(20,))
+                                return_value=_connection("role-a", 10, has=(20, 30))
                             ),
+                            connection_issue=MagicMock(return_value=None),
                             replace_connection=remove_roles,
                         ),
                         conn_id="role-a",

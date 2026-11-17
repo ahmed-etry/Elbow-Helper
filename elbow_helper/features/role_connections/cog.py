@@ -31,6 +31,8 @@ from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 
 from .config import CONNECTIONS_PER_PAGE
+from .config import INVALID_DEPENDENCY_MESSAGE
+from .config import NO_CONDITION_MESSAGE
 from .config import ROLE_CHANGE_DELAY_SECONDS
 from .config import SCAN_PREVIEW_PER_PAGE
 from .config import SELECTOR_PAGE_SIZE
@@ -77,15 +79,26 @@ class RoleConnections(commands.Cog):
         *,
         replacing_id: str | None = None,
     ) -> bool:
-        """Check a proposed rule against every managed-role dependency."""
+        """Every save of a rule passes here: panel, builder, edit screens and agent."""
+        return self.connection_issue(connection, replacing_id=replacing_id) is None
 
+    def connection_issue(
+        self,
+        connection: Dict[str, Any],
+        *,
+        replacing_id: str | None = None,
+    ) -> str | None:
+        """Why a proposed rule cannot be saved, or None."""
+        # A rule with no condition matches every member and would give its role to everyone.
+        if not connection.get("all") and not connection.get("any"):
+            return NO_CONDITION_MESSAGE
         prospective = [
             copy.deepcopy(existing)
             for existing in self.state["connections"]
             if replacing_id is None or existing.get("id") != replacing_id
         ]
         prospective.append(copy.deepcopy(connection))
-        return not self._invalid_connection_indexes(prospective)
+        return INVALID_DEPENDENCY_MESSAGE if self._invalid_connection_indexes(prospective) else None
 
     def cog_unload(self) -> None:
         for task in self._role_change_tasks.values():

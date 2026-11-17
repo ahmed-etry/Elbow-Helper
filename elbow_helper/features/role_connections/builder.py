@@ -10,7 +10,6 @@ import discord
 from elbow_helper.infrastructure.discord.interactions import edit_bound_view
 from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
-from .config import INVALID_DEPENDENCY_MESSAGE
 from .config import PERSISTENCE_ERROR_MESSAGE
 from .formatting import _conditions_to_lines
 from .formatting import _format_condition
@@ -141,9 +140,10 @@ class ConditionBuilderView(BaseTimeoutView):
             "all": self.conditions_all,
             "any": self.conditions_any,
         }
-        if not self.cog.connection_change_is_valid(connection):
+        issue = self.cog.connection_issue(connection)
+        if issue:
             await interaction.response.send_message(
-                INVALID_DEPENDENCY_MESSAGE,
+                issue,
                 ephemeral=True,
             )
             return
