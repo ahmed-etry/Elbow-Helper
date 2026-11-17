@@ -727,6 +727,20 @@ class TrialMixin:
             reminders = self.recruitment_state.reminders()
         if not reminders:
             return
+        for ticket_id, info in reminders.items():
+            if info.get("resolved_at") or self.bot.get_channel(int(ticket_id)) is not None:
+                continue
+            try:
+                await self.bot.fetch_channel(int(ticket_id))
+            except discord.NotFound:
+                # A deleted ticket's reminder is done, as if its button had been pressed.
+                await self._mark_trial_reminder_resolved(
+                    ticket_channel_id=int(ticket_id), applicant_id=int(info.get("applicant_id") or 0),
+                    resolver_id=None, via="schedule")
+            except (discord.Forbidden, discord.HTTPException):
+                continue
+        async with self._reminder_lock:
+            reminders = self.recruitment_state.reminders()
         to_delete = []
         for ticket_id, info in reminders.items():
             resolved_at = int(info.get("resolved_at", 0) or 0)

@@ -118,6 +118,9 @@ class RecruitmentCommandMixin:
             role_update_failed = True
         await channel.send(prepared["message"])
         await self.record_decision("finalized", channel.id, applicant.id, actor_id=actor_id, via=via)
+        # A finalized member's trial-end reminder is done, as if its button had been pressed.
+        await self._mark_trial_reminder_resolved(
+            ticket_channel_id=channel.id, applicant_id=applicant.id, resolver_id=actor_id, via=via)
         lines = [f"Completed {applicant.display_name}'s trial."]
         if name_changed:
             lines.append(f"Renamed the channel to {new_name}.")

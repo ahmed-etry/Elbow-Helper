@@ -14,7 +14,7 @@ from tests.agent.discord_actions.helpers import register_requester
 
 class CheckupCommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_checkup_posts_the_previewed_message_once(self):
-        workflow = recording_workflow()
+        workflow = await recording_workflow()
         bot_member = SimpleNamespace(id=1, top_role=SimpleNamespace(position=10))
         requester = SimpleNamespace(id=2)
         applicant = SimpleNamespace(

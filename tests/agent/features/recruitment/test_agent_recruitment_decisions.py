@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -11,14 +12,21 @@ from elbow_helper.agent.features.recruitment.commands import prepare_accept, pre
 from elbow_helper.data.events.testing import MemoryEventsStore
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
 from elbow_helper.features.recruitment.state import RecruitmentState
+from elbow_helper.features.recruitment.trials import TrialMixin
 from tests.agent.discord_actions.helpers import register_requester
 
 
-def recording_workflow():
+class RecordingWorkflow(RecruitmentCommandMixin, TrialMixin):
+    pass
+
+
+async def recording_workflow():
     """The feature mixin with a real history store, as the cog has."""
-    workflow = RecruitmentCommandMixin()
+    workflow = RecordingWorkflow()
+    workflow._reminder_lock = asyncio.Lock()
     events = MemoryEventsStore()
     workflow.recruitment_state = RecruitmentState(events)
+    await workflow.recruitment_state.startup()
     return workflow
 
 
@@ -103,7 +111,7 @@ class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
                       ActionClass.IRREVERSIBLE)
 
     async def test_finalize_previews_roles_ticket_and_message(self):
-        workflow = recording_workflow()
+        workflow = await recording_workflow()
         bot_member = SimpleNamespace(
             id=1, top_role=SimpleNamespace(position=10),
         )
@@ -165,7 +173,7 @@ class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
         await self.assert_agent_event(workflow, "finalized")
 
     async def test_decline_previews_message_and_posts_on_confirm(self):
-        workflow = recording_workflow()
+        workflow = await recording_workflow()
         bot_member = SimpleNamespace(
             id=1, top_role=SimpleNamespace(position=10),
         )

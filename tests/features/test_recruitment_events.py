@@ -175,6 +175,28 @@ class RecruitmentHistoryTests(unittest.IsolatedAsyncioTestCase):
             ticket_channel_id=300, applicant_id=45, resolver_id=7) for _ in range(2)))
         self.assertEqual(len(await owner.recruitment_state.events.read(kind="trial_followup_resolved")), 1)
 
+    async def test_finalizing_or_deleting_the_ticket_closes_its_trial_end_reminder(self):
+        # Host: open reminders stayed on record for trials finalized or whose ticket was deleted.
+        import discord
+        reminders = saved_work()["reminders"]
+        await self.seed({"reminders": {"200": {**reminders["300"], "applicant_id": 42}, "300": reminders["300"]}})
+        owner = await self.new_owner()
+        await owner.post_finalize({"applicant": SimpleNamespace(id=42, display_name="Applicant"),
+                                   "channel": self.ticket, "new_name": self.ticket.name, "remove_roles": [],
+                                   "add_roles": [], "message": "Finalized."}, actor_id=7)
+        self.assertTrue(owner.recruitment_state.reminders()["200"]["resolved_at"])
+        self.assertIsNone(owner.recruitment_state.reminders()["300"]["resolved_at"])
+
+        async def fetch_channel(channel_id):
+            raise discord.NotFound(SimpleNamespace(status=404, reason="Unknown Channel"), "gone")
+
+        owner.bot.fetch_channel = fetch_channel
+        await TrialMixin.cleanup_trial_reminders.coro(owner)
+        self.assertTrue(owner.recruitment_state.reminders()["300"]["resolved_at"])
+        rows = await owner.recruitment_state.events.read(kind="trial_followup_resolved")
+        self.assertEqual(sorted((row["source_channel_id"], row["via"]) for row in rows),
+                         [(200, "command"), (300, "schedule")])
+
     async def test_decisions_are_history_and_a_failed_save_never_undoes_the_message(self):
         owner = await self.new_owner()
         prepared = {"applicant": SimpleNamespace(id=42, display_name="Applicant"),
