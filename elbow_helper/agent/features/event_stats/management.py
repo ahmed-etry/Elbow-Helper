@@ -9,6 +9,7 @@ from typing import Any
 import discord
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from elbow_helper.features.event_stats.config import MAX_EVENT_NAME_LENGTH, MAX_GRACE_HOURS
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.safety.access import ACCESS_LEAD, require_evidence_access
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
@@ -231,6 +232,11 @@ async def _prepare_preset(context: AgentRequestContext,
     if not name:
         raise ActionRefused('That event tracker is unavailable.')
     grace = values.get("grace_hours")
+    # The save keeps at most these limits; a preview must not promise more than is saved.
+    if len(name) > MAX_EVENT_NAME_LENGTH:
+        raise ActionRefused("Enter an event name.")
+    if grace is not None and grace > MAX_GRACE_HOURS:
+        raise ActionRefused(f"Grace hours must be a whole number between 0 and {MAX_GRACE_HOURS}.")
     if name == event["name"] and (grace is None or grace == event.get("grace_period_hours")):
         return {"status": "no_change"}
     lines = [ACTION_EVENT_FORM_EDIT.format(name=event["name"])]

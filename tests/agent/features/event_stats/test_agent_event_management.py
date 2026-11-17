@@ -106,6 +106,28 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
             await context.state.proposed_changes[0].run()
         self.assertEqual(len(saved_on), 7)
         self.assertNotIn(threading.get_ident(), saved_on)
+
+    async def test_preset_edit_refuses_values_the_save_would_cut(self):
+        # Asked for 500 grace hours, the preview promised 500 and the save kept 168.
+        from elbow_helper.agent.actions.contracts import ActionRefused
+        event = {"key": "preset", "name": "Preset", "enabled": True, "source": "preset",
+                 "category_id": None, "grace_period_hours": 24}
+        workflow = SimpleNamespace(event_management_state=lambda value: {"event": event, "position": 0,
+                                                                         "count": 1},
+                                   update_preset_event=MagicMock(return_value=True))
+        tool = next(tool for tool in event_management_tools() if tool.definition.name == "edit_preset_event")
+        for values, refusal in (({"name": "N" * 150}, "Enter an event name."),
+                                ({"name": "Preset", "grace_hours": 500},
+                                 "Grace hours must be a whole number between 0 and 168.")):
+            with self.subTest(values=list(values)):
+                context = SimpleNamespace(private_pass=True, bot=SimpleNamespace(get_cog=lambda name: workflow),
+                                          guild=SimpleNamespace(), state=AgentTurnState())
+                with patch('elbow_helper.agent.features.event_stats.management.require_evidence_access',
+                           new_callable=AsyncMock), self.assertRaises(ActionRefused) as raised:
+                    await tool.handler(context, {"event": "preset", **values})
+                self.assertEqual(str(raised.exception), refusal)
+                self.assertEqual(context.state.proposed_changes, [])
+
     async def test_move_to_top_is_one_confirmed_feature_operation(self):
         state = {"event": {"key": "alpha", "name": "Alpha", "enabled": True,
                            "source": "preset", "category_id": None},
