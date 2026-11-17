@@ -15,7 +15,7 @@ from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, Cha
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from elbow_helper.agent.conversation.wording import ACTION_ROSTER_ACCOUNT_LINE, ACTION_ROSTER_ACCOUNT_ITEM, ACTION_ROSTER_ACCOUNT_ROLE, ACTION_ROSTER_POST_REFRESH, ACTION_ROSTER_ACCOUNT_LABEL, ACTION_ROSTER_BULK_LINE, ACTION_ROSTER_BULK_ACCOUNT, ACTION_ROSTER_BULK_SIGNED, ACTION_ROSTER_BULK_LABEL, ACTION_ROSTER_REMOVE_LINE, ACTION_ROSTER_REMOVE_ROW, ACTION_ROSTER_REMOVE_LABEL
-from elbow_helper.agent.discord_actions.safety import check_member, check_post_access, check_role, resolve_channel, resolve_member
+from elbow_helper.agent.discord_actions.safety import check_member, check_post_access, check_role, present_members, resolve_channel, resolve_member
 
 
 def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -185,8 +185,8 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
     if role is not None:
         check_role(role, context.guild, context.guild.me, {}, requester=context.member)
-    members = {member_id: await resolve_member(context.guild, member_id)
-               for _, _, member_id, _ in state["accounts"]}
+    members = await present_members(context.guild, dict.fromkeys(
+        member_id for _, _, member_id, _ in state["accounts"]))
     for member in members.values():
         check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     channels = [await resolve_channel(context, channel_id)
@@ -195,7 +195,7 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
         check_post_access(channel, context.member, context.guild.me)
     lines = [ACTION_ROSTER_BULK_LINE.format(name=roster.name)]
     lines.extend(ACTION_ROSTER_BULK_ACCOUNT.format(
-        name=name, tag=tag, member=members[member_id].mention,
+        name=name, tag=tag, member=members[member_id].mention if member_id in members else f"<@{member_id}>",
         status=ACTION_ROSTER_BULK_SIGNED if signed else "")
         for tag, name, member_id, signed in state["accounts"])
     if role is not None:

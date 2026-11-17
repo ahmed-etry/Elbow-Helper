@@ -112,6 +112,17 @@ async def resolve_member(guild: Any, member_id: int, *, fresh: bool = False) -> 
         raise DiscordActionRefused("That member is unavailable.") from error
 
 
+async def present_members(guild: Any, member_ids: Any) -> dict[int, Any]:
+    """Members still in the server; one who left is skipped, the way roster delete and edit do."""
+    present = {}
+    for member_id in member_ids:
+        try:
+            present[member_id] = await resolve_member(guild, member_id)
+        except DiscordActionRefused:
+            continue
+    return present
+
+
 async def find_member(guild: Any, member_id: int) -> Any:
     """The member from cache or Discord, or None when Discord cannot return them."""
     member = guild.get_member(member_id)

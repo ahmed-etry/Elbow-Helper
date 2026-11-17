@@ -80,6 +80,64 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["status"], "confirmation_required")
                 summary = context.state.proposed_changes[0].preview.summary
                 self.assertTrue(action_progress_status(summary).endswith(" roster signup controls"))
+
+    async def test_a_member_who_left_does_not_block_clear_refresh_or_reset_open(self):
+        # One of 598 signups belonged to someone no longer in the server; each path answered "unavailable".
+        import discord
+        for tool_name, arguments in (("clear_roster_signups", {"roster_id": 17}),
+                                     ("refresh_roster", {"roster_id": 17}),
+                                     ("set_roster_state", {"roster_id": 17, "operation": "open"})):
+            with self.subTest(tool=tool_name):
+                roster = SimpleNamespace(id=17, guild_id=1, name="War", status="closed", buttons_hidden=False,
+                                         active_cycle_id=3, role_id=8, reset_on_open=True)
+                snapshot = {"roster": roster, "account_count": 2, "member_ids": (41, 43), "posts": ()}
+                workflow = SimpleNamespace(roster_management_state=AsyncMock(return_value=snapshot))
+                bot_member = SimpleNamespace(id=999, top_role=SimpleNamespace(position=10))
+                role = SimpleNamespace(id=8, mention="<@&8>", managed=False, position=1,
+                                       permissions=SimpleNamespace(), is_default=lambda: False)
+                present = SimpleNamespace(id=41, mention="<@41>", top_role=SimpleNamespace(position=1))
+
+                async def fetch_member(member_id):
+                    raise discord.NotFound(SimpleNamespace(status=404, reason="Unknown Member"), "gone")
+
+                guild = SimpleNamespace(id=1, me=bot_member, get_role=lambda role_id: role,
+                                        get_member=lambda member_id: present if member_id == 41 else None,
+                                        fetch_member=fetch_member)
+                context = register_requester(SimpleNamespace(private_pass=True,
+                    bot=SimpleNamespace(get_cog=lambda name: workflow),
+                    guild=guild, member=object(), state=AgentTurnState()))
+                tool = next(tool for tool in roster_management_tools() if tool.definition.name == tool_name)
+                with patch('elbow_helper.agent.features.rosters.management.require_evidence_access',
+                           new_callable=AsyncMock):
+                    result = await tool.handler(context, arguments)
+                self.assertEqual(result["status"], "confirmation_required")
+                lines = context.state.proposed_changes[0].preview.lines
+                self.assertFalse(any("<@43>" in line for line in lines))
+                self.assertTrue(await context.state.proposed_changes[0].preview.recheck())
+
+    async def test_bulk_add_skips_checks_for_an_owner_who_left(self):
+        import discord
+        from elbow_helper.agent.features.rosters.signups import prepare_bulk_roster_add
+        roster = SimpleNamespace(id=17, guild_id=1, name="War", role_id=None)
+        workflow = SimpleNamespace(bulk_add_roster_preview=AsyncMock(return_value={
+            "roster": roster, "posts": (),
+            "accounts": (("#P0", "Synthetic", 41, False), ("#Q0", "Departed", 43, True))}))
+
+        async def fetch_member(member_id):
+            raise discord.NotFound(SimpleNamespace(status=404, reason="Unknown Member"), "gone")
+
+        present = SimpleNamespace(id=41, mention="<@41>", top_role=SimpleNamespace(position=1))
+        guild = SimpleNamespace(id=1, me=SimpleNamespace(id=999, top_role=SimpleNamespace(position=10)),
+                                get_role=lambda role_id: None, fetch_member=fetch_member,
+                                get_member=lambda member_id: present if member_id == 41 else None)
+        context = register_requester(SimpleNamespace(private_pass=True,
+            bot=SimpleNamespace(get_cog=lambda name: workflow),
+            guild=guild, member=object(), state=AgentTurnState()))
+        with patch('elbow_helper.agent.features.rosters.signups.require_evidence_access', new_callable=AsyncMock):
+            result = await prepare_bulk_roster_add(context, {"roster_id": 17, "player_tags": ["#P0", "#Q0"]})
+        self.assertEqual(result["status"], "confirmation_required")
+        self.assertTrue(any("<@43>" in line for line in context.state.proposed_changes[0].preview.lines))
+
     async def test_clear_previews_members_and_posts_before_calling_feature(self):
         roster = SimpleNamespace(
             id=17, guild_id=1, name="War", status="open", buttons_hidden=False,

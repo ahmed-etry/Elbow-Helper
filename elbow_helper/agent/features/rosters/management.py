@@ -17,7 +17,7 @@ from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.actions.values import display_value
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from elbow_helper.agent.conversation.wording import ACTION_ROSTER_CONTROL_LINE, ACTION_ROSTER_CONTROL_STATUS, ACTION_ROSTER_POST_REFRESH, ACTION_ROSTER_CONTROL_MEMBER, ACTION_SIGNUP_ROLE, ACTION_ROSTER_CONTROL_COUNT, ACTION_ROSTER_CONTROL_OPEN, ACTION_ROSTER_CONTROL_CLOSE, ACTION_ROSTER_CONTROL_SHOW, ACTION_ROSTER_CONTROL_HIDE, ACTION_ROSTER_CONTROL_CLEAR, ACTION_FIELD_CHANGE, ACTION_ROSTER_LAYOUT_LINE, ACTION_ROSTER_LAYOUT_LABEL, ACTION_ROSTER_REFRESH_LINE, ACTION_ROSTER_REFRESH_MEMBER, ACTION_ROSTER_REFRESH_LABEL, ACTION_ROSTER_LAYOUT_FIELDS
-from elbow_helper.agent.discord_actions.safety import check_member, check_post_access, check_role, resolve_channel, resolve_member
+from elbow_helper.agent.discord_actions.safety import check_member, check_post_access, check_role, present_members, resolve_channel
 
 
 TOOL_CONTRACTS = {
@@ -48,13 +48,14 @@ async def _check_posts(context: AgentRequestContext,
 
 
 async def _check_members(context: AgentRequestContext,
-                         roster: Any, member_ids: tuple[int, ...]) -> None:
+                         roster: Any, member_ids: tuple[int, ...]) -> dict[int, Any]:
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
     if role is not None:
         check_role(role, context.guild, context.guild.me, {}, requester=context.member)
-    for member_id in member_ids:
-        member = await resolve_member(context.guild, member_id)
+    present = await present_members(context.guild, member_ids)
+    for member in present.values():
         check_member(member, context.guild.me, requester=context.member, guild=context.guild)
+    return present
 
 
 _OPERATIONS = (
@@ -159,8 +160,7 @@ async def prepare_roster_refresh(context: AgentRequestContext,
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
     if role is not None:
         check_role(role, context.guild, context.guild.me, {}, requester=context.member)
-    members = [await resolve_member(context.guild, member_id)
-               for member_id in state["member_ids"]]
+    members = list((await present_members(context.guild, state["member_ids"])).values())
     for member in members:
         check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     lines = [ACTION_ROSTER_REFRESH_LINE.format(name=roster.name)]
@@ -313,8 +313,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     roster = state["roster"]
     await _check_posts(context, state["posts"])
     check_members = operation == "clear" or (operation == "open" and roster.reset_on_open)
-    if check_members:
-        await _check_members(context, roster, state["member_ids"])
+    present = await _check_members(context, roster, state["member_ids"]) if check_members else {}
     if name == "show_roster_controls" and not roster.buttons_hidden:
         return {"status": "no_change"}
     if name == "hide_roster_controls" and roster.buttons_hidden:
@@ -329,7 +328,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         if role is not None and state["member_ids"]:
             lines.append(ACTION_SIGNUP_ROLE.format(role=role.mention))
         lines.extend(ACTION_ROSTER_CONTROL_MEMBER.format(member=f"<@{member_id}>")
-                     for member_id in state["member_ids"])
+                     for member_id in state["member_ids"] if member_id in present)
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(channel=f"<#{channel_id}>")
                  for channel_id, message_id in state["posts"])
 
