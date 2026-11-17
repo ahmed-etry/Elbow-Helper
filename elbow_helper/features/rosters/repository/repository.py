@@ -443,7 +443,7 @@ class RosterRepository:
         conn.execute(
             """
             UPDATE rosters
-            SET active_cycle_id = ?, status = 'open', last_open_cycle_key = ?,
+            SET active_cycle_id = ?, status = 'open', last_open_cycle_key = ?, last_close_cycle_key = NULL,
                 updated_ts = ?
             WHERE id = ?
             """,

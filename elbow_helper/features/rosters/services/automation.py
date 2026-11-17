@@ -129,23 +129,19 @@ class RosterAutomationService:
             if not opens_at <= now < closes_at:
                 return await self._set_status(roster.id, "closed")
             cycle_key = f"once:{roster.one_off_open_ts}"
-            if roster.last_close_cycle_key == cycle_key:
-                return await self._set_status(roster.id, "closed")
             if roster.last_open_cycle_key == cycle_key and roster.active_cycle_id:
-                return await self._set_status(roster.id, "open")
+                return (await asyncio.to_thread(self._repository.start_cycle, roster.id, cycle_key))[0]
             return await self._start_cycle(roster.id, cycle_key)
 
         if roster.schedule_enabled:
             window = due_window(roster, now)
             if window is None or not window.opens_at <= now < window.closes_at:
                 return await self._set_status(roster.id, "closed")
-            if roster.last_close_cycle_key == window.cycle_key:
-                return await self._set_status(roster.id, "closed")
             if (
                 roster.last_open_cycle_key == window.cycle_key
                 and roster.active_cycle_id
             ):
-                return await self._set_status(roster.id, "open")
+                return (await asyncio.to_thread(self._repository.start_cycle, roster.id, window.cycle_key))[0]
             return await self._start_cycle(roster.id, window.cycle_key)
 
         return await asyncio.to_thread(
