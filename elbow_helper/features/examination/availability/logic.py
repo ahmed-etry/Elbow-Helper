@@ -192,6 +192,24 @@ def _parse_time_token(token: str, ampm: Optional[str] = None) -> Optional[float]
     return None
 
 
+def _range_start(token: str, end_ampm: str, end: Optional[float]) -> Optional[float]:
+    """A range start written without am/pm, read against the end's am/pm.
+
+    It takes the end's half of the day when that keeps it before the end
+    (8-11pm, 12-6pm), otherwise the other half (9-5pm, 10-10pm). A start in
+    24-hour form (0:xx or 13:00 and later) is taken as written.
+    """
+    plain = _parse_time_token(token)
+    if plain is None or plain < 1 or plain >= 13:
+        return plain
+    meridiem = end_ampm.lower().replace(".", "").replace(" ", "")
+    same = _parse_time_token(token, meridiem)
+    if end is not None and same is not None and same < end:
+        return same
+    other = _parse_time_token(token, "am" if meridiem == "pm" else "pm")
+    return other if other is not None else same
+
+
 def _parse_single_time_input(value: str) -> Optional[float]:
     # Parse a single time value like 16:00, 4pm, 1630, or noon.
     if not value:
@@ -268,10 +286,9 @@ def parse_availability_windows(text: str) -> List[Tuple[Set[str], Tuple[float, f
         end_token = match.group(3)
         start_ampm = match.group(2)
         end_ampm = match.group(4)
-        if not start_ampm and end_ampm:
-            start_ampm = end_ampm
-        start = _parse_time_token(start_token, start_ampm)
         end = _parse_time_token(end_token, end_ampm)
+        start = (_range_start(start_token, end_ampm, end) if not start_ampm and end_ampm
+                 else _parse_time_token(start_token, start_ampm))
         if start is None or end is None:
             last_idx = match.end()
             continue
