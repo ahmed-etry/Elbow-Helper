@@ -4,7 +4,7 @@ from elbow_helper.agent.engine.result_fields import names
 COMMON = {**names('schema_version,report_id,total_rows,returned_rows,next_offset,next_cursor,complete_snapshot,count,coverage,missing_sources,resolved_inputs,artifact_status'),
           'artifact': names('report_id,filename,total_rows')}
 RESULT_FIELDS = {
-    'read_ranked_activity': {**COMMON, 'rows': [names('player_tag,member_id,player_name,status,selection_rank,ranked_league,attacks_used,attacks_available,watch_status,watched_from,counts_complete')]},
+    'read_ranked_activity': {**COMMON, 'rows': [names('player_tag,member_id,member_name,player_name,status,selection_rank,ranked_league,attacks_used,attacks_available,watch_status,watched_from,counts_complete')]},
     'read_war_participation': {**COMMON, 'rows': [names('member_id,member_name,player_tag,player_name,account_tags,war_ids,attacks_used,attacks_expected,missed,miss_rate,unconfirmed_opportunities,unit,missing_link')]},
     'read_cwl_results': {**COMMON, 'rows': [names('player_tag,player_name,clan_code,season,league,rank,rank_total,ass_score,score,attacks,attacks_expected,multi_season_score,multi_season_rank')]},
     'read_current_war': {**COMMON, 'rows': [{**names('clan_code,status,state,start_at,end_at,team_size,opponent'), 'members': [names('player_tag,player_name,attacks_used,unused_attacks,missed')]}]},
@@ -96,7 +96,7 @@ RESULT_FIELDS['read_clan_rosters']['rows'][0].pop('leadership')
 RESULT_FIELDS['read_cwl_results']['clan_results'] = [{
     **names('clan_code,league,completed_wars,scoring_status,ranked_population'),
     'top_rows': RESULT_FIELDS['read_cwl_results']['rows']}]
-RESULT_FIELDS['read_member_accounts']['unknown_accounts'] = [names('member_id,player_tag')]
+RESULT_FIELDS['read_member_accounts']['unknown_accounts'] = [names('member_id,member_name,player_tag')]
 RESULT_FIELDS['read_clan_rosters']['clans'] = [names('clan_code,name,tag,basis,season,status,cohort_accounts,included_accounts,excluded_accounts,unknown_filter_accounts,in_game_members,in_game_capacity,capacity_basis,open_in_game_slots,town_halls')]
 RESULT_FIELDS['read_clan_rosters']['clans'][0]['entry_settings'] = names(
     'type,join_method,type_meaning,requiredTownhallLevel,requiredTrophies,requiredBuilderBaseTrophies')
@@ -160,7 +160,7 @@ RESULT_FIELDS['read_member_accounts']['rows'][0]['activity'] = {
     kind: {**names('status,error,cause'), **RESULT_FIELDS[family]['rows'][0]}
     for kind, family in (('regular_war', 'read_war_participation'), ('cwl', 'read_war_participation'),
                          ('ranked', 'read_ranked_activity'))}
-RESULT_FIELDS['read_cwl_results']['rows'][0].update(names('member_id,roster_id,cycle_id,townHallLevel,signed_up_ts'))
+RESULT_FIELDS['read_cwl_results']['rows'][0].update(names('member_id,member_name,roster_id,cycle_id,townHallLevel,signed_up_ts'))
 RESULT_FIELDS['read_cwl_results']['rosters'] = [{**names('roster_id,name,clan_code,cycle_id,season,status,accounts'),
     'source_posts': [names('channel_id,message_id')]}]
 RESULT_FIELDS['read_recruitment_pipeline']['rows'][0].update(
@@ -178,6 +178,7 @@ RESULT_FIELDS.update({
 })
 
 RESULT_FIELDS['read_conversation_evidence'].update(names('remaining_message_id,projection,selection_complete'))
+RESULT_FIELDS['read_conversation_evidence']['rows'][0].update(names('source'))
 RESULT_FIELDS['read_community_reference']['rows'][0].update(names(
     'workflow,sources,formula,profiles,profile_selection,support,recruitment,requester_lookup,new_applicant_route,supported_clan_codes'))
 RESULT_FIELDS['read_community_reference']['rows'][0]['roles'] = [names('role_id,name,purpose,status')]
@@ -204,7 +205,7 @@ RESULT_FIELDS['read_war_participation']['rows'] = [{**RESULT_FIELDS['read_war_pa
 RESULT_FIELDS['read_war_participation']['family_wars_scope'] = names(
     'status,reason,cause,clan_codes,regular_wars,cwl_wars,lineups_complete,clan_stays,meanings')
 RESULT_FIELDS['read_war_attacks'] = {**COMMON, 'rows': [names(
-    'war_id,war_type,war_state,war_end_at,clan_code,opponent_tag,opponent_name,player_tag,player_name,member_id,'
+    'war_id,war_type,war_state,war_end_at,clan_code,opponent_tag,opponent_name,player_tag,player_name,member_id,member_name,'
     'map_position,townhall,defender_map_position,defender_townhall,defender_basis,stars,destruction,attack_order,'
     'duration_seconds')], **names('war_type,accounts_without_attacks,members_without_links,ownership_basis,meanings')}
 # How far back the stored wars go, beside the wars each read checked.

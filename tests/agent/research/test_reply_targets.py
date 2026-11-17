@@ -60,7 +60,8 @@ class ReplyTargetTests(unittest.IsolatedAsyncioTestCase):
     async def test_deleted_parent_is_unavailable_not_replaced_by_neighbour(self):
         self.channel.fetch_message.side_effect = discord.NotFound(SimpleNamespace(status=404, reason="Missing"), "gone")
         result = await self.read()
-        self.assertEqual(result["reply_target"], {"message_id": 150, "status": "unavailable"})
+        self.assertEqual(result["reply_target"], {"message_id": 150, "status": "unavailable",
+                                               "source": "https://discord.com/channels/1/100/150"})
 
     async def test_no_reference_does_not_turn_adjacency_into_a_reply(self):
         self.quote.reference = None

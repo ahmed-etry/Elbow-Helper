@@ -112,6 +112,24 @@ class ReferenceFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['rows'][0]['mentioned_member_ids'],[41])
         self.assertEqual(result['rows'][0]['attachments'][0]['filename'],'Synthetic.txt')
 
+    async def test_message_rows_keep_links_in_planner_and_writer_evidence(self):
+        from elbow_helper.agent.reads.evidence import family_model_view, record_rows
+        from elbow_helper.agent.engine.answer_inputs import answer_evidence
+        from tests.agent.research.test_history_text_filter import history as saved_history
+        from tests.agent.research.test_agent_search import _context as history_context
+        context = replace(_context(), message_search=history_context().message_search)
+        context.source_message.channel.id = 100
+        messages = saved_history(context, [(1, 'Synthetic conversation message', (), ())])
+        tool = next(t for t in reads.TOOLS if t.definition.name == 'read_conversation_evidence')
+        with patch.object(history, 'accessible_message_channel',
+                          AsyncMock(return_value=context.source_message.channel)):
+            result = await tool.handler(context, {'mode': 'channel_window', 'channel_id': 100})
+        expected = f'https://discord.com/channels/{context.guild.id}/100/{messages[0].message_id}'
+        planner = family_model_view(result)
+        self.assertEqual(record_rows(planner['rows'])[0]['source'], expected)
+        writer = answer_evidence({'messages': planner}, guild=context.guild)
+        self.assertEqual(record_rows(writer['messages']['rows'])[0]['source'], expected)
+
 
     async def test_recruitment_ticket_evidence_requests_complete_native_bodies(self):
         from elbow_helper.agent.reads import workflow_reads

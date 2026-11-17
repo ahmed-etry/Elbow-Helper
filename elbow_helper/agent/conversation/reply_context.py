@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from elbow_helper.agent.safety.access import accessible_message_channel
 from elbow_helper.agent.conversation.text import message_text
+from elbow_helper.agent.research.history import jump_url
 
 
 REPLY_CONTEXT_INSTRUCTION = (
@@ -81,6 +82,7 @@ async def prepare_reply_context(context):
     if await accessible_message_channel(context, channel_id) is None:
         context.state.reply_context = {"status": "inaccessible"}
         return
+    result['source'] = jump_url(context.guild.id, channel_id, message_id)
     referenced = next((item for item in context.attachment_sources
                        if item.id == message_id), None)
     if referenced is not None:
@@ -88,7 +90,7 @@ async def prepare_reply_context(context):
         result.update(status="resolved", channel_id=channel_id,
                       author={"member_id": author.id, "display_name": author.display_name},
                       content=_reply_text(referenced),
-                      source=getattr(referenced, "jump_url", None),
+                      source=jump_url(context.guild.id, channel_id, message_id),
                       reply_to_message_id=getattr(getattr(referenced, "reference", None), "message_id", None))
         context.state.source_channels.add(channel_id)
     for turn in reversed(context.state.authorized_history or ()):
@@ -132,8 +134,12 @@ async def prepare_reply_context(context):
                 if entity.get('kind') != 'member':
                     continue
                 member = context.guild.get_member(entity['id'])
+                entity['display_name'] = member.display_name if member is not None and member.id == entity['id'] else None
                 if member is not None and member.id == entity['id']:
                     context.state.resolved_members[member.id] = member.display_name
+        requester = context.guild.get_member(conversation.get('requester_id'))
+        conversation['requester_name'] = (requester.display_name if requester is not None
+                                        and requester.id == conversation.get('requester_id') else None)
         result["conversation"] = conversation
         context.state.source_channels.update(turn.source_channels)
         context.state.required_access.update(turn.required_access)

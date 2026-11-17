@@ -82,7 +82,7 @@ def account_view(row, *, nested=False, requested_role_ids=()):
 def ranked_view(row):
     # A fixed schema lets the transport encode large selections once as a
     # column table, including accounts whose names or ranking are unknown.
-    fields = ('player_tag', 'member_id', 'player_name', 'status', 'selection_rank',
+    fields = ('player_tag', 'member_id', 'member_name', 'player_name', 'status', 'selection_rank',
         'attacks_used', 'attacks_available', 'counts_complete', 'ranked_league', 'watch_status',
         'watched_from', 'historical_counts_complete')
     result = {field: row.get(field) for field in fields}
@@ -146,6 +146,7 @@ def participation_view(clans, rows):
                     selected = [tag for tag in identity.get('account_tags', []) if tag in tags]
                     if selected or identity['member_id'] in members:
                         identities.append({'member_id': identity['member_id'],
+                            'member_name': identity.get('member_name'),
                             'account_tags': selected})
                 elif identity.get('player_tag') in tags:
                     identities.append({'player_tag': identity['player_tag']})
@@ -257,15 +258,12 @@ def family_model_view(payload, *, shared_rows=True):
     elif family == 'read_conversation_evidence' and len(rows) >= 10:
         # Search and context pages are tables too, even when only some messages are replies.
         data['rows'] = message_columns(rows)
-    if family == 'read_conversation_evidence':
-        # The jump link is rebuilt from guild, channel and message at citation time.
-        data['rows'] = [omit(row, ('source',)) for row in data['rows']]
     # Source channels are retained access bookkeeping; nothing the model is told to use reads them.
     data.pop('provenance', None)
     if isinstance(data.get('unknown_accounts'), list):
         # Each of these accounts is a row of this view already; name it, not a second copy of the row.
         selected = {row.get('player_tag') for row in rows}
-        data['unknown_accounts'] = [pick(row, ('member_id', 'player_tag')) for row in data['unknown_accounts']
+        data['unknown_accounts'] = [pick(row, ('member_id', 'member_name', 'player_tag')) for row in data['unknown_accounts']
                                    if row.get('player_tag') in selected]
     if isinstance(data.get('clan_facts'), list):
         data['clan_facts'] = [pick(row, ('clan_code', 'name', 'tag', 'operational_cwl_only',

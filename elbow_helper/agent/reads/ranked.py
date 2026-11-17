@@ -141,6 +141,8 @@ async def read_ranked(context, arguments, *, selection_maximum=200, starts=None)
     rows, battle_rows = [], {}
     for raw in stored['accounts']:
         account = account_view(raw)
+        member = context.guild.get_member(account['member_id']) if account['member_id'] else None
+        account['member_name'] = member.display_name if member else None
         battles = account.pop('battles', [])
         after = (datetime.fromtimestamp(starts[account['player_tag']], timezone.utc)
                  if starts and account['player_tag'] in starts else request.after)

@@ -51,6 +51,11 @@ def search_message_text(message, guild) -> str:
     ))
 
 
+def message_author_name(message, guild) -> str:
+    member = guild.get_member(message.author_id)
+    return getattr(member, "display_name", message.author_name)
+
+
 async def read_discord_channel_history(
     context: AgentRequestContext,
     arguments: Mapping[str, Any], *, complete_content: bool = False, whole_period: bool = False,
@@ -250,9 +255,10 @@ async def _read_history_page(context, arguments, *, character_budget, complete_c
             entry = {
                 "message_id": message.message_id,
                 "author_id": message.author_id,
-                "author": message.author_name,
+                "author": message_author_name(message, context.guild),
                 "timestamp": message.timestamp,
                 "content": content,
+                "source": jump_url(context.guild.id, channel_id, message.message_id),
             }
             if message.reply_to_message_id is not None:
                 entry["reply_to_message_id"] = message.reply_to_message_id
@@ -266,7 +272,7 @@ async def _read_history_page(context, arguments, *, character_budget, complete_c
                 "channel_id": channel_id,
                 "channel": getattr(channel, "name", str(channel_id)),
                 "author_id": message.author_id,
-                "author": message.author_name,
+                "author": message_author_name(message, context.guild),
                 "timestamp": message.timestamp,
                 "content": content,
                 "content_complete": True,
@@ -519,7 +525,8 @@ async def _read_reply_target(guild_id, channel, anchor, messages, *, after, befo
     if after is not None and not (
         discord.utils.time_snowflake(after) - 1 < target_id < discord.utils.time_snowflake(before)
     ):
-        return {"message_id": target_id, "status": "outside_requested_period"}
+        return {"message_id": target_id, "source": jump_url(guild_id, channel.id, target_id),
+                "status": "outside_requested_period"}
     target = next((message for message in messages if message.id == target_id), None)
     if target is None:
         fetch = getattr(channel, "fetch_message", None)
@@ -530,7 +537,7 @@ async def _read_reply_target(guild_id, channel, anchor, messages, *, after, befo
                 target = None
     if (target is None or target.id != target_id
             or target.channel.id != channel.id):
-        return {"message_id": target_id, "status": "unavailable"}
+        return {"message_id": target_id, "source": jump_url(guild_id, channel.id, target_id), "status": "unavailable"}
     return {**discord_message_evidence(guild_id, target, complete_content=complete_content), "status": "read"}
 
 
@@ -559,6 +566,8 @@ def discord_message_evidence(guild_id: int, message: discord.Message, *, complet
     }
     if complete_content:
         entry.update(content_complete=True, mentioned_member_ids=list(getattr(message, "raw_mentions", ())),
+                     mentioned_members=[{'member_id': member.id, 'display_name': member.display_name}
+                                        for member in getattr(message, 'mentions', ())],
                      embeds=readable_embeds(embed.to_dict() for embed in getattr(message, "embeds", ())),
                      attachment_contents_read=False,
                      attachments=[{"filename": item.filename, "url": getattr(item, "url", None),

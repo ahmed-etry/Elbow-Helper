@@ -80,6 +80,7 @@ async def cwl_rosters(context, arguments):
                 'status': roster.status, 'accounts': len(snapshot.members), 'source_posts': posts})
             rows.extend({'roster_id': roster.id, 'cycle_id': cycle_id,
                 'member_id': member.discord_user_id,
+                'member_name': getattr(context.guild.get_member(member.discord_user_id), 'display_name', None),
                 'player_tag': member.player_tag,
                 'player_name': member.player_name, 'townHallLevel': member.townhall,
                 'clan_code': member.clan_code, 'signed_up_ts': member.signed_up_ts}

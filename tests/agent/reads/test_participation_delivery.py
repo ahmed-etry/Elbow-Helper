@@ -167,6 +167,7 @@ class ParticipationDeliveryTests(unittest.IsolatedAsyncioTestCase):
                 report = context.state.reports[page['report_id']]
                 full = family_model_view(report.page(limit=len(rows)))
                 self.assertEqual(full['clan_participation'][0]['warring']['identities'],
-                                 [{'member_id': x['member_id'], 'account_tags': x['account_tags']}
+                                 [{'member_id': x['member_id'], 'member_name': x['member_name'],
+                                   'account_tags': x['account_tags']}
                                   for x in identities])
                 self.assertEqual(json.loads(report.payload)['summary']['clan_participation'], summary)

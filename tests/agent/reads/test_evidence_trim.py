@@ -36,7 +36,7 @@ class ModelViewTrimTests(unittest.TestCase):
                     self.assertIn('provenance', payload)
 
 
-    def test_message_rows_drop_source_but_cited_messages_still_link(self):
+    def test_message_rows_keep_sources_and_cited_messages_still_link(self):
         from elbow_helper.agent.engine.grounding import ground_answer
         from elbow_helper.agent.plan.results import model_view
         link = 'https://discord.com/channels/3/91/{}'
@@ -49,11 +49,10 @@ class ModelViewTrimTests(unittest.TestCase):
                 payload = {'kind': 'family', 'family': 'read_conversation_evidence', 'mode': mode,
                            'channel_id': 91, 'rows': [dict(row) for row in rows]}
                 view = family_model_view(payload)
-                self.assertTrue(all('source' not in row for row in view['rows']))
-                self.assertLess(_size(view), _size(payload))
+                self.assertEqual([row['source'] for row in view['rows']], [row['source'] for row in rows])
                 self.assertTrue(all('source' in row for row in payload['rows']))
                 shown = model_view(payload)
-                self.assertNotIn('discord.com', json.dumps(shown))
+                self.assertIn('discord.com', json.dumps(shown))
                 self.assertEqual(ground_answer('See [[103]]', {'read': shown}, 3),
                                  f"See [Member 3]({link.format(103)})")
                 quoted = ground_answer('[[message:105]]', {'read': shown}, 3)

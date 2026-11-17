@@ -131,12 +131,14 @@ def select_recent_turns(turns: Sequence[ConversationTurn], *, token_budget: int,
     return tuple(reversed(selected))
 
 
-def _history_text(turn):
+def _history_text(turn, guild=None):
     """Old snapshots' sliced excerpts cannot stand in for complete lookup records."""
     if turn.record is not None:
         # Nearby Discord context is already supplied for this request. Repeating
         # every old window multiplies context and can drown out corrections.
         return json.dumps({"member_id": turn.record.member_id,
+                           **({'member_name': getattr(guild.get_member(turn.record.member_id), 'display_name', None)}
+                              if guild is not None else {}),
                            "question": turn.record.question,
                            "answer": turn.record.delivered_answer,
                            "delivery_complete": turn.record.delivery_complete,
@@ -161,7 +163,7 @@ def retained_knowledge_sources(turn):
         try:
             record = json.loads(encoded)
             sources.update(value for value in record.get("knowledge_sources", ())
-                           if isinstance(value, str) and len(value) == 64)
+                           if isinstance(value, str) and 12 <= len(value) <= 64)
         except (TypeError, ValueError, AttributeError):
             continue
     return sources
@@ -309,7 +311,7 @@ def compile_context(
             else:
                 evidence.append((turn, model_evidence(encoded)))
     def history_text(turn):
-        rendered = _history_text(turn)
+        rendered = _history_text(turn, context.guild)
         findings = findings_by_turn.get(id(turn))
         if findings:
             value = json.loads(rendered)
@@ -348,6 +350,10 @@ def compile_context(
             ),
         )
         prompt += "\n\n<current_channel>\n" + json.dumps(channel, ensure_ascii=False) + "\n</current_channel>"
+        if getattr(context.source_message, 'mentions', ()):
+            prompt += '\n<mentioned_members>\n' + json.dumps([
+                {'member_id': member.id, 'display_name': member.display_name}
+                for member in context.source_message.mentions], ensure_ascii=False) + '\n</mentioned_members>'
         if social:
             return prompt
         return (prompt + "\n\n<bot_command_overview>\n"
@@ -474,9 +480,11 @@ def compile_context(
                 "bot_read_overview": _member_read_overview(read_overview)} if not social else {}),
             "application_owner": asdict(owner) if owner is not None else None,
             "reply_context": context.state.reply_context,
+            "mentioned_members": [{'member_id': member.id, 'display_name': member.display_name}
+                                  for member in getattr(context.source_message, 'mentions', ())],
             "history_checkpoint": checkpoint_text,
             "history_status": history_status(len(selected), omitted),
-            "conversation_history": ("\n".join(_history_text(turn) for turn in selected)
+            "conversation_history": ("\n".join(_history_text(turn, context.guild) for turn in selected)
                                      if candidates is not None else conversation_history),
             "task_instructions": instructions,
             **({'prior_findings': prior_findings,

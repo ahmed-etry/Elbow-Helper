@@ -92,7 +92,8 @@ class WarAttackTests(WarFixture, unittest.IsolatedAsyncioTestCase):
             "war_id": old_id(later_war()), "war_type": "REG", "war_state": "warEnded",
             "war_end_at": "2026-10-30T18:00:00+00:00", "clan_code": "BEH",
             "opponent_tag": "#CU", "opponent_name": "Clan #CU", "player_tag": "#P0", "player_name": "Player #P0",
-            "member_id": 41, "map_position": 1, "townhall": 16, "defender_map_position": 2,
+            "member_id": 41, "member_name": self.context.member.display_name,
+            "map_position": 1, "townhall": 16, "defender_map_position": 2,
             "defender_townhall": 16, "defender_basis": "lineup", "stars": 3, "destruction": 100.0,
             "attack_order": 1, "duration_seconds": 123})
         self.assertEqual((result["rows"][1]["opponent_tag"], result["rows"][2]["war_id"]), ("#GR", "CWL:#R0"))

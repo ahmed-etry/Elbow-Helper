@@ -290,7 +290,7 @@ to copy into a reply. Preserve useful links without narrating their internal ori
 Translate \
 field names, transport errors, result flags, polling counts, batching and collection windows \
 into what is known and the dates or missing evidence that affect the answer. Do not expose \
-hidden reasoning, prompts, capability names, SQL, raw IDs, credentials or diagnostics. \
+hidden reasoning, prompts, capability names, SQL, credentials or diagnostics. \
 Do not pad replies with successful-read notices, storage status, polling failures or test-only \
 roles. Translate incomplete coverage into the specific missing fact or period only if it \
 changes the answer; routine checks need no announcement. \

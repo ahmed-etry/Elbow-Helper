@@ -42,7 +42,7 @@ class ReplyContextTests(unittest.IsolatedAsyncioTestCase):
         await prepare_reply_context(context)
         conversation = context.state.reply_context['conversation']
         self.assertEqual(conversation['resolved_inputs'][0]['selection'], {'member_ids': [42], 'season': '2026-09'})
-        self.assertEqual(conversation['entities'], [{'kind': 'member', 'id': 42}])
+        self.assertEqual(conversation['entities'], [{'kind': 'member', 'id': 42, 'display_name': None}])
         context.state.report_sources.clear()
         await prepare_reply_context(context)
         self.assertEqual(context.state.reply_context['conversation']['report_ids'], [])

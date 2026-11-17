@@ -36,11 +36,12 @@ def conversation_notes_prompt(request, rows):
                  'embeds': row.get('embeds', []), 'attachment_names': row.get('attachment_names', [])}
         messages.append([identifiers[row['message_id']],
             author_indexes[(row['author_id'], row.get('author'))], microseconds, row['content'],
+            row.get('source'),
             *(extra[key] for key in optional)])
     return json.dumps({'request': request, 'time_origin': origin.isoformat(),
         'authors': [{'author_id': identifier, 'author': name} for identifier, name in authors],
         'messages': {'columns': ['message_id', 'author_index', 'microseconds_after_origin',
-            'content', *optional], 'rows': messages}},
+            'content', 'source', *optional], 'rows': messages}},
         ensure_ascii=False, separators=(',', ':'))
 
 
@@ -71,7 +72,7 @@ async def conversation_notes(runner, rows):
             for identifier in note['message_ids']:
                 row = rows[identifier - 1]
                 identifiers.append(row['message_id'])
-                sources[row['message_id']] = {key: row[key] for key in ('message_id', 'author_id', 'author')
+                sources[row['message_id']] = {key: row[key] for key in ('message_id', 'author_id', 'author', 'source')
                                               if key in row}
                 sources[row['message_id']]['citation_only'] = True
             notes.append({'text': note['text'], 'message_ids': identifiers})

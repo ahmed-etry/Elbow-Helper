@@ -63,6 +63,11 @@ class DiscussionPagingTests(unittest.IsolatedAsyncioTestCase):
                         selected[-1].message_id if more else None, not more)
 
                 context = replace(_context(), message_search=SimpleNamespace(history_page=AsyncMock(side_effect=page)))
+                members = {context.member.id: context.member}
+                members.update({row.author_id: SimpleNamespace(id=row.author_id, display_name=row.author_name)
+                                for row in rows})
+                context.guild.members = list(members.values())
+                context.guild.get_member = members.get
                 context.source_message.created_at = start + timedelta(days=1)
                 context.source_message.id = discord.utils.time_snowflake(context.source_message.created_at)
                 tool = next(t for t in TOOLS if t.definition.name == 'read_conversation_evidence')
@@ -146,7 +151,8 @@ class DiscussionPagingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({row['content'] for row in view['rows']}, {row.content for row in rows})
         self.assertTrue(view['message_content_complete'])
         self.assertFalse(view['attachment_contents_read'])
-        self.assertTrue(all('source' not in row and 'author_id' in row for row in view['rows']))
+        self.assertTrue(all(row['source'].endswith('/' + str(row['message_id']))
+                            and 'author_id' in row for row in view['rows']))
         # The lookup's field lists name what its rows carry, and no field they lack.
         from elbow_helper.agent.engine.result_hints import RESULT_FIELDS
         from elbow_helper.agent.plan.format import REFERENCE_RETURNS
@@ -196,6 +202,12 @@ class DiscussionPagingTests(unittest.IsolatedAsyncioTestCase):
                                             separators=(',', ':'))),
                              COMPLETE_HISTORY_CHARACTER_BUDGET + MAX_TOOL_RESULT_CHARACTERS
                              - HISTORY_MESSAGE_CHARACTER_BUDGET)
+        while result['source_next_cursor']:
+            result = await tool.handler(context, {
+                'mode': 'channel_window', 'channel_id': 91,
+                'after': start.isoformat(), 'before': (start + timedelta(hours=3)).isoformat(),
+                'source_cursor': result['source_next_cursor']})
+            selected.extend(result['rows'])
         self.assertEqual([row['message_id'] for row in selected], [row.message_id for row in rows])
         self.assertTrue(result['coverage']['reached_requested_start'])
 

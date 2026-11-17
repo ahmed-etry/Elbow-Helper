@@ -37,7 +37,6 @@ from .factual_answers import numeric_conflicts
 from .change_answers import unprepared_change_issue
 from .role_claims import role_conflicts
 from .unfinished import unfinished_answer
-from .named_replies import named_reply
 from .evidence_delta import EvidenceDelta, access_refused
 from .answer_inputs import (answer_evidence, read_handles, available_report_results,
                             bounded_answer_evidence, serialized_answer_evidence)
@@ -176,7 +175,7 @@ class AnswerFlow:
         if assessed_decision is not None and answer == assessed_answer:
             refusals = await prepare_recommended_actions(self, assessed_decision)
             answer = '\n\n'.join((answer, *refusals))
-        return named_reply(answer, self.context)
+        return answer
 
     async def _checked_member_reply(self, answer):
         # Previews already have checked action targets. Unavailable prose

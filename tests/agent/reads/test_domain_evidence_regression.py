@@ -42,7 +42,8 @@ class DomainEvidenceRegressionTests(unittest.IsolatedAsyncioTestCase):
         view = delivered(page)
         rows = unpack(view['rows'])
         self.assertEqual(unpack(view['unknown_accounts']),
-                         [{'member_id': row['member_id'], 'player_tag': row['player_tag']} for row in rows])
+                         [{'member_id': row['member_id'], 'member_name': row['member_name'],
+                           'player_tag': row['player_tag']} for row in rows])
         self.assertTrue(all(row['activity'] == activity for row in rows))
 
     async def test_join_date_cohort_states_family_role_ids_once_without_losing_member_facts(self):

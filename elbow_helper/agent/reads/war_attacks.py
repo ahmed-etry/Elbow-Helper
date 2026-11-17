@@ -98,6 +98,9 @@ async def war_attacks(context, arguments):
         owners = {tag: value['discord_user_id'] for tag, value in linked.items() if value}
     rows.sort(key=lambda row: (-row['end_at'], row['clan_tag'], row['war_id'], row['attack_order']))
     result = [attack_row(row, codes, owners) for row in rows]
+    for row in result:
+        member = context.guild.get_member(row['member_id']) if row['member_id'] else None
+        row['member_name'] = member.display_name if member else None
     attacked = {row['player_tag'] for row in result}
     span = await record_span(context, arguments, source, sorted(tags) if tags is not None else None)
     return {'rows': result, 'war_type': war_type,
