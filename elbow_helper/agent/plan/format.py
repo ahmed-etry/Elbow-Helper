@@ -122,6 +122,9 @@ attributing requested content to it; otherwise leave it out. Never infer that an
 holds a missing record or explain incomplete text evidence by blaming unseen images.
 """
 
+# A capability's usage note is shown whole on one catalogue line, or refused; never cut.
+USAGE_NOTE_LIMIT = 220
+
 # Stable identity shapes allow dependent reads in one checked plan without
 # loading the much larger API and report contracts into every request.
 REFERENCE_RETURNS = {
@@ -302,9 +305,9 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool], *, include_retu
             raise ValueError(
                 f"Capability {name} needs a whole one-line summary within 100 characters"
             )
-        if len(note) > 160 or "\n" in note:
+        if len(note) > USAGE_NOTE_LIMIT or "\n" in note:
             raise ValueError(
-                f"Capability {name} usage note must fit one line within 160 characters"
+                f"Capability {name} usage note must fit one line within {USAGE_NOTE_LIMIT} characters"
             )
         line = (f"{name}: {meaning}" if describe else name) + f" | {tool.action_class.value} | " + ",".join(arguments)
         if name in rule_lines:

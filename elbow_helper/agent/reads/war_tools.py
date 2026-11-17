@@ -154,7 +154,7 @@ TOOLS = (
                         'description': 'Recent completed seasons for participation, performance, MEGA ASS or league. Counts seasons, not wars. Use alone without another period selector.'}, 'account_tags': TAGS,
       'sheet_by': {'type': 'string', 'enum': ['clan_code']},
       'cohort_ref':{'type':'string','minLength':1,'maxLength':32}}, cwl_results, rules=CWL_RULES,
-     usage_note='No period: 3 ended seasons, +latest for account performance; participation, ASS/bonus: latest; league: current. history_limit: seasons; latest_completed: wars.',
+     usage_note='No period: 3 ended seasons, +latest for account performance; participation latest; ASS/bonus: several clans, latest per clan; league current. history_limit: seasons; latest_completed: wars. Clan tabs: sheet_by=clan_code.',
      whole=True),
  family_tool('read_current_war', 'Read current war state and unused attacks for family clans.',
      {'clan_codes': CLANS_INPUT, 'account_tags': TAGS,

@@ -664,7 +664,7 @@ TOOLS = (
       'name': {'type': 'string', 'minLength': 1, 'maxLength': 100,
                'description': 'One name; requires look_in. Returns matching_members with linked account names and tags or game account candidates with owners. Ambiguity authorizes no actions or pings. Alternative to other selectors.'}}, member_accounts,
      rules=ACCOUNT_RULES,
-     usage_note='look_in: game names/data; discord people/messages/activity/roles/ID; other side on miss. after reads war/CWL/ranked; include_history: owners/names/clan moves.',
+     usage_note='look_in: game for in-game names/data; discord for server person (messages, activity, roles, Discord ID); on no match, other side is searched. after reads war/CWL/ranked; include_history: owners/names/clan moves.',
      whole=True),
  family_tool('read_clan_rosters', 'Read every selected clan roster, TH distribution, capacity and donations.',
      {'clan_codes': CLANS_INPUT, 'basis': ROSTER_BASIS,

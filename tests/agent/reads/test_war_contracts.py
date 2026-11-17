@@ -130,7 +130,8 @@ class ExternalWarContracts(unittest.IsolatedAsyncioTestCase):
                 client.get.assert_not_awaited()
         note = clash_tools()[0].definition.usage_note
         self.assertIn('War/CWL: external clans only', note)
-        self.assertLessEqual(len(note), 160)
+        from elbow_helper.agent.plan.format import USAGE_NOTE_LIMIT
+        self.assertLessEqual(len(note), USAGE_NOTE_LIMIT)
 
     async def test_raw_current_war_and_log_keep_external_payloads_and_failures(self):
         client = SimpleNamespace(configured=True, get=AsyncMock())
