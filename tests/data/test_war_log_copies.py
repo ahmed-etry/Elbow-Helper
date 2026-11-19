@@ -20,6 +20,15 @@ DRIFTED_END = "20261028T180218.000Z"
 TABLES = ("wars", "war_sides", "war_members", "war_attacks", "war_source_keys", "war_collection_state")
 
 
+def upgrade(connection):
+    """Run the step as the database upgrade does: on a plain connection."""
+    factory, connection.row_factory = connection.row_factory, None
+    try:
+        return merge_drifted_log_copies(connection)
+    finally:
+        connection.row_factory = factory
+
+
 def drifted(payload=None, end=DRIFTED_END):
     page = war_log(war("warEnded") if payload is None else payload)
     page["items"][0]["endTime"] = end
@@ -141,17 +150,17 @@ class LogMatchTests(WarFixture, unittest.IsolatedAsyncioTestCase):
     async def test_the_upgrade_leaves_a_copy_two_wars_could_own(self):
         await self.old_duplicate(rival_war())
         before = await self.dump()
-        self.assertEqual(await self.store.call(merge_drifted_log_copies), 0)
+        self.assertEqual(await self.store.call(upgrade), 0)
         self.assertEqual(before, await self.dump())
 
     async def test_the_upgrade_changes_nothing_without_duplicates(self):
-        self.assertEqual(await self.store.call(merge_drifted_log_copies), 0)
+        self.assertEqual(await self.store.call(upgrade), 0)
         await self.record(war("warEnded"), at=END + 90 * SECOND)
         await self.log(drifted())
         await self.record(later_war("inWar"), at=END + 86400 * SECOND)
         await self.log(drifted(end="20261020T180000.000Z"), at=END + 2 * 86400 * SECOND)
         before = await self.dump()
-        self.assertEqual(await self.store.call(merge_drifted_log_copies), 0)
+        self.assertEqual(await self.store.call(upgrade), 0)
         self.assertEqual(before, await self.dump())
 
 

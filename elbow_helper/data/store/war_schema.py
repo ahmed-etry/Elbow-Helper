@@ -4,6 +4,9 @@ Facts reference the collection run that last changed them, as player history
 does. Successful polls leave no per-item receipt; only failures keep one.
 """
 
+import sqlite3
+
+
 
 STATEMENTS = (
     """CREATE TABLE wars (
@@ -167,8 +170,11 @@ def merge_drifted_log_copies(connection):
     and facts; the copy adds its keys and only the facts the kept war lacks.
     """
     from .wars import BASIS_RANK, LOG_MATCH_WINDOW
+    # The upgrade runs on a plain connection; this step reads its rows by column name.
+    named = connection.cursor()
+    named.row_factory = sqlite3.Row
     merged = 0
-    for log in connection.execute(
+    for log in named.execute(
             "SELECT * FROM wars w WHERE preparation_at IS NULL AND war_tag IS NULL "
             "AND EXISTS (SELECT 1 FROM war_source_keys k WHERE k.war_id=w.id AND k.source_kind='war_log') "
             "AND NOT EXISTS (SELECT 1 FROM war_members m WHERE m.war_id=w.id) "
@@ -177,7 +183,7 @@ def merge_drifted_log_copies(connection):
         sides = connection.execute("SELECT clan_tag FROM war_sides WHERE war_id=? ORDER BY side", (log_id,)).fetchall()
         if len(sides) != 2:
             continue
-        partners = connection.execute(
+        partners = named.execute(
             "SELECT w.* FROM wars w JOIN war_sides a ON a.war_id=w.id AND a.side=0 AND a.clan_tag=? "
             "JOIN war_sides b ON b.war_id=w.id AND b.side=1 AND b.clan_tag=? "
             "WHERE w.war_tag IS NULL AND w.preparation_at IS NOT NULL AND w.preparation_at<? AND w.end_at BETWEEN ? AND ?",
