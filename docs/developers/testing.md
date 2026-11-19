@@ -51,12 +51,3 @@ channel permissions, exports, or what happens after a restart need a check in
 Discord. When a change affects generated files, open the workbooks and
 transcripts and check them. Try upgrades first on a copy of a database in the
 live bot's format.
-
-## Offline tools
-
-These run without calling the LLM.
-
-`tools/rehearsals/calibrate_tokens.py` compares the agent's token estimates with the real counts in a saved troubleshooting database.
-`tools/rehearsals/cost_scenarios.py` runs scripted agent rounds and estimates what each sends to the LLM.
-`tools/rehearsals/efficiency_replay.py` summarizes the LLM usage recorded in a saved folder of earlier agent runs.
-`tools/rehearsals/efficiency_scenarios.py` compares made-up step plans and what each would send to the LLM.

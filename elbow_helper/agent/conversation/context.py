@@ -34,9 +34,8 @@ def estimate_tokens(text: str) -> int:
     """Approximate DeepSeek input sizing fitted to archived round usage.
 
     ASCII prose uses five characters per token, syntax/digits five per three
-    tokens, and non-ASCII two UTF-8 bytes per token. See the offline calibration
-    in tests/agent/conversation/calibrate_tokens.py. This is a working
-    budget heuristic, never a billing total or a hard context-window bound.
+    tokens, and non-ASCII two UTF-8 bytes per token. This is a working budget
+    heuristic, never a billing total or a hard context-window bound.
     """
     weighted = sum((2 if char.isalpha() or char.isspace() else 6) if char.isascii()
                    else 5 * len(char.encode("utf-8")) for char in text)
