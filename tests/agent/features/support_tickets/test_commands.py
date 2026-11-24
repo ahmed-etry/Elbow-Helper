@@ -22,8 +22,8 @@ class SupportCloseCommandTests(unittest.IsolatedAsyncioTestCase):
         )
         guild = SimpleNamespace(id=5, me=bot_member, filesize_limit=25 * 1_048_576 + 123)
 
-        def permissions(_):
-            return SimpleNamespace(view_channel=True, send_messages=True)
+        def permissions(actor):
+            return SimpleNamespace(view_channel=True, send_messages=actor is bot_member)
 
         channel = SimpleNamespace(
             id=4, mention="<#4>", guild=guild,

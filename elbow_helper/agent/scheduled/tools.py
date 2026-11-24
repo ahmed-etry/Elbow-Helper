@@ -356,7 +356,7 @@ async def prepare_save(
     if values.get("deliver_to", "channel") == "channel":
         check_post_access(channel, context.member, context.guild.me)
         if kind == "reminder":
-            post_mentions(context, values, channel_reminder_content(context.guild, values))
+            post_mentions(context, values, channel_reminder_content(context.guild, values), channel)
     elif kind == "reminder" and not values.get("dm_member_ids"):
         raise ActionRefused(ACTION_UNAVAILABLE)
     actions = values.get("allowed_actions", [])
@@ -399,7 +399,7 @@ async def prepare_save(
             if values.get("deliver_to", "channel") == "channel":
                 check_post_access(refreshed, context.member, context.guild.me)
                 if kind == "reminder":
-                    post_mentions(context, values, channel_reminder_content(context.guild, values))
+                    post_mentions(context, values, channel_reminder_content(context.guild, values), refreshed)
             elif kind == "reminder":
                 dm_recipients(context, values["dm_member_ids"])
             if kind == "watcher":

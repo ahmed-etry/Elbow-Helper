@@ -28,15 +28,20 @@ class DiscordMessageControlTests(unittest.IsolatedAsyncioTestCase):
         message.remove_reaction = AsyncMock(side_effect=remove)
         message.pin = AsyncMock(side_effect=pin)
         message.unpin = AsyncMock(side_effect=unpin)
+        self.permissions = dict(view_channel=True, read_message_history=True,
+                                add_reactions=True, manage_messages=True)
         channel = SimpleNamespace(
-            id=2, guild=SimpleNamespace(id=3), fetch_message=AsyncMock(return_value=message),
-            permissions_for=lambda _: SimpleNamespace(view_channel=True),
+            id=2, mention="#place", guild=SimpleNamespace(id=3),
+            fetch_message=AsyncMock(return_value=message),
+            permissions_for=lambda _: SimpleNamespace(**self.permissions),
         )
+        member = SimpleNamespace(id=4)
         guild = SimpleNamespace(
             id=3, me=SimpleNamespace(id=1), get_channel_or_thread=lambda _: channel,
+            get_member=lambda _: member,
         )
         self.context = SimpleNamespace(
-            guild=guild, bot=SimpleNamespace(), member=SimpleNamespace(id=4),
+            guild=guild, bot=SimpleNamespace(), member=member,
             state=AgentTurnState(),
         )
         self.message = message
@@ -56,7 +61,7 @@ class DiscordMessageControlTests(unittest.IsolatedAsyncioTestCase):
         await prepare_reaction(self.context, arguments)
         action = self.context.state.proposed_changes.pop()
         self.assertEqual(action.preview.lines[0],
-                         f"Add X to {self.message.jump_url}.")
+                         f"😀 Add X to {self.message.jump_url}")
         result = await action.run()
         self.assertTrue(await action.verify())
         undo = await prepare_control_undo(self.context, {
@@ -64,10 +69,24 @@ class DiscordMessageControlTests(unittest.IsolatedAsyncioTestCase):
             "after": result.after,
         })
         self.assertEqual(undo.preview.lines[0],
-                         f"Remove X from {self.message.jump_url}.")
+                         f"😀 Remove X from {self.message.jump_url}")
         await undo.run()
         self.assertEqual(len(self.message.reactions), 1)
         self.assertFalse(self.message.reactions[0].me)
+
+    async def test_pins_and_reactions_need_the_askers_own_permission(self):
+        self.message.reactions.append(SimpleNamespace(emoji="X", me=True))
+        pin = {"channel_id": 2, "message_id": 6, "operation": "pin"}
+        add = {"channel_id": 2, "message_id": 6, "operation": "add", "emoji": "Y"}
+        remove = {"channel_id": 2, "message_id": 6, "operation": "remove", "emoji": "X"}
+        self.permissions.update(manage_messages=False, add_reactions=False)
+        for prepare, arguments in ((prepare_pin, pin), (prepare_reaction, add),
+                                   (prepare_reaction, remove)):
+            self.assertEqual((await prepare(self.context, arguments))["cause"], "access_denied")
+        self.permissions.update(add_reactions=True)
+        self.assertEqual((await prepare_reaction(self.context, add))["status"],
+                         "confirmation_required")
+        self.assertEqual((await prepare_reaction(self.context, remove))["cause"], "access_denied")
 
     async def test_pin_and_unpin_recheck_the_message(self):
         await prepare_pin(self.context, {

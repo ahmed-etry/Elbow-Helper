@@ -7,7 +7,7 @@ from typing import Any
 
 import discord
 
-from elbow_helper.agent.discord_actions.safety import check_member, check_post_access, resolve_channel
+from elbow_helper.agent.discord_actions.safety import check_member, check_bot_post_access, resolve_channel
 from elbow_helper.features.help.discovery import ParameterInfo
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
@@ -104,7 +104,7 @@ async def prepare_support_close(context: Any,
     channel = await resolve_channel(
         context, values.get("channel") or context.source_message.channel.id,
     )
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     prepared = workflow.prepare_support_close(
         context.guild, channel, context.member,
     )
@@ -114,7 +114,7 @@ async def prepare_support_close(context: Any,
     log_channel = prepared["log_channel"]
     if log_channel is None:
         raise ActionRefused("The transcript log channel hasn't been set up.")
-    check_post_access(log_channel, context.member, context.guild.me)
+    check_bot_post_access(log_channel, context.guild.me)
     owner = prepared["owner"]
     if owner is not None:
         check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
@@ -141,8 +141,8 @@ async def prepare_support_close(context: Any,
 
     async def recheck() -> bool:
         try:
-            check_post_access(channel, context.member, context.guild.me)
-            check_post_access(log_channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
+            check_bot_post_access(log_channel, context.guild.me)
             live = workflow.prepare_support_close(
                 context.guild, channel, context.member,
             )
@@ -188,7 +188,7 @@ async def prepare_support_close(context: Any,
 
     return PreparedCommandChange(
         ChangePreview(tuple(lines), recheck, summary=ACTION_SUPPORT_CLOSE_LABEL,
-                      details=tuple(details), detail_sources=frozenset({channel.id}),
+                      details=details, preview_only_sources=frozenset({channel.id}),
                       before={"channel_id": channel.id,
                               "owner_id": owner.id if owner else None,
                               "history_message_ids": tuple(row[0] for row in history)}),

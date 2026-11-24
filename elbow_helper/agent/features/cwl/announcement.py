@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from elbow_helper.agent.discord_actions.safety import check_post_access
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access
 from elbow_helper.features.cwl.announcements import PENDING_ROSTER_HUB_LINK
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
@@ -43,7 +43,7 @@ async def prepare_roster_announcement(
     channel = await workflow.resolve_roster_announcement_channel()
     if channel is None or channel.guild.id != context.guild.id:
         raise ActionRefused('CWL roster announcements are unavailable.')
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     cycles = await workflow.roster_announcement_cycles(context.guild.id)
     if cycles is None:
         raise ActionRefused("CWL rosters aren't available, so the announcement wasn't posted.")
@@ -70,7 +70,7 @@ async def prepare_roster_announcement(
         if live_channel is None or live_channel.id != channel.id:
             return False
         try:
-            check_post_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
         except ValueError:
             return False
         live = workflow.prepare_roster_announcement(

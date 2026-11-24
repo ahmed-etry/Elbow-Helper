@@ -10,12 +10,12 @@ from elbow_helper.configuration.channels import LEAD_NEWS, PUBLIC_NEWS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
-from elbow_helper.agent.safety.access import require_evidence_access
+from elbow_helper.agent.safety.access import ACCESS_LEAD, has_access_requirements, require_evidence_access
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_NEWS_PUBLISH_LINE, ACTION_NEWS_PUBLISH_FILE, ACTION_NEWS_PUBLISH_DONE, ACTION_NEWS_PUBLISH_LABEL, ACTION_PREVIEW_BLANK, ACTION_NEWS_DISMISS_LINE, ACTION_NEWS_DISMISS_LABEL, ACTION_NEWS_DISMISS_DONE, ACTION_NEWS_PUBLISH_PROMPT
-from elbow_helper.agent.discord_actions.safety import check_post_access, check_view_access, resolve_channel
+from elbow_helper.agent.conversation.wording import ACTION_NEWS_PUBLISH_LINE, ACTION_NEWS_PUBLISH_FILE, ACTION_NEWS_PUBLISH_DONE, ACTION_NEWS_PUBLISH_LABEL, ACTION_NEWS_DISMISS_LINE, ACTION_NEWS_DISMISS_LABEL, ACTION_NEWS_DISMISS_DONE, ACTION_NEWS_PUBLISH_PROMPT
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access, check_view_access, resolve_channel
 
 
 def leadership_news_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -51,10 +51,10 @@ async def prepare_news_dismiss(context: AgentRequestContext,
                                values: Mapping[str, Any]) -> Mapping[str, Any]:
     await require_evidence_access(context)
     workflow = context.bot.get_cog("LeadNews")
-    if workflow is None:
+    if workflow is None or not has_access_requirements(context.guild, context.member.id, {ACCESS_LEAD}):
         raise ActionRefused('That lead update is unavailable.')
     source = await resolve_channel(context, LEAD_NEWS)
-    check_post_access(source, context.member, context.guild.me)
+    check_view_access(source, context.member, context.guild.me)
     prompt = await source.fetch_message(values["prompt_message_id"])
     source_id = workflow.public_news_prompt_source(prompt)
     if source_id is None:
@@ -63,8 +63,10 @@ async def prepare_news_dismiss(context: AgentRequestContext,
         channel=source.mention),)
 
     async def recheck() -> bool:
+        if not has_access_requirements(context.guild, context.member.id, {ACCESS_LEAD}):
+            return False
         try:
-            check_post_access(source, context.member, context.guild.me)
+            check_view_access(source, context.member, context.guild.me)
             current = await source.fetch_message(prompt.id)
             return workflow.public_news_prompt_source(current) == source_id
         except (discord.DiscordException, ValueError):
@@ -89,12 +91,12 @@ async def prepare_lead_news(context: AgentRequestContext,
                             values: Mapping[str, Any]) -> Mapping[str, Any]:
     await require_evidence_access(context)
     workflow = context.bot.get_cog("LeadNews")
-    if workflow is None:
+    if workflow is None or not has_access_requirements(context.guild, context.member.id, {ACCESS_LEAD}):
         raise ActionRefused('That lead update is unavailable.')
     source = await resolve_channel(context, LEAD_NEWS)
     target = await resolve_channel(context, PUBLIC_NEWS)
     check_view_access(source, context.member, context.guild.me)
-    check_post_access(target, context.member, context.guild.me)
+    check_bot_post_access(target, context.guild.me)
     message = await source.fetch_message(values["message_id"])
     prepared = workflow.public_news_preview(message)
     if not prepared["content"] and not prepared["attachments"]:
@@ -113,9 +115,11 @@ async def prepare_lead_news(context: AgentRequestContext,
         (file.id, file.filename, file.size) for file in prepared["attachments"]))
 
     async def recheck() -> bool:
+        if not has_access_requirements(context.guild, context.member.id, {ACCESS_LEAD}):
+            return False
         try:
             check_view_access(source, context.member, context.guild.me)
-            check_post_access(target, context.member, context.guild.me)
+            check_bot_post_access(target, context.guild.me)
             current = await source.fetch_message(message.id)
         except (discord.DiscordException, ValueError):
             return False

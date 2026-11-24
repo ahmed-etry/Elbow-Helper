@@ -13,6 +13,12 @@ class _Channel:
     id = 9
     mention = "<#9>"
 
+    def __init__(self, bot_member):
+        self.bot_member = bot_member
+
+    def permissions_for(self, actor):
+        return SimpleNamespace(view_channel=True, send_messages=actor is self.bot_member)
+
 
 class RoleConnectionManagementTests(unittest.IsolatedAsyncioTestCase):
     async def test_create_waits_for_confirm_and_posts_board(self):
@@ -34,8 +40,7 @@ class RoleConnectionManagementTests(unittest.IsolatedAsyncioTestCase):
         with (patch('elbow_helper.agent.features.role_connections.management.require_evidence_access',
                     new_callable=AsyncMock),
               patch('elbow_helper.agent.features.role_connections.management.resolve_channel',
-                    new_callable=AsyncMock, return_value=_Channel()),
-              patch('elbow_helper.agent.features.role_connections.management.check_post_access'),
+                    new_callable=AsyncMock, return_value=_Channel(context.guild.me)),
               patch('elbow_helper.agent.features.role_connections.management.check_role'),
               patch('elbow_helper.agent.features.role_connections.management.discord.TextChannel',
                     _Channel)):
@@ -47,8 +52,7 @@ class RoleConnectionManagementTests(unittest.IsolatedAsyncioTestCase):
         action = context.state.proposed_changes[0]
         self.assertTrue(any("<@&8>" in line for line in action.preview.lines))
         workflow.add_connection.assert_not_called()
-        with patch('elbow_helper.agent.features.role_connections.management.check_post_access'), \
-             patch('elbow_helper.agent.features.role_connections.management.check_role'):
+        with patch('elbow_helper.agent.features.role_connections.management.check_role'):
             self.assertTrue(await action.preview.recheck())
         outcome = await action.run()
         self.assertIn("board-url", outcome.text)
@@ -57,8 +61,7 @@ class RoleConnectionManagementTests(unittest.IsolatedAsyncioTestCase):
         workflow.role_connection_state = lambda conn_id: outcome.after["connection"]
         workflow.remove_connection = MagicMock(return_value=True)
         with (patch('elbow_helper.agent.features.role_connections.management.resolve_channel',
-                    new_callable=AsyncMock, return_value=_Channel()),
-              patch('elbow_helper.agent.features.role_connections.management.check_post_access'),
+                    new_callable=AsyncMock, return_value=_Channel(context.guild.me)),
               patch('elbow_helper.agent.features.role_connections.management.check_role'),
               patch('elbow_helper.agent.features.role_connections.management.discord.TextChannel',
                     _Channel)):
@@ -90,8 +93,7 @@ class RoleConnectionManagementTests(unittest.IsolatedAsyncioTestCase):
         with (patch('elbow_helper.agent.features.role_connections.management.require_evidence_access',
                     new_callable=AsyncMock),
               patch('elbow_helper.agent.features.role_connections.management.resolve_channel',
-                    new_callable=AsyncMock, return_value=_Channel()),
-              patch('elbow_helper.agent.features.role_connections.management.check_post_access'),
+                    new_callable=AsyncMock, return_value=_Channel(context.guild.me)),
               patch('elbow_helper.agent.features.role_connections.management.check_role'),
               patch('elbow_helper.agent.features.role_connections.management.discord.TextChannel',
                     _Channel)):

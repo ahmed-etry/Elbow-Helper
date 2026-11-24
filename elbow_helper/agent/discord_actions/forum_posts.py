@@ -50,9 +50,10 @@ async def prepare_post(context, arguments):
             allowed_mentions=discord.AllowedMentions.none(), reason=reason,
         )
         return complete({"thread_id": created.thread.id, "message_id": created.message.id},
+                        text=f"Posted <#{created.thread.id}> in {channel.mention}.",
                         result={"thread_id": created.thread.id, "message_id": created.message.id})
 
-    labels = ", ".join(tag.name for tag in tags) or "Not set"
+    labels = ", ".join(tag.name for tag in tags)
     return await queue(context, state_action(
         context, "create_discord_forum_post", dict(arguments), "Create forum post",
         (f"Create forum post **{arguments["title"]}** in {channel.mention}.",
@@ -82,7 +83,7 @@ async def undo_post(context, log):
     async def apply(reason):
         await load()
         await (await resolve_channel(context, identifier)).delete(reason=reason)
-        return complete({"deleted": True})
+        return complete({"deleted": True}, text="Forum post deleted.")
 
     thread = await resolve_channel(context, identifier)
     return state_action(context, "undo_forum_post", {"thread_id": identifier}, "Undo forum post",

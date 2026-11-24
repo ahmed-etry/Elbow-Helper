@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import Mock
 
 from elbow_helper.configuration.roles import (
-    AGENT_TESTER_ROLE_ID, CORE, CWL_HELPERS, EXAMINERS, LEAD, LEAD_PLUS, RECRUITERS,
+    AGENT_TESTER_ROLE_ID, CORE, CWL_HELPERS, EXAMINERS, LEAD, LEAD_PLUS, MEMBER_ROLE_ID, RECRUITERS,
 )
 from elbow_helper.agent.safety.access import AgentAccessLost, require_evidence_access
 from elbow_helper.agent.safety.disclosure import can_show
@@ -116,8 +116,10 @@ class RoleVisibilityTests(unittest.IsolatedAsyncioTestCase):
                 viewer = SimpleNamespace(id=4, roles=[SimpleNamespace(id=next(iter(LEAD_PLUS)))])
                 self.members[:] = [self.member, viewer, self.bot_member]
                 self.assertTrue(await can_show(self.channel, {}, {level}, self.guild))
-                viewer.roles = [SimpleNamespace(id=next(iter(CORE)))]
+                viewer.roles = [SimpleNamespace(id=MEMBER_ROLE_ID)]
                 self.assertFalse(await can_show(self.channel, {}, {level}, self.guild))
+                viewer.roles = [SimpleNamespace(id=next(iter(CORE)))]
+                self.assertTrue(await can_show(self.channel, {}, {level}, self.guild))
         self.set_roles((next(iter(RECRUITERS)), next(iter(EXAMINERS))))
         viewer.roles = [SimpleNamespace(id=next(iter(RECRUITERS)))]
         self.assertFalse(await can_show(self.channel, {}, {"recruiter", "examiner"}, self.guild))
@@ -140,9 +142,10 @@ class RoleVisibilityTests(unittest.IsolatedAsyncioTestCase):
                 department = Mock(id=next(iter(roles)), managed=False)
                 lead_plus = Mock(id=next(iter(LEAD_PLUS)), managed=False)
                 core = Mock(id=next(iter(CORE)), managed=False)
-                self.guild.roles = [default, department, lead_plus, core]
+                member = Mock(id=MEMBER_ROLE_ID, managed=False)
+                self.guild.roles = [default, department, lead_plus, core, member]
                 allowed.clear()
-                allowed.update((department.id, lead_plus.id))
+                allowed.update((department.id, lead_plus.id, core.id))
                 self.assertTrue(await can_show(self.channel, {}, {level}, self.guild))
-                allowed.add(core.id)
+                allowed.add(member.id)
                 self.assertFalse(await can_show(self.channel, {}, {level}, self.guild))

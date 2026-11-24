@@ -9,7 +9,7 @@ from typing import Any
 
 import discord
 
-from elbow_helper.agent.discord_actions.safety import check_member, check_post_access, check_role, resolve_channel, resolve_member
+from elbow_helper.agent.discord_actions.safety import check_member, check_bot_post_access, check_role, resolve_channel, resolve_member
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
 from elbow_helper.agent.conversation.wording import ACTION_PREVIEW_BLANK, ACTION_RECSTATEMENT_LABEL, ACTION_RECSTATEMENT_LINE, ACTION_CHECKUP_LABEL, ACTION_CHECKUP_LINE, ACTION_DECLINE_LABEL, ACTION_DECLINE_LINE, ACTION_TICKET_RENAME, ACTION_DECLINE_RENAME_SKIP, ACTION_FINALIZE_LABEL, ACTION_FINALIZE_LINE, ACTION_ROLE_ADD_LINE, ACTION_ROLE_REMOVE_LINE, ACTION_ACCEPT_ACCOUNT, ACTION_ACCEPT_ACCOUNT_OLD, ACTION_ACCEPT_ACHIEVEMENT, ACTION_ACCEPT_BOARD, ACTION_ACCEPT_LABEL, ACTION_ACCEPT_LINE, ACTION_ACCEPT_NICKNAME, ACTION_ACCEPT_TRACK, ACTION_ACCEPT_WARNING, ACTION_ACCEPT_NO_LINK, ACTION_ACCEPT_ROLE_MISSING
@@ -47,7 +47,7 @@ async def _recstatement(context: Any, values: Mapping[str, Any]):
     channel = await resolve_channel(context, channel_id)
     if not isinstance(channel, discord.TextChannel):
         raise ActionRefused("Recruitment messages can only go in a server text channel.")
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     prepared = workflow.prepare_recstatement(
         values["message"], member, channel, values.get("additional_notes"),
     )
@@ -94,7 +94,7 @@ async def prepare_checkup(context: Any,
     channel = await resolve_channel(
         context, values.get("channel") or context.source_message.channel.id,
     )
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     prepared = workflow.prepare_checkup(
         member, values["account_linked"], channel,
         values.get("additional_notes"),
@@ -107,7 +107,7 @@ async def prepare_checkup(context: Any,
             current_member = await resolve_member(context.guild, member.id, fresh=True)
             check_member(current_member, context.guild.me,
                 requester=context.member, guild=context.guild)
-            check_post_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
         except (ValueError, discord.DiscordException):
             return False
         current = workflow.prepare_checkup(
@@ -146,7 +146,7 @@ async def prepare_decline(context: Any,
     channel = await resolve_channel(
         context, values.get("channel") or context.source_message.channel.id,
     )
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     prepared = workflow.prepare_decline(
         member, channel, values.get("additional_notes"),
     )
@@ -168,7 +168,7 @@ async def prepare_decline(context: Any,
             live_member = await resolve_member(context.guild, member.id, fresh=True)
             check_member(live_member, context.guild.me,
                 requester=context.member, guild=context.guild)
-            check_post_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
         except (ValueError, discord.DiscordException):
             return False
         live = workflow.prepare_decline(
@@ -205,7 +205,7 @@ async def prepare_finalize(context: Any,
     channel = await resolve_channel(
         context, values.get("channel") or context.source_message.channel.id,
     )
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     prepared = workflow.prepare_finalize(
         member, channel, context.guild, values.get("additional_notes"),
     )
@@ -242,7 +242,7 @@ async def prepare_finalize(context: Any,
             live_member = await resolve_member(context.guild, member.id, fresh=True)
             check_member(live_member, context.guild.me,
                 requester=context.member, guild=context.guild)
-            check_post_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
             check_roles()
         except (ValueError, discord.DiscordException):
             return False
@@ -288,7 +288,7 @@ async def prepare_accept(context: Any,
     channel = await resolve_channel(
         context, values.get("channel") or context.source_message.channel.id,
     )
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     options = {
         "clans": values["clans"], "nickname": values["nickname"],
         "player_tags": values["player_tags"],
@@ -355,7 +355,7 @@ async def prepare_accept(context: Any,
             live_member = await resolve_member(context.guild, member.id, fresh=True)
             check_member(live_member, context.guild.me,
                 requester=context.member, guild=context.guild)
-            check_post_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
             live = await workflow.prepare_accept(user=live_member, **options)
             if live["issue"]:
                 return False

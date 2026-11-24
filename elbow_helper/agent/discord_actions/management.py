@@ -116,7 +116,7 @@ async def queue(context, action):
 
 
 def state_action(context, path, values, summary, lines, before, load, apply, *,
-                 irreversible=False, sources=(), details=()):
+                 irreversible=False, sources=(), details=(), result_label=""):
     async def recheck():
         await require_evidence_access(context)
         return await load() == before
@@ -130,7 +130,7 @@ def state_action(context, path, values, summary, lines, before, load, apply, *,
     return PreparedAction(
         path, values, ChangePreview(
             tuple(lines), recheck, summary=summary, before=before,
-            details=tuple(details), detail_sources=frozenset(sources),
+            details=tuple(details), detail_sources=frozenset(sources), result_label=result_label,
         ), run, ActionClass.IRREVERSIBLE if irreversible else ActionClass.CHANGE,
     )
 

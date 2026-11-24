@@ -55,12 +55,14 @@ async def timeout_action(context, arguments, until, *, undo=False):
         if len(f"{given_reason}; {reason}" if given_reason else reason) > 512:
             raise DiscordActionRefused("The selected reason is invalid.")
         await current.timeout(until, reason=f"{given_reason}; {reason}" if given_reason else reason)
-        return complete({"until": until.isoformat() if until else None})
+        return complete(
+            {"until": until.isoformat() if until else None},
+            text=(f"Timed out {member.mention} until {display_value(until)}." if until else
+                  f"Removed {member.mention}'s timeout."),
+        )
 
-    line = (f"Time out {member.mention} until {display_value(until)}." if until else
-            f"Remove the timeout from {member.mention}.")
-    if undo and until is None:
-        line = f"Remove the timeout set by this change from {member.mention}."
+    line = (f"⏰ Time out {member.mention} until {display_value(until)}" if until else
+            f"⏰ Remove {member.mention}'s timeout")
     lines = [line]
     if arguments.get("reason"):
         lines.append(f"Reason: {arguments["reason"]}")

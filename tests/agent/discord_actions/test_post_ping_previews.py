@@ -13,6 +13,7 @@ class PostPingPreviewTests(unittest.IsolatedAsyncioTestCase):
         await fixtures.DiscordMessageActionTests.asyncSetUp(self)
         self.channel.permissions_for = lambda _: SimpleNamespace(
             view_channel=True, send_messages=True, read_message_history=True,
+            mention_everyone=True,
         )
         self.messages[55] = SimpleNamespace(
             id=55, channel=self.channel, author=self.context.guild.get_member(7),
@@ -61,7 +62,7 @@ class PostPingPreviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Pings: Example (@example.7)", duplicate.lines)
 
     async def test_everyone_roles_and_members_are_all_listed(self):
-        self.context.guild.get_role = lambda _: SimpleNamespace(id=9, mention="<@&9>")
+        self.context.guild.get_role = lambda _: SimpleNamespace(id=9, mention="<@&9>", mentionable=True)
         preview = await self.preview(
             text="@here <@&9> <@7>", ping_everyone=True, ping_role_ids=[9],
         )

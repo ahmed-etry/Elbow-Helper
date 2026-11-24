@@ -73,11 +73,11 @@ class ActionRunOutput:
 
 def _history_preview(context, action, *, original=None):
     state = context.state
-    sources = set(state.source_channels) | set(action.preview.detail_sources)
+    sources = set(state.source_channels) | set(action.preview.disclosure_sources)
     access = (set(state.required_access) | set(state.knowledge_title_access)
               | set(action.preview.detail_access))
     if original is not None:
-        sources.update(original.preview.detail_sources)
+        sources.update(original.preview.disclosure_sources)
         access.update(original.preview.detail_access)
     return {"lines": action.preview.lines,
             "detail_sources": sorted(sources), "detail_access": sorted(access)}
@@ -343,9 +343,9 @@ class AgentActionRunner:
             ), identifier) is None:
                 raise AgentAccessLost("Action detail source is no longer readable")
         details_hidden = action.details_hidden
-        if action.preview.detail_sources or action.preview.detail_access:
+        if action.preview.disclosure_sources or action.preview.detail_access:
             details_hidden |= not await can_disclose_provenance(
-                context, action.preview.detail_sources, action.preview.detail_access,
+                context, action.preview.disclosure_sources, action.preview.detail_access,
             )
         return details_hidden
 

@@ -51,7 +51,10 @@ def _nickname_action(context: AgentRequestContext, member_id: int,
     async def run() -> ActionOutcome:
         member = await current()
         await member.edit(nick=after, reason=audit_reason(context.member))
-        return ActionOutcome("complete", after={"nickname": after},
+        return ActionOutcome("complete",
+                              text=(f"Set {label}'s nickname to **{after}**." if after is not None
+                                    else f"Reset {label}'s nickname."),
+                              after={"nickname": after},
                               result={"member_id": member_id})
 
     async def verify() -> bool:

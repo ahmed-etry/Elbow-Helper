@@ -78,10 +78,14 @@ def check_overwrite_grants(context, channel, before, after):
     check_grants(context, discord.Permissions(granted), channel=channel)
 
 
-def overwrite_lines(target, channel, before, after):
-    lines = [f"Change permissions for {target.mention} in {channel.mention}."]
-    if after is None:
-        lines[0] = f"Remove the permission overwrite for {target.mention} in {channel.mention}."
+def overwrite_lines(target, channel, before, after, *, undo, creating=False):
+    if creating:
+        line = f"Permissions for {target.mention}"
+    elif after is None:
+        line = f"🔒 Remove custom permissions for {target.mention} in {channel.mention}"
+    else:
+        line = f"🔒 {'Restore' if undo else 'Set'} {target.mention}'s permissions in {channel.mention}"
+    lines = [line]
     old, new = unpacked(before), unpacked(after)
     names = sorted({name for overwrite in (old, new) if overwrite is not None
                     for name, value in overwrite if value is not None})
@@ -89,7 +93,8 @@ def overwrite_lines(target, channel, before, after):
     for name in names:
         left = getattr(old, name) if old is not None else None
         right = getattr(new, name) if new is not None else None
-        lines.append(f"{permission_name(name, channel=True)}: {labels[left]} to {labels[right]}")
+        if left != right:
+            lines.append(f"{permission_name(name, channel=True)} goes from {labels[left]} to {labels[right]}.")
     if not names:
         left = "No permission overwrite" if before is None else "No permissions"
         right = "No permission overwrite" if after is None else "No permissions"
@@ -120,10 +125,11 @@ async def permission_action(context, values, desired=None, *, undo=False):
         for target, old, new in zip(selected, before, after):
             check_overwrite_grants(context, current, old, new)
             await current.set_permissions(target, overwrite=unpacked(new), reason=reason)
-        return complete(after)
+        return complete(after, text="\n".join(
+            f"Updated permissions for {target.mention} in {channel.mention}." for target in targets))
 
     lines = [line for target, old, new in zip(targets, before, after)
-             for line in overwrite_lines(target, channel, old, new)]
+             for line in overwrite_lines(target, channel, old, new, undo=undo)]
     return state_action(
         context, "change_channel_permissions", values,
         "Undo channel permissions" if undo else "Change channel permissions",

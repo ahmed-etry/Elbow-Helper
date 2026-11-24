@@ -2,15 +2,20 @@
 
 from contextlib import ExitStack
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from elbow_helper.agent.actions.store import AgentActionRepository
 from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.discord_actions.threads import (
-    prepare_create_thread, prepare_thread_members, prepare_update_thread,
+    discord_thread_tools, prepare_create_thread, prepare_thread_members, prepare_update_thread,
 )
+from elbow_helper.agent.loop.tools import model_definition
+from elbow_helper.agent.plan.checker import valid_arguments
 from tests.agent.discord_actions.helpers import register_requester
+from tests.temp_directory import TemporaryDirectory
 
 
 class FakeThread:
@@ -22,9 +27,11 @@ class FakeThread:
         self.mention = "#thread"
         self.members = set()
         self.guild = SimpleNamespace(id=3)
+        self.owner_id = 1
+        self.manage_threads = True
 
     def permissions_for(self, actor):
-        return SimpleNamespace(view_channel=True)
+        return SimpleNamespace(view_channel=True, manage_threads=self.manage_threads)
 
     async def edit(self, *, reason, **values):
         for key, value in values.items():
@@ -76,6 +83,10 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
             guild=guild, bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=self.thread)),
             member=SimpleNamespace(id=5, display_name="Asker"), state=AgentTurnState(),
         )
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.repository = AgentActionRepository(Path(directory.name) / "actions.sqlite3")
+        self.context.action_repository = self.repository
         self.context = register_requester(self.context)
         self.patches = ExitStack()
         self.patches.enter_context(patch(
@@ -119,17 +130,19 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_thread_can_be_updated_and_joined_in_the_same_run(self):
         reference = {"step": "created", "path": ["thread_id"]}
+        tools = {tool.definition.name: tool for tool in discord_thread_tools()}
+        update_args = {"thread_id": reference, "operation": "rename", "name": "After"}
+        member_args = {"thread_id": reference, "operation": "add", "member_ids": [4]}
+        for name, arguments in (("update_discord_thread", update_args),
+                                ("change_discord_thread_members", member_args)):
+            self.assertTrue(valid_arguments(arguments, model_definition(tools, name).parameters))
         await prepare_create_thread(self.context, {
             "parent_channel_id": 2, "name": "Planned",
         })
         created = self.context.state.proposed_changes.pop()
         self.context.state.proposed_changes.append(replace(created, step_id="created"))
-        update = await prepare_update_thread(self.context, {
-            "thread_id": reference, "operation": "rename", "name": "After",
-        })
-        members = await prepare_thread_members(self.context, {
-            "thread_id": reference, "operation": "add", "member_ids": [4],
-        })
+        update = await prepare_update_thread(self.context, update_args)
+        members = await prepare_thread_members(self.context, member_args)
         self.assertEqual(update["status"], "confirmation_required")
         self.assertEqual(members["status"], "confirmation_required")
         _, changing, joining = self.context.state.proposed_changes
@@ -143,3 +156,59 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
         await bound_join.run()
         self.assertEqual(self.thread.name, "After")
         self.assertIn(4, self.thread.members)
+
+    async def test_changing_a_thread_needs_manage_threads_unless_the_asker_owns_it(self):
+        self.thread.manage_threads = False
+        rename = {"thread_id": 7, "operation": "rename", "name": "After"}
+        lock = {"thread_id": 7, "operation": "lock"}
+        members = {"thread_id": 7, "operation": "add", "member_ids": [4]}
+        for prepare, arguments in ((prepare_update_thread, rename), (prepare_update_thread, lock),
+                                   (prepare_thread_members, members)):
+            self.assertEqual((await prepare(self.context, arguments))["cause"], "access_denied")
+        self.thread.owner_id = self.context.member.id
+        self.assertEqual((await prepare_update_thread(self.context, rename))["status"],
+                         "confirmation_required")
+        self.assertEqual((await prepare_thread_members(self.context, members))["status"],
+                         "confirmation_required")
+        self.assertEqual((await prepare_update_thread(self.context, lock))["cause"], "access_denied")
+
+    async def test_a_thread_made_for_a_member_stays_theirs_in_later_requests(self):
+        self.thread.manage_threads = False
+        self.thread.owner_id = self.context.guild.me.id
+        rename = {"thread_id": 7, "operation": "rename", "name": "After"}
+        lock = {"thread_id": 7, "operation": "lock"}
+        await prepare_create_thread(self.context, {"parent_channel_id": 2, "name": "Planned"})
+        created = self.context.state.proposed_changes.pop()
+        outcome = await created.run()
+        member_id = self.context.member.id
+        run_id = self.repository.create_run(
+            guild_id=3, channel_id=2, request_message_id=1, requester_id=member_id,
+            confirmer_id=member_id, steps=[{
+                "name": "create_discord_thread", "class": "change",
+                "values": created.values, "preview": {},
+            }],
+        )
+        self.repository.claim(run_id, owner="worker")
+        self.repository.start_step(run_id, 0, owner="worker")
+        self.repository.finish_step(run_id, 0, owner="worker", status="completed",
+                                    outcome=outcome.result, after=outcome.after)
+        self.assertEqual((await prepare_update_thread(self.context, rename))["status"],
+                         "confirmation_required")
+        self.assertEqual((await prepare_update_thread(self.context, lock))["cause"], "access_denied")
+        self.context.member = SimpleNamespace(id=9, top_role=SimpleNamespace(position=1))
+        self.assertEqual((await prepare_update_thread(self.context, rename))["cause"], "access_denied")
+
+    async def test_forum_post_needs_send_messages(self):
+        class Forum(FakeForumChannel):
+            id = 9
+            mention = "#forum"
+            guild = SimpleNamespace(id=3)
+
+            def permissions_for(self, actor):
+                return SimpleNamespace(view_channel=True, create_public_threads=True)
+
+        self.context.guild.get_channel_or_thread = lambda value: Forum()
+        result = await prepare_create_thread(self.context, {
+            "parent_channel_id": 9, "name": "Post", "initial_message": "Hello",
+        })
+        self.assertEqual(result["cause"], "access_denied")

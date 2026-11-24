@@ -154,8 +154,8 @@ async def prepare_event_refresh(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "refresh_event_trackers", {},
-        ChangePreview(tuple(lines[:1]), recheck, summary=ACTION_EVENT_REFRESH_LABEL,
-                      details=tuple(lines[1:]), detail_access=frozenset({ACCESS_LEAD})),
+        ChangePreview((), recheck, summary=ACTION_EVENT_REFRESH_LABEL,
+                      details=tuple(lines), detail_access=frozenset({ACCESS_LEAD})),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}
@@ -349,14 +349,8 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
 
     context.state.proposed_changes.append(PreparedAction(
         operation, {"event": key},
-        ChangePreview(
-            ((ACTION_EVENT_FORM_EDIT.format(name=event["name"]),)
-             if operation in ("set_event_enabled", "set_event_category", "move_event")
-             else tuple(lines)), recheck, summary=ACTION_EVENT_MANAGE_LABEL,
-            details=(tuple(lines) if operation in (
-                "set_event_enabled", "set_event_category", "move_event") else ()),
-            detail_access=frozenset({ACCESS_LEAD}),
-        ),
+        ChangePreview((), recheck, summary=ACTION_EVENT_MANAGE_LABEL, details=(line,),
+                      detail_access=frozenset({ACCESS_LEAD})),
         run, action_class=classification,
     ))
     return {"status": "confirmation_required"}

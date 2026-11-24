@@ -299,7 +299,7 @@ class ScheduledRunner:
                     result = ScheduledResult(completed=stopped)
                 else:
                     content = channel_reminder_content(context.guild, rule["rule"])
-                    mentions = post_mentions(context, rule["rule"], content)
+                    mentions = post_mentions(context, rule["rule"], content, channel)
                     for part in chunk_response(content):
                         await channel.send(part, allowed_mentions=mentions)
                     result = ScheduledResult()

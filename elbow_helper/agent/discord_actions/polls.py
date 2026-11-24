@@ -75,6 +75,7 @@ async def prepare_poll(context, arguments):
             poll.add_answer(text=answer)
         message = await current.send(poll=poll, allowed_mentions=discord.AllowedMentions.none())
         return complete({"message_id": message.id},
+                        text=f"Poll posted in {channel.mention}. {message.jump_url}",
                         result={"message_id": message.id, "channel_id": channel.id})
 
     hours = arguments["duration_hours"]
@@ -82,7 +83,7 @@ async def prepare_poll(context, arguments):
     multiple = display_value(arguments.get("multiple_choice", False))
     lines = [f"Post this poll in {channel.mention}:", f"Question: {arguments["question"]}"]
     lines.extend(f"{index}. {answer}" for index, answer in enumerate(arguments["answers"], 1))
-    lines.extend((f"Duration: {hours} {unit}", f"Multiple answers: {multiple}"))
+    lines.append(f"Multiple answers: {multiple}")
     return await queue(context, state_action(
         context, "post_discord_poll", dict(arguments), "Post poll", lines,
         dict(arguments), load, apply,
@@ -124,7 +125,7 @@ async def undo_poll(context, log):
     async def apply(reason):
         await load()
         await (await channel.fetch_message(identifier)).delete()
-        return complete({"deleted": True})
+        return complete({"deleted": True}, text="Poll deleted.")
 
     message = await channel.fetch_message(identifier)
     return state_action(context, "undo_poll_post", {"channel_id": channel.id}, "Undo poll post",

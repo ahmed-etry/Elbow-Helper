@@ -14,7 +14,7 @@ from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, Cha
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from elbow_helper.agent.conversation.wording import ACTION_CWL_PREP_REFRESH_LINE, ACTION_CWL_PREP_REFRESH_LABEL
-from elbow_helper.agent.discord_actions.safety import check_post_access, resolve_channel
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access, check_view_access, resolve_channel
 
 
 def cwl_prep_refresh_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -40,13 +40,15 @@ async def prepare_cwl_prep_refresh(context: AgentRequestContext,
     if workflow is None:
         raise ActionRefused("That CWL prep board couldn't be refreshed.")
     channel = await resolve_channel(context, DASHBOARD_THREADS[values["clan_code"]])
-    check_post_access(channel, context.member, context.guild.me)
+    check_view_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     lines = (ACTION_CWL_PREP_REFRESH_LINE.format(
         clan=values["clan_code"], channel=channel.mention),)
 
     async def recheck() -> bool:
         try:
-            check_post_access(channel, context.member, context.guild.me)
+            check_view_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
             return True
         except ValueError:
             return False

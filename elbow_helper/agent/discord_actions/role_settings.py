@@ -97,7 +97,8 @@ async def role_action(context, arguments, *, create=False, undo=False):
                 permissions=discord.Permissions(desired["permissions"]), reason=reason,
             )
             await created.edit(position=desired["position"], reason=reason)
-            return complete({**desired, "role_id": created.id}, result={"role_id": created.id})
+            return complete({**desired, "role_id": created.id}, text=f"Created <@&{created.id}>.",
+                            result={"role_id": created.id})
         current = resolved(context, role.id)
         options = {key: desired[key] for key in FIELDS if before[key] != desired[key]}
         if "permissions" in options:
@@ -105,7 +106,7 @@ async def role_action(context, arguments, *, create=False, undo=False):
         if "colour" in options:
             options["colour"] = discord.Colour(options["colour"])
         await current.edit(reason=reason, **options)
-        return complete(desired)
+        return complete(desired, text=f"{'Restored settings for' if undo else 'Updated'} {role.mention}.")
 
     line = (f"Create role **{desired["name"]}**." if create else
             f"Restore the previous settings for {role.mention}." if undo
@@ -113,8 +114,8 @@ async def role_action(context, arguments, *, create=False, undo=False):
     lines = [line]
     for key in FIELDS:
         if create or before[key] != desired[key]:
-            lines.append(f"{key.title()}: {visible(key, before[key])} to "
-                         f"{visible(key, desired[key])}")
+            lines.append(f"{key.title()} goes from {visible(key, before[key])} to "
+                         f"{visible(key, desired[key])}.")
     return state_action(
         context, "create_discord_role" if create else "edit_discord_role", dict(arguments),
         "Create role" if create else "Undo role settings" if undo else "Change role",
@@ -154,7 +155,7 @@ async def undo_create(context, log):
     async def apply(reason):
         await load()
         await resolved(context, identifier).delete(reason=reason)
-        return complete({"deleted": True})
+        return complete({"deleted": True}, text=f"Deleted role **{role.name}**.")
 
     role = resolved(context, identifier)
     return state_action(context, "undo_role_creation", {"role_id": identifier},

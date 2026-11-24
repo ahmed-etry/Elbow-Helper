@@ -56,11 +56,10 @@ async def prepare_event_update(context: Any, values: Mapping[str, Any]) -> Chang
         current = workflow.queries.snapshot(context.guild)
         return tuple((row.event_key, row.name) for row in current.rows) == targets
 
-    return ChangePreview((
-        ACTION_EVENT_UPDATE_LINE,
-    ), recheck, summary=ACTION_EVENT_UPDATE_LABEL,
-        details=tuple(ACTION_EVENT_UPDATE_TARGET.format(name=name) for _, name in targets),
-        detail_access=frozenset({ACCESS_LEAD}))
+    names = ", ".join(name for _, name in targets)
+    line = f"🔄 Update counts for {names}" if names else "🔄 " + ACTION_EVENT_UPDATE_LINE.rstrip(".")
+    return ChangePreview((), recheck, summary=ACTION_EVENT_UPDATE_LABEL, details=(line,),
+                         detail_access=frozenset({ACCESS_LEAD}))
 
 
 async def run_event_update(context: Any, values: Mapping[str, Any]) -> ActionOutcome:

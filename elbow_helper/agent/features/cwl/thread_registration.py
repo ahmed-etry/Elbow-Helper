@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from elbow_helper.agent.discord_actions.safety import check_post_access
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
 from elbow_helper.agent.conversation.wording import ACTION_CWL_REGISTER_LABEL, ACTION_CWL_REGISTER_LINE, ACTION_CWL_REGISTER_OLD, ACTION_CWL_REGISTER_CLOSED, ACTION_CWL_REGISTER_WELCOME, ACTION_CWL_REGISTER_BOARD
@@ -27,7 +27,7 @@ async def _registration(context: Any, values: Mapping[str, Any]):
         raise ActionRefused('That thread is unavailable here.')
     if getattr(thread, "archived", False) or getattr(thread, "locked", False):
         raise ActionRefused(ACTION_CWL_REGISTER_CLOSED)
-    check_post_access(thread, context.member, context.guild.me)
+    check_bot_post_access(thread, context.guild.me)
     if prepared["status"] == "new":
         prepared["status_preview"] = await workflow.cwl_registration_status_preview(
             prepared["clan"],

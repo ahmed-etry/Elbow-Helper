@@ -18,7 +18,7 @@ from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.actions.values import display_value
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from elbow_helper.agent.conversation.wording import ACTION_EXAMINER_PROFILE_LINE, ACTION_FIELD_CHANGE, ACTION_EXAMINER_PROFILE_LABEL, ACTION_EXAMINER_PROFILE_LEAVE, ACTION_EXAMINER_PROFILE_LEAVE_LABEL, ACTION_EXAMINER_PROFILE_FIELDS
-from elbow_helper.agent.discord_actions.safety import check_post_access, resolve_channel
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access, resolve_channel
 
 
 PROFILE_FIELDS = ("th_levels", "status", "timezone", "availability")
@@ -118,7 +118,7 @@ async def _workflow(context: AgentRequestContext, *, post: bool = True):
         raise ActionRefused("That examiner profile isn't available.")
     if post:
         channel = await resolve_channel(context, EXAMINATION_PANEL_THREAD)
-        check_post_access(channel, context.member, context.guild.me)
+        check_bot_post_access(channel, context.guild.me)
     else:
         channel = await accessible_message_channel(context, EXAMINATION_PANEL_THREAD)
         if channel is None:
@@ -150,7 +150,7 @@ async def prepare_examiner_profile(context: AgentRequestContext,
 
     async def recheck() -> bool:
         try:
-            check_post_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
             return (workflow.has_examiner_profile(context.member) == existed
                     and workflow.examiner_profile_snapshot(context.member) == before)
         except ValueError:
@@ -165,7 +165,7 @@ async def prepare_examiner_profile(context: AgentRequestContext,
     context.state.proposed_changes.append(PreparedAction(
         "set_examiner_profile", {"member_id": context.member.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_EXAMINER_PROFILE_LABEL,
-                      details=details, detail_sources=frozenset({channel.id}),
+                      details=details, preview_only_sources=frozenset({channel.id}),
                       before={"profile": {key: before[key] for key in PROFILE_FIELDS},
                               "existed": existed}), run,
     ))
@@ -183,7 +183,7 @@ async def prepare_examiner_leave(context: AgentRequestContext,
 
     async def recheck() -> bool:
         try:
-            check_post_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
             return workflow.examiner_profile_snapshot(context.member) == before
         except ValueError:
             return False
@@ -197,7 +197,7 @@ async def prepare_examiner_leave(context: AgentRequestContext,
     context.state.proposed_changes.append(PreparedAction(
         "leave_examiner_roster", {"member_id": context.member.id},
         ChangePreview(lines, recheck, summary=ACTION_EXAMINER_PROFILE_LEAVE_LABEL,
-                      detail_sources=frozenset({channel.id})),
+                      preview_only_sources=frozenset({channel.id})),
         run, action_class=ActionClass.IRREVERSIBLE,
     ))
     return {"status": "confirmation_required"}
@@ -219,6 +219,9 @@ async def prepare_examiner_profile_undo(context: AgentRequestContext,
         for key in PROFILE_FIELDS if current[key] != prior["profile"][key])
 
     async def recheck() -> bool:
+        if not workflow.can_edit_examiner_profile(context.member):
+            return False
+        check_bot_post_access(channel, context.guild.me)
         live = workflow.examiner_profile_snapshot(context.member)
         return all(live[key] == expected["profile"][key] for key in PROFILE_FIELDS)
 
@@ -235,7 +238,7 @@ async def prepare_examiner_profile_undo(context: AgentRequestContext,
     return PreparedAction(
         "undo_examiner_profile", {"member_id": context.member.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_EXAMINER_PROFILE_LABEL,
-                      details=details, detail_sources=frozenset({channel.id}),
+                      details=details, preview_only_sources=frozenset({channel.id}),
                       before=expected), run,
     )
 

@@ -76,7 +76,7 @@ def selected_role(context, arguments):
         roles = [role for role in context.guild.roles
                  if role.name.casefold() == str(arguments.get('role_name', '')).casefold()]
     if len(roles) != 1 or arguments.get('role_name') and roles[0].name.casefold() != arguments['role_name'].casefold():
-        raise DiscordActionRefused('Choose one exact guild role name or ID.')
+        raise DiscordActionRefused('Choose one exact guild role name or ID.', cause='needs_input')
     return roles[0]
 
 
@@ -98,7 +98,7 @@ async def read_role_change_preview(context, arguments):
     try:
         role = selected_role(context, arguments)
     except DiscordActionRefused as error:
-        return {'error': str(error), 'cause': 'needs_input'}
+        return error.result()
     owners = await managed_role_commands(context)
     rows = []
     for identifier in arguments['member_ids']:
@@ -112,11 +112,12 @@ async def read_role_change_preview(context, arguments):
             if change:
                 check_member_role_ownership(context, role, member)
         except DiscordActionRefused as error:
-            refusal = str(error)
+            refusal = error.result()
         rows.append({'member_id': identifier, 'member_name': member.display_name, 'current_role_ids': current,
             'add_role_ids': [role.id] if change and arguments['operation'] == 'add' else [],
             'remove_role_ids': [role.id] if change and arguments['operation'] == 'remove' else [],
-            'allowed': refusal is None, 'refusal': refusal})
+            'allowed': refusal is None, 'refusal': refusal['error'] if refusal else None,
+            **({'cause': refusal['cause']} if refusal and 'cause' in refusal else {})})
     await require_evidence_access(context)
     return {'role_id': role.id, 'role_name': role.name, 'members': rows, 'preview_only': True,
             'role_change_access': role_change_access(context),
@@ -151,7 +152,7 @@ async def _prepare_roles(context: AgentRequestContext, arguments: Mapping[str, A
                 check_member_role_ownership(context, role, member)
                 selected.append(member)
     except DiscordActionRefused as error:
-        return {"error": str(error), 'cause': error.cause or 'ineligible',
+        return {**error.result(),
                 'role_change_access': role_change_access(context),
                 'change_attempted': False, 'confirmation_prepared': False}
     await require_evidence_access(context)
@@ -202,6 +203,8 @@ def _role_action(
             await member.remove_roles(role, reason=audit_reason(context.member))
         return ActionOutcome(
             "complete",
+            text=(f"Gave {label_role} to {label_member}." if add
+                  else f"Removed {label_role} from {label_member}."),
             after={"has_role": add},
         )
 

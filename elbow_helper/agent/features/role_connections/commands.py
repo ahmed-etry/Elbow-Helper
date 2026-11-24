@@ -8,7 +8,7 @@ from typing import Any
 import discord
 
 from elbow_helper.agent.safety.access import ACCESS_LEAD, has_access_requirements
-from elbow_helper.agent.discord_actions.safety import check_post_access, resolve_channel
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access, resolve_channel
 from elbow_helper.features.help.discovery import ParameterInfo
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ChangePreview
@@ -27,7 +27,7 @@ async def _target(context: Any, values: Mapping[str, Any]) -> tuple[Any, Any]:
     channel = await resolve_channel(context, channel_id)
     if not isinstance(channel, discord.TextChannel):
         raise ActionRefused("Use a server text channel")
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     return workflow, channel
 
 

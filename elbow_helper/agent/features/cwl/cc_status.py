@@ -13,8 +13,8 @@ from elbow_helper.agent.safety.access import require_evidence_access
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_CC_STATUS_LINE, ACTION_CC_STATUS_FIELD, ACTION_CC_STATUS_POST, ACTION_CC_STATUS_LABEL
-from elbow_helper.agent.discord_actions.safety import check_post_access, resolve_channel
+from elbow_helper.agent.conversation.wording import ACTION_CC_STATUS_LINE, ACTION_CC_STATUS_FIELD, ACTION_CC_STATUS_LABEL
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access, resolve_channel
 
 
 def cwl_cc_status_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -47,7 +47,7 @@ async def prepare_cc_status(context: AgentRequestContext,
     if snapshot["status"] == values["status"]:
         return {"status": "no_change"}
     thread = await resolve_channel(context, snapshot["thread_id"])
-    check_post_access(thread, context.member, context.guild.me)
+    check_bot_post_access(thread, context.guild.me)
     lines = (ACTION_CC_STATUS_LINE.format(clan=values["clan_code"],
                                           round=snapshot["round"],
                                           season=snapshot["season"]),
@@ -57,7 +57,7 @@ async def prepare_cc_status(context: AgentRequestContext,
 
     async def recheck() -> bool:
         try:
-            check_post_access(thread, context.member, context.guild.me)
+            check_bot_post_access(thread, context.guild.me)
             return await workflow.cc_status_snapshot(values["clan_code"]) == snapshot
         except ValueError:
             return False
@@ -74,8 +74,8 @@ async def prepare_cc_status(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "set_cwl_cc_status", {"clan_code": values["clan_code"]},
-        ChangePreview((lines[0], lines[2]), recheck, summary=ACTION_CC_STATUS_LABEL,
-                      details=(lines[1],), detail_sources=frozenset({thread.id}),
+        ChangePreview(lines[:1], recheck, summary=ACTION_CC_STATUS_LABEL,
+                      details=(lines[1],), preview_only_sources=frozenset({thread.id}),
                       before={"status": snapshot["status"] or "empty",
                               "war_tag": snapshot["war_tag"]}), run,
     ))
@@ -93,7 +93,7 @@ async def prepare_cc_status_undo(context: AgentRequestContext,
             snapshot["status"] != log["after"]["status"]):
         raise ActionRefused("That CWL Clan Castle status isn't available.")
     thread = await resolve_channel(context, snapshot["thread_id"])
-    check_post_access(thread, context.member, context.guild.me)
+    check_bot_post_access(thread, context.guild.me)
     prior = log["before"]["status"]
     lines = (ACTION_CC_STATUS_LINE.format(clan=clan, round=snapshot["round"],
                                           season=snapshot["season"]),
@@ -101,6 +101,9 @@ async def prepare_cc_status_undo(context: AgentRequestContext,
              ACTION_CC_STATUS_POST.format(channel=thread.mention))
 
     async def recheck() -> bool:
+        if not workflow.can_change_cc_status(context.member):
+            return False
+        check_bot_post_access(thread, context.guild.me)
         live = await workflow.cc_status_snapshot(clan)
         return live == snapshot
 
@@ -114,8 +117,8 @@ async def prepare_cc_status_undo(context: AgentRequestContext,
 
     return PreparedAction(
         "undo_cwl_cc_status", {"clan_code": clan},
-        ChangePreview((lines[0], lines[2]), recheck, summary=ACTION_CC_STATUS_LABEL,
-                      details=(lines[1],), detail_sources=frozenset({thread.id}),
+        ChangePreview(lines[:1], recheck, summary=ACTION_CC_STATUS_LABEL,
+                      details=(lines[1],), preview_only_sources=frozenset({thread.id}),
                       before=log["after"]), run,
     )
 

@@ -23,8 +23,9 @@ from ..actions.contracts import (
 from ..actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentAttachment, AgentRequestContext
 from elbow_helper.agent.conversation.wording import ACTION_ATTACH_LINE, ACTION_DELETE_LABEL, ACTION_DELETE_LINE, ACTION_EDIT_LABEL, ACTION_EDIT_LINE, ACTION_PINGS_LINE, ACTION_POST_FUTURE_LINE, ACTION_POST_LABEL, ACTION_POST_LINE, ACTION_UNDO_CHANGED, ACTION_PREVIEW_BLANK, ACTION_REPLY_NO_PING, ACTION_REPLY_WITH_PING
-from .safety import (DiscordActionRefused, check_post_access,
+from .safety import (DiscordActionRefused, check_ping_access, check_post_access,
                              check_view_access, resolve_channel)
+from .management import guard
 from .message_parts import image_attachment, media_links, outgoing_parts
 from .member_labels import member_label, mentioned_member_labels
 from ..research.member_provenance import member_target_issue
@@ -96,7 +97,9 @@ async def find_agent_files(context: AgentRequestContext,
             "coverage": "Files on the bot's own replies in this conversation."}
 
 
-def post_mentions(context: Any, arguments: Mapping[str, Any], text: str) -> discord.AllowedMentions:
+def post_mentions(context: Any, arguments: Mapping[str, Any], text: str,
+                  channel: Any = None) -> discord.AllowedMentions:
+    """With a channel, the ping must also be one the requester could make there."""
     if issue := member_target_issue(context, text):
         raise DiscordActionRefused(issue)
     roles = []
@@ -110,10 +113,13 @@ def post_mentions(context: Any, arguments: Mapping[str, Any], text: str) -> disc
     everyone = bool(arguments.get("ping_everyone", False))
     if everyone and "@everyone" not in text and "@here" not in text:
         raise DiscordActionRefused("The selected everyone ping is missing from the message.")
-    return discord.AllowedMentions(
+    mentions = discord.AllowedMentions(
         everyone=everyone, roles=roles, users=True,
         replied_user=bool(arguments.get("ping_author", False)),
     )
+    if channel is not None:
+        check_ping_access(channel, context.member, mentions)
+    return mentions
 
 
 def _ping_line(context: Any, arguments: Mapping[str, Any], *,
@@ -137,9 +143,15 @@ def _ping_line(context: Any, arguments: Mapping[str, Any], *,
     return (ACTION_PINGS_LINE.format(targets=", ".join(targets)),) if targets else ()
 
 
-async def _channel_for_post(context: AgentRequestContext, channel_id: int) -> Any:
+async def _channel_for_post(context: AgentRequestContext, channel_id: int,
+                            mentions: discord.AllowedMentions | None = None,
+                            *, attachment: Any = None) -> Any:
     channel = await resolve_channel(context, channel_id)
     check_post_access(channel, context.member, context.guild.me)
+    if mentions is not None:
+        check_ping_access(channel, context.member, mentions)
+    if attachment is not None:
+        guard(context, "attach_files", channel=channel)
     return channel
 
 
@@ -203,7 +215,7 @@ async def prepare_post(context: AgentRequestContext,
     deferred = isinstance(channel_value, Mapping) and set(channel_value) == {"step", "path"}
     try:
         channel = None if deferred else await _channel_for_post(context, channel_value)
-        mentions = post_mentions(context, arguments, arguments["text"])
+        mentions = post_mentions(context, arguments, arguments["text"], channel)
         member_labels = await mentioned_member_labels(context.guild, arguments["text"])
         reply = None
         if "reply_to" in arguments:
@@ -221,6 +233,8 @@ async def prepare_post(context: AgentRequestContext,
         return error.result()
     try:
         attachment = await resolve_post_attachment(context, arguments)
+        if attachment is not None and channel is not None:
+            await _channel_for_post(context, channel.id, attachment=attachment)
     except DiscordActionRefused as error:
         return error.result()
     parts = outgoing_parts(arguments["text"], attachment=attachment)
@@ -291,14 +305,15 @@ def _deferred_post_part(context: AgentRequestContext, reference: Mapping[str, An
         channel_id = resolve_arguments({"channel_id": reference}, results)["channel_id"]
         if type(channel_id) is not int:
             raise DiscordActionRefused("The earlier action did not return a channel.")
-        await _channel_for_post(context, channel_id)
+        await _channel_for_post(context, channel_id, mentions, attachment=attachment)
         return _post_part(
             context, channel_id, text, mentions,
             attachment=attachment, ping_line=ping_line,
         )
 
     lines = (ACTION_POST_FUTURE_LINE.format(target=target_label), *ping_line)
-    details = tuple(text.splitlines())
+    details = tuple(text.split("\n")) if text else ()
+    body = slice(0, len(details))
     if attachment is not None:
         details += (ACTION_ATTACH_LINE.format(filename=attachment.filename),)
     return PreparedAction(
@@ -323,7 +338,7 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
 
     async def recheck() -> bool:
         try:
-            channel = await _channel_for_post(context, channel_id)
+            channel = await _channel_for_post(context, channel_id, mentions, attachment=attachment)
             await check_reply(channel)
         except DiscordActionRefused:
             return False
@@ -338,7 +353,7 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
 
     async def run() -> ActionOutcome:
         nonlocal sent_id
-        channel = await _channel_for_post(context, channel_id)
+        channel = await _channel_for_post(context, channel_id, mentions, attachment=attachment)
         await check_reply(channel)
         options = {"allowed_mentions": mentions, "nonce": nonce}
         if reply is not None:
@@ -383,7 +398,9 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
     channel = context.guild.get_channel_or_thread(channel_id)
     label = channel.mention if channel is not None else f"<#{channel_id}>"
     lines = (ACTION_POST_LINE.format(channel=label), *ping_line)
-    details = tuple(text.splitlines())
+    details = tuple(text.split("\n")) if text else ()
+    start = int(reply is not None)
+    body = slice(start, start + len(details))
     if reply is not None:
         details = (_reply_line(reply, ping_author=mentions.replied_user, guild=context.guild), *details)
     if attachment is not None:
@@ -398,7 +415,9 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
 
 
 async def _owned_message(context: AgentRequestContext, channel_id: int,
-                         message_id: int) -> tuple[Any, Any]:
+                         message_id: int, *, delete: bool = False) -> tuple[Any, Any]:
+    """An agent post. Its requester may edit it where they can still post, and delete it;
+    anyone else needs Manage Messages to delete it, and nobody else can edit it."""
     channel = await resolve_channel(context, channel_id)
     check_view_access(channel, context.member, context.guild.me)
     owned = await asyncio.to_thread(
@@ -407,6 +426,13 @@ async def _owned_message(context: AgentRequestContext, channel_id: int,
     )
     if owned is None:
         raise DiscordActionRefused("That message was not posted with this action.")
+    if owned["requester_id"] != context.member.id:
+        if not delete:
+            raise DiscordActionRefused("You don't have permission to edit that message.",
+                                       cause="access_denied")
+        guard(context, "manage_messages", channel=channel, bot_permissions=())
+    elif not delete:
+        check_post_access(channel, context.member, context.guild.me)
     try:
         message = await channel.fetch_message(message_id)
     except discord.NotFound as error:
@@ -423,7 +449,7 @@ async def prepare_edit(context: AgentRequestContext,
         channel, message = await _owned_message(
             context, arguments["channel_id"], arguments["message_id"],
         )
-        post_mentions(context, arguments, arguments["text"])
+        post_mentions(context, arguments, arguments["text"], channel)
         member_labels = await mentioned_member_labels(context.guild, arguments["text"])
     except DiscordActionRefused as error:
         return error.result()
@@ -444,6 +470,8 @@ def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
                  member_labels: Mapping[int, str],
                  ) -> PreparedAction:
     primary = new_text.strip()
+    target = f"[message](https://discord.com/channels/{context.guild.id}/{channel_id}/{message_id})"
+    operation = "Restore the earlier text of" if undo else "Edit"
     # Edits made before links stayed in the text may have posted GIFs separately.
     removed_gifs = set()
 
@@ -467,7 +495,7 @@ def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
         channel, message = await _owned_message(context, channel_id, message_id)
         await check_gifs()
         await message.edit(content=primary,
-                           allowed_mentions=post_mentions(context, mention_values, new_text))
+                           allowed_mentions=post_mentions(context, mention_values, new_text, channel))
         for identifier in remove_gifs or {}:
             _, companion = await _owned_message(context, channel_id, int(identifier))
             await companion.delete()
@@ -526,7 +554,7 @@ async def prepare_delete(context: AgentRequestContext,
     await require_evidence_access(context)
     try:
         channel, message = await _owned_message(
-            context, arguments["channel_id"], arguments["message_id"],
+            context, arguments["channel_id"], arguments["message_id"], delete=True,
         )
     except DiscordActionRefused as error:
         return error.result()
@@ -534,13 +562,13 @@ async def prepare_delete(context: AgentRequestContext,
 
     async def recheck() -> bool:
         try:
-            _, current = await _owned_message(context, channel.id, message.id)
+            _, current = await _owned_message(context, channel.id, message.id, delete=True)
         except DiscordActionRefused:
             return False
         return current.content == before
 
     async def run() -> ActionOutcome:
-        _, current = await _owned_message(context, channel.id, message.id)
+        _, current = await _owned_message(context, channel.id, message.id, delete=True)
         await current.delete()
         await asyncio.to_thread(
             context.action_repository.mark_message_deleted,

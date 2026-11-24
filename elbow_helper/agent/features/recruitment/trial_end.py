@@ -12,8 +12,8 @@ from elbow_helper.agent.safety.access import require_evidence_access
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_TRIAL_END_LINE, ACTION_TRIAL_END_RENAME, ACTION_TRIAL_END_TRACKING, ACTION_TRIAL_END_REMINDER, ACTION_TRIAL_END_FOLLOWUP, ACTION_TRIAL_END_LABEL, ACTION_TRIAL_END_DONE
-from elbow_helper.agent.discord_actions.safety import check_member, check_post_access, resolve_channel
+from elbow_helper.agent.conversation.wording import ACTION_TRIAL_END_LINE, ACTION_TRIAL_END_RENAME, ACTION_TRIAL_END_LABEL
+from elbow_helper.agent.discord_actions.safety import check_member, check_bot_post_access, resolve_channel
 
 
 def trial_end_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -52,7 +52,7 @@ async def prepare_trial_end(context: AgentRequestContext,
     if trial and trial.get("applicant_id") and int(trial["applicant_id"]) != applicant_id:
         raise ActionRefused("That trial isn't available.")
     ticket = await resolve_channel(context, values["ticket_channel_id"])
-    check_post_access(ticket, context.member, context.guild.me)
+    check_bot_post_access(ticket, context.guild.me)
     member = context.guild.get_member(applicant_id)
     if member is not None:
         check_member(member, context.guild.me, requester=context.member, guild=context.guild)
@@ -63,7 +63,7 @@ async def prepare_trial_end(context: AgentRequestContext,
         channel_id = entry.get("tracking_channel_id") or entry.get("channel_id")
         if channel_id:
             channel = await resolve_channel(context, int(channel_id))
-            check_post_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
             channels.append(channel)
     lines = [ACTION_TRIAL_END_LINE.format(member=f"<@{applicant_id}>",
                                           channel=ticket.mention)]
@@ -82,7 +82,7 @@ async def prepare_trial_end(context: AgentRequestContext,
     async def recheck() -> bool:
         try:
             for channel in channels:
-                check_post_access(channel, context.member, context.guild.me)
+                check_bot_post_access(channel, context.guild.me)
             if member is not None:
                 check_member(member, context.guild.me,
                     requester=context.member, guild=context.guild)

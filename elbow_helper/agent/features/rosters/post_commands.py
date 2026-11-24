@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 import discord
-from elbow_helper.agent.discord_actions.safety import check_post_access, resolve_channel
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access, resolve_channel
 from elbow_helper.features.help.discovery import ParameterInfo
 from elbow_helper.agent.safety.access import ACCESS_LEAD_PLUS
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
@@ -31,7 +31,7 @@ async def prepare_roster_post(context: Any,
     )
     if not isinstance(channel, (discord.TextChannel, discord.Thread)):
         raise ActionRefused('That roster is unavailable.')
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     state = await workflow.roster_edit_state(roster)
     render = await workflow.preview_roster_post(roster)
     effect = render["effect"]
@@ -62,7 +62,7 @@ async def prepare_roster_post(context: Any,
         if current != roster or workflow.roster_post_effect(roster) != effect:
             return False
         try:
-            check_post_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
         except ValueError:
             return False
         if await workflow.roster_edit_state(roster) != state:

@@ -4,8 +4,10 @@ from itertools import product
 from types import SimpleNamespace
 import unittest
 
+import discord
+
 from elbow_helper.agent.discord_actions.safety import (
-    POWERFUL_PERMISSIONS, DiscordActionRefused, check_member, check_post_access,
+    POWERFUL_PERMISSIONS, DiscordActionRefused, check_member, check_ping_access, check_post_access,
     check_role, check_raw_role, check_raw_nickname,
 )
 
@@ -123,6 +125,42 @@ class DiscordActionSafetyTests(unittest.TestCase):
             else:
                 check_member(member, bot, guild=self.guild, requester=self.requester)
 
+    def test_pings_need_the_askers_own_permission_in_that_channel(self):
+        member = SimpleNamespace(id=1)
+
+        def channel(*, mention_everyone):
+            return SimpleNamespace(permissions_for=lambda actor: SimpleNamespace(
+                view_channel=True, send_messages=True, mention_everyone=mention_everyone))
+
+        everyone = discord.AllowedMentions(everyone=True)
+        open_role = discord.AllowedMentions(
+            everyone=False, roles=[SimpleNamespace(id=5, mentionable=True)])
+        locked_role = discord.AllowedMentions(
+            everyone=False, roles=[SimpleNamespace(id=6, mentionable=False)])
+        check_ping_access(channel(mention_everyone=False), member, open_role)
+        for mentions in (everyone, locked_role):
+            with self.assertRaises(DiscordActionRefused):
+                check_ping_access(channel(mention_everyone=False), member, mentions)
+            check_ping_access(channel(mention_everyone=True), member, mentions)
+
+    def test_a_locked_thread_needs_manage_threads_to_post(self):
+        def thread(*, manage_threads):
+            class LockedThread(discord.Thread):
+                locked = True
+
+                def __init__(self):
+                    pass
+
+                def permissions_for(self, actor):
+                    return SimpleNamespace(view_channel=True, send_messages_in_threads=True,
+                                           manage_threads=manage_threads)
+            return LockedThread()
+
+        asker, bot = SimpleNamespace(id=1), SimpleNamespace(id=2)
+        check_post_access(thread(manage_threads=True), asker, bot)
+        with self.assertRaises(DiscordActionRefused):
+            check_post_access(thread(manage_threads=False), asker, bot)
+
     def test_both_actors_need_view_and_send_access(self):
         first = SimpleNamespace(id=1)
         second = SimpleNamespace(id=2)
@@ -135,5 +173,10 @@ class DiscordActionSafetyTests(unittest.TestCase):
             if all((asker_view, asker_send, bot_view, bot_send)):
                 check_post_access(channel, first, second)
             else:
-                with self.assertRaises(DiscordActionRefused):
+                with self.assertRaises(DiscordActionRefused) as refused:
                     check_post_access(channel, first, second)
+                asker_lacks = not (asker_view and asker_send)
+                bot_lacks = not (bot_view and bot_send)
+                expected = ("Neither you nor the bot" if asker_lacks and bot_lacks
+                            else "You don't" if asker_lacks else "The bot doesn't")
+                self.assertIn(expected, str(refused.exception))

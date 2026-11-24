@@ -14,8 +14,8 @@ from elbow_helper.agent.safety.access import require_evidence_access
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_ELDER_REFRESH_LINE, ACTION_ELDER_REFRESH_BOARD, ACTION_ELDER_REFRESH_LABEL
-from elbow_helper.agent.discord_actions.safety import check_post_access, resolve_channel
+from elbow_helper.agent.conversation.wording import ACTION_ELDER_REFRESH_LINE, ACTION_ELDER_REFRESH_LABEL
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access, check_view_access, resolve_channel
 
 
 def missing_elder_board_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -44,7 +44,8 @@ async def prepare_missing_elder_board(context: AgentRequestContext,
     if location is None:
         raise ActionRefused("That Missing Elder board couldn't be refreshed.")
     channel = await resolve_channel(context, location["channel_id"])
-    check_post_access(channel, context.member, context.guild.me)
+    check_view_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     lines = [ACTION_ELDER_REFRESH_LINE.format(clan=values["clan_code"],
                                              channel=channel.mention)]
     if location["message_id"]:
@@ -52,7 +53,8 @@ async def prepare_missing_elder_board(context: AgentRequestContext,
 
     async def recheck() -> bool:
         try:
-            check_post_access(channel, context.member, context.guild.me)
+            check_view_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
             return workflow.missing_elder_board_location(values["clan_code"]) == location
         except (discord.DiscordException, ValueError):
             return False

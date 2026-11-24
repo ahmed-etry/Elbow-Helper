@@ -110,6 +110,10 @@ async def prepare_move(context, arguments):
         failed = [identifier for identifier in arguments["message_ids"] if identifier not in moved]
         retained = [identifier for identifier in failed if identifier in reposted]
         lines = []
+        if moved:
+            noun = "message" if len(moved) == 1 else "messages"
+            original = "original" if len(moved) == 1 else "originals"
+            lines.append(f"Moved {len(moved)} {noun} to {target.mention} and deleted the {original}.")
         for label, identifiers in (("Not moved", failed),
                                    ("Reposted but not deleted", retained)):
             if identifiers:

@@ -140,8 +140,6 @@ async def prepare_direct_messages(context, arguments):
     attachment = await resolve_post_attachment(context, arguments)
     text = '\n'.join(outgoing_parts(text, attachment=attachment))
     labels = await mentioned_member_labels(context.guild, text)
-    if any(member.id != context.member.id for member in members):
-        context.state.required_access.add(ACCESS_LEAD)
 
     async def recheck():
         await require_evidence_access(context)

@@ -89,7 +89,7 @@ async def initial_overwrites(context, parent, specifications):
         check_overwrite_grants(context, parent, None, after)
         if after is not None:
             overwrites[target] = unpacked(after)
-        lines.extend(overwrite_lines(target, parent, None, after))
+        lines.extend(overwrite_lines(target, parent, None, after, undo=False, creating=True))
     return overwrites, lines
 
 
@@ -119,14 +119,15 @@ async def create_action(context, arguments):
                 arguments["name"], category=parent, topic=arguments.get("topic"),
                 slowmode_delay=arguments.get("slowmode_seconds", 0), reason=reason, **options,
             )
-        return complete({"channel_id": created.id}, result={"channel_id": created.id})
+        return complete({"channel_id": created.id}, text=f"Created <#{created.id}>.",
+                        result={"channel_id": created.id})
 
     kind = "text channel" if arguments["kind"] == "text" else "category"
     place = parent.mention if parent is not None else "No category"
     return state_action(
         context, "create_discord_channel", dict(arguments),
         "Create text channel" if arguments["kind"] == "text" else "Create category",
-        [f"Create {kind} **{arguments["name"]}** in {place}.", *permission_lines],
+        [f"➕ Create {kind} **{arguments["name"]}** in {place}", *permission_lines],
         dict(arguments), load, apply,
     )
 
@@ -157,7 +158,7 @@ async def edit_action(context, arguments, *, undo=False):
             options.update(category=parent, sync_permissions=False, topic=desired["topic"],
                            slowmode_delay=desired["slowmode_seconds"])
         await current.edit(reason=reason, **options)
-        return complete(desired)
+        return complete(desired, text=f"{'Restored settings for' if undo else 'Updated'} {channel.mention}.")
 
     labels = {"name": "Name", "category_id": "Category", "topic": "Topic",
               "slowmode_seconds": "Slowmode"}
@@ -172,8 +173,8 @@ async def edit_action(context, arguments, *, undo=False):
              else f"Change {channel.mention}."]
     for key in labels:
         if before[key] != desired[key]:
-            lines.append(f"{labels[key]}: {await visible(key, before[key])} to "
-                         f"{await visible(key, desired[key])}")
+            lines.append(f"{labels[key]} goes from {await visible(key, before[key])} to "
+                         f"{await visible(key, desired[key])}.")
     return state_action(context, "edit_discord_channel", dict(arguments),
                         "Undo channel change" if undo else "Change channel",
                         lines, before, load, apply)
@@ -202,7 +203,7 @@ async def prepare_delete(context, arguments):
 
     async def apply(reason):
         await (await editable(context, channel.id)).delete(reason=reason)
-        return complete({"deleted": True})
+        return complete({"deleted": True}, text=f"Deleted {channel.name}.")
 
     parent = channel.category.mention if channel.category else "No category"
     return await queue(context, state_action(
@@ -244,7 +245,7 @@ async def undo_create(context, log):
     async def apply(reason):
         await load()
         await (await editable(context, identifier)).delete(reason=reason)
-        return complete({"deleted": True})
+        return complete({"deleted": True}, text=f"Deleted {channel.name}.")
 
     channel = await editable(context, identifier)
     return state_action(context, "undo_channel_creation", {"channel_id": identifier},

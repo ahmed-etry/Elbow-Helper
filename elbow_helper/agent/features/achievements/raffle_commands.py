@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 import discord
 from elbow_helper.features.achievements.raffle import RAFFLE_COLLECTION_CONTACT
-from elbow_helper.agent.discord_actions.safety import check_post_access, resolve_channel
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access, resolve_channel
 from elbow_helper.features.help.discovery import ParameterInfo
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.conversation.wording import ACTION_RAFFLE_PRIZE_LABEL, ACTION_RAFFLE_PRIZE_LINE, ACTION_RAFFLE_PRIZE_UNDO_LABEL, ACTION_RAFFLE_PRIZE_VALUE, ACTION_RAFFLE_WINNERS_VALUE, ACTION_UNDO_CHANGED, ACTION_RAFFLE_HUB_UPDATE, ACTION_RAFFLE_CLEAR_LINE, ACTION_RAFFLE_CLEAR_TICKETS_LINE, ACTION_RAFFLE_CLEAR_WINNER, ACTION_RAFFLE_CLEAR_TICKET, ACTION_RAFFLE_CLEAR_NONE, ACTION_RAFFLE_CLEAR_LABEL, ACTION_RAFFLE_DRAW_LINE, ACTION_RAFFLE_REROLL_LINE, ACTION_RAFFLE_DRAW_ELIGIBLE, ACTION_RAFFLE_DRAW_OLD, ACTION_RAFFLE_DRAW_PRIOR, ACTION_RAFFLE_DRAW_PRIZE, ACTION_RAFFLE_DRAW_PINGS, ACTION_RAFFLE_DRAW_COLLECT, ACTION_RAFFLE_DRAW_HISTORY, ACTION_RAFFLE_DRAW_LABEL, ACTION_RAFFLE_REROLL_LABEL, ACTION_RAFFLE_WINNER_ONE, ACTION_RAFFLE_WINNER_MANY, ACTION_RAFFLE_CURRENT_MONTH, ACTION_RAFFLE_NO_PRIZE
@@ -55,7 +55,7 @@ async def _draw_target(context: Any, values: Mapping[str, Any]):
     workflow = achievement_workflow(context)
     channel_id = values.get("channel") or context.source_message.channel.id
     channel = await resolve_channel(context, channel_id)
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     return workflow, channel
 
 

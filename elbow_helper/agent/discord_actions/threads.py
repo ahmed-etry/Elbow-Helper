@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from typing import Any
 
@@ -25,6 +26,16 @@ from .safety import (DiscordActionRefused, check_member, check_view_access,
 
 THREAD_OPERATIONS = ("rename", "archive", "unarchive", "lock", "unlock")
 MEMBER_OPERATIONS = ("add", "remove")
+
+
+THREAD_TARGET = {"anyOf": [
+    {"type": "integer", "minimum": 1},
+    {"type": "object", "properties": {
+        "step": {"type": "string"},
+        "path": {"type": "array", "items": {"type": "string", "enum": ["thread_id"]},
+                 "minItems": 1, "maxItems": 1},
+    }, "required": ["step", "path"], "additionalProperties": False},
+]}
 
 
 def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -53,7 +64,7 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
             name="update_discord_thread",
             description="Rename, archive, unarchive, lock or unlock a thread.",
             parameters={"type": "object", "properties": {
-                "thread_id": {"type": "integer", "minimum": 1},
+                "thread_id": THREAD_TARGET,
                 "operation": {"type": "string", "enum": list(THREAD_OPERATIONS)},
                 "name": {"type": "string", "minLength": 1, "maxLength": 100},
             }, "required": ["thread_id", "operation"], "additionalProperties": False},
@@ -67,7 +78,7 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
             name="change_discord_thread_members",
             description="Add or remove selected members of a thread.",
             parameters={"type": "object", "properties": {
-                "thread_id": {"type": "integer", "minimum": 1},
+                "thread_id": THREAD_TARGET,
                 "operation": {"type": "string", "enum": list(MEMBER_OPERATIONS)},
                 "member_ids": {"type": "array", "items": {"type": "integer", "minimum": 1},
                                "minItems": 1, "maxItems": 25, "uniqueItems": True},
@@ -92,6 +103,23 @@ async def _thread(context: AgentRequestContext, thread_id: int,
     return thread
 
 
+def _creates_thread(actions, reference) -> bool:
+    return any(action.step_id == reference["step"] and action.path == "create_discord_thread"
+               for action in actions)
+
+
+async def _check_thread_power(context: AgentRequestContext, thread: Any, *,
+                              owner_may: bool, created_here: bool = False) -> None:
+    """The bot acts with its own Manage Threads, so the asker needs it too. Discord lets a
+    thread's owner rename, archive and manage its members without it; a thread the bot
+    created for the asker, in this plan or an earlier request, counts as theirs."""
+    if owner_may and (created_here or thread.owner_id == context.member.id
+                      or await asyncio.to_thread(context.action_repository.thread_requester,
+                                                 thread_id=thread.id) == context.member.id):
+        return
+    guard(context, "manage_threads", channel=thread, bot_permissions=())
+
+
 async def _parent(context: AgentRequestContext, channel_id: int,
                   *, private: bool) -> Any:
     channel = await resolve_channel(context, channel_id)
@@ -101,8 +129,10 @@ async def _parent(context: AgentRequestContext, channel_id: int,
     if private and isinstance(channel, discord.ForumChannel):
         raise DiscordActionRefused("Forum threads cannot be private.")
     permission = "create_private_threads" if private else "create_public_threads"
+    # A forum post is created by sending its opening message.
+    needed = (permission, "send_messages") if isinstance(channel, discord.ForumChannel) else (permission,)
     for actor in (context.member, context.guild.me):
-        if not getattr(channel.permissions_for(actor), permission, False):
+        if not all(getattr(channel.permissions_for(actor), name, False) for name in needed):
             raise DiscordActionRefused("Both you and the bot need permission to create that thread.", cause="access_denied")
     return channel
 
@@ -149,7 +179,7 @@ async def prepare_create_thread(context: AgentRequestContext,
             )
         created_id = thread.id
         return ActionOutcome(
-            "complete",
+            "complete", text=f"Created <#{thread.id}>.",
             after={"thread_id": thread.id},
             result={"thread_id": thread.id, "channel_id": thread.id},
         )
@@ -164,7 +194,7 @@ async def prepare_create_thread(context: AgentRequestContext,
         return thread.name == name
 
     lines = (ACTION_THREAD_CREATE_LINE.format(name=name, channel=parent.mention),)
-    details = tuple(initial.splitlines()) if initial else ()
+    details = tuple(initial.split("\n")) if initial else ()
     context.state.proposed_changes.append(PreparedAction(
         "create_discord_thread", dict(arguments),
         ChangePreview(lines, recheck, summary=ACTION_THREAD_CREATE_LABEL,
@@ -179,7 +209,7 @@ def _thread_change(operation: str, name: str | None = None) -> tuple[str, Any, s
     if operation == "rename":
         if not name or not name.strip():
             raise DiscordActionRefused("Choose a name for the thread.")
-        return "name", name.strip(), f" to {name.strip()}"
+        return "name", name.strip(), f" to **{name.strip()}**"
     return {
         "archive": ("archived", True, ""),
         "unarchive": ("archived", False, ""),
@@ -196,15 +226,18 @@ def _thread_update_action(context: AgentRequestContext, thread_id: int,
     async def recheck() -> bool:
         try:
             thread = await _thread(context, thread_id, fresh=True)
+            await _check_thread_power(context, thread, owner_may=owner_may, created_here=created_here)
         except (DiscordActionRefused, discord.NotFound):
             return False
         return getattr(thread, field) == before
 
     async def run() -> ActionOutcome:
         thread = await _thread(context, thread_id, fresh=True)
+        await _check_thread_power(context, thread, owner_may=owner_may, created_here=created_here)
         await thread.edit(**{field: after}, reason=audit_reason(context.member))
         return ActionOutcome(
-            "complete", after={field: after}, result={"thread_id": thread_id},
+            "complete", text=f"{finished} {label}{detail}.",
+            after={field: after}, result={"thread_id": thread_id},
         )
 
     async def verify() -> bool:
@@ -243,6 +276,7 @@ async def prepare_update_thread(context: AgentRequestContext,
             label = earlier_result_label(context.state.proposed_changes, reference)
         except ValueError as error:
             return {"error": str(error)}
+        created_here = _creates_thread(context.state.proposed_changes, reference)
         async def bind(results: Mapping[str, Mapping[str, Any]]) -> PreparedAction:
             thread_id = resolve_arguments({"thread_id": reference}, results)["thread_id"]
             if type(thread_id) is not int:
@@ -251,6 +285,7 @@ async def prepare_update_thread(context: AgentRequestContext,
             return _thread_update_action(
                 context, thread_id, field=field, before=getattr(thread, field),
                 after=after, operation=arguments["operation"], detail=detail,
+                created_here=created_here,
             )
         async def recheck() -> bool:
             return True
@@ -270,6 +305,8 @@ async def prepare_update_thread(context: AgentRequestContext,
         field, after, detail = _thread_change(
             arguments["operation"], arguments.get("name"),
         )
+        await _check_thread_power(context, thread, owner_may=arguments["operation"] in (
+            "rename", "archive", "unarchive"))
     except DiscordActionRefused as error:
         return error.result()
     before = getattr(thread, field)
@@ -292,7 +329,7 @@ async def prepare_thread_update_undo(context: AgentRequestContext,
     operation = ("rename" if field == "name" else
                  ("archive" if previous else "unarchive") if field == "archived" else
                  ("lock" if previous else "unlock"))
-    detail = f" to {previous}" if field == "name" else ""
+    detail = f" to **{previous}**" if field == "name" else ""
     return _thread_update_action(
         context, thread.id, field=field, before=expected, after=previous,
         operation=operation, detail=detail, undo=True,
@@ -312,6 +349,7 @@ def _thread_member_action(context: AgentRequestContext, thread_id: int,
     async def recheck() -> bool:
         try:
             thread = await _thread(context, thread_id, fresh=True)
+            await _check_thread_power(context, thread, owner_may=True, created_here=created_here)
             member = await resolve_member(context.guild, member_id, fresh=True)
             check_member(member, context.guild.me, requester=context.member, guild=context.guild)
         except (DiscordActionRefused, discord.NotFound):
@@ -320,6 +358,7 @@ def _thread_member_action(context: AgentRequestContext, thread_id: int,
 
     async def run() -> ActionOutcome:
         thread = await _thread(context, thread_id, fresh=True)
+        await _check_thread_power(context, thread, owner_may=True, created_here=created_here)
         member = await resolve_member(context.guild, member_id, fresh=True)
         check_member(member, context.guild.me, requester=context.member, guild=context.guild)
         if before != add:
@@ -328,6 +367,7 @@ def _thread_member_action(context: AgentRequestContext, thread_id: int,
             else:
                 await thread.remove_user(member)
         return ActionOutcome("complete",
+                              text=f"{finished} {label_member} {relation} {label_thread}.",
                               after={"has_member": add},
                               result={"thread_id": thread_id})
 
@@ -364,6 +404,7 @@ async def prepare_thread_members(context: AgentRequestContext,
             label = earlier_result_label(context.state.proposed_changes, reference)
         except ValueError as error:
             return {"error": str(error)}
+        created_here = _creates_thread(context.state.proposed_changes, reference)
         selected = []
         try:
             for member_id in arguments["member_ids"]:
@@ -383,6 +424,7 @@ async def prepare_thread_members(context: AgentRequestContext,
                 before = member_id in await _member_ids(thread)
                 return _thread_member_action(
                     context, thread_id, member_id, add=add, before=before,
+                    created_here=created_here,
                 )
             async def recheck() -> bool:
                 return True
@@ -404,6 +446,7 @@ async def prepare_thread_members(context: AgentRequestContext,
         return {"status": "confirmation_required"}
     try:
         thread = await _thread(context, reference)
+        await _check_thread_power(context, thread, owner_may=True)
         present = await _member_ids(thread)
         selected = []
         for member_id in arguments["member_ids"]:

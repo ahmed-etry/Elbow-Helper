@@ -214,8 +214,8 @@ RESULT_FIELDS = {
                 "examples?,notes?"), "options?": [result_fields(ParameterInfo)],
         "commands?": [names("path,summary,category")],
     },
-    "find_discord_channels": {"channels": [names("channel_id,name")],
-                              **names("matched_count,truncated")},
+    "find_discord_channels": {"channels": [names("channel_id,name,asker_can_view,asker_can_post,bot_can_view,bot_can_post")],
+                              **names("matched_count,next_offset")},
     "find_discord_members": {
         "query": "", "members": [names("member_id,display_name,username?,joined_at,mention,roles")],
         **names("next_offset"),

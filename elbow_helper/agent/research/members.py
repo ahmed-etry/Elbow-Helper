@@ -321,6 +321,7 @@ async def find_discord_roles(
             "name": role.name,
             "position": role.position,
             "managed": role.managed,
+            "asker_can_ping_here": can_ping_role(context.source_message.channel, context.member, role),
             "permissions": [name for name, enabled in role.permissions if enabled],
             "member_count": counts[role.id],
             "clan_purposes": purposes,

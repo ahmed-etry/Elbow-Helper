@@ -15,7 +15,7 @@ from ..actions.contracts import ActionClass, ActionRefused, PreparedAction
 from ..actions.discord_failure import DiscordFailure, discord_failure
 from elbow_helper.agent.conversation.wording import ACTION_UNAVAILABLE
 from elbow_helper.agent.safety.access import AgentAccessLost, LookupAccessDenied
-from elbow_helper.agent.safety.access import has_lookup_access
+from elbow_helper.agent.safety.access import has_access_requirements, has_lookup_access
 from elbow_helper.agent.safety.access import require_evidence_access
 from .capability_contract import CapabilityBindError
 from .capability_contract import require_source_provenance
@@ -57,7 +57,11 @@ async def execute_tool(
             return error_result(issue)
         required_access = frozenset((capability_scope or {}).get("required_access", ()))
         if required_access:
-            if not has_lookup_access(context, required_access):
+            if action_class in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):
+                allowed = has_access_requirements(context.guild, context.member.id, required_access)
+            else:
+                allowed = has_lookup_access(context, required_access)
+            if not allowed:
                 outcome = "refused"
                 return json.dumps({"error": ACTION_UNAVAILABLE,
                                    "required_access": sorted(required_access), "cause": "access_denied"})

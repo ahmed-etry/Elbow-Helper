@@ -137,7 +137,13 @@ async def prepare_cleanup(context, arguments):
         deleted = await delete_selection(context, current, selected, reason)
         deleted.extend(missing)
         failed = [identifier for identifier in arguments["message_ids"] if identifier not in deleted]
-        text = f"Not deleted: {message_links(context, channel.id, failed)}" if failed else ""
+        lines = []
+        if deleted:
+            noun = "message" if len(deleted) == 1 else "messages"
+            lines.append(f"Deleted {len(deleted)} {noun} from {channel.mention}.")
+        if failed:
+            lines.append(f"Not deleted: {message_links(context, channel.id, failed)}")
+        text = "\n".join(lines)
         return complete({"deleted": deleted}, text=text,
                         result={"deleted_ids": deleted, "not_deleted_ids": failed})
 

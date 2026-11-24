@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from elbow_helper.agent.discord_actions.safety import check_post_access
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ChangePreview
 from elbow_helper.agent.conversation.wording import ACTION_CWL_BRIEF_LABEL, ACTION_CWL_BRIEF_LINE
@@ -25,7 +25,7 @@ async def _brief(context: Any, values: Mapping[str, Any]):
         )
     except ValueError as error:
         raise ActionRefused(str(error)) from error
-    check_post_access(brief.channel, context.member, context.guild.me)
+    check_bot_post_access(brief.channel, context.guild.me)
     return workflow, brief
 
 

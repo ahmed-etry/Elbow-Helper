@@ -57,9 +57,17 @@ def discord_message_control_tools() -> tuple[RegisteredAgentTool, ...]:
 
 
 async def _message(context: AgentRequestContext, channel_id: int,
-                   message_id: int) -> tuple[Any, Any]:
+                   message_id: int, *, reaction: bool, add: bool) -> tuple[Any, Any]:
     channel = await resolve_channel(context, channel_id)
     check_view_access(channel, context.member, context.guild.me)
+    # The bot acts with its own permission, so the asker needs the same one: pinning
+    # and removing a reaction take Manage Messages, adding one takes Add Reactions.
+    if reaction and add:
+        guard(context, "add_reactions", "read_message_history", channel=channel)
+    elif reaction:
+        guard(context, "manage_messages", channel=channel, bot_permissions=())
+    else:
+        guard(context, "manage_messages", channel=channel)
     try:
         message = await channel.fetch_message(message_id)
     except discord.NotFound as error:
@@ -80,7 +88,8 @@ def _control_action(context: AgentRequestContext, *, channel_id: int,
     verb = (ACTION_PIN_ADD if add else ACTION_PIN_REMOVE)[0] if not reaction else ""
 
     async def current() -> tuple[Any, Any, bool]:
-        channel, message = await _message(context, channel_id, message_id)
+        channel, message = await _message(
+            context, channel_id, message_id, reaction=reaction, add=add)
         active = (_reaction_active(message, emoji) if reaction else message.pinned)
         return channel, message, active
 
@@ -103,7 +112,12 @@ def _control_action(context: AgentRequestContext, *, channel_id: int,
                 await message.pin(reason=audit_reason(context.member))
             else:
                 await message.unpin(reason=audit_reason(context.member))
-        return ActionOutcome("complete", after={"active": add},
+        if reaction:
+            text = (f"Added {emoji} to {label_message}." if add
+                    else f"Removed {emoji} from {label_message}.")
+        else:
+            text = f"{'Pinned' if add else 'Unpinned'} {label_message}."
+        return ActionOutcome("complete", text=text, after={"active": add},
                               result={"message_id": message_id, "channel_id": channel_id})
 
     async def verify() -> bool:
@@ -134,13 +148,14 @@ def _control_action(context: AgentRequestContext, *, channel_id: int,
 async def _prepare(context: AgentRequestContext, arguments: Mapping[str, Any],
                    *, kind: str) -> Mapping[str, Any]:
     await require_evidence_access(context)
+    add = arguments["operation"] in ("add", "pin")
     try:
         _, message = await _message(
             context, arguments["channel_id"], arguments["message_id"],
+            reaction=kind == "reaction", add=add,
         )
     except DiscordActionRefused as error:
         return error.result()
-    add = arguments["operation"] in ("add", "pin")
     emoji = arguments.get("emoji", "")
     before = _reaction_active(message, emoji) if kind == "reaction" else message.pinned
     if before == add:
@@ -167,7 +182,10 @@ async def prepare_control_undo(context: AgentRequestContext,
                                log: Mapping[str, Any]) -> PreparedAction:
     values = log["targets"]
     kind = "reaction" if "emoji" in values else "pin"
-    _, message = await _message(context, values["channel_id"], values["message_id"])
+    _, message = await _message(
+        context, values["channel_id"], values["message_id"],
+        reaction=kind == "reaction", add=log["before"]["active"],
+    )
     expected = log["after"]["active"]
     active = (_reaction_active(message, values["emoji"]) if kind == "reaction"
               else message.pinned)

@@ -25,7 +25,9 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
         messages = {}
         channel = SimpleNamespace(id=2, mention="#place")
         channel.guild = SimpleNamespace(id=3)
-        channel.permissions_for = lambda _: SimpleNamespace(view_channel=True, send_messages=True, read_message_history=True)
+        self.permissions = dict(view_channel=True, send_messages=True, read_message_history=True,
+                                attach_files=True)
+        channel.permissions_for = lambda _: SimpleNamespace(**self.permissions)
         async def send(text, **kwargs):
             message_id = 100 + len(messages)
             message = SimpleNamespace(id=message_id, content=text, author=bot_member,
@@ -115,6 +117,32 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
                 "channel_id": 2, "message_id": message_id, "text": "Third",
             })
             self.assertIn("error", refused)
+
+    async def test_a_post_made_for_another_member_is_theirs_to_edit_and_delete(self):
+        self.repository.record_message(message_id=500, guild_id=3, channel_id=2, requester_id=7)
+        self.messages[500] = SimpleNamespace(id=500, content="Theirs", author=self.context.guild.me)
+        arguments = {"channel_id": 2, "message_id": 500}
+        with patch("elbow_helper.agent.discord_actions.messages.require_evidence_access",
+                   new_callable=AsyncMock):
+            edit = await prepare_edit(self.context, {**arguments, "text": "Mine"})
+            removal = await prepare_delete(self.context, arguments)
+            self.assertEqual((edit["cause"], removal["cause"]), ("access_denied",) * 2)
+            self.permissions["manage_messages"] = True
+            edit = await prepare_edit(self.context, {**arguments, "text": "Mine"})
+            removal = await prepare_delete(self.context, arguments)
+        self.assertEqual(edit["cause"], "access_denied")
+        self.assertEqual(removal["status"], "confirmation_required")
+
+    async def test_a_file_needs_attach_files_in_the_channel(self):
+        self.context.state.attachments = [SimpleNamespace(filename="r.txt", data=b"x")]
+        self.permissions["attach_files"] = False
+        with patch("elbow_helper.agent.discord_actions.messages.require_evidence_access",
+                   new_callable=AsyncMock):
+            refused = await prepare_post(self.context, {
+                "channel_id": 2, "text": "File", "file_name": "r.txt",
+            })
+        self.assertEqual(refused["cause"], "access_denied")
+        self.assertEqual(self.context.state.proposed_changes, [])
 
     async def test_only_a_delivered_conversation_file_can_be_reposted(self):
         attachment = SimpleNamespace(

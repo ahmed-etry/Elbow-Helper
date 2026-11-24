@@ -14,8 +14,12 @@ from elbow_helper.agent.safety.access import ACCESS_LEAD_PLUS, require_evidence_
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_ROSTER_ACCOUNT_LINE, ACTION_ROSTER_ACCOUNT_ITEM, ACTION_ROSTER_ACCOUNT_ROLE, ACTION_ROSTER_POST_REFRESH, ACTION_ROSTER_ACCOUNT_LABEL, ACTION_ROSTER_BULK_LINE, ACTION_ROSTER_BULK_ACCOUNT, ACTION_ROSTER_BULK_SIGNED, ACTION_ROSTER_BULK_LABEL, ACTION_ROSTER_REMOVE_LINE, ACTION_ROSTER_REMOVE_ROW, ACTION_ROSTER_REMOVE_LABEL
-from elbow_helper.agent.discord_actions.safety import check_member, check_post_access, check_role, present_members, resolve_channel, resolve_member
+from elbow_helper.agent.conversation.wording import ACTION_ROSTER_ACCOUNT_LABEL, ACTION_ROSTER_BULK_LABEL, ACTION_ROSTER_REMOVE_LABEL, ACTION_UNAVAILABLE
+from elbow_helper.agent.discord_actions.safety import check_member, check_role, present_members, resolve_member
+from .management import (
+    can_manage_roster, check_roster_posts,
+    require_roster_management_access,
+)
 
 
 def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -118,14 +122,20 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
         if owner is not None:
             check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
         owners[row.discord_user_id] = owner
-    channels = [await resolve_channel(context, channel_id)
-                for channel_id, _ in state["posts"]]
-    for channel in channels:
-        check_post_access(channel, context.member, context.guild.me)
-    lines = [ACTION_ROSTER_REMOVE_LINE.format(name=roster.name)]
-    lines.extend(ACTION_ROSTER_REMOVE_ROW.format(
-        name=row.player_name, tag=row.player_tag,
-        member=f"<@{row.discord_user_id}>") for row in selected)
+    await check_roster_posts(context, state["posts"])
+    selected_tags = {row.player_tag for row in selected}
+    remaining = {row.discord_user_id for row in state["members"]
+                 if row.player_tag not in selected_tags}
+    losing_role = {
+        member.id for member in owners.values()
+        if role is not None and member is not None and member.id not in remaining
+        and await workflow.roster_signup_role_changes(roster, member.id, should_have=False)
+    }
+    lines = [
+        f"➖ Remove **{row.player_name}** `{row.player_tag}`, "
+        f"signed up by <@{row.discord_user_id}>, from **{roster.name}**"
+        for row in selected
+    ]
     if role is not None:
         lines.append(ACTION_ROSTER_ACCOUNT_ROLE.format(role=role.mention))
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(
@@ -143,8 +153,12 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
                 if owner is not None:
                     check_member(owner, context.guild.me,
                         requester=context.member, guild=context.guild)
-            for channel in channels:
-                check_post_access(channel, context.member, context.guild.me)
+                    if role is not None and owner.id not in remaining:
+                        loses_role = await workflow.roster_signup_role_changes(
+                            roster, owner.id, should_have=False)
+                        if loses_role != (owner.id in losing_role):
+                            return False
+            await check_roster_posts(context, current["posts"])
         except (discord.DiscordException, ValueError):
             return False
         return True
@@ -189,15 +203,12 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
         member_id for _, _, member_id, _ in state["accounts"]))
     for member in members.values():
         check_member(member, context.guild.me, requester=context.member, guild=context.guild)
-    channels = [await resolve_channel(context, channel_id)
-                for channel_id, _ in state["posts"]]
-    for channel in channels:
-        check_post_access(channel, context.member, context.guild.me)
-    lines = [ACTION_ROSTER_BULK_LINE.format(name=roster.name)]
-    lines.extend(ACTION_ROSTER_BULK_ACCOUNT.format(
-        name=name, tag=tag, member=members[member_id].mention if member_id in members else f"<@{member_id}>",
-        status=ACTION_ROSTER_BULK_SIGNED if signed else "")
-        for tag, name, member_id, signed in state["accounts"])
+    await check_roster_posts(context, state["posts"])
+    lines = [f"📝 Sign up **{name}** `{tag}`, linked to <@{member_id}>, for **{roster.name}**"
+             for tag, name, member_id, signed in state["accounts"] if not signed]
+    details = tuple(f"**{name}** `{tag}`, linked to <@{member_id}>, is already signed up."
+                    for tag, name, member_id, signed in state["accounts"] if signed)
+    gaining_role = set()
     if role is not None:
         lines.append(ACTION_ROSTER_ACCOUNT_ROLE.format(role=role.mention))
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(
@@ -214,8 +225,13 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
             for member in members.values():
                 check_member(member, context.guild.me,
                     requester=context.member, guild=context.guild)
-            for channel in channels:
-                check_post_access(channel, context.member, context.guild.me)
+            if role is not None:
+                for member_id in state["adding_members"]:
+                    gains_role = await workflow.roster_signup_role_changes(
+                        roster, member_id, should_have=True)
+                    if gains_role != (member_id in gaining_role):
+                        return False
+            await check_roster_posts(context, current["posts"])
         except ValueError:
             return False
         return True
@@ -271,21 +287,29 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     selected_accounts = [account for account in picker.accounts
                          if account.player_tag in selected]
     posts = (await workflow.roster_edit_state(roster))["posts"]
-    channels = [await resolve_channel(context, channel_id)
-                for channel_id, _ in posts]
-    for channel in channels:
-        check_post_access(channel, context.member, context.guild.me)
-    lines = [ACTION_ROSTER_ACCOUNT_LINE.format(
-        action="Sign up" if mode == "signup" else "Remove",
-        member=member.mention, name=roster.name)]
-    lines.extend(ACTION_ROSTER_ACCOUNT_ITEM.format(
-        name=account.player_name, tag=account.player_tag)
-        for account in selected_accounts)
-    if role is not None:
-        lines.append(ACTION_ROSTER_ACCOUNT_ROLE.format(role=role.mention))
-    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        channel=f"<#{channel_id}>")
-        for channel_id, message_id in posts)
+    await check_roster_posts(context, posts)
+    signing_up = mode == "signup"
+    accounts = {account.player_tag: f"**{account.player_name}** `{account.player_tag}`"
+                for account in selected_accounts}
+    if signing_up:
+        owner = f"{member.mention}'s " if for_other_member else ""
+        lines = [f"📝 Sign up {owner}{account} for **{roster.name}**"
+                 for account in accounts.values()]
+    else:
+        lines = [f"➖ Remove {member.mention}'s {account} from **{roster.name}**"
+                 for account in accounts.values()]
+
+    async def role_changes(picker) -> bool:
+        return (role is not None
+                and (signing_up or all(account.player_tag in selected for account in picker.accounts))
+                and await workflow.roster_signup_role_changes(
+                    roster, member_id, should_have=signing_up))
+
+    changes_role = await role_changes(picker)
+    if changes_role:
+        verb = "get" if signing_up else "lose"
+        who = f"{member.mention} will" if for_other_member else "You'll"
+        lines.append(f"{who} {verb} {role.mention}")
     snapshots = {account.player_tag: account for account in picker.accounts}
 
     async def recheck() -> bool:
@@ -293,8 +317,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
             check_member(member, context.guild.me, requester=context.member, guild=context.guild)
             if role is not None:
                 check_role(role, context.guild, context.guild.me, {}, requester=context.member)
-            for channel in channels:
-                check_post_access(channel, context.member, context.guild.me)
+            await check_roster_posts(context, posts)
             current_roster, current = await workflow.prepare_roster_account_selection(
                 roster_id, member_id, mode=mode,
                 for_other_member=member_id != context.member.id)

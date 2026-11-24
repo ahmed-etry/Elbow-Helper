@@ -58,7 +58,7 @@ def check_member_role_ownership(context: Any, role: Any, member: Any) -> None:
     owner = member_role_owner(context, role.id, member.id)
     if owner is not None:
         template = ACTION_ROLE_OPEN_TRIAL if owner == "trial" else ACTION_ROLE_HIBERNATING
-        raise DiscordActionRefused(template.format(member=member.display_name))
+        raise DiscordActionRefused(template.format(member=member.display_name), cause="ineligible")
 
 
 async def managed_role_commands(context: Any) -> dict[int, str]:
@@ -81,16 +81,16 @@ async def managed_role_commands(context: Any) -> dict[int, str]:
 def check_role(role: Any, guild: Any, bot_member: Any,
                owners: Mapping[int, str], *, requester: Any) -> None:
     if role is None:
-        raise DiscordActionRefused("That role is unavailable.")
+        raise DiscordActionRefused("That role is unavailable.", cause="ineligible")
     if role.id == guild.id or role.is_default():
-        raise DiscordActionRefused("The everyone role cannot be changed.")
+        raise DiscordActionRefused("The everyone role cannot be changed.", cause="ineligible")
 
 
 def check_member(member: Any, bot_member: Any, *, guild: Any, requester: Any) -> None:
     if member is None:
-        raise DiscordActionRefused("That member is unavailable.")
+        raise DiscordActionRefused("That member is unavailable.", cause="ineligible")
     if bot_member is None or member.id == bot_member.id:
-        raise DiscordActionRefused("The bot cannot change its own membership.")
+        raise DiscordActionRefused("The bot cannot change its own membership.", cause="ineligible")
 
 
 def _below_requester(position: int, guild: Any, requester: Any) -> bool:
@@ -110,7 +110,7 @@ async def resolve_member(guild: Any, member_id: int, *, fresh: bool = False) -> 
     try:
         return await guild.fetch_member(member_id)
     except discord.NotFound as error:
-        raise DiscordActionRefused("That member is unavailable.") from error
+        raise DiscordActionRefused("That member is unavailable.", cause="ineligible") from error
 
 
 async def present_members(guild: Any, member_ids: Any) -> dict[int, Any]:
@@ -148,48 +148,101 @@ async def resolve_channel(context: Any, channel_id: int) -> Any:
 
 
 def check_post_access(channel: Any, member: Any, bot_member: Any) -> None:
-    check_view_access(channel, member, bot_member)
+    """Both need to view and post, and a locked thread also needs Manage Threads."""
+    lacking = []
+    for who, actor in (("you", member), ("the bot", bot_member)):
+        try:
+            _check_view(channel, actor)
+            _check_send_access(channel, channel.permissions_for(actor), "")
+        except DiscordActionRefused:
+            lacking.append(who)
+    if lacking:
+        message = {("you",): "You don't have access to post there.",
+                   ("the bot",): "The bot doesn't have access to post there."}.get(
+            tuple(lacking), "Neither you nor the bot has access to post there.")
+        raise DiscordActionRefused(message, cause="access_denied")
+
+
+def post_access(channel: Any, member: Any, bot_member: Any) -> dict[str, bool]:
+    """Each side's access, by the same checks the post runs, applied to one side at a time."""
+    result = {}
+    for prefix, actor in (("asker", member), ("bot", bot_member)):
+        for key, check in (("can_view", check_view_access), ("can_post", check_post_access)):
+            try:
+                check(channel, actor, actor)
+                result[f"{prefix}_{key}"] = True
+            except DiscordActionRefused:
+                result[f"{prefix}_{key}"] = False
+    return result
+
+
+def check_bot_post_access(channel: Any, bot_member: Any) -> None:
+    """Check the bot's ability to post for a workflow with its own access rules."""
+    if bot_member is None:
+        raise DiscordActionRefused(ACTION_UNAVAILABLE, cause="access_denied")
+    allowed = channel.permissions_for(bot_member)
+    if not allowed.view_channel:
+        raise DiscordActionRefused(ACTION_UNAVAILABLE, cause="access_denied")
+    _check_send_access(channel, allowed, ACTION_UNAVAILABLE)
+
+
+def _check_send_access(channel: Any, allowed: Any, error: str) -> None:
     permission = "send_messages_in_threads" if isinstance(channel, discord.Thread) else "send_messages"
-    for actor in (member, bot_member):
-        allowed = channel.permissions_for(actor)
-        if not getattr(allowed, permission, False):
-            raise DiscordActionRefused("Both you and the bot need access to post there.", cause="access_denied")
+    locked = getattr(channel, "locked", False) is True
+    if not getattr(allowed, permission, False) or (locked and not getattr(allowed, "manage_threads", False)):
+        raise DiscordActionRefused(error, cause="access_denied")
+
+
+def can_ping_role(channel: Any, member: Any, role: Any) -> bool:
+    return role.mentionable or not missing_permissions(member, ("mention_everyone",), channel=channel)
+
+
+def check_ping_access(channel: Any, member: Any, mentions: discord.AllowedMentions) -> None:
+    """The bot pings with its own permission, so the member must be able to make the ping."""
+    roles = mentions.roles if isinstance(mentions.roles, list) else ()
+    if mentions.everyone:
+        if missing_permissions(member, ("mention_everyone",), channel=channel):
+            raise DiscordActionRefused("You don't have permission to ping everyone here.",
+                                       cause="access_denied")
+    elif any(not can_ping_role(channel, member, role) for role in roles):
+        raise DiscordActionRefused("You don't have permission to ping that role here.",
+                                   cause="access_denied")
+
+
+def _check_view(channel: Any, actor: Any) -> None:
+    if actor is None or not channel.permissions_for(actor).view_channel:
+        raise DiscordActionRefused("Both you and the bot need access to view that channel.", cause="access_denied")
 
 
 def check_view_access(channel: Any, member: Any, bot_member: Any) -> None:
     for actor in (member, bot_member):
-        if actor is None or not channel.permissions_for(actor).view_channel:
-            raise DiscordActionRefused("Both you and the bot need access to view that channel.", cause="access_denied")
+        _check_view(channel, actor)
 
 
 def check_raw_role(role: Any, guild: Any, bot_member: Any,
                    owners: Mapping[int, str], *, requester: Any) -> None:
     check_role(role, guild, bot_member, owners, requester=requester)
     if role.managed:
-        raise DiscordActionRefused("An integration manages that role.")
+        raise DiscordActionRefused("An integration manages that role.", cause="ineligible")
     current = guild.get_member(requester.id)
-    if current is None or not getattr(current.guild_permissions, "manage_roles", False):
+    if missing_permissions(current, ("manage_roles",)):
         raise DiscordActionRefused("Changing roles requires Manage Roles permission.", cause="access_denied")
     if not _below_requester(role.position, guild, requester):
-        raise DiscordActionRefused("That role is above your top role.")
+        raise DiscordActionRefused("That role is above your top role.", cause="ineligible")
     for permission in POWERFUL_PERMISSIONS:
         if getattr(role.permissions, permission, False):
-            raise DiscordActionRefused("That role grants server management access.")
+            raise DiscordActionRefused("That role grants server management access.", cause="ineligible")
     owner = owners.get(role.id)
     if owner:
-        raise DiscordActionRefused(f"{owner} manages that role.")
+        raise DiscordActionRefused(f"{owner} manages that role.", cause="ineligible")
 
 
 def check_raw_nickname(member: Any, bot_member: Any, *, guild: Any, requester: Any) -> None:
     check_member(member, bot_member, guild=guild, requester=requester)
     current = guild.get_member(requester.id)
-    if current is None or not getattr(current.guild_permissions, "manage_nicknames", False):
+    if missing_permissions(current, ("manage_nicknames",)):
         raise DiscordActionRefused(ACTION_UNAVAILABLE, cause="access_denied")
     if (member.id != requester.id
             and (member.id == getattr(guild, "owner_id", None)
                  or not _below_requester(member.top_role.position, guild, requester))):
         raise DiscordActionRefused("That member ranks at or above you.")
-
-
-def can_ping_role(channel: Any, member: Any, role: Any) -> bool:
-    return role.mentionable or not missing_permissions(member, ("mention_everyone",), channel=channel)

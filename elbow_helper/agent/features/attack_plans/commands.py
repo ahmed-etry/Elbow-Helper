@@ -7,7 +7,7 @@ from typing import Any
 
 import discord
 
-from elbow_helper.agent.discord_actions.safety import check_post_access
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
 from elbow_helper.agent.conversation.wording import ACTION_PLAN_BASE, ACTION_PLAN_LABEL, ACTION_PLAN_LINE, ACTION_PLAN_PAGE, ACTION_PLAN_PINGS, ACTION_PLAN_STRATEGY, ACTION_PREVIEW_BLANK
@@ -26,7 +26,7 @@ async def prepare_attack_plan(context: Any,
     if workflow is None:
         raise ActionRefused('Attack plans are unavailable.')
     channel = context.source_message.channel
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     strategy_image = _image(context, values["strategy_image"])
     base_image = _image(context, values["base_image"])
     if strategy_image is None or base_image is None:
@@ -56,7 +56,7 @@ async def prepare_attack_plan(context: Any,
 
     async def recheck() -> bool:
         try:
-            check_post_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
         except ValueError:
             return False
         return (_image(context, values["strategy_image"]) is strategy_image

@@ -22,10 +22,12 @@ class RosterAccountManagementTests(unittest.IsolatedAsyncioTestCase):
         )
         bot_member = SimpleNamespace(id=999, top_role=SimpleNamespace(position=10))
         owner = SimpleNamespace(id=4, top_role=SimpleNamespace(position=1))
+        bot_permissions = SimpleNamespace(view_channel=True, send_messages=True)
+        asker_permissions = SimpleNamespace(view_channel=True, send_messages=False)
         guild = SimpleNamespace(id=1, me=bot_member, get_role=lambda role_id: None,
                                 get_member=lambda member_id: owner)
-        channel = SimpleNamespace(guild=guild, permissions_for=lambda actor: SimpleNamespace(
-            view_channel=True, send_messages=True))
+        channel = SimpleNamespace(guild=guild, permissions_for=lambda actor:
+                                  bot_permissions if actor is bot_member else asker_permissions)
         guild.get_channel_or_thread = lambda channel_id: channel
         context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow), guild=guild,
@@ -40,6 +42,11 @@ class RosterAccountManagementTests(unittest.IsolatedAsyncioTestCase):
         action = context.state.proposed_changes[0]
         self.assertTrue(any("#P2" in line for line in action.preview.lines))
         self.assertTrue(await action.preview.recheck())
+        asker_permissions.view_channel = False
+        self.assertTrue(await action.preview.recheck())
+        bot_permissions.send_messages = False
+        self.assertFalse(await action.preview.recheck())
+        bot_permissions.send_messages = True
         await action.run()
         workflow.remove_roster_signup_rows.assert_awaited_once_with(17, ["#P2"])
 

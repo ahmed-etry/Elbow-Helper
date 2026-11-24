@@ -77,6 +77,20 @@ class AgentActionRepository(ScheduledStore, MemeUsageStore):
             ).fetchone()
         return dict(row) if row is not None else None
 
+    def thread_requester(self, *, thread_id: int) -> int | None:
+        """The member a thread was created for by an agent action, if one was."""
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT requester_id FROM action_log
+                WHERE action_name='create_discord_thread' AND outcome='completed'
+                  AND json_extract(after_json, '$.thread_id')=?
+                ORDER BY executed_at DESC LIMIT 1
+            """,
+                (thread_id,),
+            ).fetchone()
+        return row["requester_id"] if row is not None else None
+
     def mark_message_deleted(
         self, *, message_id: int, guild_id: int, channel_id: int, now: float | None = None
     ) -> bool:

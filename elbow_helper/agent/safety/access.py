@@ -8,7 +8,7 @@ import re
 
 import discord
 
-from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID, CORE, CWL_HELPERS, EXAMINERS, LEAD, LEAD_PLUS, RECRUITERS, SLEEPING_CO_ROLE_ID, SLEEPING_CROSS_ROLE_ID
+from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID, CORE, CWL_HELPERS, EXAMINERS, LEAD, LEAD_PLUS, RECRUITERS, SLEEPING_CO_ROLE_ID, SLEEPING_CROSS_ROLE_ID, implied_role_ids
 
 from elbow_helper.agent.engine.models import AgentRequestContext
 
@@ -70,8 +70,6 @@ ACCESS_ROLE_SETS = {
     ACCESS_RECRUITER_OR_CORE: RECRUITERS | CORE,
     ACCESS_LEAD_OR_RECRUITER: LEAD | RECRUITERS,
     ACCESS_LEAD_PLUS_OR_CWL_HELPER: LEAD_PLUS | CWL_HELPERS,
-    # Source audiences include Core observers without changing the narrower
-    # department knowledge and command requirements above.
     ACCESS_LEAD_PLUS_OR_CORE: LEAD_PLUS | CORE,
     ACCESS_RECRUITMENT: RECRUITERS | LEAD_PLUS | CORE,
     ACCESS_PROMOTION: EXAMINERS | LEAD_PLUS | CORE,
@@ -108,6 +106,16 @@ def has_reader_access_requirements(guild, member_id, requirements):
     return _has_role_requirements(guild, member_id, requirements, READ_ACCESS_ROLE_SETS)
 
 
+def has_audience_access_requirements(guild, member_id, requirements):
+    """A viewer of a room or source clears these levels, by the role hierarchy."""
+    return requirements <= reader_clearance(guild, member_id, audience=True)
+
+
+def role_clears_reader_level(role_id, level):
+    """Whether everyone holding this role clears a reading level, by the role hierarchy."""
+    return bool(implied_role_ids({role_id}) & READ_ACCESS_ROLE_SETS[level])
+
+
 def leadership_asker(context):
     """Share the leadership allowance, including sleeping leaders, across agent limits."""
     return has_reader_access_requirements(
@@ -140,12 +148,18 @@ def _member_meets(guild, member, role_ids, requirements, role_sets):
                for level in requirements if level != ACCESS_VIEW_AUDIT_LOG)
 
 
-def reader_clearance(guild, member_id):
-    """Every access level the member currently clears, from one read of their roles."""
+def reader_clearance(guild, member_id, *, audience=False):
+    """Every access level the member currently clears, from one read of their roles.
+
+    A member reading a room's audience counts by the role hierarchy; the asker
+    counts by the roles they hold.
+    """
     member = guild.get_member(member_id)
     if member is None:
         return frozenset()
     role_ids = _role_ids(member)
+    if audience:
+        role_ids = implied_role_ids(role_ids)
     return frozenset(level for level in KNOWN_ACCESS_REQUIREMENTS
                      if _member_meets(guild, member, role_ids, {level}, READ_ACCESS_ROLE_SETS))
 

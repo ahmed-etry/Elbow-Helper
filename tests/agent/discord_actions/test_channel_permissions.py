@@ -32,7 +32,7 @@ class ChannelPermissionTests(unittest.IsolatedAsyncioTestCase):
         await prepare_permissions(context, self.arguments())
         channel.set_permissions.assert_not_called()
         action = context.state.proposed_changes[0]
-        self.assertIn("Send Messages: Allow to Deny", action.preview.lines)
+        self.assertIn("Send Messages goes from Allow to Deny.", action.preview.lines)
         result = await action.run()
         self.assertFalse(channel.overwrites[role].send_messages)
         undo = await undo_permissions(context, {

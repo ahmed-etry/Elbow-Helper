@@ -34,7 +34,7 @@ class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("elbow_helper.agent.features.hibernation.tickets.require_evidence_access", AsyncMock()),
             patch("elbow_helper.agent.features.hibernation.tickets.resolve_channel", AsyncMock(return_value=channel)),
-            patch("elbow_helper.agent.features.hibernation.tickets.check_post_access"),
+            patch("elbow_helper.agent.features.hibernation.tickets.check_bot_post_access"),
             patch("elbow_helper.agent.features.hibernation.tickets.check_member"),
         ):
             result = await prepare_reactivation_close(context, {})

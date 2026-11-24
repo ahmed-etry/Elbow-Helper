@@ -80,3 +80,24 @@ PLANNING_HELPERS = (
     COACH_INTERN_ROLE_ID,
 )
 MEMBERS = frozenset((TRIAL_ROLE_ID, MEMBER_ROLE_ID, ALLIANCE_MEMBER_ROLE_ID))
+
+
+def implied_role_ids(role_ids):
+    """Roles held plus the roles they carry in the hierarchy.
+
+    Every Core is a Lead, every Leadership BEx holder is Lead Plus (a Lead or a
+    Co-Leader Applicant, so only the applicant level is guaranteed), every Lead
+    Plus is an Elder and every Elder is a Member. This is for reading
+    audiences; who may run a command is decided by the plain groups above.
+    """
+    from elbow_helper.configuration.clans import CLAN_LEADERSHIP_ROLE_IDS
+    roles = set(role_ids)
+    if roles & CORE:
+        roles |= LEAD_PLUS
+    if roles & set(CLAN_LEADERSHIP_ROLE_IDS.values()):
+        roles.add(CO_APPLICANT_ROLE_ID)
+    if roles & LEAD_PLUS:
+        roles.add(ELDER_ROLE_ID)
+    if ELDER_ROLE_ID in roles:
+        roles.add(MEMBER_ROLE_ID)
+    return frozenset(roles)

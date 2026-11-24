@@ -17,8 +17,8 @@ from elbow_helper.agent.safety.access import require_evidence_access
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_ACCOUNT_ADD_LINE, ACTION_SUGGESTION_OLD, ACTION_SUGGESTION_IGNORE, ACTION_SUGGESTION_REVIEW, ACTION_SUGGESTION_BOARD, ACTION_SUGGESTION_LINK_LABEL, ACTION_SUGGESTION_IGNORE_LABEL
-from elbow_helper.agent.discord_actions.safety import check_member, check_post_access, check_view_access, resolve_channel, resolve_member
+from elbow_helper.agent.conversation.wording import ACTION_ACCOUNT_ADD_LINE, ACTION_SUGGESTION_IGNORE, ACTION_SUGGESTION_LINK_LABEL, ACTION_SUGGESTION_IGNORE_LABEL
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access, check_member, resolve_channel, resolve_member
 
 
 def account_suggestion_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -86,7 +86,7 @@ async def prepare_suggestion_ignore(context: AgentRequestContext,
 async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
                    *, ignore: bool) -> Mapping[str, Any]:
     workflow, review = await _workflow(context)
-    check_post_access(review, context.member, context.guild.me)
+    check_bot_post_access(review, context.guild.me)
     tag = normalize_player_tag(values["player_tag"])
     if tag is None:
         return {"status": "needs_input", "issue": "That player tag is not valid."}
@@ -105,7 +105,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     board_id = CLAN_LEADERSHIP_CHANNELS.get(str(suggestion.get("current_clan_code") or ""))
     board = await resolve_channel(context, board_id) if board_id and not ignore else None
     if board is not None:
-        check_post_access(board, context.member, context.guild.me)
+        check_bot_post_access(board, context.guild.me)
     lines = [(ACTION_SUGGESTION_IGNORE if ignore else ACTION_ACCOUNT_ADD_LINE).format(
         name=suggestion.get("player_name") or tag, tag=tag,
         member=member.mention if member else "")]
@@ -119,9 +119,9 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
 
     async def recheck() -> bool:
         try:
-            check_post_access(review, context.member, context.guild.me)
+            check_bot_post_access(review, context.guild.me)
             if board is not None:
-                check_post_access(board, context.member, context.guild.me)
+                check_bot_post_access(board, context.guild.me)
             if member is not None:
                 check_member(member, context.guild.me,
                     requester=context.member, guild=context.guild)
@@ -146,7 +146,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         "ignore_account_suggestion" if ignore else "link_account_suggestion",
         {"player_tag": tag, **({"member_id": member.id} if member else {})},
         ChangePreview(tuple(lines), recheck, summary=label,
-                      detail_sources=frozenset({review.id})),
+                      preview_only_sources=frozenset({review.id})),
         run, action_class=(ActionClass.IRREVERSIBLE if ignore else ActionClass.CHANGE),
     ))
     return {"status": "confirmation_required"}

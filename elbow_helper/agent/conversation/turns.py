@@ -135,7 +135,7 @@ class AgentTurnMixin:
                     "resolved_entities": resolved_entities,
                 }, ensure_ascii=False),
                 source_channels=frozenset(context.state.source_channels).union(
-                    *(preview.detail_sources for preview in visible_previews)),
+                    *(preview.disclosure_sources for preview in visible_previews)),
                 required_access=frozenset(context.state.required_access | context.state.knowledge_title_access).union(
                     *(preview.detail_access for preview in visible_previews)),
                 record=ConversationRecord(

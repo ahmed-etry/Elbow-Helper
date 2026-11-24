@@ -15,7 +15,7 @@ class RoleDirectoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unconfigured_role_discovery_and_complete_holders(self):
         context = _context()
-        role = SimpleNamespace(id=27, name='Raid Organizers', position=2, managed=False,
+        role = SimpleNamespace(id=27, name='Raid Organizers', position=2, managed=False, mentionable=False,
                                permissions=discord.Permissions.none(), is_default=lambda: False)
         members = [SimpleNamespace(id=i, display_name=f'Member {i}', joined_at=None,
                                   roles=[role] if i % 2 else []) for i in range(1, 102)]
@@ -27,6 +27,7 @@ class RoleDirectoryTests(unittest.IsolatedAsyncioTestCase):
         context = replace(context, member=guild.get_member(41))
         result = await find_discord_roles(context, {'query': 'Raid'})
         self.assertEqual(result['roles'][0]['role_id'], 27)
+        self.assertFalse(result['roles'][0]['asker_can_ping_here'])
         cohort = await member_cohort(context, {'basis': 'role_holders', 'role_ids': [27]})
         self.assertEqual({r['member_id'] for r in cohort['rows']}, {m.id for m in members if m.roles})
         self.assertEqual(result['roles'][0]['member_count'], len(cohort['rows']))

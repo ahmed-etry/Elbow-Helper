@@ -88,7 +88,7 @@ class CommandHelpGateTests(unittest.IsolatedAsyncioTestCase):
         self.context.guild.get_member(11).roles = [fixtures.Role(next(iter(roles.CORE)))]
         result = await read_bot_command_help(self.context, {'query': 'trial', 'limit': 20})
         self.assertIn('/accept', {entry['path'] for entry in result['commands']})
-        self.assertIn('recruitment', self.context.state.required_access)
+        self.assertIn('recruiter_or_core', self.context.state.required_access)
         self.assertIn('lead_or_recruiter', self.context.state.help_requester_access)
         self.context.member.roles = [fixtures.Role(roles.AGENT_TESTER_ROLE_ID),
                                      fixtures.Role(next(iter(roles.CORE)))]

@@ -34,16 +34,29 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
         channel = SimpleNamespace(guild=guild, permissions_for=lambda actor: SimpleNamespace(
             view_channel=True, send_messages=True))
         guild.get_channel_or_thread = lambda channel_id: channel
-        context = SimpleNamespace(private_pass=True,
+        scope = SimpleNamespace(levels=frozenset({"lead_plus"}))
+        requester = SimpleNamespace(id=8, roles=[SimpleNamespace(id=CO_LEADER_ROLE_ID)])
+        context = SimpleNamespace(
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=guild, member=object(), state=AgentTurnState(),
         )
         context = register_requester(context)
         tool = next(tool for tool in roster_management_tools()
                     if tool.definition.name == "set_roster_layout")
-        with patch('elbow_helper.agent.features.rosters.management.require_evidence_access',
-                   new_callable=AsyncMock):
-            await tool.handler(context, {"roster_id": 17, "show_clan": False})
+        arguments = {"roster_id": 17, "show_clan": False}
+        with (patch("elbow_helper.agent.features.rosters.management.require_evidence_access",
+                    new_callable=AsyncMock),
+              patch("elbow_helper.agent.engine.tool_call.require_evidence_access",
+                    new_callable=AsyncMock),
+              patch("elbow_helper.agent.safety.disclosure.request_scope",
+                    new=AsyncMock(return_value=scope))):
+            result = json.loads(await execute_tool(
+                name=tool.definition.name, handler=tool.handler, arguments=arguments,
+                capability_scope=compile_capability_call(tool, arguments),
+                context=context, action_class=tool.action_class,
+            ))
+            self.assertEqual(result["status"], "confirmation_required")
+            await prepare_preview(context)
         action = context.state.proposed_changes[0]
         self.assertIn("Clan: Visible to Hidden", action.preview.details)
         self.assertTrue(await action.preview.recheck())

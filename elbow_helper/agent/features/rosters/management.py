@@ -11,21 +11,26 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.features.rosters.config import ROSTER_PLAYER_COLUMN_MIN_WIDTH, ROSTER_PLAYER_COLUMN_MAX_WIDTH, ROSTER_DISCORD_COLUMN_MIN_WIDTH, ROSTER_DISCORD_COLUMN_MAX_WIDTH
 
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
-from elbow_helper.agent.safety.access import ACCESS_LEAD_PLUS, require_evidence_access
+from elbow_helper.agent.safety.access import ACCESS_LEAD_PLUS, has_access_requirements, require_evidence_access
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.actions.values import display_value
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_ROSTER_CONTROL_LINE, ACTION_ROSTER_CONTROL_STATUS, ACTION_ROSTER_POST_REFRESH, ACTION_ROSTER_CONTROL_MEMBER, ACTION_SIGNUP_ROLE, ACTION_ROSTER_CONTROL_COUNT, ACTION_ROSTER_CONTROL_OPEN, ACTION_ROSTER_CONTROL_CLOSE, ACTION_ROSTER_CONTROL_SHOW, ACTION_ROSTER_CONTROL_HIDE, ACTION_ROSTER_CONTROL_CLEAR, ACTION_FIELD_CHANGE, ACTION_ROSTER_LAYOUT_LINE, ACTION_ROSTER_LAYOUT_LABEL, ACTION_ROSTER_REFRESH_LINE, ACTION_ROSTER_REFRESH_MEMBER, ACTION_ROSTER_REFRESH_LABEL, ACTION_ROSTER_LAYOUT_FIELDS
-from elbow_helper.agent.discord_actions.safety import check_member, check_post_access, check_role, present_members, resolve_channel
+from elbow_helper.agent.conversation.wording import ACTION_ROSTER_POST_REFRESH, ACTION_ROSTER_CONTROL_OPEN, ACTION_ROSTER_CONTROL_CLOSE, ACTION_ROSTER_CONTROL_SHOW, ACTION_ROSTER_CONTROL_HIDE, ACTION_ROSTER_CONTROL_CLEAR, ACTION_FIELD_CHANGE, ACTION_ROSTER_LAYOUT_LINE, ACTION_ROSTER_LAYOUT_LABEL, ACTION_ROSTER_REFRESH_LINE, ACTION_ROSTER_REFRESH_MEMBER, ACTION_ROSTER_REFRESH_LABEL, ACTION_ROSTER_LAYOUT_FIELDS
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access, check_member, check_role, present_members, resolve_channel
+from elbow_helper.agent.conversation.wording import ACTION_UNAVAILABLE
 
 
-TOOL_CONTRACTS = {
-    "clear_roster_signups": CapabilityContract(
-        entity_fields=(("roster_id", "roster"),),
-        source_scope="request_context", required_access=frozenset({ACCESS_LEAD_PLUS}),
-    ),
-}
+ROSTER_MANAGEMENT_ACCESS = frozenset({ACCESS_LEAD_PLUS})
+
+
+def can_manage_roster(context: AgentRequestContext) -> bool:
+    return has_access_requirements(context.guild, context.member.id, ROSTER_MANAGEMENT_ACCESS)
+
+
+def require_roster_management_access(context: AgentRequestContext) -> None:
+    if not can_manage_roster(context):
+        raise ActionRefused(ACTION_UNAVAILABLE, cause="access_denied")
 
 
 def _layout_field(field: str) -> str:
@@ -40,11 +45,11 @@ def _layout_field(field: str) -> str:
     return label
 
 
-async def _check_posts(context: AgentRequestContext,
-                       posts: tuple[tuple[int, int], ...]) -> None:
+async def check_roster_posts(context: AgentRequestContext,
+                            posts: tuple[tuple[int, int], ...]) -> None:
     for channel_id, _ in posts:
         channel = await resolve_channel(context, channel_id)
-        check_post_access(channel, context.member, context.guild.me)
+        check_bot_post_access(channel, context.guild.me)
 
 
 async def _check_members(context: AgentRequestContext,
@@ -105,7 +110,9 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
         AgentToolDefinition(name=name, description="Clear a roster's signups.",
                             parameters=schema),
         prepare_clear, AgentCapabilityEffect.COMMAND, classification,
-                            contract=TOOL_CONTRACTS[name],
+        contract=CapabilityContract(
+            entity_fields=(("roster_id", "roster"),), source_scope="request_context",
+        ),
     ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
         name="refresh_roster",
@@ -114,7 +121,6 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
     ), prepare_roster_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("roster_id", "roster"),), source_scope="request_context",
-            required_access=frozenset({ACCESS_LEAD_PLUS}),
         ),
                  ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
@@ -133,7 +139,6 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
     ), prepare_roster_layout, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("roster_id", "roster"),), source_scope="request_context",
-            required_access=frozenset({ACCESS_LEAD_PLUS}),
             filter_fields=(
                 "show_townhall",
                 "show_discord",
@@ -156,7 +161,7 @@ async def prepare_roster_refresh(context: AgentRequestContext,
     if state is None or state["roster"].guild_id != context.guild.id:
         raise ActionRefused('That roster is unavailable.')
     roster = state["roster"]
-    await _check_posts(context, state["posts"])
+    await check_roster_posts(context, state["posts"])
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
     if role is not None:
         check_role(role, context.guild, context.guild.me, {}, requester=context.member)
@@ -174,7 +179,7 @@ async def prepare_roster_refresh(context: AgentRequestContext,
         if current is None or current != state:
             return False
         try:
-            await _check_posts(context, state["posts"])
+            await check_roster_posts(context, state["posts"])
             if role is not None:
                 check_role(role, context.guild, context.guild.me, {}, requester=context.member)
             for member in members:
@@ -216,8 +221,8 @@ async def prepare_roster_layout(context: AgentRequestContext,
     if not changes:
         return {"status": "no_change"}
     posts = (await workflow.roster_edit_state(roster))["posts"]
-    await _check_posts(context, posts)
-    lines = [ACTION_ROSTER_LAYOUT_LINE.format(name=roster.name)]
+    await check_roster_posts(context, posts)
+    lines = [ACTION_ROSTER_LAYOUT_LINE.format(action="Change", name=roster.name)]
     details = tuple(ACTION_FIELD_CHANGE.format(
         field=_layout_field(field), old=display_value(before[field], visibility=True),
         new=display_value(value, visibility=True))
@@ -231,7 +236,7 @@ async def prepare_roster_layout(context: AgentRequestContext,
         if live is None or live[0] != roster or live[1] != layout:
             return False
         try:
-            await _check_posts(context, posts)
+            await check_roster_posts(context, posts)
         except (discord.DiscordException, ValueError):
             return False
         return True
@@ -246,9 +251,9 @@ async def prepare_roster_layout(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "set_roster_layout", {"roster_id": roster_id},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_LAYOUT_LABEL, details=details,
-                      detail_access=frozenset({ACCESS_LEAD_PLUS}),
-                      before={"layout": before}), run,
+        ChangePreview((), recheck, summary=ACTION_ROSTER_LAYOUT_LABEL, details=(*lines, *details),
+                      before={"layout": before},
+                      detail_access=frozenset({ACCESS_LEAD_PLUS})), run,
     ))
     return {"status": "confirmation_required"}
 
@@ -266,8 +271,8 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
     prior = log["before"]["layout"]
     expected = log["after"]["layout"]
     posts = (await workflow.roster_edit_state(roster))["posts"]
-    await _check_posts(context, posts)
-    lines = [ACTION_ROSTER_LAYOUT_LINE.format(name=roster.name)]
+    await check_roster_posts(context, posts)
+    lines = [ACTION_ROSTER_LAYOUT_LINE.format(action="Restore", name=roster.name)]
     details = tuple(ACTION_FIELD_CHANGE.format(
         field=_layout_field(field), old=display_value(getattr(layout, field), visibility=True),
         new=display_value(value, visibility=True))
@@ -278,7 +283,7 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
         if live is None or asdict(live[1]) != expected:
             return False
         try:
-            await _check_posts(context, posts)
+            await check_roster_posts(context, posts)
         except (discord.DiscordException, ValueError):
             return False
         return True
@@ -293,9 +298,9 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
 
     return PreparedAction(
         "undo_roster_layout", {"roster_id": roster_id},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_LAYOUT_LABEL, details=details,
-                      detail_access=frozenset({ACCESS_LEAD_PLUS}),
-                      before={"layout": expected}), run,
+        ChangePreview((), recheck, summary=ACTION_ROSTER_LAYOUT_LABEL, details=(*lines, *details),
+                      before={"layout": expected},
+                      detail_access=frozenset({ACCESS_LEAD_PLUS})), run,
     )
 
 
@@ -311,7 +316,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     if state is None or state["roster"].guild_id != context.guild.id:
         raise ActionRefused('That roster is unavailable.')
     roster = state["roster"]
-    await _check_posts(context, state["posts"])
+    await check_roster_posts(context, state["posts"])
     check_members = operation == "clear" or (operation == "open" and roster.reset_on_open)
     present = await _check_members(context, roster, state["member_ids"]) if check_members else {}
     if name == "show_roster_controls" and not roster.buttons_hidden:
@@ -342,7 +347,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         if current is None or signature(current) != signature(state):
             return False
         try:
-            await _check_posts(context, current["posts"])
+            await check_roster_posts(context, current["posts"])
             if check_members:
                 await _check_members(context, current["roster"], current["member_ids"])
         except (discord.DiscordException, ValueError):

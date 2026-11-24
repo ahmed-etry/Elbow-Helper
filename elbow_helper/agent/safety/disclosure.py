@@ -11,7 +11,7 @@ from typing import Any
 
 import discord
 
-from elbow_helper.agent.safety.access import READ_ACCESS_ROLE_SETS, ACCESS_VIEW_AUDIT_LOG, KNOWN_ACCESS_REQUIREMENTS, has_reader_access_requirements, reader_clearance
+from elbow_helper.agent.safety.access import READ_ACCESS_ROLE_SETS, ACCESS_VIEW_AUDIT_LOG, KNOWN_ACCESS_REQUIREMENTS, has_reader_access_requirements, has_audience_access_requirements, reader_clearance, role_clears_reader_level
 from elbow_helper.agent.engine.models import AgentRequestContext, EvidenceScope
 from elbow_helper.configuration import channels as channel_ids
 from elbow_helper.configuration.roles import MEMBERS
@@ -131,10 +131,9 @@ def _destination_satisfies_role_requirements(
         return deny()
     # The owner bypasses channel overwrites, even without an administrator role.
     owner_id = getattr(guild, "owner_id", None)
-    if type(owner_id) is not int or not has_reader_access_requirements(guild, owner_id, requirements):
+    if type(owner_id) is not int or not has_audience_access_requirements(guild, owner_id, requirements):
         requirement, kind = _member_access_failure(guild, owner_id, requirements)
         return deny(requirement, kind)
-    allowed_ids = set.intersection(*(set(READ_ACCESS_ROLE_SETS[level]) for level in requirements))
     known_roles = {getattr(role, "id", None) for role in roles}
     if not known_roles or getattr(default_role, "id", None) not in known_roles:
         return deny()
@@ -143,15 +142,16 @@ def _destination_satisfies_role_requirements(
     for role in roles:
         if type(getattr(getattr(role, "tags", None), "bot_id", None)) is int:
             continue
-        if destination.permissions_for(role).view_channel and role.id not in allowed_ids:
+        if destination.permissions_for(role).view_channel and not all(
+                role_clears_reader_level(role.id, level) for level in requirements):
             requirement = next(level for level in sorted(requirements)
-                               if role.id not in READ_ACCESS_ROLE_SETS[level])
+                               if not role_clears_reader_level(role.id, level))
             return deny(requirement, "role_group")
     for target, overwrite in destination.overwrites.items():
         if overwrite.view_channel is True and target.id not in known_roles:
             # A member-specific grant is safe only when that member can be
             # resolved and satisfies every requirement under the usual checks.
-            if not has_reader_access_requirements(guild, target.id, requirements):
+            if not has_audience_access_requirements(guild, target.id, requirements):
                 requirement, kind = _member_access_failure(guild, target.id, requirements)
                 return deny(requirement, kind)
     return True
@@ -166,13 +166,14 @@ def _reader_kind(member):
 def _member_access_failure(guild, member_id, requirements):
     member = guild.get_member(member_id) if type(member_id) is int else None
     requirement = next((level for level in sorted(requirements)
-                        if not has_reader_access_requirements(guild, member_id, {level})),
+                        if not has_audience_access_requirements(guild, member_id, {level})),
                        "guild_membership")
     return requirement, _reader_kind(member)
 
 
 def member_clearance(guild, member_id):
-    return reader_clearance(guild, member_id)
+    """What a viewer of a room or source clears, by the role hierarchy."""
+    return reader_clearance(guild, member_id, audience=True)
 
 
 async def _thread_member_ids(thread, cache):
@@ -443,7 +444,8 @@ def source_access_levels(channel, guild, *, examination_queries=None):
     if grants & MEMBERS:
         return (frozenset() if _role_category_levels(channel, guild, "") is not None
                 else None)
-    matching = [level for level, ids in READ_ACCESS_ROLE_SETS.items() if grants <= ids]
+    matching = [level for level in READ_ACCESS_ROLE_SETS
+                if all(role_clears_reader_level(grant, level) for grant in grants)]
     if matching:
         smallest = min(matching, key=lambda level: (len(READ_ACCESS_ROLE_SETS[level]), level))
         return _role_category_levels(channel, guild, smallest)
@@ -485,7 +487,7 @@ async def request_scope(context, *, refresh=False):
     clearance = await destination_clearance(
         destination, context.guild, thread_members=getattr(context, "disclosure_thread_members", None),
     )
-    asker = member_clearance(context.guild, context.member.id)
+    asker = reader_clearance(context.guild, context.member.id)
     scope = EvidenceScope(destination_id, clearance, asker if requester else clearance & asker, requester)
     if state is not None:
         state.scope = scope

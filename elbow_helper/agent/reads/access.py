@@ -68,7 +68,7 @@ async def discord_access(context, arguments):
                                                        else actor.guild_permissions),
                           'role_only': kind == 'role'} for kind, actor in actors],
               'permission_sets': [list(names) for names in permission_sets], 'rows': rows,
-              'coverage': 'Current guild snapshot and channel overwrites. Row lists follow actors; '
+              'coverage': 'Current server permissions and channel overwrites. Row lists follow actors; '
               'channel_permissions index permission_sets; differing_channel_ids differ in view or history '
               'access. Role actors include @everyone plus that role only; '
               'member actors combine all held roles and member overwrites. '

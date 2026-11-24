@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from elbow_helper.agent.discord_actions.safety import check_post_access, check_view_access, find_member
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access, find_member
 from elbow_helper.features.wars.commands import resolve_statement_members
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
@@ -37,8 +37,7 @@ async def _statement(context: Any, values: Mapping[str, Any], kind: str):
         )
     if prepared["issue"]:
         raise ActionRefused(prepared["issue"])
-    check_post_access(prepared["post_channel"], context.member, context.guild.me)
-    check_view_access(prepared["clan_war_channel"], context.member, context.guild.me)
+    check_bot_post_access(prepared["post_channel"], context.guild.me)
     return workflow, prepared
 
 

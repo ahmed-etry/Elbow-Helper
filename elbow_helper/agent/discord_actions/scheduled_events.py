@@ -142,7 +142,9 @@ async def event_action(context, arguments, *, create=False, undo=False):
             if values["description"] is None:
                 values.pop("description")
             created = await context.guild.create_scheduled_event(reason=reason, **values)
-            return complete({"event_id": created.id}, result={"event_id": created.id})
+            return complete({"event_id": created.id},
+                            text=f"Scheduled https://discord.com/events/{context.guild.id}/{created.id} for {start}.",
+                            result={"event_id": created.id})
         mapping = {"entity_type": "kind", "channel": "channel_id"}
         changed_kind = desired["kind"] != before["kind"]
         edits = {key: value for key, value in values.items()
@@ -169,7 +171,8 @@ async def event_action(context, arguments, *, create=False, undo=False):
         elif key == "channel_id" and value is not None:
             value = (await resolve_channel(context, value)).mention
         if create:
-            lines.append(f"{label}: {display_value(value)}")
+            if key in ("kind", "end_time", "description") and value is not None:
+                lines.append(f"{label}: {display_value(value)}")
         elif before.get(key) != desired.get(key):
             old = before.get(key)
             if key in ("start_time", "end_time"):
@@ -178,7 +181,7 @@ async def event_action(context, arguments, *, create=False, undo=False):
                 old = old.title()
             elif key == "channel_id" and old is not None:
                 old = (await resolve_channel(context, old)).mention
-            lines.append(f"{label}: {display_value(old)} to {display_value(value)}")
+            lines.append(f"{label} goes from {display_value(old)} to {display_value(value)}.")
     return state_action(context, "create_discord_event" if create else "edit_discord_event",
                         dict(arguments), "Create scheduled event" if create else
                         "Undo scheduled event change" if undo else "Change scheduled event",
@@ -209,11 +212,11 @@ async def prepare_cancel(context, arguments):
         current = await resolved(context, event.id)
         await event_access(context, snapshot(current), current)
         await current.edit(status=discord.EventStatus.canceled, reason=reason)
-        return complete({"canceled": True})
+        return complete({"canceled": True}, text=f"Cancelled **{event.name}**.")
 
     return await queue(context, state_action(
         context, "cancel_discord_event", dict(arguments), "Cancel scheduled event",
-        (f"Cancel scheduled event **{event.name}**.",), before, load, apply, irreversible=True,
+        (f"📅 Cancel **{event.name}**",), before, load, apply, irreversible=True,
     ))
 
 
@@ -240,7 +243,7 @@ async def undo_create(context, log):
     async def apply(reason):
         await load()
         await (await resolved(context, identifier)).delete(reason=reason)
-        return complete({"deleted": True})
+        return complete({"deleted": True}, text=f"Deleted **{event.name}**.")
 
     return state_action(context, "undo_scheduled_event_creation", {"event_id": identifier},
                         "Undo scheduled event creation",

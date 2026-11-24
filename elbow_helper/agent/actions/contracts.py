@@ -63,6 +63,13 @@ class ChangePreview:
     details: tuple[str, ...] = ()
     detail_sources: frozenset[int] = frozenset()
     detail_access: frozenset[str] = frozenset()
+    # A workflow can authorize the change separately from access to its draft.
+    preview_only_sources: frozenset[int] = frozenset()
+    message_body: slice | None = None
+
+    @property
+    def disclosure_sources(self) -> frozenset[int]:
+        return self.detail_sources | self.preview_only_sources
 
     def __post_init__(self) -> None:
         if not (self.lines or self.summary) or not callable(self.recheck) or self.count < 1:

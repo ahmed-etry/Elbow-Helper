@@ -15,7 +15,7 @@ from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, Cha
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from elbow_helper.agent.conversation.wording import ACTION_TICKET_REOPEN_LINE, ACTION_TICKET_REOPEN_ACCESS, ACTION_TICKET_REOPEN_LABEL
-from elbow_helper.agent.discord_actions.safety import check_member, check_post_access, resolve_channel
+from elbow_helper.agent.discord_actions.safety import check_member, check_bot_post_access, resolve_channel
 
 
 def support_reopen_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -47,7 +47,7 @@ async def prepare_support_reopen(context: AgentRequestContext,
     channel = await resolve_channel(context, values.get("channel_id") or context.source_message.channel.id)
     if not isinstance(channel, discord.TextChannel):
         raise ActionRefused("That ticket couldn't be reopened.")
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     owner = workflow.support_reopen_state(context.guild, channel)
     check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
     before = channel.overwrites_for(owner).send_messages
@@ -62,7 +62,7 @@ async def prepare_support_reopen(context: AgentRequestContext,
 
     async def recheck() -> bool:
         try:
-            check_post_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
             check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
             return (workflow.support_reopen_state(context.guild, channel) == owner
                     and channel.overwrites_for(owner).send_messages == before)

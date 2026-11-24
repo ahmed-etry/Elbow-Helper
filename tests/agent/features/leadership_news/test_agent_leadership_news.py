@@ -12,7 +12,8 @@ from elbow_helper.agent.features.leadership_news.actions import leadership_news_
 class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
     async def test_prompt_dismissal_prepares_its_registered_class(self):
         prompt = SimpleNamespace(id=8)
-        source = SimpleNamespace(id=1, mention="<#1>", fetch_message=AsyncMock(return_value=prompt))
+        source = SimpleNamespace(id=1, mention="<#1>", fetch_message=AsyncMock(return_value=prompt),
+                                 permissions_for=lambda _: SimpleNamespace(view_channel=True))
         workflow = SimpleNamespace(public_news_prompt_source=lambda _: 7)
         context = SimpleNamespace(private_pass=True, bot=SimpleNamespace(get_cog=lambda _: workflow),
                                   guild=SimpleNamespace(me=object()), member=object(),
@@ -20,8 +21,10 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         with (patch('elbow_helper.agent.features.leadership_news.actions.require_evidence_access',
                     new_callable=AsyncMock),
               patch('elbow_helper.agent.features.leadership_news.actions.resolve_channel',
-                    new_callable=AsyncMock, return_value=source),
-              patch('elbow_helper.agent.features.leadership_news.actions.check_post_access')):
+                    new_callable=AsyncMock, return_value=source)):
+            with self.assertRaises(ActionRefused):
+                await prepare_news_dismiss(context, {"prompt_message_id": prompt.id})
+            member.roles.append(SimpleNamespace(id=CO_LEADER_ROLE_ID))
             await prepare_news_dismiss(context, {"prompt_message_id": prompt.id})
         tool = next(tool for tool in leadership_news_tools()
                     if tool.definition.name == "dismiss_lead_news_prompt")
@@ -31,8 +34,11 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         attachment = SimpleNamespace(id=5, filename="photo.png", size=10)
         prompt = SimpleNamespace(id=8)
         message = SimpleNamespace(id=7, content="A public update", attachments=[attachment])
-        source = SimpleNamespace(id=1, mention="<#1>", fetch_message=AsyncMock(return_value=message))
-        target = SimpleNamespace(id=2, mention="<#2>")
+        source = SimpleNamespace(id=1, mention="<#1>", fetch_message=AsyncMock(return_value=message),
+                                 permissions_for=lambda _: SimpleNamespace(view_channel=True))
+        bot_member = object()
+        target = SimpleNamespace(id=2, mention="<#2>", permissions_for=lambda actor: SimpleNamespace(
+            view_channel=True, send_messages=actor is bot_member))
         workflow = SimpleNamespace(
             public_news_preview=lambda item: {
                 "content": item.content, "attachments": tuple(item.attachments[:3]),
@@ -47,9 +53,7 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         with (patch('elbow_helper.agent.features.leadership_news.actions.require_evidence_access',
                     new_callable=AsyncMock),
               patch('elbow_helper.agent.features.leadership_news.actions.resolve_channel',
-                    new_callable=AsyncMock, side_effect=(source, target)),
-              patch('elbow_helper.agent.features.leadership_news.actions.check_view_access'),
-              patch('elbow_helper.agent.features.leadership_news.actions.check_post_access')):
+                    new_callable=AsyncMock, side_effect=(source, target))):
             result = await prepare_lead_news(context, {"message_id": 7})
         self.assertEqual(result["status"], "confirmation_required")
         action = context.state.proposed_changes[0]
@@ -66,9 +70,7 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any("A public update" in line for line in action.preview.lines))
         self.assertNotIn("A public update", str(result))
         workflow.publish_public_news.assert_not_awaited()
-        with (patch('elbow_helper.agent.features.leadership_news.actions.check_view_access'),
-              patch('elbow_helper.agent.features.leadership_news.actions.check_post_access')):
-            self.assertTrue(await action.preview.recheck())
+        self.assertTrue(await action.preview.recheck())
         outcome = await action.run()
         self.assertIn("posted-url", outcome.text)
         workflow.publish_public_news.assert_awaited_once()
@@ -77,7 +79,5 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(workflow.publish_public_news.await_args.kwargs["actor_discord_id"], 42)
         self.assertEqual(workflow.publish_public_news.await_args.kwargs["via"], "agent")
         source.fetch_message.side_effect = RuntimeError("Synthetic source failure")
-        with (patch('elbow_helper.agent.features.leadership_news.actions.check_view_access'),
-              patch('elbow_helper.agent.features.leadership_news.actions.check_post_access'),
-              self.assertLogs("elbow_helper.agent.actions.contracts", level="ERROR")):
+        with self.assertLogs("elbow_helper.agent.actions.contracts", level="ERROR"):
             self.assertFalse(await action.preview.recheck())

@@ -66,6 +66,7 @@ class RoleOwnershipTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_state_does_not_authorize_membership_role_changes(self):
         self.context.recruitment_queries = None
-        with self.assertRaises(DiscordActionRefused):
+        with self.assertRaises(DiscordActionRefused) as refused:
             member_role_owner(self.context, 11, 4)
+        self.assertEqual(refused.exception.cause, 'missing_setup')
         self.assertIsNone(member_role_owner(self.context, 99, 4))

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from elbow_helper.agent.discord_actions.safety import check_post_access
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
 from elbow_helper.agent.conversation.wording import ACTION_PREVIEW_BLANK, ACTION_TRANSFER_REMINDER_CHANNEL, ACTION_TRANSFER_REMINDER_CLEAR, ACTION_TRANSFER_REMINDER_DELETE, ACTION_TRANSFER_REMINDER_LABEL, ACTION_TRANSFER_REMINDER_PAGE
@@ -29,8 +29,9 @@ async def prepare_transfer_reminder(
         )
     channel = prepared["channel"]
     if channel is not None:
-        check_post_access(channel, context.member, context.guild.me)
-    lines = []
+        check_bot_post_access(channel, context.guild.me)
+    prior_channels = ", ".join(dict.fromkeys(f"<#{entry['channel_id']}>"
+                                            for entry in prepared["previous_entries"]))
     if prepared["status"] == "clear":
         lines.append(ACTION_TRANSFER_REMINDER_CLEAR)
     else:
@@ -63,7 +64,7 @@ async def prepare_transfer_reminder(
             return False
         if current["channel"] is not None:
             try:
-                check_post_access(current["channel"], context.member, context.guild.me)
+                check_bot_post_access(current["channel"], context.guild.me)
             except ValueError:
                 return False
         return signature(current) == initial

@@ -18,7 +18,9 @@ import discord
 from elbow_helper.agent.safety.access import accessible_message_channel, can_access_message_channel, message_channel_unavailable
 from elbow_helper.agent.engine.models import AgentRequestContext
 from elbow_helper.agent.conversation.text import message_text
-from elbow_helper.agent.engine.validation import bounded_int
+from elbow_helper.agent.discord_actions.safety import post_access
+from elbow_helper.agent.discord_actions.gif_library import own_message_text, sent_gif_name_lines, with_sent_gifs
+from elbow_helper.agent.engine.validation import bounded_int, invalid_arguments
 from elbow_helper.agent.engine.validation import positive_int
 from .history_cache import history_page
 from .dates import search_date, message_time
@@ -445,6 +447,12 @@ def request_message_boundary(context: AgentRequestContext) -> int:
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=timezone.utc)
     return discord.utils.time_snowflake(created_at.astimezone(timezone.utc))
+
+
+def _channel_entry(context: AgentRequestContext, channel_id: int, name: str, channel: Any) -> dict[str, Any]:
+    """Reading a channel is checked separately; viewing and posting are reported for the asker and the bot separately."""
+    return {"channel_id": channel_id, "name": name,
+            **post_access(channel, context.guild.get_member(context.member.id), context.guild.me)}
 
 
 async def find_discord_channels(context: AgentRequestContext, arguments: Mapping[str, Any]) -> Mapping[str, Any]:

@@ -80,7 +80,9 @@ def _scan_action(context: AgentRequestContext, workflow: Any,
         member, role = await targets()
         if not await workflow.apply_role_connection_change(member, role, add=add):
             raise ActionRefused('Role connections are unavailable.')
-        return ActionOutcome("complete", after={"has_role": add})
+        text = (f"Gave {role_label} to {member_label}." if add
+                else f"Removed {role_label} from {member_label}.")
+        return ActionOutcome("complete", text=text, after={"has_role": add})
 
     line = (ACTION_ROLE_ADD_LINE if add else ACTION_ROLE_REMOVE_LINE).format(
         role=role_label, member=member_label)

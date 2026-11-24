@@ -16,7 +16,7 @@ from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, Cha
 from elbow_helper.agent.actions.outcomes import ActionOutcome, embed_text
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from elbow_helper.agent.conversation.wording import ACTION_PROMOTION_ROUTE_LINE, ACTION_FIELD_CHANGE, ACTION_PROMOTION_ROUTE_REVIEW, ACTION_PROMOTION_ROUTE_PROMPT, ACTION_PROMOTION_ROUTE_LABEL
-from elbow_helper.agent.discord_actions.safety import check_post_access, check_view_access, resolve_channel
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access, check_view_access, resolve_channel
 
 
 def promotion_route_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -98,7 +98,7 @@ async def prepare_promotion_route(context: AgentRequestContext,
     if not isinstance(ticket, discord.TextChannel):
         raise ActionRefused("That promotion request isn't available.")
     for channel in (ticket, review):
-        check_post_access(channel, context.member, context.guild.me)
+        check_bot_post_access(channel, context.guild.me)
     from_clan, to_clan = values["from_clan"], values["to_clan"]
     if not is_valid_route(from_clan, to_clan):
         return {"status": "needs_input", "issue": "That promotion isn't available from the selected clan.",
@@ -118,7 +118,7 @@ async def prepare_promotion_route(context: AgentRequestContext,
     async def recheck() -> bool:
         try:
             for channel in (ticket, review):
-                check_post_access(channel, context.member, context.guild.me)
+                check_bot_post_access(channel, context.guild.me)
             return workflow.promotion_route_snapshot(ticket.id) == case
         except ValueError:
             return False
@@ -138,7 +138,7 @@ async def prepare_promotion_route(context: AgentRequestContext,
     context.state.proposed_changes.append(PreparedAction(
         "change_promotion_route", {"ticket_channel_id": ticket.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_PROMOTION_ROUTE_LABEL,
-                      details=details, detail_sources=frozenset({ticket.id, review.id})),
+                      details=details, preview_only_sources=frozenset({ticket.id, review.id})),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}

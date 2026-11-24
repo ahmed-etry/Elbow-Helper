@@ -13,8 +13,8 @@ from elbow_helper.agent.safety.access import ACCESS_LEAD, require_evidence_acces
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_CONNECTION_MANAGE_LINE, ACTION_CONNECTION_MANAGE_TARGET, ACTION_CONNECTION_MANAGE_BOARD, ACTION_CONNECTION_MANAGE_LABEL, ACTION_CONNECTION_MANAGE_DONE, ACTION_CONNECTION_MANAGE_OLD_RULE, ACTION_CONNECTION_MANAGE_NEW_RULE
-from elbow_helper.agent.discord_actions.safety import check_post_access, check_role, resolve_channel
+from elbow_helper.agent.conversation.wording import ACTION_CONNECTION_MANAGE_TARGET, ACTION_CONNECTION_MANAGE_LABEL, ACTION_CONNECTION_MANAGE_OLD_RULE, ACTION_CONNECTION_MANAGE_NEW_RULE
+from elbow_helper.agent.discord_actions.safety import check_bot_post_access, check_role, resolve_channel
 
 
 def role_connection_management_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -77,7 +77,7 @@ async def prepare_role_connection_change(context: AgentRequestContext,
         context, values.get("channel_id") or context.source_message.channel.id)
     if not isinstance(channel, discord.TextChannel):
         raise ActionRefused('That role connection is unavailable.')
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     operation = values["operation"]
     connection_id = values.get("connection_id")
     before = workflow.role_connection_state(connection_id) if connection_id else None
@@ -142,7 +142,7 @@ async def prepare_role_connection_change(context: AgentRequestContext,
     async def recheck() -> bool:
         current = workflow.role_connection_state(connection_id)
         try:
-            check_post_access(channel, context.member, context.guild.me)
+            check_bot_post_access(channel, context.guild.me)
             check_role(context.guild.get_role(candidate["target_role_id"]),
                        context.guild, context.guild.me, {}, requester=context.member)
         except ValueError:
@@ -185,7 +185,7 @@ async def prepare_role_connection_undo(context: AgentRequestContext,
     channel = await resolve_channel(context, log["targets"]["channel_id"])
     if not isinstance(channel, discord.TextChannel):
         raise ActionRefused('That role connection is unavailable.')
-    check_post_access(channel, context.member, context.guild.me)
+    check_bot_post_access(channel, context.guild.me)
     prior = log["before"]["connection"]
     expected = log["after"]["connection"]
     current = workflow.role_connection_state(connection_id)
@@ -196,6 +196,7 @@ async def prepare_role_connection_undo(context: AgentRequestContext,
     check_role(role, context.guild, context.guild.me, {}, requester=context.member)
 
     async def recheck() -> bool:
+        check_bot_post_access(channel, context.guild.me)
         return workflow.role_connection_state(connection_id) == expected
 
     async def run() -> ActionOutcome:
@@ -212,11 +213,9 @@ async def prepare_role_connection_undo(context: AgentRequestContext,
 
     return PreparedAction(
         "undo_role_connection", {"connection_id": connection_id, "channel_id": channel.id},
-        ChangePreview((ACTION_CONNECTION_MANAGE_LINE.format(
-            operation="Restore" if prior is not None else "Remove",
-            role=role.mention), ACTION_CONNECTION_MANAGE_BOARD.format(channel=channel.mention)),
-            recheck, summary=ACTION_CONNECTION_MANAGE_LABEL,
-            detail_access=frozenset({ACCESS_LEAD}), before={"connection": expected}),
+        ChangePreview((), recheck, summary=ACTION_CONNECTION_MANAGE_LABEL,
+            details=(line, *details), detail_access=frozenset({ACCESS_LEAD}),
+            before={"connection": expected}),
         run,
     )
 
