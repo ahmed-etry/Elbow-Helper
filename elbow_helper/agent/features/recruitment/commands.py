@@ -15,6 +15,7 @@ from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, Cha
 from elbow_helper.agent.conversation.wording import ACTION_RECSTATEMENT_LABEL, ACTION_RECSTATEMENT_LINE, ACTION_CHECKUP_LABEL, ACTION_CHECKUP_LINE, ACTION_DECLINE_LABEL, ACTION_DECLINE_LINE, ACTION_TICKET_RENAME, ACTION_DECLINE_RENAME_SKIP, ACTION_FINALIZE_LABEL, ACTION_FINALIZE_LINE, ACTION_ROLE_ADD_LINE, ACTION_ROLE_REMOVE_LINE, ACTION_ACCEPT_ACCOUNT, ACTION_ACCEPT_ACCOUNT_OLD, ACTION_ACCEPT_ACHIEVEMENT, ACTION_ACCEPT_LABEL, ACTION_ACCEPT_LINE, ACTION_ACCEPT_NICKNAME, ACTION_ACCEPT_WARNING, ACTION_ACCEPT_NO_LINK, ACTION_ACCEPT_ROLE_MISSING
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter, PreparedCommandChange
+from elbow_helper.features.recruitment.commands import MAX_NICKNAME_LENGTH
 
 
 async def run_opinion(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
@@ -448,5 +449,6 @@ def recruitment_adapters() -> tuple[CommandAdapter, ...]:
             entity_options=(("applicant", "discord_member"), ("channel", "discord_channel")),
             capability_name="accept_applicant",
             tool_description="Carry out /accept for an authorized requester to accept an applicant, link their accounts and start their trial.",
+            option_max_lengths=(("nickname", MAX_NICKNAME_LENGTH),),
         ),
     )

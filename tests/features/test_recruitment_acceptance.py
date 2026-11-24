@@ -113,6 +113,22 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+    async def test_accept_rejects_an_overlong_nickname_before_confirmation(self) -> None:
+        owner, _, user, _, *_ = self._flow()
+        owner.parse_clan_input = MagicMock(return_value=(["BEH"], []))
+        channel = MagicMock(spec=discord.TextChannel, mention="<#200>")
+        arguments = dict(user=user, clans="BEH", player_tags="#P0Y", days=7, channel=channel)
+
+        with self._config():
+            rejected = await owner.prepare_accept(nickname="x" * 33, **arguments)
+            self.assertEqual(rejected["issue"], "Nicknames can be 32 characters at most.")
+            self.assertNotIn("embed", rejected)
+            owner.account_links.lookup_players.assert_not_awaited()
+
+            accepted = await owner.prepare_accept(nickname="x" * 32, **arguments)
+            self.assertIsNone(accepted["issue"])
+            self.assertEqual(accepted["embed"].title, "Confirm Applicant Acceptance")
+
     async def test_accept_rejects_404_and_saves_temporary_failures_and_named_players(self) -> None:
         for prepared in (False, True):
             with self.subTest(prepared=prepared):

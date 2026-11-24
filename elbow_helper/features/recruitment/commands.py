@@ -46,6 +46,8 @@ from .state import decision_event
 from .trials import TrialStartResult
 from .views import AcceptConfirmationView
 
+MAX_NICKNAME_LENGTH = 32
+
 RARE_STATEMENT_META = {
     "under16": {"name": "Under 16", "emoji": "🔞"},
     "hyperactive": {"name": "Hyperactive", "emoji": "⚡"},
@@ -276,6 +278,8 @@ class RecruitmentCommandMixin:
                              nickname: str, player_tags: str, days: int,
                              channel: discord.TextChannel | None,
                              additional_notes: str | None = None) -> dict[str, object]:
+        if len(nickname) > MAX_NICKNAME_LENGTH:
+            return {"issue": "Nicknames can be 32 characters at most.", "warnings": ()}
         if days < 1:
             return {"issue": "Enter a trial length of at least 1 day.", "warnings": ()}
         valid_clans, invalid_clans = self.parse_clan_input(clans)
@@ -676,7 +680,7 @@ class RecruitmentCommandMixin:
         interaction: discord.Interaction,
         applicant: discord.Member,
         clans: str,
-        nickname: str,
+        nickname: app_commands.Range[str, 1, MAX_NICKNAME_LENGTH],
         player_tags: str,
         days: int = TRIAL_DAYS_DEFAULT,
         channel: Optional[discord.TextChannel] = None,
