@@ -3,14 +3,12 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from itertools import combinations
 import re
 import unicodedata
 
 import discord
 
 from elbow_helper.configuration import roles as role_config
-from elbow_helper.features.help.catalog import HELP_ENTRIES
 
 from .names import PERMISSIONS
 
@@ -22,13 +20,6 @@ POWERS = tuple((key, PERMISSIONS[key]) for key in (
 VIEW = discord.Permissions(view_channel=True).value
 ADMIN = discord.Permissions(administrator=True).value
 MANAGE_ROLES = discord.Permissions(manage_roles=True).value
-
-# Community terms used in core.md and the community explanations.
-GROUP_LABELS = {
-    "CORE": "Core", "LEAD": "Lead", "LEAD_PLUS": "Lead Plus",
-    "RECRUITERS": "Recruiters", "CWL_HELPERS": "CWL helpers",
-}
-
 
 def shows_whole_layout(roles: frozenset[int]) -> bool:
     """Open owner decision: who is shown every channel the bot can see, not only their own.
@@ -148,12 +139,6 @@ class Structure:
         self.channels = {c.id: c for c in server.channels}
         self.members = {m.id: m for m in server.members}
         self.holders = Counter(role for m in server.members for role in m.roles)
-        self.groups = {
-            name: frozenset(value) for name, value in vars(role_config).items()
-            if name.isupper() and not name.endswith("_IDS")
-            and isinstance(value, (frozenset, set, tuple)) and value
-            and all(isinstance(role, int) for role in value)
-        }
 
     def permissions(self, channel: Channel, roles: frozenset[int], member_id: int | None = None) -> int:
         """Discord's base, everyone, combined roles, then member overwrite order."""
@@ -199,11 +184,6 @@ class Structure:
         names.extend(f"missing role {i}" for i in sorted(ids - self.by_id.keys()))
         return ", ".join(names)
 
-    def group_name(self, name: str) -> str:
-        roles = self.role_names(self.groups[name])
-        label = GROUP_LABELS.get(name)
-        return f"{label} ({roles})" if label else roles
-
     def audience(self, channel: Channel) -> str:
         """Role-only visibility, with combined-role and member exceptions explicit."""
         everyone = bool(self.permissions(channel, frozenset()) & VIEW)
@@ -227,8 +207,8 @@ class Structure:
                 text += "; overridden by: " + self.role_names(allowers)
         return text
 
-    def fixed_text(self, role_ids: frozenset[int] | None = None) -> str:
-        """Shared facts for a command audience; None retains the offline full catalogue."""
+    def fixed_text(self) -> str:
+        """Shared facts about server roles and which roles can assign them."""
         lines = ["Community roles (highest first; count = holders; powers are granted by that role)"]
         for role in self.roles:
             permissions = discord.Permissions(role.permissions)
@@ -239,17 +219,6 @@ class Structure:
             lines.append(f"{self.label(role)}: {self.holders[role.id]}"
                          # Discord's names can hold commas ("Mention @everyone, @here, and All Roles").
                          + ("; " + "; ".join(markers + powers) if markers or powers else ""))
-        lines.append("\nBot role groups (any listed role qualifies)")
-        lines.extend(self.group_name(name) for name, ids in self.groups.items()
-                     if role_ids is None or ids & role_ids)
-        lines.append("\nCommand access from the help catalogue (| means either group)")
-        entries = {}
-        for entry in HELP_ENTRIES:
-            if role_ids is not None and entry.visible_to is not None and not entry.visible_to & role_ids:
-                continue
-            entries.setdefault(entry.visible_to, []).append(entry.path)
-        for ids, commands in entries.items():
-            lines.append(f"{self._group_label(ids, role_ids)}: {', '.join(commands)}")
         lines.extend(("\nGiving roles", "Manage Roles also comes from Administrator. A giver can assign "
                       "non-managed roles below their highest held role, excluding @everyone. "
                       "Higher held roles extend the ranges below; dividers retain their place."))
@@ -260,17 +229,6 @@ class Structure:
             reach = f"starting at {self.label(targets[0])}" if targets else "no assignable roles below it"
             lines.append(f"{self.label(role)}: below {self.label(role)}, {reach} ({len(targets)} roles)")
         return "\n".join(lines)
-
-    def _group_label(self, ids: frozenset[int] | None, role_ids: frozenset[int] | None = None) -> str:
-        if ids is None:
-            return "Everyone"
-        candidates = [(n, v) for n, v in self.groups.items() if v <= ids]
-        for count in range(1, len(candidates) + 1):
-            for subset in combinations(candidates, count):
-                if frozenset().union(*(v for _, v in subset)) == ids:
-                    return " | ".join(self.group_name(n) for n, roles in subset
-                                      if role_ids is None or roles & role_ids)
-        return self.role_names(ids if role_ids is None else ids & role_ids)
 
     def channel_text(self, asker_id: int, bot_id: int) -> str:
         """Channel names/topics/counts the asker sees, or the bot sees for a whole-layout asker."""
@@ -316,14 +274,13 @@ class Structure:
         return "\n".join(lines)
 
     def render(self, asker_id: int, bot_id: int) -> str:
-        return (self.fixed_text(self.members[asker_id].roles) + "\n\n"
+        return (self.fixed_text() + "\n\n"
                 + self.channel_text(asker_id, bot_id) + "\n")
 
 
 def build_structure(guild: discord.Guild | Server, asker_id: int, bot_id: int) -> str:
     """Build a fresh block for one asker. The caller supplies the destination policy.
 
-    Commands and groups are limited to the asker's actual role memberships.
     The request builder sends shared facts and asker-specific channels separately.
     """
     server = guild if isinstance(guild, Server) else Server.from_guild(guild)

@@ -172,18 +172,25 @@ def channel_sources(paths):
     )
 
 
-def current_roles_snapshot(paths, path, readable, *, rows=()):
-    if 'member_roles' not in readable:
-        return {}
-    return {'member_roles': ([('member_id', 'INTEGER'), ('role_id', 'INTEGER'),
-                              ('role_name', 'TEXT')], rows)}
+def current_roles_snapshot(paths, path, readable, *, rows=(), command_rows=()):
+    tables = {}
+    if 'member_roles' in readable:
+        tables['member_roles'] = ([('member_id', 'INTEGER'), ('role_id', 'INTEGER'),
+                                   ('role_name', 'TEXT')], rows)
+    if 'member_commands' in readable:
+        tables['member_commands'] = ([('member_id', 'INTEGER'), ('command', 'TEXT'),
+                                      ('through_roles', 'TEXT')], command_rows)
+    return tables
 
 
 def current_roles_source():
     return DataSource('discord', FAMILY_DATABASE, tables=(('member_roles', 'none',
         'Current Discord roles, one row per member and role; member_id is a Discord ID and joins '
         'family.members.discord_id or links.links.discord_user_id. role_id and role_name identify '
-        'the role. No history; observed role intervals are in family.member_roles.'),),
+        'the role. Results with a Discord member ID include role-granted commands visible to the asker. '
+        'No history; observed role intervals are in family.member_roles.'),
+        ('member_commands', 'none', 'Current role-granted help commands visible to the asker, '
+         'one row per member and command. through_roles names the held roles that grant access.')),
         snapshot=current_roles_snapshot)
 
 

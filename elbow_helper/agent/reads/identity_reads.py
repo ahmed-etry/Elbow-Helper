@@ -17,6 +17,7 @@ from elbow_helper.agent.research.members import _complete_members, _joined_at
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.engine.budgets import TOOL_TIMEOUT_SECONDS
 from elbow_helper.agent.reads.member_context import owner_context, account_owner_profiles, configured_member_roles, PROFILE_ROLE_GROUPS
+from elbow_helper.agent.reads.member_commands import MemberCommands
 from elbow_helper.agent.reads import people as record_identity
 from elbow_helper.agent.reads.people import PeopleAdapter, PeopleSelection, seasonal_tags
 
@@ -57,7 +58,7 @@ async def profiles(context, tags):
     return result
 
 
-def member_fields(member, identifier, *, include_roles=False, selected_role_ids=()):
+def member_fields(member, identifier, *, include_roles=False, selected_role_ids=(), commands=None):
     held = {role.id for role in member.roles} if member else set()
     role_names = {role.id: role.name for role in member.roles} if member else {}
     bindings = [{'clan_code': code, 'name': CLANS[code].name, 'tag': CLANS[code].tag,
@@ -67,6 +68,7 @@ def member_fields(member, identifier, *, include_roles=False, selected_role_ids=
     homes = [clan for clan in bindings if not CLANS[clan['clan_code']].is_utility]
     participation = [clan for clan in bindings if CLANS[clan['clan_code']].is_utility]
     return {**owner_context(member, identifier),
+            **(commands.facts(held) if member and commands is not None else {}),
             'nickname': getattr(member, 'nick', None) if member else None,
             'joined_at': _joined_at(member) if member else None,
             'family_membership_roles': {
@@ -270,9 +272,10 @@ async def account_members(context, identifiers, *, links=None, include_roles=Fal
         links, links_available = selected.by_member, selected.status == 'available'
     await require_evidence_access(context)
     result = []
+    commands = MemberCommands.for_request(context) if include_roles else None
     for identifier in identifiers:
         member = context.guild.get_member(identifier)
-        result.append({**member_fields(member, identifier, include_roles=include_roles),
+        result.append({**member_fields(member, identifier, include_roles=include_roles, commands=commands),
             'membership_status': 'present' if member else 'not_in_guild',
             'has_elbow_helper_links': bool(links.get(identifier)) if links_available else None,
             'account_tags': sorted({row['player_tag'] for row in links.get(identifier, [])}),

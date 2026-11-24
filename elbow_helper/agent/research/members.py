@@ -20,6 +20,7 @@ from elbow_helper.agent.engine.validation import invalid_arguments
 from ..plan.input_rules import RULES
 from elbow_helper.agent.features.hibernation.report import HibernationReport
 from elbow_helper.agent.knowledge.clan_roles import clan_role_purposes
+from elbow_helper.agent.reads.member_commands import MemberCommands
 from .member_identity import clarification, matching_members
 MEMBER_RESULT_LIMIT = 8
 MEMBER_DETAILS_LIMIT = 1000
@@ -148,6 +149,8 @@ async def read_discord_members(
         await _complete_members(context.guild)
     duplicates = duplicate_names(getattr(context.guild, "members", ()))
     rows, missing, unknown_joins = [], [], []
+    include_roles = arguments.get("include_roles", False)
+    member_roles = {}
     for identifier in identifiers:
         member = context.guild.get_member(identifier)
         if member is None:
@@ -160,13 +163,15 @@ async def read_discord_members(
                       or "joined_after" in dates and joined < dates["joined_after"]
                       or "joined_before" in dates and joined >= dates["joined_before"]):
             continue
+        if include_roles:
+            member_roles[member.id] = member.roles
         rows.append({
             "member_id": member.id, **identity_fields(member, duplicates), "joined_at": joined,
             "bot": bool(getattr(member, "bot", False)),
             **({"roles": [
                 {"role_id": role.id, "name": role.name}
                 for role in member.roles if not role.is_default()
-            ]} if arguments.get("include_roles", False) else {}),
+            ]} if include_roles else {}),
         })
     if sorting is not None:
         known = [row for row in rows if row["joined_at"] is not None]
@@ -175,6 +180,10 @@ async def read_discord_members(
         known.sort(key=lambda row: row["joined_at"], reverse=sorting == "newest_first")
         rows = known + sorted(unknown, key=lambda row: row["member_id"])
     selected = rows[offset:offset + limit]
+    if include_roles:
+        commands = MemberCommands.for_request(context)
+        for row in selected:
+            row.update(commands.facts(role.id for role in member_roles[row["member_id"]]))
     await require_evidence_access(context)
     return {
         "members": selected, "total_members": len(rows), "missing_member_ids": sorted(missing),

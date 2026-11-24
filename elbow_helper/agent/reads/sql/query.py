@@ -15,6 +15,7 @@ import time
 import zlib
 
 from elbow_helper.agent.safety.access import can_access_message_channel, has_reader_access_requirements, require_evidence_access
+from elbow_helper.agent.reads.member_commands import MemberCommands
 from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID
 
 QUERY_SECONDS = 20.0  # a full pass over the largest table takes ~10s; tool timeout is 30s
@@ -112,7 +113,7 @@ def _identifiers(sql):
 
 
 def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_ROWS, *,
-              channel_ids=None, read_channels=None):
+              channel_ids=None, read_channels=None, member_command_facts=None):
     """Use a fresh connection; return touched levels separately from data."""
     if not isinstance(sql, str) or not 1 <= len(sql) <= 4000:
         return {"error": "SQL must be between 1 and 4,000 characters."}, set()
@@ -357,6 +358,14 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
             }
             if coverage:
                 result["source_coverage"] = coverage
+            if member_command_facts is not None and ("discord", "member_roles") in read_tables:
+                member_ids = {
+                    value for row in result["rows"] for key, value in row.items()
+                    if key.lower() in {"member_id", "discord_id", "discord_user_id"} and type(value) is int
+                }
+                facts = member_command_facts(member_ids)
+                if facts:
+                    result["member_commands"] = facts
             return result, touched
     except ValueError as error:
         return {"error": str(error)}, set()
@@ -416,15 +425,38 @@ async def query_context(context, sql, params=None, max_rows=DEFAULT_QUERY_ROWS, 
                 channel_ids.add(channel.id)
     read_channels = set()
     sources = scoped_sources(sources, channel_ids, read_channels)
-    if "member_roles" in identifiers:
-        rows = tuple((member.id, role.id, role.name) for member in context.guild.members
-                     for role in member.roles
-                     if not role.is_default() and role.id != AGENT_TESTER_ROLE_ID)
-        sources = tuple(replace(source, snapshot=partial(current_roles_snapshot, rows=rows))
+    lookup_member_commands = None
+    if ("member_roles" in identifiers or "member_commands" in identifiers) and any(
+        source.snapshot is current_roles_snapshot for source in sources
+    ):
+        commands = MemberCommands.for_request(context)
+        members = [(member.id, member.roles) for member in context.guild.members]
+        roles_by_member = {
+            member_id: frozenset(role.id for role in roles) for member_id, roles in members
+        }
+        rows = (
+            (member_id, role.id, role.name) for member_id, roles in members
+            for role in roles if not role.is_default() and role.id != AGENT_TESTER_ROLE_ID
+        )
+        command_rows = (
+            (member_id, path, ", ".join(grant["through_roles"]))
+            for member_id, held in roles_by_member.items()
+            for grant in commands.named_grants(held)
+            for path in grant["paths"]
+        )
+        sources = tuple(replace(source, snapshot=partial(
+                            current_roles_snapshot, rows=rows, command_rows=command_rows))
                         if source.snapshot is current_roles_snapshot else source for source in sources)
+
+        def member_command_facts(member_ids):
+            return [{"member_id": member_id, **commands.facts(roles_by_member[member_id])}
+                    for member_id in sorted(member_ids & roles_by_member.keys())]
+
+        lookup_member_commands = member_command_facts
+
     result, touched = await asyncio.to_thread(
         run_query, sources, context.bot.paths, levels, sql, params, max_rows,
-        channel_ids=channel_ids, read_channels=read_channels,
+        channel_ids=channel_ids, read_channels=read_channels, member_command_facts=lookup_member_commands,
     )
     if "required_access" in result:
         if CLOSED in result["required_access"]:

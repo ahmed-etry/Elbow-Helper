@@ -426,7 +426,7 @@ class LoopRun:
         parts.extend(("Community map: what roles and terms mean",
                       "\n\n".join(f"## {note.title} [{note.visibility}]\n{note.body}" for note in meanings),
                       "Community map: roles and channels on the server",
-                      structure.fixed_text(structure.members[context.member.id].roles)))
+                      structure.fixed_text()))
         # The emoji meanings submit_social_reply tells the model to use; the same for every request on a server.
         if not context.private_pass and (reactions := server_reaction_context(context.guild)):
             parts.append(reactions)
