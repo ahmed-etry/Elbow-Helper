@@ -45,7 +45,7 @@ class CheckupCommandTests(unittest.IsolatedAsyncioTestCase):
                    new=SimpleNamespace):
             prepared = await prepare_checkup(context, values)
             self.assertTrue(await prepared.preview.recheck())
-            self.assertIn("Post this recruitment checkup in <#4>.",
+            self.assertIn("📢 Post this recruitment checkup in <#4>",
                           prepared.preview.lines)
             self.assertTrue(any("<@3>" in line for line in prepared.preview.details))
             self.assertIs(next(adapter for adapter in recruitment_adapters()

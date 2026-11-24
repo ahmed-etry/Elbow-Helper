@@ -50,7 +50,8 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
         )
         values = {"member": owner.id, "tags": "#P0Y"}
         preview = await prepare_account_add(context, values)
-        self.assertTrue(any("from <@8> to <@7>" in line for line in preview.lines))
+        self.assertIn("Moves from <@8>.", preview.lines)
+        self.assertIn("to <@7>", preview.lines[0])
         self.assertFalse(any("primary" in line.lower() for line in preview.lines))
         self.assertTrue(any("Clear the saved clan" in line for line in preview.lines))
         self.assertTrue(await preview.recheck())
@@ -81,7 +82,7 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
         links._board_refresher = None
         context = SimpleNamespace(bot=SimpleNamespace(get_cog=lambda _: links))
         preview = await prepare_account_remove(context, {"tags": "#P0Y"})
-        self.assertIn("Unlink `#P0Y` from <@8>.", preview.lines)
+        self.assertIn("➖ Unlink `#P0Y` from <@8>", preview.lines)
         self.assertTrue(await preview.recheck())
         self.assertIn("#P0Y", saved)
         outcome = await run_account_remove(context, {"tags": "#P0Y"})

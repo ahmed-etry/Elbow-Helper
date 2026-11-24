@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 from elbow_helper.configuration.channels import GENERAL_CHAT
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
-from elbow_helper.agent.conversation.wording import ACTION_ACHIEVEMENT_ANNOUNCE_LINE, ACTION_ACHIEVEMENT_AWARD_LABEL, ACTION_ACHIEVEMENT_AWARD_LINE, ACTION_ACHIEVEMENT_COIN_LINE, ACTION_ACHIEVEMENT_COIN_ADD, ACTION_ACHIEVEMENT_COIN_REMOVE, ACTION_ACHIEVEMENT_COIN_PLURAL, ACTION_ACHIEVEMENT_COIN_SINGULAR, ACTION_ACHIEVEMENT_REMOVE_LABEL, ACTION_ACHIEVEMENT_REMOVE_LINE, ACTION_COIN_GRANT_BALANCE, ACTION_COIN_GRANT_LABEL, ACTION_COIN_GRANT_LINE, ACTION_REASON_LINE, ACTION_RAFFLE_HUB_UPDATE, ACTION_TICKET_GRANT_LABEL, ACTION_TICKET_GRANT_LINE, ACTION_RAFFLE_REMOVE_LINE, ACTION_RAFFLE_REMOVE_LABEL
+from elbow_helper.agent.conversation.wording import ACTION_ACHIEVEMENT_ANNOUNCE_LINE, ACTION_ACHIEVEMENT_AWARD_LABEL, ACTION_ACHIEVEMENT_AWARD_LINE, ACTION_ACHIEVEMENT_COIN_LINE, ACTION_ACHIEVEMENT_COIN_ADD, ACTION_ACHIEVEMENT_COIN_REMOVE, ACTION_ACHIEVEMENT_COIN_PLURAL, ACTION_ACHIEVEMENT_COIN_SINGULAR, ACTION_ACHIEVEMENT_REMOVE_LABEL, ACTION_ACHIEVEMENT_REMOVE_LINE, ACTION_COIN_GRANT_BALANCE, ACTION_COIN_GRANT_LABEL, ACTION_COIN_GRANT_LINE, ACTION_REASON_LINE, ACTION_TICKET_GRANT_LABEL, ACTION_TICKET_GRANT_LINE, ACTION_RAFFLE_REMOVE_LINE, ACTION_RAFFLE_REMOVE_LABEL
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter
 from elbow_helper.agent.discord_actions.safety import find_member
@@ -75,7 +75,7 @@ async def run_achievement_award(context: Any,
     if member is None:
         return ActionOutcome.unavailable()
     state = await _achievement_state(workflow, member.id, values["achievement"])
-    success, message = await workflow.manually_award_achievement(
+    success, _ = await workflow.manually_award_achievement(
         member.id, state["id"], context.member.display_name,
         bool(values.get("silent", False)),
     )
@@ -84,7 +84,7 @@ async def run_achievement_award(context: Any,
     after = await workflow.achievement_change_state(member.id, state["id"])
     if after is None or after["completed_date"] is None:
         raise OSError("Achievement award could not be verified")
-    return ActionOutcome("complete", "private", text=f"{message} to {member.display_name}.",
+    return ActionOutcome("complete", "private", text=f"{member.mention} earned **{state['name']}**.",
                           after={"achievement": after})
 
 
@@ -119,7 +119,7 @@ async def run_achievement_remove(context: Any,
     if member is None:
         return ActionOutcome.unavailable()
     state = await _achievement_state(workflow, member.id, values["achievement"])
-    success, message = await workflow.manually_remove_achievement(
+    success, _ = await workflow.manually_remove_achievement(
         member.id, state["id"], context.member.display_name,
     )
     if not success:
@@ -127,7 +127,7 @@ async def run_achievement_remove(context: Any,
     after = await workflow.achievement_change_state(member.id, state["id"])
     if after is None or after["completed_date"] is not None:
         raise OSError("Achievement removal could not be verified")
-    return ActionOutcome("complete", "private", text=f"{message} from {member.display_name}.",
+    return ActionOutcome("complete", "private", text=f"Removed **{state['name']}** from {member.mention}.",
                           after={"achievement": after})
 
 
@@ -177,7 +177,7 @@ async def run_grant_coins(context: Any,
     before = await workflow.manual_coin_grant_state(
         member, category, amount, context.member,
     )
-    ok, message = await workflow.grant_coins_to_member(
+    ok, _ = await workflow.grant_coins_to_member(
         member, category, amount, values["reason"], context.member,
     )
     if not ok:
@@ -187,7 +187,7 @@ async def run_grant_coins(context: Any,
     )
     if after["balance"] != before["balance"] + amount:
         raise OSError("Coin grant could not be verified")
-    return ActionOutcome("complete", "private", text=message,
+    return ActionOutcome("complete", "private", text=f"Gave {amount} {'coin' if amount == 1 else 'coins'} to {member.mention}.",
                           after={"coin_state": after})
 
 
@@ -208,7 +208,6 @@ async def prepare_grant_ticket(context: Any,
 
     return ChangePreview((
         ACTION_TICKET_GRANT_LINE.format(member=member.mention),
-        ACTION_RAFFLE_HUB_UPDATE,
     ), recheck, summary=ACTION_TICKET_GRANT_LABEL,
         before={"ticket_state": state},
         details=(ACTION_REASON_LINE.format(reason=values["reason"]),))
@@ -220,13 +219,13 @@ async def run_grant_ticket(context: Any,
     member = await find_member(context.guild, values["user"])
     if member is None:
         return ActionOutcome.unavailable()
-    ok, message = await workflow.grant_raffle_ticket(member.id, values["reason"])
+    ok, _ = await workflow.grant_raffle_ticket(member.id, values["reason"])
     if not ok:
         return ActionOutcome.unavailable()
     after = await workflow.ticket_grant_state(member.id)
     if not after["has_ticket"]:
         raise OSError("Ticket grant could not be verified")
-    return ActionOutcome("complete", "private", text=message,
+    return ActionOutcome("complete", "private", text=f"{member.mention} has a raffle ticket for this month.",
                           after={"ticket_state": after})
 
 
@@ -257,11 +256,11 @@ async def run_raffle_remove(context: Any,
     member = await find_member(context.guild, values["user"])
     if member is None:
         return ActionOutcome.unavailable()
-    message = await workflow.remove_raffle_ticket(member.id)
+    await workflow.remove_raffle_ticket(member.id)
     after = await workflow.raffle_member_ticket_state(member.id)
     if after["has_ticket"] or after["last_ticket_month"] == after["month_key"]:
         raise OSError("Ticket removal could not be verified")
-    return ActionOutcome("complete", "private", text=message,
+    return ActionOutcome("complete", "private", text=f"Removed {member.mention}'s raffle ticket for this month.",
                           after={"ticket_state": after})
 
 

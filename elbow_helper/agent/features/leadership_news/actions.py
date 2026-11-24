@@ -76,7 +76,7 @@ async def prepare_news_dismiss(context: AgentRequestContext,
         current = await source.fetch_message(prompt.id)
         if not await workflow.dismiss_public_news_prompt(current):
             raise ActionRefused('That lead update is unavailable.')
-        return ActionOutcome("complete", "private", text=ACTION_NEWS_DISMISS_DONE)
+        return ActionOutcome("complete", "private", text=ACTION_NEWS_DISMISS_DONE.format(channel=source.mention))
 
     context.state.proposed_changes.append(PreparedAction(
         "dismiss_lead_news_prompt", {"prompt_message_id": prompt.id},
@@ -103,9 +103,9 @@ async def prepare_lead_news(context: AgentRequestContext,
         raise ActionRefused('That lead update is unavailable.')
     lines = [ACTION_NEWS_PUBLISH_LINE.format(
         target=target.mention)]
-    details = []
-    details.extend(line if line.strip() else ACTION_PREVIEW_BLANK
-                 for line in str(prepared["content"]).splitlines())
+    content = str(prepared["content"])
+    details = content.split("\n") if content else []
+    message_body = slice(0, len(details))
     details.extend(ACTION_NEWS_PUBLISH_FILE.format(name=file.filename)
                  for file in prepared["attachments"])
     prompts = await workflow.find_public_news_prompts(message)
@@ -137,13 +137,14 @@ async def prepare_lead_news(context: AgentRequestContext,
             current, target, prepared=workflow.public_news_preview(current),
             prompts=current_prompts, actor_kind="agent", actor_discord_id=context.member.id, via="agent")
         return ActionOutcome("complete", "private",
-                              text=ACTION_NEWS_PUBLISH_DONE.format(url=sent.jump_url))
+                              text=ACTION_NEWS_PUBLISH_DONE.format(target=target.mention, url=sent.jump_url))
 
     context.state.proposed_changes.append(PreparedAction(
         "publish_lead_news", {"source_channel_id": source.id,
                               "message_id": message.id, "target_channel_id": target.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_NEWS_PUBLISH_LABEL,
-                      details=tuple(details), detail_sources=frozenset({source.id})),
+                      details=tuple(details), message_body=message_body,
+                      detail_sources=frozenset({source.id})),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}

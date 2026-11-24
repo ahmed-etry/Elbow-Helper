@@ -56,8 +56,10 @@ async def prepare_post(context, arguments):
     labels = ", ".join(tag.name for tag in tags)
     return await queue(context, state_action(
         context, "create_discord_forum_post", dict(arguments), "Create forum post",
-        (f"Create forum post **{arguments["title"]}** in {channel.mention}.",
-         "Content:", arguments["content"], f"Tags: {labels}"), dict(arguments), load, apply,
+        (f"🧵 Post **{arguments['title']}** in {channel.mention}",
+         *((f"Tags {labels}",) if labels else ()), arguments["content"]),
+        dict(arguments), load, apply,
+        result_label=f"Create forum post **{arguments['title']}** in {channel.mention}.",
     ))
 
 
@@ -87,7 +89,7 @@ async def undo_post(context, log):
 
     thread = await resolve_channel(context, identifier)
     return state_action(context, "undo_forum_post", {"thread_id": identifier}, "Undo forum post",
-                        (f"Delete the forum post created by this change: {thread.mention}.",),
+                        (f"🗑️ Delete forum post {thread.mention}",),
                         before, load, apply)
 
 

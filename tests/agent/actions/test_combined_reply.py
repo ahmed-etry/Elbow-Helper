@@ -1,9 +1,11 @@
-"""Combined replies preserve independent synthetic action and answer controls."""
+"""Answers and confirmation cards use independent messages and controls."""
 
 import json
 from dataclasses import replace
 from types import SimpleNamespace
 import unittest
+
+import discord
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
@@ -12,12 +14,12 @@ from elbow_helper.agent.safety.access import ACCESS_LEAD
 from elbow_helper.agent.conversation.state import ConversationRecord, ConversationStore, ConversationTurn
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin, AgentDeliveryUnknown, _delivery_nonce
 from elbow_helper.agent.engine.models import AgentAttachment, AgentDelivery, AgentRequestContext, AgentTurnState
-from elbow_helper.agent.conversation.wording import ACTION_CANCELLED, ACTION_PREVIEW_EXPIRED, ACTION_PREVIEW_DETAILS_BUTTON
+from elbow_helper.agent.conversation.wording import ACTION_CANCELLED, ACTION_PREVIEW_EXPIRED, ACTION_PREVIEW_REPLACED, ACTION_PREVIEW_DETAILS_BUTTON
 
 
-class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
+class ConfirmationDeliveryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.member = SimpleNamespace(id=121, bot=False)
+        self.member = SimpleNamespace(id=121, bot=False, display_name="Requester")
         self.channel = SimpleNamespace(id=221, send=AsyncMock())
         self.guild = SimpleNamespace(id=321, get_member=lambda value: self.member if value == 121 else None)
         self.message = SimpleNamespace(id=421, channel=self.channel, guild=self.guild,
@@ -25,11 +27,13 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         self.sent = []
 
         async def send(content, **kwargs):
-            sent = SimpleNamespace(id=521 + len(self.sent), content=content, view=kwargs.get("view"))
+            sent = SimpleNamespace(id=521 + len(self.sent), content=content, view=kwargs.get("view"),
+                                   embed=kwargs.get("embed"))
 
             async def edit(**changes):
                 sent.content = changes.get("content", sent.content)
                 sent.view = changes.get("view", sent.view)
+                sent.embed = changes.get("embed", sent.embed)
                 return sent
 
             sent.edit = AsyncMock(side_effect=edit)
@@ -40,7 +44,6 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         self.channel.send.side_effect = send
         self.surface = AgentDeliveryMixin()
         self.surface.bot = SimpleNamespace(user=SimpleNamespace(id=921))
-        self.surface._previews = {}
         self.surface._archive_reply = AsyncMock()
         self.surface._conversations = ConversationStore()
         self.surface.action_runner = SimpleNamespace(submit=AsyncMock(return_value="synthetic-run"))
@@ -66,9 +69,10 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
             patched.start()
             self.addCleanup(patched.stop)
 
-    def interaction(self):
+    def interaction(self, message=None):
         return SimpleNamespace(id=721, user=self.member,
-                               response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock()),
+                               response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock(),
+                                                        edit_message=message.edit if message else AsyncMock()),
                                followup=SimpleNamespace(send=AsyncMock()))
 
     async def deliver(self, answer="Synthetic lookup answer"):
@@ -92,17 +96,49 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         return delivery
 
 
+    async def test_a_direct_reply_retires_the_members_earlier_open_card(self):
+        for request_id, name in ((421, "CWL talk"), (422, "CWL rosters")):
+            reference = (SimpleNamespace(channel_id=self.channel.id, message_id=self.sent[-1].id)
+                         if self.sent else None)
+            message = SimpleNamespace(**(vars(self.message) | {"id": request_id, "reference": reference}))
+            action = replace(
+                self.action, path="create_discord_thread",
+                values={"parent_channel_id": self.channel.id, "name": name},
+                preview=replace(self.action.preview, lines=(f"Create thread {name}.",)),
+            )
+            context = replace(self.context, source_message=message, state=AgentTurnState(
+                source_channels={self.channel.id}, proposed_changes=[action],
+                preview_reply=preview_text([action]),
+            ))
+            await self.surface.send_response(
+                message, f"Ready to create {name}.", None,
+                conversation=self.conversation, context=context,
+            )
+            self.addCleanup(self.sent[-1].view.stop)
+
+        earlier, revised = self.sent[1].view, self.sent[3].view
+        click = self.interaction()
+        await earlier.confirm(click)
+        click.response.send_message.assert_awaited_once_with(ACTION_PREVIEW_REPLACED, ephemeral=True)
+        self.surface.action_runner.submit.assert_not_awaited()
+        await revised.confirm(self.interaction())
+        self.surface.action_runner.submit.assert_awaited_once()
+        self.assertEqual(self.surface.action_runner.submit.await_args.args[1][0].values["name"],
+                         "CWL rosters")
+
+
     async def test_image_answer_is_separate_from_confirmation_and_has_no_caption(self):
         delivery = AgentDelivery()
         self.context.state.preview_first = True
         await self.surface.send_response(self.message, 'Synthetic fallback.', None,
             [AgentAttachment('sample.png', b'media')], context=self.context, delivery=delivery)
-        calls = self.message.reply.await_args_list
-        self.assertEqual(len(calls), 2)
-        self.assertIsNotNone(calls[0].args[0])
-        self.assertNotIn('files', calls[0].kwargs)
-        self.assertIsNone(calls[1].args[0])
-        self.assertEqual(len(calls[1].kwargs['files']), 1)
+        answer = self.message.reply.await_args
+        card = self.channel.send.await_args
+        self.assertIsNone(answer.args[0])
+        self.assertEqual(len(answer.kwargs["files"]), 1)
+        self.assertIsNone(card.args[0])
+        self.assertNotIn("files", card.kwargs)
+        self.assertEqual(card.kwargs["embed"].title, "Confirm 1 change")
         self.assertTrue(delivery.complete)
         for sent in self.sent:
             if sent.view is not None:
@@ -117,40 +153,55 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         await self.surface.send_response(
             self.message, "Synthetic workbooks ready", None, attachments, context=self.context,
         )
-        combined = self.sent[0].view
-        self.addCleanup(combined.stop)
+        answer, card = self.sent
+        self.addCleanup(answer.view.stop)
+        self.addCleanup(card.view.stop)
         self.assertNotIn("files", self.message.reply.await_args.kwargs)
-        links = [item for item in combined.children if getattr(item, "url", None)]
+        links = [item for item in answer.view.children if getattr(item, "url", None)]
         self.assertEqual(len(links), 2)
         self.assertEqual([item.label for item in links], [
             "Google Sheet", "Download",
         ])
-        self.assertEqual([item.row for item in links], [1, 1])
-        await combined.views["preview"].cancel(self.interaction())
+        self.assertEqual([item.row for item in links], [0, 0])
+        await card.view.cancel(self.interaction(card))
         remaining = [item for item in self.sent[0].view.children if getattr(item, "url", None)]
         self.assertEqual(remaining, links)
         self.assertTrue(all(not item.disabled for item in remaining))
 
-    async def test_cancel_and_expiry_replace_only_the_preview_in_either_order(self):
-        for first in (True, False):
-            for cancel in (True, False):
-                with self.subTest(preview_first=first, cancel=cancel):
-                    self.context.state.preview_first = first
-                    await self.deliver()
-                    combined = self.sent[-1].view
-                    preview = combined.views["preview"]
-                    if cancel:
-                        await preview.cancel(self.interaction())
-                    else:
-                        await preview.on_timeout()
-                    expected = ACTION_CANCELLED if cancel else ACTION_PREVIEW_EXPIRED
-                    self.assertEqual(combined.parts["preview"], expected)
-                    self.assertEqual(combined.parts["answer"], "Synthetic lookup answer")
-                    self.assertEqual(self.sent[-1].content, combined.render())
-                    self.assertIn("Synthetic lookup answer", self.conversation.turns[-1].record.delivered_answer)
+    async def test_cancel_and_expiry_edit_only_the_card(self):
+        for cancel in (True, False):
+            with self.subTest(cancel=cancel):
+                await self.deliver()
+                answer, card = self.sent[-2:]
+                if cancel:
+                    await card.view.cancel(self.interaction(card))
+                else:
+                    await card.view.on_timeout()
+                expected = ACTION_CANCELLED if cancel else ACTION_PREVIEW_EXPIRED
+                self.assertEqual(card.embed.description, expected)
+                self.assertEqual(card.embed.colour, discord.Colour.greyple())
+                self.assertIsNone(card.view)
+                self.assertEqual(answer.content, "Synthetic lookup answer")
+                answer.edit.assert_not_awaited()
 
+    async def test_two_change_card_quotes_dm_with_real_blank_lines(self):
+        dm = replace(self.action, path="send_direct_messages", preview=ChangePreview(
+            ("DM Requester",), AsyncMock(return_value=True), summary="Send DMs",
+            details=("First line", "", "Second line"), message_body=slice(None),
+        ))
+        self.context.state.proposed_changes.append(dm)
+        await self.deliver()
+        answer, card = self.sent
+        self.assertEqual(answer.content, "Synthetic lookup answer")
+        self.assertIsNone(card.content)
+        self.assertEqual(card.embed.title, "Confirm 2 changes")
+        self.assertEqual(card.embed.footer.text, "Only Requester can confirm \u00b7 expires in 5 min")
+        self.assertEqual(card.embed.colour, discord.Colour.blue())
+        self.assertIn("> First line\n> \n> Second line", card.embed.description)
+        self.assertNotIn("(blank line)", card.embed.description)
+        self.assertEqual([button.label for button in card.view.children], ["Confirm", "Cancel"])
 
-    async def test_hidden_details_keep_their_control_beside_both_button_sets(self):
+    async def test_hidden_details_stay_off_the_public_card(self):
         self.allowed.return_value = False
         action = replace(self.action, preview=replace(
             self.action.preview, details=("Synthetic hidden detail",), detail_access=frozenset({ACCESS_LEAD}),
@@ -161,41 +212,33 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.agent.actions.details.can_disclose_provenance",
                    AsyncMock(return_value=False)):
             await self.deliver()
-        combined = self.sent[0].view
-        self.assertIn(ACTION_PREVIEW_DETAILS_BUTTON, [item.label for item in combined.children])
-        self.assertEqual(len(combined.children), 3)
-        self.assertNotIn("Synthetic hidden detail", combined.render())
+        card = self.sent[-1]
+        self.assertIn(ACTION_PREVIEW_DETAILS_BUTTON, [item.label for item in card.view.children])
+        self.assertEqual(len(card.view.children), 3)
+        self.assertNotIn("Synthetic hidden detail", card.embed.description)
         self.assertNotIn("Synthetic hidden detail", self.context.state.preview_reply)
         with (patch("elbow_helper.agent.actions.preview.require_access"),
               patch("elbow_helper.agent.actions.preview.require_access_requirements")):
             interaction = self.interaction()
-            await combined.views["preview"].show_details(interaction)
+            await card.view.show_details(interaction)
         self.assertEqual(interaction.response.send_message.await_args.args[0], "Synthetic hidden detail")
         self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
 
 
-    async def test_over_limit_and_ping_answers_fall_back_in_request_order(self):
-        for first in (True, False):
-            for ping in (True, False):
-                with self.subTest(preview_first=first, ping=ping):
-                    self.context.state.preview_first = first
-                    response = "Synthetic answer <@121>" if ping else "Synthetic " + "x" * 1940
-                    before = self.message.reply.await_count
-                    await self.deliver(response)
-                    calls = self.message.reply.await_args_list[before:]
-                    self.assertEqual(len(calls), 2)
-                    expected = [self.context.state.preview_reply, response]
-                    if not first:
-                        expected.reverse()
-                    self.assertEqual([call.args[0] for call in calls], expected)
-                    preview_call, answer_call = calls if first else calls[::-1]
-                    self.assertFalse(preview_call.kwargs["allowed_mentions"].users)
-                    if ping:
-                        self.assertIn(self.member, answer_call.kwargs["allowed_mentions"].users)
-                    self.assertNotEqual(calls[0].kwargs["nonce"], calls[1].kwargs["nonce"])
+    async def test_long_or_ping_answer_still_precedes_the_card(self):
+        for ping in (True, False):
+            with self.subTest(ping=ping):
+                response = "Synthetic answer <@121>" if ping else "Synthetic " + "x" * 1940
+                await self.deliver(response)
+                answer, card = self.message.reply.await_args, self.channel.send.await_args
+                self.assertEqual(answer.args[0], response)
+                self.assertIsNone(card.args[0])
+                self.assertFalse(card.kwargs["allowed_mentions"].users)
+                if ping:
+                    self.assertIn(self.member, answer.kwargs["allowed_mentions"].users)
+                self.assertNotEqual(answer.kwargs["nonce"], card.kwargs["nonce"])
 
-
-    async def test_uncertain_combined_send_retains_one_nonce_and_complete_generated_part(self):
+    async def test_uncertain_answer_send_retains_both_generated_parts(self):
         self.message.reply.side_effect = OSError("Synthetic uncertain delivery")
         self.surface._find_delivery_nonce = AsyncMock(return_value=None)
         delivery = AgentDelivery()
@@ -207,4 +250,4 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(delivery.complete)
         self.assertEqual(delivery.attempted_nonces, [_delivery_nonce(421, 0)])
         self.assertEqual(delivery.generated_parts,
-                         [f"1. Synthetic answer\n\n2. {self.context.state.preview_reply}"])
+                         ["Synthetic answer", self.context.state.preview_reply])

@@ -43,15 +43,17 @@ async def prepare_cwl_brief(context: Any, values: Mapping[str, Any]) -> ChangePr
     return ChangePreview((
         ACTION_CWL_BRIEF_LINE.format(channel=brief.channel.mention),
     ), recheck, summary=ACTION_CWL_BRIEF_LABEL,
-       details=tuple(brief.content.splitlines()))
+       details=tuple(brief.content.split("\n")), message_body=slice(None))
 
 
 async def run_cwl_brief(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
     workflow, brief = await _brief(context, values)
     await workflow.post_cwl_brief(brief)
-    return ActionOutcome("complete", result={"channel_id": brief.channel.id})
+    return ActionOutcome("complete", text=f"CWL brief posted in {brief.channel.mention}.",
+                         result={"channel_id": brief.channel.id})
 
 
 def cwl_brief_adapters() -> tuple[CommandAdapter, ...]:
     return (CommandAdapter("/cwl brief", "confirm", run_cwl_brief,
-                           prepare=prepare_cwl_brief),)
+                           prepare=prepare_cwl_brief,
+                           tool_description="Carry out /cwl brief for an authorized requester to post a clan's opening CWL briefing."),)

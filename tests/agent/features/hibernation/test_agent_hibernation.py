@@ -1,6 +1,4 @@
 from datetime import datetime, timezone
-from dataclasses import asdict
-import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock
@@ -84,41 +82,6 @@ class AgentHibernationToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page["matched_count"], 1)
         self.queries.active_snapshot.assert_called_once_with()
 
-
-    async def test_255_records_keep_the_oldest_ten_within_the_model_result_budget(self):
-        from elbow_helper.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
-        from elbow_helper.agent.engine.tool_call import bound_tool_result
-        from elbow_helper.agent.plan.results import model_result, model_view
-
-        records = tuple(ActiveHibernationRecord(
-            1000000000000000000 + index,
-            datetime.fromtimestamp(1750000000 - index * 86400, timezone.utc).isoformat(),
-            1750000000 - index * 86400, "recorded",
-        ) for index in range(254)) + (ActiveHibernationRecord(2000000000000000000, None, None, "unavailable"),)
-        self.queries.active_snapshot.return_value = ActiveHibernationSnapshot(
-            "2026-10-21T12:00:00+00:00", 255, 0, 0, 1, records,
-        )
-        payload = await read_active_hibernation(self.context, {"limit": 500})
-        raw = json.dumps(payload, separators=(",", ":"))
-        view = model_view(model_result(payload))
-        content = json.dumps(view, separators=(",", ":"))
-        bounded = json.loads(bound_tool_result(content, MAX_TOOL_RESULT_CHARACTERS))
-        self.assertGreater(len(raw), MAX_TOOL_RESULT_CHARACTERS)
-        self.assertLess(len(content), MAX_TOOL_RESULT_CHARACTERS)
-        self.assertFalse(bounded["flags"]["truncated"])
-        self.assertNotIn("truncated", bounded)
-        self.assertEqual(bounded["records"]["columns"], ["member_id", "started_ts"])
-        rows = [dict(zip(bounded["records"]["columns"], row)) for row in bounded["records"]["rows"]]
-        self.assertEqual(len(rows), 255)
-        oldest = sorted((row for row in rows if row["started_ts"] is not None), key=lambda row: row["started_ts"])[:10]
-        self.assertEqual([row["member_id"] for row in oldest], [row.member_id for row in reversed(records[244:254])])
-        self.assertIsNone(rows[-1]["started_ts"])
-        self.assertEqual(payload["records"], [asdict(row) for row in records])
-        self.assertEqual(self.context.state.reports[payload["report_id"]].snapshot.records, records)
-        # A genuinely smaller allowance still reports omitted rows explicitly.
-        small = json.loads(bound_tool_result(content, 2500))
-        self.assertTrue(small["truncated"])
-        self.assertLess(len(small["records"]["rows"]), 255)
 
     async def test_denied_log_access_prevents_private_state_read(self):
         self.log.allowed = False

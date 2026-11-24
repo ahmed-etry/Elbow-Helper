@@ -107,6 +107,18 @@ class RosterAutomationService:
             event_key,
         )
 
+    @staticmethod
+    def manual_open_window(roster: Roster, now: datetime) -> tuple[bool, str | None]:
+        if roster.one_off_open_ts is not None and roster.one_off_close_ts is not None:
+            return (roster.one_off_open_ts <= now.timestamp() < roster.one_off_close_ts,
+                    f"once:{roster.one_off_open_ts}")
+        if roster.schedule_enabled:
+            window = due_window(roster, now)
+            if window is None:
+                return False, None
+            return window.opens_at <= now < window.closes_at, window.cycle_key
+        return True, None
+
     async def ensure_open_cycle(
         self,
         roster: Roster,
@@ -114,35 +126,13 @@ class RosterAutomationService:
         now: datetime | None = None,
     ) -> Roster:
         now = now or datetime.now(dt_timezone.utc)
-        if (
-            roster.one_off_open_ts is not None
-            and roster.one_off_close_ts is not None
-        ):
-            opens_at = datetime.fromtimestamp(
-                roster.one_off_open_ts,
-                dt_timezone.utc,
-            )
-            closes_at = datetime.fromtimestamp(
-                roster.one_off_close_ts,
-                dt_timezone.utc,
-            )
-            if not opens_at <= now < closes_at:
-                return await self._set_status(roster.id, "closed")
-            cycle_key = f"once:{roster.one_off_open_ts}"
+        opens, cycle_key = self.manual_open_window(roster, now)
+        if not opens:
+            return await self._set_status(roster.id, "closed")
+        if cycle_key is not None:
             if roster.last_open_cycle_key == cycle_key and roster.active_cycle_id:
                 return (await asyncio.to_thread(self._repository.start_cycle, roster.id, cycle_key))[0]
             return await self._start_cycle(roster.id, cycle_key)
-
-        if roster.schedule_enabled:
-            window = due_window(roster, now)
-            if window is None or not window.opens_at <= now < window.closes_at:
-                return await self._set_status(roster.id, "closed")
-            if (
-                roster.last_open_cycle_key == window.cycle_key
-                and roster.active_cycle_id
-            ):
-                return (await asyncio.to_thread(self._repository.start_cycle, roster.id, window.cycle_key))[0]
-            return await self._start_cycle(roster.id, window.cycle_key)
 
         return await asyncio.to_thread(
             self._repository.ensure_manual_cycle,

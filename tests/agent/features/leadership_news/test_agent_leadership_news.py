@@ -5,8 +5,9 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.engine.models import AgentTurnState
-from elbow_helper.agent.actions.contracts import ActionClass
+from elbow_helper.agent.actions.contracts import ActionClass, ActionRefused
 from elbow_helper.agent.features.leadership_news.actions import leadership_news_tools, prepare_lead_news, prepare_news_dismiss
+from elbow_helper.configuration.roles import CO_LEADER_ROLE_ID
 
 
 class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
@@ -15,8 +16,9 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         source = SimpleNamespace(id=1, mention="<#1>", fetch_message=AsyncMock(return_value=prompt),
                                  permissions_for=lambda _: SimpleNamespace(view_channel=True))
         workflow = SimpleNamespace(public_news_prompt_source=lambda _: 7)
+        member = SimpleNamespace(id=42, roles=[])
         context = SimpleNamespace(private_pass=True, bot=SimpleNamespace(get_cog=lambda _: workflow),
-                                  guild=SimpleNamespace(me=object()), member=object(),
+                                  guild=SimpleNamespace(me=object(), get_member=lambda _: member), member=member,
                                   state=AgentTurnState())
         with (patch('elbow_helper.agent.features.leadership_news.actions.require_evidence_access',
                     new_callable=AsyncMock),
@@ -29,6 +31,9 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         tool = next(tool for tool in leadership_news_tools()
                     if tool.definition.name == "dismiss_lead_news_prompt")
         self.assertIs(context.state.proposed_changes[0].action_class, tool.action_class)
+        self.assertTrue(await context.state.proposed_changes[0].preview.recheck())
+        member.roles.clear()
+        self.assertFalse(await context.state.proposed_changes[0].preview.recheck())
 
     async def test_publication_waits_for_confirm_and_rechecks_source(self):
         attachment = SimpleNamespace(id=5, filename="photo.png", size=10)
@@ -46,9 +51,11 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
             find_public_news_prompts=AsyncMock(return_value=(prompt,)),
             publish_public_news=AsyncMock(return_value=SimpleNamespace(jump_url="posted-url")),
         )
+        member = SimpleNamespace(id=42, roles=[SimpleNamespace(id=CO_LEADER_ROLE_ID)])
         context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
-            guild=SimpleNamespace(me=object()), member=SimpleNamespace(id=42), state=AgentTurnState(),
+            guild=SimpleNamespace(me=bot_member, get_member=lambda _: member), member=member,
+            state=AgentTurnState(),
         )
         with (patch('elbow_helper.agent.features.leadership_news.actions.require_evidence_access',
                     new_callable=AsyncMock),
@@ -58,7 +65,7 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "confirmation_required")
         action = context.state.proposed_changes[0]
         self.assertIs(action.action_class, ActionClass.CHANGE)
-        self.assertEqual(action.preview.lines, ("Publish this update in <#2>:",))
+        self.assertEqual(action.preview.lines, ("📢 Publish this lead update in <#2>",))
         self.assertNotIn("Post:", action.preview.details)
         self.assertIs(next(tool for tool in leadership_news_tools()
                            if tool.definition.name == "publish_lead_news").action_class,

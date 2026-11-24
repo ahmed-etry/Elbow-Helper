@@ -24,6 +24,8 @@ class CommandAdapter:
     option_types: tuple[tuple[str, str], ...] = ()
     usage_note: str = ""
     capability_name: str | None = None
+    tool_description: str | None = None
+    option_max_lengths: tuple[tuple[str, int], ...] = ()
 
     def __post_init__(self) -> None:
         if self.delivery == "confirm" and self.classification not in (
@@ -70,10 +72,12 @@ _TYPES = {
 }
 
 
-def _option_schema(option: ParameterInfo) -> dict[str, Any]:
+def _option_schema(option: ParameterInfo, max_length: int | None) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": _TYPES.get(option.type_name, "string")}
     if option.choice_values:
         schema["enum"] = list(option.choice_values)
+    if max_length is not None:
+        schema["maxLength"] = max_length
     return schema
 
 
@@ -121,9 +125,12 @@ def build_command_capabilities(
         if command is None or help_entry is None:
             continue
         type_overrides = dict(adapter.option_types)
+        max_lengths = dict(adapter.option_max_lengths)
         option_names = {option.name for option in (*command.parameters, *adapter.options)}
         if type_overrides.keys() - option_names:
             raise ValueError("Command type override names an unknown option")
+        if max_lengths.keys() - option_names:
+            raise ValueError("Command length limit names an unknown option")
         options = tuple(
             replace(option, type_name=type_overrides.get(option.name, option.type_name))
             for option in (*command.parameters, *adapter.options)
@@ -135,14 +142,17 @@ def build_command_capabilities(
             raise ValueError(f"Command capability already exists: {name}")
         definition = AgentToolDefinition(
             name=name,
-            description=help_entry.summary,
+            description=adapter.tool_description or help_entry.summary,
             usage_note=" ".join(filter(None, (
                 adapter.usage_note,
                 "Private result." if adapter.delivery == "private" else "",
             ))),
             parameters={
                 "type": "object",
-                "properties": {option.name: _option_schema(option) for option in options},
+                "properties": {
+                    option.name: _option_schema(option, max_lengths.get(option.name))
+                    for option in options
+                },
                 "required": [],
                 "x-command-required": [option.name for option in options if option.required],
                 "additionalProperties": False,

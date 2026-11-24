@@ -12,7 +12,7 @@ from elbow_helper.agent.actions.answer_view import PrivateAnswerView
 from elbow_helper.agent.cog import AgentCog
 from elbow_helper.agent.conversation.instructions import TaskInstruction
 from elbow_helper.agent.conversation.wording import (
-    AGENT_ANSWER_UNFINISHED, AGENT_PRIVATE_CHECK_BUTTON, AGENT_PRIVATE_OFFER,
+    ACTION_PREVIEW_REPLACED, AGENT_ANSWER_UNFINISHED, AGENT_PRIVATE_CHECK_BUTTON, AGENT_PRIVATE_OFFER,
 )
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.agent.discord_actions.meme_usage import RECENT_SECONDS
@@ -73,6 +73,64 @@ class MentionThroughCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.reply.await_args.args, ("Synthetic answer.",))
         self.assertTrue(self.turn().delivery_complete)
         self.assertEqual(self.model.requests[0]["prompt"], "@Synthetic Agent synthetic request")
+
+    async def test_a_change_goes_out_with_its_preview_and_waits_for_confirm(self):
+        message = await self.mention(call("make_thread", {}), final("Ready to go."))
+        message.reply.assert_awaited_once()
+        self.assertEqual(message.reply.await_args.args, ("Ready to go.",))
+        message.channel.send.assert_awaited_once()
+        card = message.channel.send.await_args
+        self.assertIsNone(card.args[0])
+        self.assertIn("Do make_thread", card.kwargs["embed"].description)
+        view = card.kwargs["view"]
+        self.addCleanup(view.stop)
+        self.assertEqual(sorted(button.label for button in view.children), ["Cancel", "Confirm"])
+        self.run.assert_not_awaited()
+
+    async def test_a_revision_retires_the_named_card_in_its_conversation(self):
+        self.cog.action_runner = SimpleNamespace(submit=AsyncMock())
+        conversation = self.cog._conversations.create(GUILD_ID, 100, 1)
+        model = StubModel(
+            StubSession(call("make_thread", {}), final("First proposal.")),
+            StubSession(call("make_thread", {}), final("Unrelated proposal.")),
+            StubSession(call("make_thread", {"replaces_card_id": 9001}), final("Revised proposal.")),
+        )
+        self.cog.service = loop_service(model)
+        cards = []
+        for message_id, question in enumerate(("Create a thread.", "Create another thread.", "Revise the first one."), 1):
+            message = self.make_message(self.member, message_id, question)
+            message.channel.send.return_value = SimpleNamespace(id=9000 + message_id)
+            await self.cog._answer(message, self.member, question, conversation)
+            card = message.channel.send.await_args.kwargs["view"]
+            self.addCleanup(card.stop)
+            cards.append(card)
+
+        request = model.requests[-1]
+        tool = next(tool for tool in request["tools"] if tool.name == "make_thread")
+        self.assertIn("replaces_card_id", tool.parameters["properties"])
+        self.assertNotIn("replaces_card_id", tool.parameters.get("required", ()))
+        self.assertTrue(any("[Open Confirm card ID: 9001]" in item.get("content", "")
+                            and "First proposal." in item["content"] for item in request["prior_messages"]))
+        self.assertEqual(dict(cards[-1].proposals[0].checked_arguments), {})
+
+        clicks = [SimpleNamespace(
+            user=self.member, response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock()),
+        ) for _ in cards]
+        for card, click in zip(cards, clicks):
+            await card.confirm(click)
+        clicks[0].response.send_message.assert_awaited_once_with(ACTION_PREVIEW_REPLACED, ephemeral=True)
+        self.assertEqual([item.args[0].source_message.id
+                          for item in self.cog.action_runner.submit.await_args_list], [2, 3])
+
+    async def test_a_card_that_expires_is_remembered_so_the_next_request_knows_nothing_ran(self):
+        self.cog.action_runner = SimpleNamespace(on_unconfirmed=self.cog._record_unconfirmed)
+        message = await self.mention(call("make_thread", {}), final("Ready to go."))
+        preview = message.channel.send.await_args.kwargs["view"]
+        self.addCleanup(preview.stop)
+        preview.message.edit = AsyncMock()
+        await preview.on_timeout()
+        turn = self.cog._conversations.find(GUILD_ID, 100, preview.message.id).turns[-1]
+        self.assertEqual(json.loads(turn.text), {"confirmation": "expired", "actions": ["make_thread"]})
 
     async def test_a_gif_is_the_whole_reply(self):
         item = next(iter(ITEM_BY_ID))

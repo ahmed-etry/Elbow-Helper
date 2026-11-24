@@ -54,13 +54,15 @@ async def prepare_support_reopen(context: AgentRequestContext,
     if before is True:
         return {"status": "no_change"}
     lines = (
-        ACTION_TICKET_REOPEN_LINE.format(channel=channel.mention),
+        ACTION_TICKET_REOPEN_LINE.format(channel=channel.mention, member=owner.mention),
         ACTION_TICKET_REOPEN_ACCESS.format(member=owner.mention,
                                           old=("not set" if before is None else "blocked"),
                                           new="allowed"),
     )
 
     async def recheck() -> bool:
+        if not workflow.can_manage_ticket_controls(context.member):
+            return False
         try:
             check_bot_post_access(channel, context.guild.me)
             check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
@@ -74,7 +76,7 @@ async def prepare_support_reopen(context: AgentRequestContext,
                                                             context.member, via="agent")
         if not restored:
             raise ActionRefused("That ticket couldn't be reopened.")
-        return ActionOutcome("complete", "private", text=ACTION_TICKET_REOPEN_LABEL)
+        return ActionOutcome("complete", "private", text=f"Reopened {channel.mention} for {owner.mention}.")
 
     context.state.proposed_changes.append(PreparedAction(
         "reopen_support_ticket", {"channel_id": channel.id, "owner_id": owner.id},

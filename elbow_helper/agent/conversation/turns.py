@@ -71,6 +71,8 @@ class AgentTurnMixin:
             state=AgentTurnState(
                 source_channels={message.channel.id},
                 working=conversation.working if conversation is not None else WorkingState(),
+                open_confirmation_ids=(conversation.open_confirmation_ids(member.id)
+                                       if conversation is not None else frozenset()),
             ),
             history=tuple(conversation.turns) if conversation is not None else (),
             roster_queries=self.roster_queries,

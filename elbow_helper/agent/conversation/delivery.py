@@ -25,8 +25,10 @@ from elbow_helper.agent.actions.answer_view import PrivateAnswerView
 from elbow_helper.agent.actions.preview import CONFIRMATION_TIMEOUT, ConfirmationView
 from elbow_helper.agent.actions.preview import preview_text
 from elbow_helper.agent.actions.details import prepare_preview
-from elbow_helper.agent.actions.combined_reply import CombinedReplyView
-from elbow_helper.agent.files.delivery import attachment_files, publish_spreadsheet, spreadsheet_links, spreadsheet_response
+from elbow_helper.agent.files.delivery import (
+    attachment_files, publish_spreadsheet, spreadsheet_links,
+    spreadsheet_response,
+)
 from elbow_helper.agent.files.gif_media import URLS
 from elbow_helper.agent.discord_actions.reply_targets import answer_reply_target, member_reply_target
 from elbow_helper.agent.discord_actions.reactions import render_server_emojis
@@ -206,44 +208,40 @@ class AgentDeliveryMixin:
         _post_mentions: bool = False,
         _feedback_hint: bool = True,
     ) -> None:
-        has_answer_text = bool(response.strip())
         if context is not None and (stop_typing := getattr(context, "stop_typing", None)):
             await stop_typing()
+        has_preview = bool(context and context.state.proposed_changes)
+        if has_preview:
+            previous_preview = preview_text(context.state.proposed_changes)
+            if response == previous_preview or response.startswith(previous_preview + "\n\n"):
+                response = response[len(previous_preview):].lstrip("\n")
+            await prepare_preview(context)
+            context.state.preview_reply = preview_text(context.state.proposed_changes)
+            context.state.preview_first = False
+        has_answer_text = bool(response.strip())
         response = discord_text(response)
         guild = getattr(context, "guild", None) or getattr(message, "guild", None)
         response = render_server_emojis(response, guild)
         if context is not None:
             await assert_answer_scope(context, response)
+            if has_preview:
+                await assert_answer_scope(context, context.state.preview_reply)
             log_scope(context)
-        if context is not None:
             attachments = await publish_spreadsheet(context, attachments)
-        if context is not None and context.state.preview_reply is not None:
-            await self._send_mixed_response(
-                message, response, referenced, attachments, conversation, context,
-                delivery or AgentDelivery(), preview_timeout, mention_requester,
-            )
-            return
-        if context is not None and private_check_offered(context):
-            response = "\n\n".join(filter(None, (response, AGENT_PRIVATE_OFFER)))
-        if context is not None and context.state.proposed_changes:
-            previous_preview = preview_text(context.state.proposed_changes)
-            await prepare_preview(context)
-            if response.startswith(previous_preview):
-                response = preview_text(context.state.proposed_changes) + response[len(previous_preview):]
+            if private_check_offered(context):
+                response = "\n\n".join(filter(None, (response, AGENT_PRIVATE_OFFER)))
         response = spreadsheet_response(response, attachments)
         if any(image_attachment(item) for item in attachments):
             response = ""
-        has_preview = bool(context and context.state.proposed_changes)
-        # A preview must not ping the people it names before the change is confirmed.
-        allowed_users: dict[int, discord.abc.User] = {} if has_preview else {
+        allowed_users: dict[int, discord.abc.User] = {
             member.id: member
             for member in message.mentions
             if self.bot.user is None or member.id != self.bot.user.id
         }
-        if referenced is not None and not referenced.author.bot and not has_preview:
+        if referenced is not None and not referenced.author.bot:
             allowed_users[referenced.author.id] = referenced.author
         get_member = getattr(getattr(message, "guild", None), "get_member", None)
-        if not has_preview and callable(get_member):
+        if callable(get_member):
             # The model decides who to address; it pings only members it writes as mentions.
             for member_id in dict.fromkeys(int(value) for value in _USER_MENTION.findall(response or "")):
                 member = get_member(member_id)
@@ -261,13 +259,15 @@ class AgentDeliveryMixin:
         if _post_mentions:
             allowed_mentions = post_mentions(context, {}, response)
         files = attachment_files(attachments)
-        if not has_preview and (_needs_file(response) or (
+        if _needs_file(response) or (
                 context is not None and context.state.scope_audit.offered
-                and len(response) > DISCORD_MESSAGE_LIMIT)):
+                and len(response) > DISCORD_MESSAGE_LIMIT):
             files.append(discord.File(io.BytesIO(response.encode("utf-8")), filename=LONG_REPLY_FILENAME))
             chunks = [None]
         else:
             chunks = _chunk_response(response)
+        if not chunks and (files or any(item.google_link for item in attachments)):
+            chunks = [None]
         if has_answer_text and _feedback_hint and await self._research_feedback_hint_due(context, response, chunks):
             # Split the original answer first. Never create a message for the hint,
             # move answer text, or change the existing file fallback decision.
@@ -275,7 +275,8 @@ class AgentDeliveryMixin:
             if len(chunks[-1]) + len(suffix) <= DISCORD_MESSAGE_LIMIT:
                 chunks[-1] += suffix
                 response = response.rstrip() + suffix
-        if not chunks and not files and not any(item.google_link for item in attachments):
+        has_answer = bool(chunks or files or any(item.google_link for item in attachments))
+        if not has_answer and not has_preview:
             response = "What result do you need?"
             chunks = [response]
         active_delivery = delivery or AgentDelivery()
@@ -288,7 +289,7 @@ class AgentDeliveryMixin:
             options = {"files": files} if files else {}
             private_view, confirm_view = build_reply_views(
                 message, context, getattr(self, "action_runner", None),
-                preview_timeout=preview_timeout,
+                preview_timeout=preview_timeout, private_on_card=not has_answer,
             )
             await self._send_response_parts(
                 message, response, chunks, options, private_view, confirm_view,
@@ -342,115 +343,6 @@ class AgentDeliveryMixin:
             self._research_feedback_answers = count
         return context.state.feedback_lookup_problem or count % RESEARCH_FEEDBACK_HINT_INTERVAL == 0
 
-    async def _send_mixed_response(
-        self, message, response, referenced, attachments, conversation, context,
-        active, preview_timeout, mention_requester,
-    ) -> None:
-        response = spreadsheet_response(response, attachments)
-        answer_context = replace(context, state=replace(
-            context.state, proposed_changes=[], preview_reply=None,
-            research_answer_completed=False,
-        ))
-        preview_context = replace(context, state=replace(
-            context.state, outcomes=[], attachments=[], preview_reply=None, gif_url=None,
-            scope_audit=replace(context.state.scope_audit, offered=False), private_answer_run=None,
-        ))
-        scheduled = getattr(message, "scheduled_run", False)
-        if scheduled:
-            await self._send_split_response(
-                message, response, referenced, attachments, conversation, answer_context,
-                preview_context, active, preview_timeout, mention_requester, preview_first=False,
-            )
-            return
-        await prepare_preview(preview_context)
-        preview = preview_text(preview_context.state.proposed_changes)
-        context.state.preview_reply = preview
-        await assert_answer_scope(answer_context, response)
-        answer = response
-        if private_check_offered(context):
-            answer = "\n\n".join((answer, AGENT_PRIVATE_OFFER))
-        private_view, _ = build_reply_views(message, answer_context, None)
-        _, confirm_view = build_reply_views(
-            message, preview_context, getattr(self, "action_runner", None), preview_timeout=preview_timeout,
-        )
-
-        async def changed(sent, previous, content):
-            await self._archive_reply(message.id, sent.id, content, previous_content=previous)
-            if conversation is not None:
-                async with conversation.lock:
-                    conversation.replace_reply_content(message.id, sent.id, content)
-                    await self._save_reply_conversation(conversation, message.id)
-
-        answer_view = spreadsheet_links(private_view, attachments)
-        combined = CombinedReplyView(
-            preview, answer, confirm_view, answer_view,
-            preview_first=context.state.preview_first, on_change=changed,
-        )
-        if (len(combined.render()) > DISCORD_MESSAGE_LIMIT or mention_requester
-                or any(image_attachment(item) for item in attachments)
-                or _answer_needs_ping(message, response, referenced, self.bot)
-                or _needs_file(response)):
-            combined.stop()
-            await self._send_split_response(
-                message, response, referenced, attachments, conversation, answer_context,
-                preview_context, active, preview_timeout, mention_requester,
-                preview_first=context.state.preview_first,
-            )
-            return
-        self._bind_private_answer(private_view, active, conversation)
-        files = attachment_files(attachments)
-        content = combined.render()
-        active.generated_parts.append(content)
-        try:
-            await require_evidence_access(context)
-            sent = await self._send_delivery_part(
-                message.reply, message.channel, _delivery_nonce(message.id, 0), active,
-                content, mention_author=False, allowed_mentions=discord.AllowedMentions.none(),
-                view=combined, **({"files": files} if files else {}),
-            )
-        except BaseException:
-            combined.stop()
-            raise
-        finally:
-            for file in files:
-                file.close()
-        combined.start(sent)
-        if hasattr(self, "_previews"):
-            self._previews[sent.id] = confirm_view
-        active.record(sent.id, content)
-        active.complete = True
-        if conversation is not None:
-            self._conversations.register_reply(conversation, sent.id)
-        if getattr(message, "archive_reply", True):
-            await self._archive_reply(message.id, sent.id, content,
-                                      attachment_names=tuple(file.filename for file in files))
-
-    async def _send_split_response(
-        self, message, response, referenced, attachments, conversation, answer_context,
-        preview_context, active, preview_timeout, mention_requester, *, preview_first,
-    ) -> None:
-        preview = preview_text(preview_context.state.proposed_changes)
-        parts = [(preview, preview_context, (), False), (response, answer_context, attachments, True)]
-        if not preview_first:
-            parts.reverse()
-        for index, (content, selected, files, answer) in enumerate(parts):
-            active.complete = False
-            try:
-                await self._send_response(
-                    message, content, referenced, files, conversation, delivery=active, context=selected,
-                    preview_timeout=preview_timeout, mention_requester=mention_requester,
-                    _nonce_seed=None if index == 0 else _delivery_nonce(message.id, 1_000_001),
-                    _feedback_hint=False,
-                )
-            except BaseException:
-                if index == 0:
-                    pending = parts[1][0]
-                    if mention_requester:
-                        pending = f"<@{message.author.id}> {pending}"
-                    active.generated_parts.extend(_chunk_response(pending))
-                active.complete = False
-                raise
-
     async def _save_reply_conversation(self, conversation, request_id):
         persistence = getattr(self, "persistence", None)
         if persistence is not None:
@@ -476,10 +368,8 @@ class AgentDeliveryMixin:
             if target is None:
                 raise RuntimeError("Private answer has no public edit target")
             previous = getattr(target, "content", "")
-            combined = getattr(target, "preserves_other_text", False)
             content = response
-            fits = (len(target.reply.render(**{target.key: content})) <= DISCORD_MESSAGE_LIMIT
-                    if combined else len(content) <= DISCORD_MESSAGE_LIMIT)
+            fits = len(content) <= DISCORD_MESSAGE_LIMIT
             files = attachment_files(attachments)
             if not fits:
                 files.append(discord.File(io.BytesIO(response.encode("utf-8")), filename=LONG_REPLY_FILENAME))
@@ -494,38 +384,10 @@ class AgentDeliveryMixin:
                 # Refresh the private evidence immediately before the authorized edit.
                 await assert_answer_scope(private, answer)
                 require_access(context.guild, view.owner_id, destination)
-                if combined and media_reply:
-                    # The confirmation remains independent text; the disclosed
-                    # image needs its own message rather than inheriting it.
-                    delivery.complete = False
-                    delivery.generated_parts.append(response)
-                    edited = await self._send_delivery_part(
-                        destination.send, destination,
-                        _delivery_nonce(context.source_message.id, 3_000_001), delivery,
-                        content or None, files=files, view=public_view,
-                        allowed_mentions=discord.AllowedMentions.none(),
-                    )
-                    delivery.record(edited.id, response)
-                    if public_view is not None:
-                        public_view.message = edited
-                    if conversation is not None:
-                        self._conversations.register_reply(conversation, edited.id)
-                        async with conversation.lock:
-                            conversation.record_additional_delivery(
-                                context.source_message.id, response, (edited.id,), True, False,
-                                tuple(delivery.attempted_nonces[-1:]), None, (response,),
-                            )
-                            await self._save_reply_conversation(conversation, context.source_message.id)
-                    if getattr(context.source_message, "archive_reply", True):
-                        await self._archive_reply(context.source_message.id, edited.id, response,
-                                                  attachment_names=tuple(file.filename for file in files))
-                    await target.edit(content="", view=None)
-                    delivery.complete = True
-                else:
-                    edited = await target.edit(
-                        content=content, attachments=files, view=public_view,
-                        **({} if combined else {"allowed_mentions": discord.AllowedMentions.none()}),
-                    )
+                edited = await target.edit(
+                    content=content, attachments=files, view=public_view,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
             except BaseException:
                 if public_view is not None:
                     public_view.stop()
@@ -533,25 +395,21 @@ class AgentDeliveryMixin:
             finally:
                 for file in files:
                     file.close()
-            if not combined:
-                view.message = edited
-                if public_view is not None:
-                    public_view.message = edited
-                if getattr(context.source_message, "archive_reply", True):
-                    await self._archive_reply(
-                        context.source_message.id, edited.id, response, previous_content=previous,
-                        attachment_names=tuple(file.filename for file in files),
-                    )
-                if conversation is not None:
-                    async with conversation.lock:
-                        conversation.replace_reply_content(context.source_message.id, edited.id, response)
-                        await self._save_reply_conversation(conversation, context.source_message.id)
-            elif not media_reply and getattr(context.source_message, "archive_reply", True):
-                await self._archive_reply_delivery(context.source_message.id, target.id, response,
-                                                   tuple(file.filename for file in files))
+            view.message = edited
+            if public_view is not None:
+                public_view.message = edited
+            if getattr(context.source_message, "archive_reply", True):
+                await self._archive_reply(
+                    context.source_message.id, edited.id, response, previous_content=previous,
+                    attachment_names=tuple(file.filename for file in files),
+                )
+            if conversation is not None:
+                async with conversation.lock:
+                    conversation.replace_reply_content(context.source_message.id, edited.id, response)
+                    await self._save_reply_conversation(conversation, context.source_message.id)
             if target.id in delivery.message_ids:
                 index = delivery.message_ids.index(target.id)
-                delivery.text_parts[index] = (target.reply.render() if combined else response)
+                delivery.text_parts[index] = response
             view.stop()
 
         view.post = post
@@ -561,73 +419,68 @@ class AgentDeliveryMixin:
         allowed_mentions, active_delivery, delivery, context, conversation,
         *, nonce_seed=None, attachments=(),
     ) -> None:
+        if confirm_view is not None:
+            active_delivery.generated_parts.append(confirm_view.preview)
         self._bind_private_answer(private_view, active_delivery, conversation)
-        if private_view is not None and confirm_view is None:
-            options["view"] = private_view
-        if confirm_view is not None and len(chunks) <= 1:
-            options["view"] = confirm_view
-        view = spreadsheet_links(options.get("view"), attachments)
-        if view is not None:
-            options["view"] = view
-        target = (
-            await answer_reply_target(context, getattr(message, "channel", None))
-            if confirm_view is None else None
-        )
-        ping_author = bool(target is not None and context.state.ping_author)
-        if target is not None:
-            allowed_mentions = allowed_mentions.merge(discord.AllowedMentions(
-                replied_user=ping_author,
-            ))
-        nonce = _delivery_nonce(nonce_seed or message.id, 0)
-        sent = await self._send_delivery_part(
-            (target or message).reply, getattr(message, "channel", None), nonce,
-            active_delivery,
-            chunks[0] if chunks else None,
-            mention_author=ping_author, allowed_mentions=allowed_mentions,
-            **options,
-        )
-        if private_view is not None:
-            private_view.message = sent
-        if confirm_view is not None and len(chunks) <= 1:
-            confirm_view.message = sent
-        if confirm_view is not None and hasattr(self, "_previews"):
-            self._previews[sent.id] = confirm_view
-        if delivery is not None:
-            delivery.record(sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
-        if conversation is not None:
-            self._conversations.register_reply(conversation, sent.id)
-        if getattr(message, "archive_reply", True):
-            await self._archive_reply(
-                message.id, sent.id, response if chunks == [None] else (chunks[0] if chunks else ""),
-                attachment_names=tuple(file.filename for file in options.get("files", ())),
-                is_answer=not bool(context and context.state.proposed_changes),
-            )
-        if target is not None:
-            allowed_mentions = allowed_mentions.merge(discord.AllowedMentions(replied_user=False))
-        for index, chunk in enumerate(chunks[1:], start=1):
-            if context is not None:
+        channel = getattr(message, "channel", None)
+        if chunks:
+            view = spreadsheet_links(private_view, attachments)
+            if view is not None:
+                options["view"] = view
+            target = await answer_reply_target(context, channel)
+            ping_author = bool(target is not None and context.state.ping_author)
+            for index, chunk in enumerate(chunks):
+                if index and context is not None:
+                    await require_evidence_access(context)
+                sent = await self._send_delivery_part(
+                    (target or message).reply if index == 0 else channel.send,
+                    channel, _delivery_nonce(nonce_seed or message.id, index), active_delivery,
+                    chunk, allowed_mentions=allowed_mentions.merge(discord.AllowedMentions(
+                        replied_user=ping_author and index == 0,
+                    )),
+                    **({"mention_author": ping_author, **options} if index == 0 else {}),
+                )
+                await self._record_response_part(
+                    message, sent.id, response if chunk is None else chunk, delivery, conversation,
+                    attachment_names=tuple(file.filename for file in options.get("files", ()))
+                    if index == 0 else (),
+                )
+                if index == 0:
+                    if private_view is not None:
+                        private_view.message = sent
+        if confirm_view is not None:
+            try:
                 await require_evidence_access(context)
-            nonce = _delivery_nonce(nonce_seed or message.id, index)
-            sent = await self._send_delivery_part(
-                message.channel.send, message.channel, nonce,
-                active_delivery, chunk, allowed_mentions=allowed_mentions,
-                **({"view": confirm_view} if confirm_view is not None and index == len(chunks) - 1 else {}),
-            )
-            if confirm_view is not None:
-                if hasattr(self, "_previews"):
-                    self._previews[sent.id] = confirm_view
-                if index == len(chunks) - 1:
-                    confirm_view.message = sent
-                    confirm_view.preview = chunk
-            if delivery is not None:
-                delivery.record(sent.id, chunk)
+                sent = await self._send_delivery_part(
+                    channel.send if chunks or active_delivery.message_ids else message.reply,
+                    channel, _delivery_nonce(nonce_seed or message.id, len(chunks)),
+                    active_delivery, None, embed=confirm_view.card, view=confirm_view,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+            except BaseException:
+                confirm_view.stop()
+                raise
+            confirm_view.start(sent)
+            if confirm_view.private_result is not None:
+                confirm_view.private_result.message = sent
             if conversation is not None:
-                self._conversations.register_reply(conversation, sent.id)
-            if getattr(message, "archive_reply", True):
-                await self._archive_reply(message.id, sent.id, chunk,
-                                          is_answer=not bool(context and context.state.proposed_changes))
+                conversation.register_confirmation(sent.id, confirm_view)
+            await self._record_response_part(
+                message, sent.id, confirm_view.preview, delivery, conversation, is_answer=False,
+            )
         if delivery is not None:
             delivery.complete = True
+
+    async def _record_response_part(self, message, message_id, text, delivery, conversation,
+                                    *, attachment_names=(), is_answer=True):
+        if delivery is not None:
+            delivery.record(message_id, text)
+        if conversation is not None:
+            self._conversations.register_reply(conversation, message_id)
+        if getattr(message, "archive_reply", True):
+            await self._archive_reply(
+                message.id, message_id, text, attachment_names=attachment_names, is_answer=is_answer,
+            )
 
     async def _send_delivery_part(
         self, sender, channel, nonce: int, delivery: AgentDelivery,
@@ -823,7 +676,8 @@ def _uncertain_delivery_error(error: BaseException) -> bool:
     )
 
 
-def build_reply_views(message, context, runner, *, preview_timeout=CONFIRMATION_TIMEOUT):
+def build_reply_views(message, context, runner, *, preview_timeout=CONFIRMATION_TIMEOUT,
+                      private_on_card=False):
     private_parts = tuple(
         part for outcome in (context.state.outcomes if context else ())
         if outcome.visibility == "private" for part in outcome.private_parts
@@ -850,7 +704,7 @@ def build_reply_views(message, context, runner, *, preview_timeout=CONFIRMATION_
         _log_visibility(message, context, "private", "feature_private_result", controls=("view_result",))
     confirm_view = (ConfirmationView(message.author.id,
                                      tuple(context.state.proposed_changes), context,
-                                     private_view,
+                                     private_view if private_on_card else None,
                                      runner=runner, timeout=preview_timeout)
                     if context and context.state.proposed_changes else None)
     return private_view, confirm_view

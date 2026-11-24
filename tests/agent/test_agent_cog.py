@@ -225,7 +225,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 self.addCleanup(answer_view.stop)
                 self.assertIsInstance(answer_view, PrivateResultView)
                 self.assertIn("Synthetic command result", answer_view.parts)
-                confirm = combined.views["preview"]
+                confirm = card_call.kwargs["view"]
+                self.addCleanup(confirm.stop)
                 self.assertIsInstance(confirm, ConfirmationView)
                 self.assertIsNone(confirm.private_result)
                 self.cog._archive_reply.assert_any_await(

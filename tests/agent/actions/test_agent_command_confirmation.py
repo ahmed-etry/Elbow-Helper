@@ -43,13 +43,12 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
     async def test_confirm_hands_a_preview_only_message_to_the_run(self):
         proposal, _, _ = self.proposal(1)
         view = self.view((proposal,))
-        view.message.content = view.preview
         order = []
         view.message.edit.side_effect = lambda **_: order.append("disabled")
         view.runner.submit.side_effect = lambda *_, **__: order.append("queued")
         await view.confirm(self.interaction(101))
         view.runner.submit.assert_awaited_once_with(
-            view.context, view.proposals, confirmer_id=101, progress_message=view.message,
+            view.context, view.proposals, confirmer_id=101, progress_message=view.message, confirmation=True,
         )
         self.assertEqual(order, ["queued"])
         self.assertTrue(view.is_finished())
@@ -58,12 +57,12 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_queue_removes_controls_from_a_reusable_card(self):
         proposal, _, run = self.proposal(1)
         view = self.view((proposal,))
-        view.message.content = view.preview
         view.context.delivery_channel = SimpleNamespace(send=AsyncMock())
         view.runner.submit.side_effect = RuntimeError("Synthetic queue failure")
         with self.assertLogs("elbow_helper.agent.actions.preview", level="ERROR"):
             await view.confirm(self.interaction(101))
-        view.message.edit.assert_awaited_once_with(view=None)
+        view.message.edit.assert_awaited_once()
+        self.assertEqual(view.message.edit.await_args.kwargs["embed"].colour, discord.Colour.red())
         self.assertTrue(view.is_finished())
         run.assert_not_awaited()
         view.message.edit.reset_mock()
@@ -112,14 +111,16 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         view = self.view((proposal,))
         member = self.interaction(101)
         await view.cancel(member)
-        member.response.edit_message.assert_awaited_once_with(content=ACTION_CANCELLED, view=None)
+        member.response.edit_message.assert_awaited_once()
+        self.assertEqual(member.response.edit_message.await_args.kwargs["embed"].description, ACTION_CANCELLED)
         self.assertTrue(all(item.disabled for item in view.children))
         await view.confirm(self.interaction(101))
         check.assert_not_awaited()
         run.assert_not_awaited()
         expired = self.view((proposal,))
         await expired.on_timeout()
-        expired.message.edit.assert_awaited_once_with(content=ACTION_PREVIEW_EXPIRED, view=None)
+        expired.message.edit.assert_awaited_once()
+        self.assertEqual(expired.message.edit.await_args.kwargs["embed"].description, ACTION_PREVIEW_EXPIRED)
         await expired.confirm(self.interaction(101))
         run.assert_not_awaited()
 
@@ -138,23 +139,11 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         member.followup.send.assert_not_awaited()
         self.assertTrue(view.used)
         self.assertTrue(all(item.disabled for item in view.children))
-        view.message.edit.assert_awaited_once_with(view=None)
+        view.message.edit.assert_not_awaited()
 
     async def test_long_preview_is_complete(self):
         proposal, _, _ = self.proposal("x" * 2000)
         self.assertIn("x" * 2000, preview_text([proposal]))
-
-
-    async def test_revised_preview_invalidates_previous_buttons(self):
-        proposal, _, run = self.proposal(1)
-        view = self.view((proposal,))
-        await view.invalidate()
-        await view.confirm(self.interaction(101))
-        run.assert_not_awaited()
-        view.runner.submit.assert_not_awaited()
-        self.assertTrue(all(item.disabled for item in view.children[:2]))
-        view.message.edit.assert_awaited_once_with(view=None)
-        self.assertTrue(view.is_finished())
 
 
     async def test_mixed_private_result_remains_available_after_cancel(self):

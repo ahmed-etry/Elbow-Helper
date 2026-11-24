@@ -10,7 +10,7 @@ from elbow_helper.features.event_stats.commands import open_event_panel
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ChangePreview
 from elbow_helper.agent.conversation.wording import ACTION_UNAVAILABLE
-from elbow_helper.agent.conversation.wording import ACTION_EVENT_UPDATE_LABEL, ACTION_EVENT_UPDATE_LINE, ACTION_EVENT_UPDATE_TARGET
+from elbow_helper.agent.conversation.wording import ACTION_EVENT_UPDATE_LABEL, ACTION_EVENT_UPDATE_LINE
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter
 

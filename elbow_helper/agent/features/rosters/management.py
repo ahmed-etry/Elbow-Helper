@@ -91,7 +91,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
 
     tools = [RegisteredAgentTool(AgentToolDefinition(
         name="set_roster_state",
-        description="Open or close a roster, or show or hide its signup controls.",
+        description="Use the roster management controls for an authorized requester to open or close a roster or show or hide signup controls.",
         parameters={"type": "object", "properties": {
             "roster_id": {"type": "integer", "minimum": 1},
             "operation": {"type": "string", "enum": ["open", "close", "show", "hide"]},
@@ -99,7 +99,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
     ), prepare_state, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("roster_id", "roster"),), source_scope="request_context",
-            required_access=frozenset({ACCESS_LEAD_PLUS}), filter_fields=("operation",),
+            filter_fields=("operation",),
         ),
              )]
     name, operation, classification, label = _OPERATIONS[4]
@@ -107,8 +107,11 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
                             values: Mapping[str, Any]) -> Mapping[str, Any]:
         return await _prepare(context, values, name, operation, classification, label)
     tools.append(RegisteredAgentTool(
-        AgentToolDefinition(name=name, description="Clear a roster's signups.",
-                            parameters=schema),
+        AgentToolDefinition(
+            name=name,
+            description="Use the roster's Clear signups action for an authorized requester to remove all signups.",
+            parameters=schema,
+        ),
         prepare_clear, AgentCapabilityEffect.COMMAND, classification,
         contract=CapabilityContract(
             entity_fields=(("roster_id", "roster"),), source_scope="request_context",
@@ -116,7 +119,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
     ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
         name="refresh_roster",
-        description="Refresh a roster's account details, signup roles and post.",
+        description="Perform the roster refresh button's action for the requester to refresh account details, signup roles and the post.",
         parameters=schema,
     ), prepare_roster_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
@@ -153,6 +156,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
 async def prepare_roster_refresh(context: AgentRequestContext,
                                  values: Mapping[str, Any]) -> Mapping[str, Any]:
     await require_evidence_access(context)
+    require_roster_management_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
         raise ActionRefused('That roster is unavailable.')
@@ -187,13 +191,13 @@ async def prepare_roster_refresh(context: AgentRequestContext,
                     requester=context.member, guild=context.guild)
         except (discord.DiscordException, ValueError):
             return False
-        return True
+        return can_manage_roster(context)
 
     async def run() -> ActionOutcome:
         status = await workflow.refresh_roster(roster_id)
         if status != "complete":
             raise ActionRefused("That roster couldn't be refreshed.")
-        return ActionOutcome("complete", "private", text=ACTION_ROSTER_REFRESH_LABEL)
+        return ActionOutcome("complete", "private", text=f"Refreshed **{roster.name}**.")
 
     context.state.proposed_changes.append(PreparedAction(
         "refresh_roster", dict(values),
@@ -207,6 +211,7 @@ async def prepare_roster_refresh(context: AgentRequestContext,
 async def prepare_roster_layout(context: AgentRequestContext,
                                 values: Mapping[str, Any]) -> Mapping[str, Any]:
     await require_evidence_access(context)
+    require_roster_management_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
         raise ActionRefused('That roster is unavailable.')
@@ -227,9 +232,6 @@ async def prepare_roster_layout(context: AgentRequestContext,
         field=_layout_field(field), old=display_value(before[field], visibility=True),
         new=display_value(value, visibility=True))
         for field, value in changes.items())
-    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        channel=f"<#{channel_id}>")
-        for channel_id, message_id in posts)
 
     async def recheck() -> bool:
         live = await workflow.roster_layout_state(roster_id)
@@ -239,14 +241,14 @@ async def prepare_roster_layout(context: AgentRequestContext,
             await check_roster_posts(context, posts)
         except (discord.DiscordException, ValueError):
             return False
-        return True
+        return can_manage_roster(context)
 
     async def run() -> ActionOutcome:
         updated, result = await workflow.set_roster_layout(roster_id, **changes)
         if updated is None:
             raise ActionRefused('That roster is unavailable.')
         return ActionOutcome("complete", "private",
-                              text=ACTION_ROSTER_LAYOUT_LINE.format(name=updated.name),
+                              text=f"Updated the layout of **{updated.name}**.",
                               after={"layout": asdict(result)})
 
     context.state.proposed_changes.append(PreparedAction(
@@ -260,6 +262,7 @@ async def prepare_roster_layout(context: AgentRequestContext,
 
 async def prepare_roster_layout_undo(context: AgentRequestContext,
                                      log: Mapping[str, Any]) -> PreparedAction:
+    require_roster_management_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
         raise ActionRefused('That roster is unavailable.')
@@ -286,14 +289,14 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
             await check_roster_posts(context, posts)
         except (discord.DiscordException, ValueError):
             return False
-        return True
+        return can_manage_roster(context)
 
     async def run() -> ActionOutcome:
         updated, result = await workflow.set_roster_layout(roster_id, **prior)
         if updated is None:
             raise ActionRefused('That roster is unavailable.')
         return ActionOutcome("complete", "private",
-                              text=ACTION_ROSTER_LAYOUT_LINE.format(name=updated.name),
+                              text=f"Restored the layout of **{updated.name}**.",
                               after={"layout": asdict(result)})
 
     return PreparedAction(
@@ -308,6 +311,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
                    name: str, operation: str, classification: ActionClass,
                    label: str) -> Mapping[str, Any]:
     await require_evidence_access(context)
+    require_roster_management_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
         raise ActionRefused('That roster is unavailable.')
@@ -323,19 +327,37 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         return {"status": "no_change"}
     if name == "hide_roster_controls" and roster.buttons_hidden:
         return {"status": "no_change"}
-    lines = [
-        ACTION_ROSTER_CONTROL_LINE.format(action=label, name=roster.name),
-        ACTION_ROSTER_CONTROL_STATUS.format(status=roster.status),
-    ]
+    count = state["account_count"]
+    noun = "signup" if count == 1 else "signups"
+    name_text = f"**{roster.name}**"
     if operation == "clear":
-        lines.append(ACTION_ROSTER_CONTROL_COUNT.format(count=state["account_count"]))
-        role = context.guild.get_role(roster.role_id) if roster.role_id else None
-        if role is not None and state["member_ids"]:
-            lines.append(ACTION_SIGNUP_ROLE.format(role=role.mention))
-        lines.extend(ACTION_ROSTER_CONTROL_MEMBER.format(member=f"<@{member_id}>")
-                     for member_id in state["member_ids"] if member_id in present)
-    lines.extend(ACTION_ROSTER_POST_REFRESH.format(channel=f"<#{channel_id}>")
-                 for channel_id, message_id in state["posts"])
+        lines = [f"➖ Clear {count} active {noun} from {name_text}"]
+    elif operation == "open":
+        lines = [f"📝 Open signups for {name_text}"]
+    elif operation == "close":
+        lines = [f"➖ Close signups for {name_text}"]
+    else:
+        verb = "Show" if roster.buttons_hidden else "Hide"
+        lines = [f"⚙️ {verb} signup controls for {name_text}"]
+
+    resets = operation == "open" and workflow.manual_open_resets_signups(roster)
+    if resets:
+        lines.append(f"This starts a new signup cycle and clears {count} active {noun}.")
+    role = context.guild.get_role(roster.role_id) if check_members and roster.role_id else None
+
+    async def role_losses() -> tuple[int, ...]:
+        if role is None or operation != "clear":
+            return ()
+        losing = []
+        for member_id in present:
+            if await workflow.roster_signup_role_changes(roster, member_id, should_have=False):
+                losing.append(member_id)
+        return tuple(losing)
+
+    losing_role = await role_losses()
+    if losing_role:
+        members = ", ".join(f"<@{member_id}>" for member_id in losing_role)
+        lines.append(f"Remove {role.mention} from {members}.")
 
     def signature(snapshot: Mapping[str, Any]) -> tuple[Any, ...]:
         item = snapshot["roster"]
@@ -346,20 +368,35 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         current = await workflow.roster_management_state(roster_id)
         if current is None or signature(current) != signature(state):
             return False
+        if operation == "open" and workflow.manual_open_resets_signups(current["roster"]) != resets:
+            return False
+        if await role_losses() != losing_role:
+            return False
         try:
             await check_roster_posts(context, current["posts"])
             if check_members:
                 await _check_members(context, current["roster"], current["member_ids"])
         except (discord.DiscordException, ValueError):
             return False
-        return True
+        return can_manage_roster(context)
 
     async def run() -> ActionOutcome:
         if operation == "clear":
             result = await workflow.clear_roster_signups(roster_id)
-            text = result.message
+            text = ("\n".join((f"Cleared {count} {noun} from {name_text}.", *result.notices))
+                    if result.changed else result.message)
         else:
             text = await workflow.change_roster_management(roster_id, operation)
+            updated = await workflow.get_roster(roster_id)
+            if updated is None:
+                raise ActionRefused(text)
+            if operation == "open" and updated.status == "open":
+                text = f"Signups are open for {name_text}."
+            elif operation == "close" and updated.status == "closed":
+                text = f"Signups are closed for {name_text}."
+            elif operation == "toggle_buttons":
+                visible = "hidden" if updated.buttons_hidden else "visible"
+                text = f"Signup controls for {name_text} are {visible}."
         return ActionOutcome("complete", "private", text=text)
 
     context.state.proposed_changes.append(PreparedAction(

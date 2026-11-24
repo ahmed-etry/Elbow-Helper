@@ -8,7 +8,7 @@ from typing import Any
 from elbow_helper.agent.discord_actions.safety import check_bot_post_access
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
-from elbow_helper.agent.conversation.wording import ACTION_PREVIEW_BLANK, ACTION_TRANSFER_REMINDER_CHANNEL, ACTION_TRANSFER_REMINDER_CLEAR, ACTION_TRANSFER_REMINDER_DELETE, ACTION_TRANSFER_REMINDER_LABEL, ACTION_TRANSFER_REMINDER_PAGE
+from elbow_helper.agent.conversation.wording import ACTION_PREVIEW_BLANK, ACTION_TRANSFER_REMINDER_LABEL, ACTION_TRANSFER_REMINDER_PAGE
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter, PreparedCommandChange
 
@@ -33,13 +33,12 @@ async def prepare_transfer_reminder(
     prior_channels = ", ".join(dict.fromkeys(f"<#{entry['channel_id']}>"
                                             for entry in prepared["previous_entries"]))
     if prepared["status"] == "clear":
-        lines.append(ACTION_TRANSFER_REMINDER_CLEAR)
+        line = f"⏰ Clear the CWL transfer reminder from {prior_channels}"
+    elif prior_channels:
+        line = (f"⏰ Replace the prior CWL transfer reminder in {prior_channels} "
+                f"with a post in {channel.mention}")
     else:
-        lines.append(ACTION_TRANSFER_REMINDER_CHANNEL.format(channel=channel.mention))
-    for entry in prepared["previous_entries"]:
-        lines.append(ACTION_TRANSFER_REMINDER_DELETE.format(
-            channel=f"<#{entry['channel_id']}>",
-            ))
+        line = f"⏰ Post the CWL transfer reminder in {channel.mention}"
     details = []
     for number, chunk in enumerate(prepared["chunks"], start=1):
         details.append(ACTION_TRANSFER_REMINDER_PAGE.format(number=number))
@@ -81,8 +80,15 @@ async def prepare_transfer_reminder(
                 entry["message_id"] for entry in refs
             } != set(result["message_ids"]):
                 raise OSError("Transfer reminder post could not be verified")
+        result_lines = result["result_lines"]
+        if result["status"] == "complete":
+            if prepared["status"] == "clear":
+                result_lines = ("Cleared the CWL transfer reminder.", *result_lines)
+            else:
+                verb = "replaced" if prior_channels else "posted"
+                result_lines = (f"CWL transfer reminder {verb} in {channel.mention}.", *result_lines[1:])
         return ActionOutcome(
-            "complete", "private", text="\n".join(result["result_lines"]),
+            "complete", "private", text="\n".join(result_lines),
             result={"status": result["status"],
                     "message_ids": list(result["message_ids"]),
                     "channel_id": channel.id if channel else None},
@@ -92,7 +98,7 @@ async def prepare_transfer_reminder(
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck,
+        ChangePreview((line,), recheck,
                       summary=ACTION_TRANSFER_REMINDER_LABEL, details=tuple(details),
                       before={"previous_entries": prepared["previous_entries"]}),
         run,
@@ -110,4 +116,5 @@ def cwl_transfer_reminder_adapters() -> tuple[CommandAdapter, ...]:
         "/transfer reminder", "confirm", run_transfer_reminder,
         prepare=prepare_transfer_reminder,
         action_class=ActionClass.CHANGE,
+        tool_description="Carry out /transfer reminder for an authorized requester to notify members who still need to move to their CWL clan.",
     ),)

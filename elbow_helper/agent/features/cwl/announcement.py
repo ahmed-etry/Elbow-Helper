@@ -9,7 +9,7 @@ from elbow_helper.agent.discord_actions.safety import check_bot_post_access
 from elbow_helper.features.cwl.announcements import PENDING_ROSTER_HUB_LINK
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
-from elbow_helper.agent.conversation.wording import ACTION_CWL_ANNOUNCEMENT_CHANNEL, ACTION_CWL_ANNOUNCEMENT_CYCLE, ACTION_CWL_ANNOUNCEMENT_HUB, ACTION_CWL_ANNOUNCEMENT_LABEL, ACTION_CWL_ANNOUNCEMENT_LINK, ACTION_CWL_ANNOUNCEMENT_RELEASE, ACTION_CWL_ANNOUNCEMENT_PREVIEW_ONLY, ACTION_PREVIEW_BLANK
+from elbow_helper.agent.conversation.wording import ACTION_CWL_ANNOUNCEMENT_CHANNEL, ACTION_CWL_ANNOUNCEMENT_CYCLE, ACTION_CWL_ANNOUNCEMENT_HUB, ACTION_CWL_ANNOUNCEMENT_LABEL, ACTION_CWL_ANNOUNCEMENT_LINK, ACTION_CWL_ANNOUNCEMENT_PREVIEW_ONLY
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter, PreparedCommandChange
 
@@ -59,11 +59,10 @@ async def prepare_roster_announcement(
     lines = [ACTION_CWL_ANNOUNCEMENT_CHANNEL.format(channel=channel.mention)]
     if prepared["hub_url"] is None:
         lines.append(ACTION_CWL_ANNOUNCEMENT_HUB)
-    lines.append(ACTION_CWL_ANNOUNCEMENT_RELEASE)
     lines.extend(ACTION_CWL_ANNOUNCEMENT_CYCLE.format(
         name=name,
     ) for name in names)
-    details = tuple(line or ACTION_PREVIEW_BLANK for line in content.splitlines())
+    details = tuple(content.split("\n"))
 
     async def recheck() -> bool:
         live_channel = await workflow.resolve_roster_announcement_channel()
@@ -91,7 +90,9 @@ async def prepare_roster_announcement(
         if not messages or not workflow.roster_announcement_released(cycles):
             raise OSError("CWL roster announcement could not be verified")
         return ActionOutcome(
-            "complete", "private", text=result["message"],
+            "complete", "private", text=(
+                f"CWL roster announcement posted in {channel.mention}."
+                if result["message"] == "The roster announcement is live." else result["message"]),
             result={"channel_id": channel.id,
                     "message_ids": [message.id for message in messages]},
             after={"channel_id": channel.id,
@@ -102,6 +103,7 @@ async def prepare_roster_announcement(
     return PreparedCommandChange(
         ChangePreview(tuple(lines), recheck,
                       summary=ACTION_CWL_ANNOUNCEMENT_LABEL, details=details,
+                      message_body=slice(None),
                       before={"released_cycles": prior_release}),
         run,
     )
@@ -118,4 +120,5 @@ def cwl_announcement_adapters() -> tuple[CommandAdapter, ...]:
         "/roster announcement", "confirm", run_roster_announcement,
         prepare=prepare_roster_announcement,
         action_class=ActionClass.CHANGE,
+        tool_description="Carry out /roster announcement for an authorized requester to share CWL roster and transfer deadlines with the clan family.",
     ),)

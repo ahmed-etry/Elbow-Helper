@@ -9,7 +9,7 @@ from elbow_helper.features.help.discovery import ParameterInfo
 from elbow_helper.agent.safety.access import ACCESS_LEAD_PLUS
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
 from elbow_helper.agent.engine.models import AgentAttachment
-from elbow_helper.agent.conversation.wording import ACTION_ROSTER_POST_REFRESH, ACTION_ROSTER_POST_ACCOUNTS, ACTION_ROSTER_POST_CHANNEL_OPTION, ACTION_ROSTER_POST_CLOSED, ACTION_ROSTER_POST_CONTROLS, ACTION_ROSTER_POST_HIDDEN, ACTION_ROSTER_POST_LABEL, ACTION_ROSTER_POST_LINE, ACTION_ROSTER_POST_OPEN, ACTION_ROSTER_POST_RESET, ACTION_ROSTER_POST_PAGE, ACTION_ROSTER_POST_IMAGE, ACTION_PREVIEW_BLANK, ACTION_ROSTER_EXPORT_ACCOUNT, ACTION_ROSTER_EXPORT_FILE, ACTION_ROSTER_EXPORT_GOOGLE, ACTION_ROSTER_EXPORT_LABEL, ACTION_ROSTER_EXPORT_LINE, ACTION_ROSTER_EXPORT_LINK
+from elbow_helper.agent.conversation.wording import ACTION_ROSTER_POST_ACCOUNTS, ACTION_ROSTER_POST_CHANNEL_OPTION, ACTION_ROSTER_POST_CLOSED, ACTION_ROSTER_POST_CONTROLS, ACTION_ROSTER_POST_HIDDEN, ACTION_ROSTER_POST_LABEL, ACTION_ROSTER_POST_LINE, ACTION_ROSTER_POST_OPEN, ACTION_ROSTER_POST_RESET, ACTION_ROSTER_POST_PAGE, ACTION_ROSTER_POST_IMAGE, ACTION_PREVIEW_BLANK, ACTION_ROSTER_EXPORT_ACCOUNT, ACTION_ROSTER_EXPORT_GOOGLE, ACTION_ROSTER_EXPORT_LABEL, ACTION_ROSTER_EXPORT_LINE
 from elbow_helper.agent.actions.outcomes import ActionOutcome, embed_text
 from elbow_helper.agent.commands.registry import CommandAdapter, PreparedCommandChange
 
@@ -45,8 +45,6 @@ async def prepare_roster_post(context: Any,
     ]
     if effect["clears_signups"]:
         lines.append(ACTION_ROSTER_POST_RESET)
-    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        channel=f"<#{channel_id}>", ) for channel_id, message_id in state["posts"])
     details = []
     for page_number, embeds in enumerate(render["pages"], start=1):
         details.append(ACTION_ROSTER_POST_PAGE.format(number=page_number))
@@ -82,7 +80,7 @@ async def prepare_roster_post(context: Any,
         if not await workflow.roster_post_registered(roster_id, message.id):
             raise OSError("Roster post could not be verified")
         return ActionOutcome(
-            "complete", "public",
+            "complete", "public", text=f"Posted **{roster.name}** in {channel.mention}.",
             result={"roster_id": roster_id, "channel_id": channel.id,
                     "message_id": message.id},
             after={"roster_id": roster_id, "status": opened.status,
@@ -122,8 +120,7 @@ async def prepare_roster_export(context: Any,
         )
     lines = [
         ACTION_ROSTER_EXPORT_LINE.format(name=roster.name),
-        ACTION_ROSTER_EXPORT_FILE.format(name=plan["workbook_name"]),
-        ACTION_ROSTER_EXPORT_GOOGLE,
+        ACTION_ROSTER_EXPORT_GOOGLE.format(name=plan["workbook_name"]),
     ]
     lines.extend(ACTION_ROSTER_EXPORT_ACCOUNT.format(
         tag=tag, member=f"<@{member_id}>",
@@ -143,10 +140,8 @@ async def prepare_roster_export(context: Any,
         if report is None:
             return ActionOutcome("complete", "private", text=warning or "")
         link, data = await workflow.deliver_roster_export(report)
-        text = f"Exported **{roster.name}**."
-        if link:
-            text += "\n" + ACTION_ROSTER_EXPORT_LINK.format(url=link)
-        elif report.google_warning:
+        text = f"Exported signups for **{roster.name}**."
+        if not link and report.google_warning:
             text += "\n" + report.google_warning
         attachments = ((AgentAttachment(report.workbook_name, data),)
                        if data is not None else ())

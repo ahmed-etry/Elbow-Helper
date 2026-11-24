@@ -39,7 +39,7 @@ def member_role_owner(context: Any, role_id: int, member_id: int) -> str | None:
     }
     if role_id in membership_roles:
         if context.recruitment_queries is None:
-            raise DiscordActionRefused(ACTION_UNAVAILABLE)
+            raise DiscordActionRefused(ACTION_UNAVAILABLE, cause="missing_setup")
         if context.recruitment_queries.has_open_trial(member_id):
             return "trial"
     saved_roles = {
@@ -48,7 +48,7 @@ def member_role_owner(context: Any, role_id: int, member_id: int) -> str | None:
     }
     if role_id in saved_roles:
         if context.hibernation_queries is None:
-            raise DiscordActionRefused(ACTION_UNAVAILABLE)
+            raise DiscordActionRefused(ACTION_UNAVAILABLE, cause="missing_setup")
         if context.hibernation_queries.is_hibernating(member_id):
             return "hibernation"
     return None

@@ -33,8 +33,8 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
             "name": " War  Signup ", "clan": "BEH", "max_members": 30,
         })
         self.assertEqual(roster_adapters()[0].path, "/roster create")
-        self.assertIn("Create roster **War Signup**.", prepared.preview.lines)
-        self.assertIn("Maximum accounts: 30", prepared.preview.lines)
+        self.assertIn("➕ Create roster **War Signup** for BEH", prepared.preview.lines)
+        self.assertIn("Up to 30 accounts.", prepared.preview.lines)
         workflow.create_roster.assert_not_awaited()
         self.assertTrue(await prepared.preview.recheck())
         result = await prepared.run()
@@ -71,7 +71,7 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
         prepared = await prepare_roster_clone(context, values)
         self.assertTrue(await prepared.preview.recheck())
         self.assertIn("Minimum Town Hall: None", prepared.preview.details)
-        self.assertIn("The new roster starts closed with no signups.",
+        self.assertIn("It starts closed with no signups.",
                       prepared.preview.details)
         self.assertEqual((await prepared.run()).result["roster_id"], 8)
         workflow.clone_roster.assert_awaited_once_with(
@@ -106,14 +106,14 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
         )
         prepared = await prepare_roster_delete(context, {"roster": "4"})
         self.assertTrue(await prepared.preview.recheck())
-        self.assertIn("Delete 1 signup across 1 cycle.", prepared.preview.lines)
+        self.assertIn("🗑️ Delete **Old** and all 1 signup across 1 cycle", prepared.preview.lines)
         self.assertIn("Disable controls on the roster post in <#9>.",
                       prepared.preview.lines)
         workflow.delete_roster.assert_not_awaited()
         self.assertTrue((await prepared.run()).after["deleted"])
         self.assertFalse(await prepared.preview.recheck())
 
-    async def test_edit_previews_old_and_new_values_and_refreshes_posts(self):
+    async def test_edit_previews_old_and_new_values(self):
         roster = SimpleNamespace(
             id=4, guild_id=5, name="Signup", clan_code="BEH",
             role_id=None, max_members=40, min_townhall=15,
@@ -145,9 +145,8 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
             "roster": "4", "max_members": 50, "min_townhall": 0,
         })
         self.assertTrue(await prepared.preview.recheck())
-        self.assertIn("Maximum accounts: 40 to 50", prepared.preview.details)
-        self.assertIn("Minimum Town Hall: 15 to None", prepared.preview.details)
-        self.assertIn("Refresh the roster post in <#9>.", prepared.preview.lines)
+        self.assertIn("Maximum accounts goes from 40 to 50.", prepared.preview.details)
+        self.assertIn("Minimum Town Hall goes from 15 to None.", prepared.preview.details)
         workflow.update_roster_settings.assert_not_awaited()
         result = await prepared.run()
         self.assertEqual(result.after["changes"], {

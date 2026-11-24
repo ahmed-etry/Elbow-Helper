@@ -12,7 +12,7 @@ import discord
 from elbow_helper.agent.discord_actions.safety import check_member, check_bot_post_access, check_role, resolve_channel, resolve_member
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
-from elbow_helper.agent.conversation.wording import ACTION_PREVIEW_BLANK, ACTION_RECSTATEMENT_LABEL, ACTION_RECSTATEMENT_LINE, ACTION_CHECKUP_LABEL, ACTION_CHECKUP_LINE, ACTION_DECLINE_LABEL, ACTION_DECLINE_LINE, ACTION_TICKET_RENAME, ACTION_DECLINE_RENAME_SKIP, ACTION_FINALIZE_LABEL, ACTION_FINALIZE_LINE, ACTION_ROLE_ADD_LINE, ACTION_ROLE_REMOVE_LINE, ACTION_ACCEPT_ACCOUNT, ACTION_ACCEPT_ACCOUNT_OLD, ACTION_ACCEPT_ACHIEVEMENT, ACTION_ACCEPT_BOARD, ACTION_ACCEPT_LABEL, ACTION_ACCEPT_LINE, ACTION_ACCEPT_NICKNAME, ACTION_ACCEPT_TRACK, ACTION_ACCEPT_WARNING, ACTION_ACCEPT_NO_LINK, ACTION_ACCEPT_ROLE_MISSING
+from elbow_helper.agent.conversation.wording import ACTION_RECSTATEMENT_LABEL, ACTION_RECSTATEMENT_LINE, ACTION_CHECKUP_LABEL, ACTION_CHECKUP_LINE, ACTION_DECLINE_LABEL, ACTION_DECLINE_LINE, ACTION_TICKET_RENAME, ACTION_DECLINE_RENAME_SKIP, ACTION_FINALIZE_LABEL, ACTION_FINALIZE_LINE, ACTION_ROLE_ADD_LINE, ACTION_ROLE_REMOVE_LINE, ACTION_ACCEPT_ACCOUNT, ACTION_ACCEPT_ACCOUNT_OLD, ACTION_ACCEPT_ACHIEVEMENT, ACTION_ACCEPT_LABEL, ACTION_ACCEPT_LINE, ACTION_ACCEPT_NICKNAME, ACTION_ACCEPT_WARNING, ACTION_ACCEPT_NO_LINK, ACTION_ACCEPT_ROLE_MISSING
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter, PreparedCommandChange
 
@@ -72,15 +72,14 @@ async def prepare_recstatement(context: Any,
     return ChangePreview((
         ACTION_RECSTATEMENT_LINE.format(channel=prepared["channel"].mention),
     ), recheck, summary=ACTION_RECSTATEMENT_LABEL,
-       details=tuple(line or ACTION_PREVIEW_BLANK
-                     for line in prepared["message"].splitlines()))
+       details=tuple(prepared["message"].split("\n")), message_body=slice(None))
 
 
 async def run_recstatement(context: Any,
                            values: Mapping[str, Any]) -> ActionOutcome:
     workflow, prepared = await _recstatement(context, values)
-    message = await workflow.post_recstatement(prepared)
-    return ActionOutcome("complete", "private", text=message,
+    await workflow.post_recstatement(prepared)
+    return ActionOutcome("complete", "private", text=f"Recruitment message posted in {prepared['channel'].mention}.",
                           result={"channel_id": prepared["channel"].id})
 
 
@@ -119,16 +118,17 @@ async def prepare_checkup(context: Any,
 
     async def run() -> ActionOutcome:
         confirmation = await workflow.post_checkup(prepared, actor_id=context.member.id, via="agent")
+        details = confirmation.partition("\n")[2]
         return ActionOutcome(
-            "complete", "private", text=confirmation,
+            "complete", "private", text="\n".join(filter(None, (
+                f"Recruitment checkup posted in {channel.mention}.", details))),
             result={"channel_id": channel.id},
         )
 
     return PreparedCommandChange(ChangePreview((
         ACTION_CHECKUP_LINE.format(channel=channel.mention),
     ), recheck, summary=ACTION_CHECKUP_LABEL,
-       details=tuple(line or ACTION_PREVIEW_BLANK
-                     for line in str(prepared["message"]).splitlines())), run)
+       details=tuple(str(prepared["message"]).split("\n")), message_body=slice(None)), run)
 
 
 async def run_checkup(context: Any,
@@ -160,8 +160,7 @@ async def prepare_decline(context: Any,
                       else ACTION_DECLINE_RENAME_SKIP).format(
             old=channel.name, new=candidate,
         ))
-    details = tuple(line or ACTION_PREVIEW_BLANK
-                    for line in prepared["message"].splitlines())
+    details = tuple(prepared["message"].split("\n"))
 
     async def recheck() -> bool:
         try:
@@ -180,13 +179,16 @@ async def prepare_decline(context: Any,
 
     async def run() -> ActionOutcome:
         message = await workflow.post_decline(prepared, actor_id=context.member.id, via="agent")
-        return ActionOutcome("complete", "private", text=message,
+        text = f"Declined {member.mention} and posted the decision in {channel.mention}."
+        warning = message.partition("\n")[2]
+        return ActionOutcome("complete", "private", text="\n".join(filter(None, (text, warning))),
                               result={"channel_id": channel.id},
                               after={"channel_id": channel.id,
                                      "channel_name": channel.name})
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_DECLINE_LABEL, details=details), run,
+        ChangePreview(tuple(lines), recheck, summary=ACTION_DECLINE_LABEL, details=details,
+                      message_body=slice(None)), run,
     )
 
 
@@ -229,8 +231,7 @@ async def prepare_finalize(context: Any,
     lines.extend(ACTION_ROLE_ADD_LINE.format(
         role=role.mention, member=member.mention,
     ) for role in prepared["add_roles"])
-    details = tuple(line or ACTION_PREVIEW_BLANK
-                    for line in prepared["message"].splitlines())
+    details = tuple(prepared["message"].split("\n"))
     signature = (
         prepared["old_name"], prepared["new_name"], prepared["message"],
         tuple(role.id for role in prepared["remove_roles"]),
@@ -260,8 +261,10 @@ async def prepare_finalize(context: Any,
 
     async def run() -> ActionOutcome:
         confirmation = await workflow.post_finalize(prepared, actor_id=context.member.id, via="agent")
+        text = f"Finalized {member.mention}'s trial and posted the decision in {channel.mention}."
+        warnings = confirmation.partition("\n")[2]
         return ActionOutcome(
-            "complete", "private", text=confirmation,
+            "complete", "private", text="\n".join(filter(None, (text, warnings))),
             result={"channel_id": channel.id, "member_id": member.id},
             after={"channel_id": channel.id, "member_id": member.id,
                    "channel_name": channel.name,
@@ -269,7 +272,8 @@ async def prepare_finalize(context: Any,
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_FINALIZE_LABEL, details=details), run,
+        ChangePreview(tuple(lines), recheck, summary=ACTION_FINALIZE_LABEL, details=details,
+                      message_body=slice(None)), run,
     )
 
 
@@ -333,11 +337,8 @@ async def prepare_accept(context: Any,
         lines.append(ACTION_ACCEPT_ACCOUNT.format(
             tag=row["player_tag"], old=old, member=member.mention,
         ))
-    lines.extend((ACTION_ACCEPT_BOARD, ACTION_ACCEPT_TRACK.format(
-        channel=channel.mention, days=prepared["days"],
-    ), ACTION_ACCEPT_ACHIEVEMENT.format(member=member.mention)))
-    details = tuple(line or ACTION_PREVIEW_BLANK
-                    for line in prepared["welcome"].splitlines())
+    lines.append(ACTION_ACCEPT_ACHIEVEMENT.format(member=member.mention))
+    details = tuple(prepared["welcome"].split("\n"))
 
     def signature(item, effect):
         return (
@@ -381,7 +382,10 @@ async def prepare_accept(context: Any,
         if result["issue"]:
             raise ActionRefused(result["issue"])
         return ActionOutcome(
-            "complete", "private", text=result["message"] or "",
+            "complete", "private",
+            text=(result["message"] or "" if result["failures"] else
+                  f"Accepted {member.mention} for {', '.join(prepared['valid_clans'])} "
+                  f"and started a {prepared['days']}-day trial."),
             result={"member_id": member.id, "channel_id": channel.id,
                     "failures": list(result["failures"])},
             after={"member_id": member.id, "channel_id": channel.id,
@@ -390,7 +394,7 @@ async def prepare_accept(context: Any,
 
     return PreparedCommandChange(
         ChangePreview(tuple(lines), recheck, summary=ACTION_ACCEPT_LABEL, details=details,
-                      before={
+                      message_body=slice(None), before={
                           "member_id": member.id,
                           "nickname": effects["nickname_before"],
                           "role_ids": tuple(role.id for role in member.roles),
@@ -422,23 +426,27 @@ def recruitment_adapters() -> tuple[CommandAdapter, ...]:
             prepare=prepare_checkup, action_class=ActionClass.CHANGE,
             entity_options=(("applicant", "discord_member"), ("channel", "discord_channel")),
             capability_name="start_applicant_checkup",
+            tool_description="Carry out /checkup for an authorized requester to start the recruitment conversation and include any remaining setup steps.",
         ),
         CommandAdapter(
             "/decline", "confirm", run_decline,
             prepare=prepare_decline, action_class=ActionClass.IRREVERSIBLE,
             entity_options=(("applicant", "discord_member"), ("channel", "discord_channel")),
             capability_name="decline_applicant",
+            tool_description="Carry out /decline for an authorized requester to decline an applicant and send the decision.",
         ),
         CommandAdapter(
             "/finalize", "confirm", run_finalize,
             prepare=prepare_finalize, action_class=ActionClass.IRREVERSIBLE,
             entity_options=(("applicant", "discord_member"), ("channel", "discord_channel")),
             capability_name="finalize_trial",
+            tool_description="Carry out /finalize for an authorized requester to close out a recruit's trial and give them full member access.",
         ),
         CommandAdapter(
             "/accept", "confirm", run_accept,
             prepare=prepare_accept, action_class=ActionClass.IRREVERSIBLE,
             entity_options=(("applicant", "discord_member"), ("channel", "discord_channel")),
             capability_name="accept_applicant",
+            tool_description="Carry out /accept for an authorized requester to accept an applicant, link their accounts and start their trial.",
         ),
     )

@@ -71,6 +71,8 @@ async def prior_messages(context, referenced, resolve_reference):
                 {"type": "function_call_output", "call_id": call_id, "output": lookup["output"]},
             ))
         if answer:
+            for card_id in sorted(state.open_confirmation_ids.intersection(reply_ids)):
+                answer = f"[Open Confirm card ID: {card_id}]\n{answer}"
             prior.append({"role": "assistant", "content": describe_sent_gifs(answer)})
         state.source_channels.update(turn.source_channels)
         state.required_access.update(turn.required_access)

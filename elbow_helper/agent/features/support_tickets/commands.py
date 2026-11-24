@@ -11,7 +11,7 @@ from elbow_helper.agent.discord_actions.safety import check_member, check_bot_po
 from elbow_helper.features.help.discovery import ParameterInfo
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
-from elbow_helper.agent.conversation.wording import ACTION_TICKET_MEMBER, ACTION_TICKET_SUPPORT_ROLE, ACTION_NO_CATEGORY, ACTION_SUPPORT_OPEN_DEFAULT_TOPIC, ACTION_SUPPORT_OPEN_CATEGORY, ACTION_TICKET_CONTROLS, ACTION_SUPPORT_OPEN_LABEL, ACTION_SUPPORT_OPEN_LINE, ACTION_SUPPORT_OPEN_POST, ACTION_SUPPORT_OPEN_TOPIC, ACTION_SUPPORT_CLOSE_CHANNEL_OPTION, ACTION_SUPPORT_CLOSE_LABEL, ACTION_SUPPORT_CLOSE_LINE, ACTION_SUPPORT_CLOSE_STATUS, ACTION_TICKET_CLOSE_ACCESS, ACTION_SUPPORT_CLOSE_LOG, ACTION_SUPPORT_CLOSE_TRANSCRIPT, ACTION_SUPPORT_CLOSE_HISTORY, ACTION_SUPPORT_CLOSE_CONTROLS, ACTION_SUPPORT_CLOSE_DONE
+from elbow_helper.agent.conversation.wording import ACTION_TICKET_SUPPORT_ROLE, ACTION_SUPPORT_OPEN_DEFAULT_TOPIC, ACTION_TICKET_CONTROLS, ACTION_SUPPORT_OPEN_LABEL, ACTION_SUPPORT_OPEN_LINE, ACTION_SUPPORT_OPEN_POST, ACTION_SUPPORT_OPEN_TOPIC, ACTION_SUPPORT_CLOSE_CHANNEL_OPTION, ACTION_SUPPORT_CLOSE_LABEL, ACTION_SUPPORT_CLOSE_LINE, ACTION_SUPPORT_CLOSE_LOG, ACTION_SUPPORT_CLOSE_TRANSCRIPT, ACTION_SUPPORT_CLOSE_HISTORY, ACTION_SUPPORT_CLOSE_CONTROLS, ACTION_SUPPORT_CLOSE_DONE
 from elbow_helper.agent.actions.outcomes import ActionOutcome, embed_text
 from elbow_helper.agent.commands.registry import CommandAdapter, PreparedCommandChange
 
@@ -52,18 +52,15 @@ async def prepare_support_open(context: Any,
     prepared["via"] = "agent"
     category = prepared["category"]
     lines = [
-        ACTION_SUPPORT_OPEN_LINE.format(name=prepared["name"], member=member.mention),
-        ACTION_SUPPORT_OPEN_CATEGORY.format(
-            category=category.mention if category else ACTION_NO_CATEGORY,
-        ),
-        ACTION_TICKET_MEMBER.format(member=member.mention),
-        *(ACTION_TICKET_SUPPORT_ROLE.format(role=f"<@&{role_id}>")
-          for role_id in prepared["visible_roles"]),
-        ACTION_SUPPORT_OPEN_POST,
-        ACTION_TICKET_CONTROLS,
+        ACTION_SUPPORT_OPEN_LINE.format(name=prepared["name"], member=member.mention,
+                                       place=f" in {category.mention}" if category else ""),
     ]
+    if prepared["visible_roles"]:
+        roles = ", ".join(f"<@&{role_id}>" for role_id in sorted(prepared["visible_roles"]))
+        lines.append(ACTION_TICKET_SUPPORT_ROLE.format(roles=roles))
     details = (ACTION_SUPPORT_OPEN_TOPIC.format(
         topic=prepared["topic"] or ACTION_SUPPORT_OPEN_DEFAULT_TOPIC),
+        ACTION_TICKET_CONTROLS, ACTION_SUPPORT_OPEN_POST,
         member.mention, prepared["welcome"], *embed_text(prepared["embed"]).splitlines())
     signature = _target_signature(prepared)
 
@@ -78,17 +75,18 @@ async def prepare_support_open(context: Any,
         return _target_signature(live) == signature
 
     async def run() -> ActionOutcome:
-        channel, message = await workflow.open_support_ticket(prepared)
+        channel, _ = await workflow.open_support_ticket(prepared)
         registration = workflow.support_ticket_registration(channel.id)
         if registration is None or registration.get("owner") != member.id:
             raise OSError("Support ticket creation could not be verified")
         return ActionOutcome(
-            "complete", "private", text=message,
+            "complete", "private", text=f"Opened <#{channel.id}> for {member.mention}.",
             result={"channel_id": channel.id}, after={"channel_id": channel.id},
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_SUPPORT_OPEN_LABEL, details=details),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_SUPPORT_OPEN_LABEL, details=details,
+                      message_body=slice(3, 5)),
         run,
     )
 
@@ -120,18 +118,17 @@ async def prepare_support_close(context: Any,
         check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
     history = await workflow.support_close_history(channel)
     lines = [
-        ACTION_SUPPORT_CLOSE_LINE.format(channel=channel.mention),
-        ACTION_SUPPORT_CLOSE_STATUS.format(member=context.member.mention),
+        ACTION_SUPPORT_CLOSE_LINE.format(
+            channel=channel.mention,
+            access=f" and stop {owner.mention} from sending messages there" if owner else ""),
     ]
-    if owner is not None:
-        lines.append(ACTION_TICKET_CLOSE_ACCESS.format(member=owner.mention))
     lines.extend((
         ACTION_SUPPORT_CLOSE_LOG.format(channel=log_channel.mention),
         ACTION_SUPPORT_CLOSE_TRANSCRIPT.format(
             limit=context.guild.filesize_limit // 1_048_576,
         ),
     ))
-    details = [ACTION_SUPPORT_CLOSE_HISTORY.format(count=len(history))]
+    details = (ACTION_SUPPORT_CLOSE_HISTORY.format(count=len(history)),)
     lines.append(ACTION_SUPPORT_CLOSE_CONTROLS)
     signature = (
         prepared["ticket_info"], prepared["source"],
@@ -178,7 +175,7 @@ async def prepare_support_close(context: Any,
         if not isinstance(result["log_message_id"], int):
             raise OSError("Support ticket close could not be verified")
         return ActionOutcome(
-            "complete", "private", text=text,
+            "complete", "private", text=f"Closed {channel.mention}.\n{text}",
             result={"channel_id": channel.id, "status": result["status"],
                     "log_channel_id": prepared["log_channel_id"],
                     "log_message_id": result.get("log_message_id")},

@@ -108,9 +108,9 @@ async def role_action(context, arguments, *, create=False, undo=False):
         await current.edit(reason=reason, **options)
         return complete(desired, text=f"{'Restored settings for' if undo else 'Updated'} {role.mention}.")
 
-    line = (f"Create role **{desired["name"]}**." if create else
-            f"Restore the previous settings for {role.mention}." if undo
-            else f"Change {role.mention}.")
+    line = (f"🏷️ Create role **{desired["name"]}**" if create else
+            f"🏷️ Restore settings for {role.mention}" if undo
+            else f"🏷️ Change settings for {role.mention}")
     lines = [line]
     for key in FIELDS:
         if create or before[key] != desired[key]:
@@ -160,7 +160,7 @@ async def undo_create(context, log):
     role = resolved(context, identifier)
     return state_action(context, "undo_role_creation", {"role_id": identifier},
                         "Undo role creation",
-                        (f"Delete the role created by this change: {role.mention}.",),
+                        (f"🗑️ Delete the new {role.mention}",),
                         before, load, apply)
 
 

@@ -122,7 +122,7 @@ class CwlRegistrationCommandTests(unittest.IsolatedAsyncioTestCase):
         )
         values = {"clan": clan, "thread_id": "20"}
         preview = await prepare_cwl_register(context, values)
-        self.assertIn("Replace prior thread <#10>.", preview.lines)
+        self.assertIn("Replaces <#10>.", preview.lines)
         self.assertTrue(any("CWL Thread Ready" in line for line in preview.details))
         self.assertTrue(await preview.recheck())
         thread.send.assert_not_awaited()

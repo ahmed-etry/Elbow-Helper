@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.plan.input_rules import RULES, rule_sentences
 from elbow_helper.agent.reports.tools import READ_NAME, original_tool
 
@@ -40,6 +41,7 @@ NOTES = {
 BEFORE = {"query_bot_data": SQL_GUIDE}
 ADDED = {"read_hibernation": HIBERNATION_SOURCE, "read_active_hibernation": HIBERNATION_SOURCE}
 SEASON = "CWL season key: the league's month, YYYY-MM, or a key a read returned."
+REPLACES_CARD_ID = "replaces_card_id"
 
 
 def _note(name, definition):
@@ -93,6 +95,12 @@ def model_definition(registry, name):
     schema = definition.parameters
     properties = {field: _codes(_season(detail) if field in ("season", "season_keys") else detail)
                   for field, detail in schema.get("properties", {}).items()}
+    if tool.action_class in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):
+        properties[REPLACES_CARD_ID] = {
+            "type": "integer",
+            "minimum": 1,
+            "description": "If this revises an earlier proposal, give its open Confirm card ID from the conversation.",
+        }
     if name == 'query_bot_data':
         properties['max_rows'] = {key: value for key, value in properties['max_rows'].items() if key != 'default'}
     parts = [definition.description, _note(name, definition), _rules(schema)]

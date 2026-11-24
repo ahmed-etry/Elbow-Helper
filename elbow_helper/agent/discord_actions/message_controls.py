@@ -15,6 +15,7 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audi
 from ..actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from elbow_helper.agent.conversation.wording import ACTION_PIN_ADD, ACTION_PIN_LABEL, ACTION_PIN_LINE, ACTION_PIN_REMOVE, ACTION_REACTION_ADD_LINE, ACTION_REACTION_LABEL, ACTION_REACTION_REMOVE_LINE, ACTION_UNDO_CHANGED
+from .management import guard
 from .safety import DiscordActionRefused, check_view_access, resolve_channel
 
 

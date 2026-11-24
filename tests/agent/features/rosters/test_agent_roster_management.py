@@ -2,12 +2,18 @@
 
 from types import SimpleNamespace
 from dataclasses import replace
+import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.actions.contracts import ActionClass
+from elbow_helper.agent.actions.details import prepare_preview
+from elbow_helper.agent.actions.preview import preview_text
+from elbow_helper.agent.engine.capability_contract import compile_capability_call
 from elbow_helper.agent.engine.models import AgentTurnState
+from elbow_helper.agent.engine.tool_call import execute_tool
 from elbow_helper.agent.features.rosters.management import roster_management_tools, prepare_roster_layout_undo
+from elbow_helper.configuration.roles import CO_LEADER_ROLE_ID
 from elbow_helper.features.rosters.models import RosterLayout
 from tests.agent.discord_actions.helpers import register_requester
 
@@ -38,7 +44,7 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
         requester = SimpleNamespace(id=8, roles=[SimpleNamespace(id=CO_LEADER_ROLE_ID)])
         context = SimpleNamespace(
             bot=SimpleNamespace(get_cog=lambda name: workflow),
-            guild=guild, member=object(), state=AgentTurnState(),
+            guild=guild, member=requester, state=AgentTurnState(scope=scope), source_message=None,
         )
         context = register_requester(context)
         tool = next(tool for tool in roster_management_tools()
@@ -58,8 +64,13 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["status"], "confirmation_required")
             await prepare_preview(context)
         action = context.state.proposed_changes[0]
-        self.assertIn("Clan: Visible to Hidden", action.preview.details)
+        self.assertIn("Clan goes from Visible to Hidden.", action.preview.details)
+        self.assertFalse(action.details_hidden)
+        self.assertIn("Clan goes from Visible to Hidden.", preview_text([action]))
         self.assertTrue(await action.preview.recheck())
+        requester.roles.clear()
+        self.assertFalse(await action.preview.recheck())
+        requester.roles.append(SimpleNamespace(id=CO_LEADER_ROLE_ID))
         workflow.set_roster_layout.assert_not_awaited()
         result = await action.run()
         self.assertFalse(current.show_clan)
@@ -68,7 +79,7 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
             "after": result.after,
         })
         self.assertTrue(await undo.preview.recheck())
-        self.assertIn("Clan: Hidden to Visible", undo.preview.details)
+        self.assertIn("Clan goes from Hidden to Visible.", undo.preview.details)
         await undo.run()
         self.assertTrue(current.show_clan)
 
@@ -82,9 +93,10 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
                 workflow = SimpleNamespace(roster_management_state=AsyncMock(return_value={
                     "roster": roster, "account_count": 0, "member_ids": (), "posts": ()}))
                 guild = SimpleNamespace(id=1, me=object())
+                requester = SimpleNamespace(id=8, roles=[SimpleNamespace(id=CO_LEADER_ROLE_ID)])
                 context = register_requester(SimpleNamespace(private_pass=True,
                     bot=SimpleNamespace(get_cog=lambda name: workflow),
-                    guild=guild, member=object(), state=AgentTurnState()))
+                    guild=guild, member=requester, state=AgentTurnState()))
                 tool = next(tool for tool in roster_management_tools()
                             if tool.definition.name == "set_roster_state")
                 with patch('elbow_helper.agent.features.rosters.management.require_evidence_access',
@@ -104,7 +116,11 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
                 roster = SimpleNamespace(id=17, guild_id=1, name="War", status="closed", buttons_hidden=False,
                                          active_cycle_id=3, role_id=8, reset_on_open=True)
                 snapshot = {"roster": roster, "account_count": 2, "member_ids": (41, 43), "posts": ()}
-                workflow = SimpleNamespace(roster_management_state=AsyncMock(return_value=snapshot))
+                workflow = SimpleNamespace(
+                    roster_management_state=AsyncMock(return_value=snapshot),
+                    roster_signup_role_changes=AsyncMock(return_value=True),
+                    manual_open_resets_signups=lambda roster: True,
+                )
                 bot_member = SimpleNamespace(id=999, top_role=SimpleNamespace(position=10))
                 role = SimpleNamespace(id=8, mention="<@&8>", managed=False, position=1,
                                        permissions=SimpleNamespace(), is_default=lambda: False)
@@ -116,9 +132,10 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
                 guild = SimpleNamespace(id=1, me=bot_member, get_role=lambda role_id: role,
                                         get_member=lambda member_id: present if member_id == 41 else None,
                                         fetch_member=fetch_member)
+                requester = SimpleNamespace(id=8, roles=[SimpleNamespace(id=CO_LEADER_ROLE_ID)])
                 context = register_requester(SimpleNamespace(private_pass=True,
                     bot=SimpleNamespace(get_cog=lambda name: workflow),
-                    guild=guild, member=object(), state=AgentTurnState()))
+                    guild=guild, member=requester, state=AgentTurnState()))
                 tool = next(tool for tool in roster_management_tools() if tool.definition.name == tool_name)
                 with patch('elbow_helper.agent.features.rosters.management.require_evidence_access',
                            new_callable=AsyncMock):
@@ -143,15 +160,16 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
         guild = SimpleNamespace(id=1, me=SimpleNamespace(id=999, top_role=SimpleNamespace(position=10)),
                                 get_role=lambda role_id: None, fetch_member=fetch_member,
                                 get_member=lambda member_id: present if member_id == 41 else None)
+        requester = SimpleNamespace(id=8, roles=[SimpleNamespace(id=CO_LEADER_ROLE_ID)])
         context = register_requester(SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
-            guild=guild, member=object(), state=AgentTurnState()))
+            guild=guild, member=requester, state=AgentTurnState()))
         with patch('elbow_helper.agent.features.rosters.signups.require_evidence_access', new_callable=AsyncMock):
             result = await prepare_bulk_roster_add(context, {"roster_id": 17, "player_tags": ["#P0", "#Q0"]})
         self.assertEqual(result["status"], "confirmation_required")
-        self.assertTrue(any("<@43>" in line for line in context.state.proposed_changes[0].preview.lines))
+        self.assertTrue(any("<@43>" in line for line in context.state.proposed_changes[0].preview.details))
 
-    async def test_clear_previews_members_and_posts_before_calling_feature(self):
+    async def test_clear_previews_role_changes_before_calling_feature(self):
         roster = SimpleNamespace(
             id=17, guild_id=1, name="War", status="open", buttons_hidden=False,
             active_cycle_id=3, role_id=8,
@@ -160,7 +178,9 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
                     "member_ids": (41, 42), "posts": ((9, 91),)}
         workflow = SimpleNamespace(
             roster_management_state=AsyncMock(return_value=snapshot),
-            clear_roster_signups=AsyncMock(return_value=SimpleNamespace(message="Cleared signups.")),
+            clear_roster_signups=AsyncMock(return_value=SimpleNamespace(
+                changed=True, message="Cleared signups.", notices=())),
+            roster_signup_role_changes=AsyncMock(return_value=True),
         )
         bot_member = SimpleNamespace(id=999, top_role=SimpleNamespace(position=10))
         role = SimpleNamespace(id=8, mention="<@&8>", managed=False, position=1,
@@ -171,9 +191,10 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
         channel = SimpleNamespace(guild=guild, permissions_for=lambda actor: SimpleNamespace(
             view_channel=True, send_messages=True))
         guild.get_channel_or_thread = lambda channel_id: channel
+        requester = SimpleNamespace(id=8, roles=[SimpleNamespace(id=CO_LEADER_ROLE_ID)])
         context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
-            guild=guild, member=object(), state=AgentTurnState(),
+            guild=guild, member=requester, state=AgentTurnState(),
         )
         context = register_requester(context)
         tool = next(tool for tool in roster_management_tools()
@@ -187,10 +208,12 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("<@41>" in line for line in action.preview.lines))
         self.assertTrue(any("<@42>" in line for line in action.preview.lines))
         self.assertTrue(any("<@&8>" in line for line in action.preview.lines))
-        self.assertTrue(any("<@9>" not in line and "<#9>" in line
-                            for line in action.preview.lines))
+        self.assertEqual(action.preview.lines, (
+            "➖ Clear 3 active signups from **War**",
+            "Remove <@&8> from <@41>, <@42>.",
+        ))
         workflow.clear_roster_signups.assert_not_awaited()
         self.assertTrue(await action.preview.recheck())
         outcome = await action.run()
-        self.assertEqual(outcome.text, "Cleared signups.")
+        self.assertEqual(outcome.text, "Cleared 3 signups from **War**.")
         workflow.clear_roster_signups.assert_awaited_once_with(17)

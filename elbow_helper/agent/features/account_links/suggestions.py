@@ -69,7 +69,6 @@ async def _workflow(context: AgentRequestContext):
     if workflow is None or not workflow.can_review_links(context.member):
         raise ActionRefused("That account suggestion isn't available.")
     review = await resolve_channel(context, REVIEW_CHANNEL_ID)
-    check_view_access(review, context.member, context.guild.me)
     return workflow, review
 
 
@@ -110,14 +109,15 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         name=suggestion.get("player_name") or tag, tag=tag,
         member=member.mention if member else "")]
     if old:
-        lines.append(ACTION_SUGGESTION_OLD.format(member=f"<@{old['discord_user_id']}>"))
-    if suggestion.get("review_message_id"):
-        lines.append(ACTION_SUGGESTION_REVIEW.format(
-            channel=review.mention))
-    if board is not None:
-        lines.append(ACTION_SUGGESTION_BOARD.format(channel=board.mention))
+        owner = f"<@{old['discord_user_id']}>"
+        if ignore:
+            lines.append(f"It stays linked to {owner}.")
+        elif int(old["discord_user_id"]) != member.id:
+            lines.append(f"Moves from {owner}.")
 
     async def recheck() -> bool:
+        if not workflow.can_review_links(context.member):
+            return False
         try:
             check_bot_post_access(review, context.guild.me)
             if board is not None:
@@ -133,13 +133,16 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     async def run() -> ActionOutcome:
         proposed = int(suggestion.get("proposed_discord_user_id") or 0)
         try:
-            message = await workflow.resolve_account_suggestion(
+            await workflow.resolve_account_suggestion(
                 tag, context.member,
                 discord_user_id=(member.id if member and member.id != proposed else None),
                 ignore=ignore)
         except ValueError as error:
             raise ActionRefused(str(error)) from error
-        return ActionOutcome("complete", "private", text=message)
+        account = f"**{suggestion.get('player_name') or tag}** `{tag}`"
+        text = (f"Ignored the suggestion for {account}." if ignore
+                else f"Linked {account} to {member.mention}.")
+        return ActionOutcome("complete", "private", text=text)
 
     label = ACTION_SUGGESTION_IGNORE_LABEL if ignore else ACTION_SUGGESTION_LINK_LABEL
     context.state.proposed_changes.append(PreparedAction(

@@ -105,7 +105,8 @@ async def prepare_promotion_route(context: AgentRequestContext,
                 "valid_targets": valid_targets_for_source(from_clan)}
     if case.get("from_clan") == from_clan and case.get("to_clan") == to_clan:
         return {"status": "no_change"}
-    lines = [ACTION_PROMOTION_ROUTE_LINE.format(channel=ticket.mention)]
+    lines = [ACTION_PROMOTION_ROUTE_LINE.format(
+        channel=ticket.mention, from_clan=from_clan, to_clan=to_clan)]
     details = (ACTION_FIELD_CHANGE.format(
         field="Current clan", old=case.get("from_clan") or "Not set", new=from_clan),
         ACTION_FIELD_CHANGE.format(
@@ -116,6 +117,8 @@ async def prepare_promotion_route(context: AgentRequestContext,
             channel=ticket.mention))
 
     async def recheck() -> bool:
+        if not workflow.can_change_promotion_route(context.member):
+            return False
         try:
             for channel in (ticket, review):
                 check_bot_post_access(channel, context.guild.me)
@@ -133,7 +136,8 @@ async def prepare_promotion_route(context: AgentRequestContext,
             )
         except ValueError as error:
             raise ActionRefused(str(error)) from error
-        return ActionOutcome("complete", "private", text=ACTION_PROMOTION_ROUTE_LABEL)
+        return ActionOutcome("complete", "private", text=(
+            f"Promotion request in {ticket.mention} changed to {from_clan} → {to_clan}."))
 
     context.state.proposed_changes.append(PreparedAction(
         "change_promotion_route", {"ticket_channel_id": ticket.id},

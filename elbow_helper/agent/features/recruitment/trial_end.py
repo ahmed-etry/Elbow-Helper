@@ -19,7 +19,7 @@ from elbow_helper.agent.discord_actions.safety import check_member, check_bot_po
 def trial_end_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="end_recruitment_trial",
-        description="End a recruit's active or expired trial and post the follow-up.",
+        description="Carry out the trial list's End Now or the trial-end reminder's action for an authorized requester to end tracking and post the follow-up.",
         parameters={"type": "object", "properties": {
             "ticket_channel_id": {"type": "integer", "minimum": 1},
             "applicant_id": {"type": "integer", "minimum": 1},
@@ -70,16 +70,11 @@ async def prepare_trial_end(context: AgentRequestContext,
     if snapshot["new_name"] and snapshot["new_name"] != snapshot["channel_name"]:
         lines.append(ACTION_TRIAL_END_RENAME.format(
             old=snapshot["channel_name"], new=snapshot["new_name"]))
-    if trial and trial.get("tracking_msg_id") and trial.get("tracking_channel_id"):
-        lines.append(ACTION_TRIAL_END_TRACKING.format(
-            channel=f"<#{trial['tracking_channel_id']}>"))
-    lines.append(ACTION_TRIAL_END_FOLLOWUP)
     details = (workflow.trial_end_followup_text(applicant_id),)
-    if reminder and reminder.get("message_id") and reminder.get("channel_id"):
-        lines.append(ACTION_TRIAL_END_REMINDER.format(
-            channel=f"<#{reminder['channel_id']}>"))
 
     async def recheck() -> bool:
+        if not workflow.can_end_trial(context.member):
+            return False
         try:
             for channel in channels:
                 check_bot_post_access(channel, context.guild.me)
@@ -97,12 +92,13 @@ async def prepare_trial_end(context: AgentRequestContext,
         if not result.ended:
             raise ActionRefused(result.error or "That trial isn't available.")
         return ActionOutcome("complete", "private", text="\n".join(
-            (ACTION_TRIAL_END_DONE, *result.notices)))
+            (f"Ended <@{applicant_id}>'s trial in {ticket.mention}.", *result.notices)))
 
     context.state.proposed_changes.append(PreparedAction(
         "end_recruitment_trial", {"ticket_channel_id": ticket.id,
                                   "applicant_id": applicant_id},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_TRIAL_END_LABEL, details=details),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_TRIAL_END_LABEL, details=details,
+                      message_body=slice(None)),
         run, action_class=ActionClass.IRREVERSIBLE,
     ))
     return {"status": "confirmation_required"}

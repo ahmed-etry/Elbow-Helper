@@ -115,7 +115,7 @@ async def prepare_cwl_bonus_scoring(context: AgentRequestContext,
     if not differences:
         return {"status": "no_change"}
     lines = [(ACTION_BONUS_SCORING_COPY_LINE.format(source=source, clan=clan)
-              if source is not None else ACTION_BONUS_SCORING_LINE.format(clan=clan)),
+              if source is not None else ACTION_BONUS_SCORING_LINE.format(action="Set", clan=clan)),
              *differences]
 
     async def recheck() -> bool:
@@ -137,7 +137,7 @@ async def prepare_cwl_bonus_scoring(context: AgentRequestContext,
                 summary="; ".join(differences),
             )
         return ActionOutcome(
-            "complete", "private", text=ACTION_BONUS_SCORING_DONE.format(clan=clan),
+            "complete", "private", text=ACTION_BONUS_SCORING_DONE.format(action="Updated", clan=clan),
             after={"payload": copy.deepcopy(updated["clans"][clan])},
         )
 
@@ -161,7 +161,7 @@ async def prepare_cwl_bonus_scoring_undo(context: AgentRequestContext,
     prior = log["before"]["payload"]
     if current != expected:
         raise ActionRefused('That CWL bonus scoring setup is unavailable.')
-    lines = [ACTION_BONUS_SCORING_LINE.format(clan=clan),
+    lines = [ACTION_BONUS_SCORING_LINE.format(action="Restore", clan=clan),
              *_changed_lines(current, prior)]
 
     async def recheck() -> bool:
@@ -174,7 +174,7 @@ async def prepare_cwl_bonus_scoring_undo(context: AgentRequestContext,
             summary=ACTION_BONUS_SCORING_RESTORE,
         )
         return ActionOutcome(
-            "complete", "private", text=ACTION_BONUS_SCORING_DONE.format(clan=clan),
+            "complete", "private", text=ACTION_BONUS_SCORING_DONE.format(action="Restored", clan=clan),
             after={"payload": copy.deepcopy(updated["clans"][clan])},
         )
 

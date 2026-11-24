@@ -100,7 +100,7 @@ class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
         change = await prepare_reactivate(context, {})
         self.assertTrue(await change.preview.recheck())
         self.assertIn("Add <@&20> to <@3>.", change.preview.lines)
-        self.assertIn("Create ticket **ticket-member**.", change.preview.lines)
+        self.assertIn("Open **ticket-member** for <@3>.", change.preview.lines)
         self.assertIn("Archive the hibernation thread <#10>.",
                       change.preview.lines)
         workflow.reactivate_member.assert_not_awaited()

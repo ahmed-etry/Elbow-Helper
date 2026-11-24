@@ -7,8 +7,11 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.features.clan_transfers.commands import clan_transfer_adapters, prepare_transfer_cancel, prepare_transfer_request
+from elbow_helper.agent.actions.contracts import ActionRefused
 from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.features.clan_transfers.queue import prepare_clear_transfer_queue
+from elbow_helper.configuration.roles import ELDER_ROLE_ID
+from elbow_helper.features.clan_transfers.cog import ClanTransfers
 
 
 class TransferCommandTests(unittest.IsolatedAsyncioTestCase):
@@ -16,22 +19,29 @@ class TransferCommandTests(unittest.IsolatedAsyncioTestCase):
         state = {"clan_code": "BEH", "member_ids": (4, 5), "ping_message_id": 7,
                  "thread_id": 8, "board_channel_id": 9}
         workflow = SimpleNamespace(
+            _is_queue_manager=ClanTransfers._is_queue_manager.__get__(object()),
             transfer_queue_clear_state=lambda clan: state,
             clear_transfer_queue=AsyncMock(return_value="Cleared two requests."),
         )
         context = SimpleNamespace(
             bot=SimpleNamespace(get_cog=lambda name: workflow),
-            member=SimpleNamespace(id=42),
+            member=SimpleNamespace(id=42, roles=[]),
             state=AgentTurnState(),
         )
         with patch('elbow_helper.agent.features.clan_transfers.queue.require_evidence_access',
                    new_callable=AsyncMock):
+            with self.assertRaises(ActionRefused):
+                await prepare_clear_transfer_queue(context, {"clan_code": "BEH"})
+            context.member.roles.append(SimpleNamespace(id=ELDER_ROLE_ID))
             result = await prepare_clear_transfer_queue(context, {"clan_code": "BEH"})
         self.assertEqual(result["status"], "confirmation_required")
         action = context.state.proposed_changes[0]
         self.assertTrue(any("<@4>" in line for line in action.preview.lines))
         self.assertTrue(any("<@5>" in line for line in action.preview.lines))
         self.assertTrue(any("<#8>" in line for line in action.preview.lines))
+        role = context.member.roles.pop()
+        self.assertFalse(await action.preview.recheck())
+        context.member.roles.append(role)
         self.assertTrue(await action.preview.recheck())
         workflow.clear_transfer_queue.assert_not_awaited()
         self.assertEqual((await action.run()).text, "Cleared two requests.")

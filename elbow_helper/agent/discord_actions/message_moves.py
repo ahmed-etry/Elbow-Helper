@@ -124,8 +124,9 @@ async def prepare_move(context, arguments):
 
     return await queue(context, state_action(
         context, "move_discord_messages", dict(arguments), "Move messages",
-        (f"Move these messages from {source.mention} to {target.mention}, "
-         "then delete the originals:",), before, load, apply,
+        (f"➡️ Move {len(messages)} {'message' if len(messages) == 1 else 'messages'} "
+         f"from {source.mention} to {target.mention} and delete "
+         f"the {'original' if len(messages) == 1 else 'originals'}",), before, load, apply,
         irreversible=True, sources=(source.id,),
         details=[line for message in messages for line in message_lines(message)],
     ))

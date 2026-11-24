@@ -57,7 +57,7 @@ async def prepare_cwl_prep_refresh(context: AgentRequestContext,
         status, _ = await workflow.refresh_prep_dashboard(values["clan_code"])
         if status != "complete":
             raise ActionRefused("That CWL prep board couldn't be refreshed.")
-        return ActionOutcome("complete", "private", text=ACTION_CWL_PREP_REFRESH_LABEL)
+        return ActionOutcome("complete", "private", text=f"Refreshed {values['clan_code']}'s CWL prep board in {channel.mention}.")
 
     context.state.proposed_changes.append(PreparedAction(
         "refresh_cwl_prep_board", dict(values),

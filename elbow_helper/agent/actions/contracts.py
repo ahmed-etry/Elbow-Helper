@@ -78,11 +78,14 @@ class ChangePreview:
             # The run shows this label's progress form; a label without one could never run.
             raise ValueError(f"Action label {self.summary!r} has no progress form")
         object.__setattr__(self, "recheck", _guard_recheck(self.recheck))
-        for name in ("lines", "details"):
-            object.__setattr__(self, name, tuple(
-                line if line.strip() else ACTION_PREVIEW_BLANK
-                for line in getattr(self, name)
-            ))
+        first, last, _ = (self.message_body or slice(0, 0)).indices(len(self.details))
+        object.__setattr__(self, "lines", tuple(
+            line if line.strip() else ACTION_PREVIEW_BLANK for line in self.lines
+        ))
+        object.__setattr__(self, "details", tuple(
+            line if first <= index < last or line.strip() else ACTION_PREVIEW_BLANK
+            for index, line in enumerate(self.details)
+        ))
 
 
 @dataclass(frozen=True, slots=True)

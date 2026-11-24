@@ -149,7 +149,7 @@ async def prepare_cleanup(context, arguments):
 
     return await queue(context, state_action(
         context, "delete_discord_messages", dict(arguments), "Delete messages",
-        (f"Delete these messages from {channel.mention}:",), before, load, apply,
+        (f"🗑️ Delete {len(messages)} {'message' if len(messages) == 1 else 'messages'} from {channel.mention}",), before, load, apply,
         irreversible=True, sources=(channel.id,),
         details=[line for message in messages for line in message_lines(message)],
     ))

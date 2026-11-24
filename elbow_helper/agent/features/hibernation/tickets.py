@@ -66,13 +66,15 @@ async def prepare_reactivation_reopen(context: AgentRequestContext,
     if before is True:
         return {"status": "no_change"}
     lines = (
-        ACTION_TICKET_REOPEN_LINE.format(channel=channel.mention),
+        ACTION_TICKET_REOPEN_LINE.format(channel=channel.mention, member=owner.mention),
         ACTION_TICKET_REOPEN_ACCESS.format(member=owner.mention,
                                           old=("not set" if before is None else "blocked"),
                                           new="allowed"),
     )
 
     async def recheck() -> bool:
+        if not workflow.can_manage_reactivation_ticket(context.member):
+            return False
         try:
             check_bot_post_access(channel, context.guild.me)
             check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
@@ -86,7 +88,7 @@ async def prepare_reactivation_reopen(context: AgentRequestContext,
                                                                  context.member, via="agent")
         if not restored:
             raise ActionRefused("That ticket couldn't be reopened.")
-        return ActionOutcome("complete", "private", text=ACTION_TICKET_REOPEN_LABEL)
+        return ActionOutcome("complete", "private", text=f"Reopened {channel.mention} for {owner.mention}.")
 
     context.state.proposed_changes.append(PreparedAction(
         "reopen_reactivation_ticket", {"channel_id": channel.id, "owner_id": owner.id},
@@ -113,13 +115,15 @@ async def prepare_reactivation_close(context: AgentRequestContext,
         check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
     before = channel.overwrites_for(owner).send_messages if owner is not None else None
     message_id = channel.last_message_id
-    lines = [ACTION_TICKET_CLOSE_LINE.format(channel=channel.mention)]
-    if owner is not None:
-        lines.append(ACTION_TICKET_CLOSE_ACCESS.format(member=owner.mention))
+    lines = [ACTION_TICKET_CLOSE_LINE.format(
+        channel=channel.mention,
+        access=f" and stop {owner.mention} from sending messages there" if owner else "")]
     lines.append(ACTION_TICKET_CLOSE_LOG.format(channel=log_channel.mention))
     lines.append(ACTION_TICKET_CLOSE_CONTROLS.format(channel=channel.mention))
 
     async def recheck() -> bool:
+        if not workflow.can_manage_reactivation_ticket(context.member):
+            return False
         try:
             for target in (channel, log_channel):
                 check_bot_post_access(target, context.guild.me)
@@ -140,7 +144,7 @@ async def prepare_reactivation_close(context: AgentRequestContext,
             # The close posts its notice and locks the owner before the transcript is saved,
             # so a failure here is a half-finished close, not a refusal that changed nothing.
             raise OSError(issue or "That reactivation ticket couldn't be closed.")
-        return ActionOutcome("complete", "private", text=ACTION_TICKET_CLOSE_LABEL)
+        return ActionOutcome("complete", "private", text=f"Closed {channel.mention}.")
 
     context.state.proposed_changes.append(PreparedAction(
         "close_reactivation_ticket", {"channel_id": channel.id},

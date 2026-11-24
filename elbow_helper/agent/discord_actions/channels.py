@@ -129,6 +129,7 @@ async def create_action(context, arguments):
         "Create text channel" if arguments["kind"] == "text" else "Create category",
         [f"➕ Create {kind} **{arguments["name"]}** in {place}", *permission_lines],
         dict(arguments), load, apply,
+        result_label=f"Create {kind} **{arguments['name']}** in {place}.",
     )
 
 
@@ -169,8 +170,8 @@ async def edit_action(context, arguments, *, undo=False):
                     if value is not None else "No category")
         return duration(value) if key == "slowmode_seconds" else display_value(value)
 
-    lines = [f"Restore the previous settings for {channel.mention}." if undo
-             else f"Change {channel.mention}."]
+    lines = [f"⚙️ Restore settings for {channel.mention}" if undo
+             else f"⚙️ Change {channel.mention}"]
     for key in labels:
         if before[key] != desired[key]:
             lines.append(f"{labels[key]} goes from {await visible(key, before[key])} to "
@@ -208,7 +209,7 @@ async def prepare_delete(context, arguments):
     parent = channel.category.mention if channel.category else "No category"
     return await queue(context, state_action(
         context, "delete_discord_channel", dict(arguments), "Delete channel",
-        (f"Delete {channel.mention}.", f"Category: {parent}", estimate),
+        (f"🗑️ Delete {channel.mention}", f"Category: {parent}", estimate),
         before, load, apply, irreversible=True,
     ))
 
@@ -250,7 +251,7 @@ async def undo_create(context, log):
     channel = await editable(context, identifier)
     return state_action(context, "undo_channel_creation", {"channel_id": identifier},
                         "Undo channel creation",
-                        (f"Delete the channel created by this change: {channel.mention}.",),
+                        (f"🗑️ Delete the new {channel.mention}",),
                         before, load, apply)
 
 

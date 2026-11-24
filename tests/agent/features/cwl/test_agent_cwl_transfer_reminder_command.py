@@ -50,8 +50,8 @@ class CwlTransferReminderCommandTests(unittest.IsolatedAsyncioTestCase):
         )
         change = await prepare_transfer_reminder(context, {})
         self.assertTrue(await change.preview.recheck())
-        self.assertIn("Replace the CWL reminder in <#9>.",
-                      change.preview.lines)
+        self.assertTrue(change.preview.lines[0].startswith(
+            "⏰ Replace the prior CWL transfer reminder in <#9> with a post in "))
         self.assertIn("<@3> move to BEH.", change.preview.details)
         workflow.apply_transfer_reminder.assert_not_awaited()
         result = await change.run()

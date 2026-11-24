@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from types import SimpleNamespace
 from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -12,13 +13,13 @@ from elbow_helper.agent.safety.access import require_evidence_access
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_TRANSFER_CLEAR_LINE, ACTION_TRANSFER_CLEAR_MEMBER, ACTION_TRANSFER_CLEAR_PING, ACTION_TRANSFER_CLEAR_BOARDS, ACTION_TRANSFER_CLEAR_LABEL
+from elbow_helper.agent.conversation.wording import ACTION_TRANSFER_CLEAR_LINE, ACTION_TRANSFER_CLEAR_MEMBER, ACTION_TRANSFER_CLEAR_PING, ACTION_TRANSFER_CLEAR_LABEL
 
 
 def transfer_management_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="clear_transfer_queue",
-        description="Clear all pending requests from a clan transfer queue.",
+        description="Use the Transfers Done — Clear Queue button's action for an authorized requester to clear all pending requests for a clan.",
         parameters={"type": "object", "properties": {
             "clan_code": {"type": "string"},
         }, "required": ["clan_code"], "additionalProperties": False},
@@ -35,9 +36,10 @@ async def prepare_clear_transfer_queue(context: AgentRequestContext,
                                        values: Mapping[str, Any]) -> Mapping[str, Any]:
     await require_evidence_access(context)
     workflow = context.bot.get_cog("ClanTransfers")
-    if workflow is None:
-        raise ActionRefused('That transfer queue is unavailable.')
     clan_code = values["clan_code"]
+    actor = SimpleNamespace(user=context.member)
+    if workflow is None or not workflow._is_queue_manager(actor, clan_code):
+        raise ActionRefused('That transfer queue is unavailable.')
     state = workflow.transfer_queue_clear_state(clan_code)
     if state is None:
         raise ActionRefused('That transfer queue is unavailable.')
@@ -48,15 +50,16 @@ async def prepare_clear_transfer_queue(context: AgentRequestContext,
         lines.append(ACTION_TRANSFER_CLEAR_PING.format(
             thread=f"<#{state['thread_id']}>",
         ))
-    lines.append(ACTION_TRANSFER_CLEAR_BOARDS.format(
-        thread=f"<#{state['thread_id']}>", board=f"<#{state['board_channel_id']}>",
-    ))
 
     async def recheck() -> bool:
-        return workflow.transfer_queue_clear_state(clan_code) == state
+        return (workflow._is_queue_manager(actor, clan_code)
+                and workflow.transfer_queue_clear_state(clan_code) == state)
 
     async def run() -> ActionOutcome:
         text = await workflow.clear_transfer_queue(clan_code, actor_discord_id=context.member.id, via="agent")
+        after = workflow.transfer_queue_clear_state(clan_code)
+        if state["member_ids"] and after is not None and not after["member_ids"]:
+            text = f"Cleared the {clan_code} transfer queue."
         return ActionOutcome("complete", "private", text=text)
 
     context.state.proposed_changes.append(PreparedAction(

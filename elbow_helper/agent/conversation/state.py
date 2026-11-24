@@ -9,8 +9,13 @@ import hashlib
 import json
 import logging
 import time
+from typing import TYPE_CHECKING
+from weakref import WeakValueDictionary
 from ..reports.base import ReportArtifact
 from .instructions import WorkingState
+
+if TYPE_CHECKING:
+    from ..actions.preview import ConfirmationView
 
 
 CONVERSATION_IDLE_SECONDS = 6 * 60 * 60
@@ -185,6 +190,35 @@ class Conversation:
     evicted_turns: int = 0
     working: WorkingState = field(default_factory=WorkingState)
     checkpoint: ConversationCheckpoint | None = None
+    pending_confirmations: WeakValueDictionary[int, ConfirmationView] = field(
+        default_factory=WeakValueDictionary, init=False, repr=False, compare=False,
+    )
+
+    def _open_confirmation(self, message_id: int, owner_id: int) -> ConfirmationView | None:
+        view = self.pending_confirmations.get(message_id)
+        if (view is not None and view.owner_id == owner_id
+                and not (view.used or view.expired or view.superseded or view.is_finished())):
+            return view
+        return None
+
+    def open_confirmation_ids(self, owner_id: int) -> frozenset[int]:
+        return frozenset(message_id for message_id in self.pending_confirmations
+                         if self._open_confirmation(message_id, owner_id) is not None)
+
+    def register_confirmation(self, message_id: int, view: ConfirmationView) -> None:
+        """Retire the named or directly replied-to card once the new card is sent."""
+        previous_id = view.context.state.replaces_card_id
+        if previous_id is None:
+            source = view.context.source_message
+            reference = getattr(source, "reference", None)
+            if reference is not None and reference.channel_id in (None, source.channel.id):
+                previous_id = reference.message_id
+        previous = self._open_confirmation(previous_id, view.owner_id) if previous_id is not None else None
+        if previous is not None and previous is not view:
+            previous.supersede()
+            self.append(previous.closed_turn("replaced"))
+        self.pending_confirmations[message_id] = view
+
     def append(self, turn: ConversationTurn) -> None:
         if turn.retained_bytes > MAX_RETAINED_BYTES:
             # Keep the bounded context excerpt if the full record is too large.

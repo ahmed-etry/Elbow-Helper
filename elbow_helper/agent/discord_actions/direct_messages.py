@@ -119,6 +119,7 @@ async def _deliver_dms(context, identifiers, text, attachment, delivery,
                 )
         results.append({
             "member_id": member.id,
+            "member": member.display_name,
             "delivered": delivered,
             "label": ACTION_DM_TARGET.format(member=member.display_name),
         })
@@ -161,7 +162,7 @@ async def prepare_direct_messages(context, arguments):
             summary=ACTION_DM_LABEL,
             count=len(members),
             result_label=ACTION_DM_LABEL,
-            details=tuple(text.splitlines()),
+            details=tuple(text.split("\n")), message_body=slice(None),
         ),
         run,
     ))

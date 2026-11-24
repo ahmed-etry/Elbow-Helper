@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import discord
 
 from elbow_helper.features.achievements.raffle import AchievementRaffleMixin
+from elbow_helper.features.achievements.database import AchievementsDatabaseMixin
 from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.features.achievements.commands import achievement_adapters
 from elbow_helper.agent.features.achievements.raffle_commands import prepare_raffle_draw
@@ -19,6 +20,7 @@ from elbow_helper.agent.features.achievements.raffle_commands import run_raffle_
 
 
 class _Raffle(AchievementRaffleMixin):
+    _month_label_from_key = staticmethod(AchievementsDatabaseMixin._month_label_from_key)
     GUILD_ID = 1
 
     def __init__(self, guild):

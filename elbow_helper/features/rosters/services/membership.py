@@ -38,6 +38,8 @@ class AccountPickerResult:
 class MembershipResult:
     message: str
     changed: bool = False
+    affected_tags: tuple[str, ...] = ()
+    notices: tuple[str, ...] = ()
 
 
 class RosterMembershipService:
@@ -224,7 +226,7 @@ class RosterMembershipService:
             return MembershipResult(message)
 
         added, total = await asyncio.to_thread(
-            self._repository.add_members,
+            self._repository.add_member_tags,
             roster.id,
             roster.active_cycle_id,
             member_id,
@@ -232,7 +234,7 @@ class RosterMembershipService:
             roster.max_members,
             None if bypass_min_townhall else roster.min_townhall,
         )
-        if added == 0:
+        if not added:
             current = await asyncio.to_thread(
                 self._repository.list_members,
                 roster.id,
@@ -248,12 +250,13 @@ class RosterMembershipService:
             return MembershipResult(message)
 
         role_synced = await self._roles.sync(roster, member_id, should_have=True)
-        message = f"Added {account_count(added)} to {roster.name}."
+        message = f"Added {account_count(len(added))} to {roster.name}."
+        notices = []
         if total >= roster.max_members:
-            message += " The roster is now full."
+            notices.append("The roster is now full.")
         if not role_synced:
-            message += " The signup was saved, but I couldn't add the signup role."
-        return MembershipResult(message, changed=True)
+            notices.append("The signup was saved, but I couldn't add the signup role.")
+        return MembershipResult(" ".join([message, *notices]), True, added, tuple(notices))
 
     async def _remove_selected(
         self,
@@ -262,13 +265,13 @@ class RosterMembershipService:
         player_tags: list[str],
     ) -> MembershipResult:
         removed = await asyncio.to_thread(
-            self._repository.remove_members,
+            self._repository.remove_member_tags,
             roster.id,
             roster.active_cycle_id,
             discord_user_id=member_id,
             player_tags=player_tags,
         )
-        if removed == 0:
+        if not removed:
             return MembershipResult("None of those accounts are signed up.")
 
         still_signed = await asyncio.to_thread(
@@ -284,10 +287,9 @@ class RosterMembershipService:
                 member_id,
                 should_have=False,
             )
-        message = f"Removed {account_count(removed)} from {roster.name}."
-        if not still_signed and not role_synced:
-            message += " The signup was removed, but I couldn't remove the signup role."
-        return MembershipResult(message, changed=True)
+        message = f"Removed {account_count(len(removed))} from {roster.name}."
+        notices = () if role_synced else ("The signup was removed, but I couldn't remove the signup role.",)
+        return MembershipResult(" ".join([message, *notices]), True, removed, notices)
 
     async def bulk_add(self, roster_id: int, raw_tags: str) -> MembershipResult:
         raw_values = [
@@ -336,7 +338,7 @@ class RosterMembershipService:
         )
         enriched = {account.player_tag: account for account in accounts}
 
-        added = 0
+        added = []
         already_signed = 0
         role_failures = 0
         total = 0
@@ -372,7 +374,7 @@ class RosterMembershipService:
                         }
                     )
                 member_added, total = await asyncio.to_thread(
-                    self._repository.add_members,
+                    self._repository.add_member_tags,
                     roster.id,
                     roster.active_cycle_id,
                     member_id,
@@ -381,10 +383,8 @@ class RosterMembershipService:
                     None,
                 )
                 if member_added:
-                    added += member_added
-                    existing.update(
-                        account["player_tag"] for account in payload[:member_added]
-                    )
+                    added.extend(member_added)
+                    existing.update(member_added)
                     if not await self._roles.sync(
                         roster,
                         member_id,
@@ -396,7 +396,7 @@ class RosterMembershipService:
             await self._refresh_posts(roster)
         messages = []
         if added:
-            messages.append(f"Added {account_count(added)} to **{roster.name}**.")
+            messages.append(f"Added {account_count(len(added))} to **{roster.name}**.")
         elif not (invalid or unlinked or already_signed):
             messages.append("No accounts were added.")
         if already_signed:
@@ -417,7 +417,8 @@ class RosterMembershipService:
             messages.append("Some signup roles couldn't be added.")
         return MembershipResult(
             " ".join(messages),
-            changed=bool(added),
+            changed=bool(added), affected_tags=tuple(added),
+            notices=tuple(messages[1:]) if added else (),
         )
 
     async def remove_players(
@@ -442,15 +443,15 @@ class RosterMembershipService:
                 by_member.setdefault(member.discord_user_id, []).append(
                     member.player_tag
                 )
-            removed = 0
+            removed = []
             for member_id, tags in by_member.items():
-                removed += await asyncio.to_thread(
-                    self._repository.remove_members,
+                removed.extend(await asyncio.to_thread(
+                    self._repository.remove_member_tags,
                     roster.id,
                     roster.active_cycle_id,
                     discord_user_id=member_id,
                     player_tags=tags,
-                )
+                ))
             if not removed:
                 return MembershipResult(
                     "Those accounts are no longer on this roster."
@@ -464,17 +465,15 @@ class RosterMembershipService:
             remaining_member_ids = {
                 member.discord_user_id for member in remaining
             }
+            notices = []
             for member_id in by_member:
                 if member_id not in remaining_member_ids:
-                    await self._roles.sync(
-                        roster,
-                        member_id,
-                        should_have=False,
-                    )
+                    if not await self._roles.sync(roster, member_id, should_have=False):
+                        notices.append("The signup was removed, but I couldn't remove the signup role.")
             await self._refresh_posts(roster)
             return MembershipResult(
-                f"Removed {account_count(removed)} from **{roster.name}**.",
-                changed=True,
+                f"Removed {account_count(len(removed))} from **{roster.name}**.",
+                changed=True, affected_tags=tuple(removed), notices=tuple(dict.fromkeys(notices)),
             )
 
     async def clear(self, roster_id: int) -> MembershipResult:

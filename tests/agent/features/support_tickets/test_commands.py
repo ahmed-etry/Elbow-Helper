@@ -60,13 +60,13 @@ class SupportCloseCommandTests(unittest.IsolatedAsyncioTestCase):
         context = register_requester(context)
         change = await prepare_support_close(context, {})
         self.assertTrue(await change.preview.recheck())
-        self.assertIn("Stop <@3> from sending in the ticket.",
+        self.assertIn("🧵 Close <#4> and stop <@3> from sending messages there",
                       change.preview.lines)
         self.assertEqual(change.preview.details, ("Ticket messages in the transcript: 1",))
         self.assertNotIn("I need help.", change.preview.details)
         self.assertNotIn("I need help.", change.preview.lines)
         self.assertIn("Upload the transcript if it's under 25 MB.", change.preview.lines)
-        self.assertEqual(change.preview.detail_sources, frozenset({channel.id}))
+        self.assertEqual(change.preview.preview_only_sources, frozenset({channel.id}))
         self.assertIn("Post the ticket log in <#9>.", change.preview.lines)
         workflow.close_support_ticket.assert_not_awaited()
         result = await change.run()

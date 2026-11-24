@@ -69,7 +69,7 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="set_examiner_profile",
-            description="Set your examiner coverage, status, timezone or availability.",
+            description="Use the Examiner Availability panel's controls to set the requester's Town Hall coverage, status, timezone or availability.",
             parameters=schema,
         ), prepare_examiner_profile, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
@@ -80,7 +80,7 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="leave_examiner_roster",
-            description="Remove yourself from the examiner roster.",
+            description="Use the Examiner Availability panel's Leave Roster action to remove the requester from the examiner roster.",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         ), prepare_examiner_leave, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE,
             contract=CapabilityContract(entity_fields=(), source_scope="request_context"),
@@ -142,13 +142,15 @@ async def prepare_examiner_profile(context: AgentRequestContext,
     changed = [key for key in PROFILE_FIELDS if before.get(key) != after.get(key)]
     if not changed:
         return {"status": "no_change"}
-    lines = [ACTION_EXAMINER_PROFILE_LINE.format(member=context.member.mention,
+    lines = [ACTION_EXAMINER_PROFILE_LINE.format(action="Update", member=context.member.mention,
                                                  channel=channel.mention)]
     details = tuple(ACTION_FIELD_CHANGE.format(
         field=ACTION_EXAMINER_PROFILE_FIELDS[key], old=_profile_value(key, before.get(key)),
         new=_profile_value(key, after.get(key))) for key in changed)
 
     async def recheck() -> bool:
+        if not workflow.can_edit_examiner_profile(context.member):
+            return False
         try:
             check_bot_post_access(channel, context.guild.me)
             return (workflow.has_examiner_profile(context.member) == existed
@@ -158,7 +160,7 @@ async def prepare_examiner_profile(context: AgentRequestContext,
 
     async def run() -> ActionOutcome:
         profile = await workflow.change_examiner_profile(context.member, dict(values))
-        return ActionOutcome("complete", "private", text=ACTION_EXAMINER_PROFILE_LABEL,
+        return ActionOutcome("complete", "private", text=f"Updated {context.member.mention}'s examiner profile.",
                               after={"profile": {key: profile[key] for key in PROFILE_FIELDS},
                                      "existed": True})
 
@@ -182,6 +184,8 @@ async def prepare_examiner_leave(context: AgentRequestContext,
                                                  channel=channel.mention),)
 
     async def recheck() -> bool:
+        if not workflow.can_edit_examiner_profile(context.member):
+            return False
         try:
             check_bot_post_access(channel, context.guild.me)
             return workflow.examiner_profile_snapshot(context.member) == before
@@ -191,8 +195,7 @@ async def prepare_examiner_leave(context: AgentRequestContext,
     async def run() -> ActionOutcome:
         if not await workflow.leave_examiner_roster(context.member):
             raise ActionRefused("That examiner profile isn't available.")
-        return ActionOutcome("complete", "private", text=ACTION_EXAMINER_PROFILE_LEAVE.format(
-            member=context.member.mention, channel=channel.mention))
+        return ActionOutcome("complete", "private", text=f"Removed {context.member.mention} from the examiner roster.")
 
     context.state.proposed_changes.append(PreparedAction(
         "leave_examiner_roster", {"member_id": context.member.id},
@@ -211,7 +214,7 @@ async def prepare_examiner_profile_undo(context: AgentRequestContext,
     if not workflow.has_examiner_profile(context.member) or any(
             current[key] != expected["profile"][key] for key in PROFILE_FIELDS):
         raise ActionRefused("That examiner profile isn't available.")
-    lines = [ACTION_EXAMINER_PROFILE_LINE.format(member=context.member.mention,
+    lines = [ACTION_EXAMINER_PROFILE_LINE.format(action="Restore", member=context.member.mention,
                                                  channel=channel.mention)]
     details = tuple(ACTION_FIELD_CHANGE.format(
         field=ACTION_EXAMINER_PROFILE_FIELDS[key], old=_profile_value(key, current[key]),
@@ -232,7 +235,7 @@ async def prepare_examiner_profile_undo(context: AgentRequestContext,
         else:
             await workflow.leave_examiner_roster(context.member)
             after = {"profile": prior["profile"], "existed": False}
-        return ActionOutcome("complete", "private", text=ACTION_EXAMINER_PROFILE_LABEL,
+        return ActionOutcome("complete", "private", text=f"Restored {context.member.mention}'s examiner profile.",
                               after=after)
 
     return PreparedAction(

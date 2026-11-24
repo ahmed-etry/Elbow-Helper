@@ -20,7 +20,7 @@ from elbow_helper.agent.discord_actions.safety import check_bot_post_access, res
 def cwl_cc_status_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="set_cwl_cc_status",
-        description="Set prep Clan Castles to filled, partial or empty.",
+        description="Use the CWL Status controls for an authorized requester to mark prep Clan Castles filled, partial or empty.",
         parameters={"type": "object", "properties": {
             "clan_code": {"type": "string", "enum": list(CWL_CLAN_TAGS)},
             "status": {"type": "string", "enum": ["filled", "partial", "empty"]},
@@ -50,12 +50,12 @@ async def prepare_cc_status(context: AgentRequestContext,
     check_bot_post_access(thread, context.guild.me)
     lines = (ACTION_CC_STATUS_LINE.format(clan=values["clan_code"],
                                           round=snapshot["round"],
-                                          season=snapshot["season"]),
-             ACTION_CC_STATUS_FIELD.format(old=snapshot["status"] or "empty",
-                                           new=values["status"]),
-             ACTION_CC_STATUS_POST.format(channel=thread.mention))
+                                          season=snapshot["season"], new=values["status"]),
+             ACTION_CC_STATUS_FIELD.format(old=snapshot["status"] or "empty"))
 
     async def recheck() -> bool:
+        if not workflow.can_change_cc_status(context.member):
+            return False
         try:
             check_bot_post_access(thread, context.guild.me)
             return await workflow.cc_status_snapshot(values["clan_code"]) == snapshot
@@ -68,7 +68,8 @@ async def prepare_cc_status(context: AgentRequestContext,
             thread.id, snapshot["sticky_message_id"])
         if not ok:
             raise ActionRefused(message)
-        return ActionOutcome("complete", "private", text=message,
+        return ActionOutcome("complete", "private", text=(f"{values['clan_code']}'s day {snapshot['round']} Clan Castle status "
+                                    f"for {snapshot['season']} is **{values['status']}**."),
                               after={"status": values["status"],
                                      "war_tag": snapshot["war_tag"]})
 
@@ -85,7 +86,7 @@ async def prepare_cc_status(context: AgentRequestContext,
 async def prepare_cc_status_undo(context: AgentRequestContext,
                                  log: Mapping[str, Any]) -> PreparedAction:
     workflow = context.bot.get_cog("CwlManagement")
-    if workflow is None:
+    if workflow is None or not workflow.can_change_cc_status(context.member):
         raise ActionRefused("That CWL Clan Castle status isn't available.")
     clan = log["targets"]["clan_code"]
     snapshot = await workflow.cc_status_snapshot(clan)
@@ -96,9 +97,8 @@ async def prepare_cc_status_undo(context: AgentRequestContext,
     check_bot_post_access(thread, context.guild.me)
     prior = log["before"]["status"]
     lines = (ACTION_CC_STATUS_LINE.format(clan=clan, round=snapshot["round"],
-                                          season=snapshot["season"]),
-             ACTION_CC_STATUS_FIELD.format(old=snapshot["status"], new=prior),
-             ACTION_CC_STATUS_POST.format(channel=thread.mention))
+                                          season=snapshot["season"], new=prior),
+             ACTION_CC_STATUS_FIELD.format(old=snapshot["status"]))
 
     async def recheck() -> bool:
         if not workflow.can_change_cc_status(context.member):
@@ -112,7 +112,8 @@ async def prepare_cc_status_undo(context: AgentRequestContext,
             clan, prior, context.member, thread.id, snapshot["sticky_message_id"])
         if not ok:
             raise ActionRefused(message)
-        return ActionOutcome("complete", "private", text=message,
+        return ActionOutcome("complete", "private", text=(f"{clan}'s day {snapshot['round']} Clan Castle status "
+                                    f"for {snapshot['season']} is **{prior}**."),
                               after={"status": prior, "war_tag": snapshot["war_tag"]})
 
     return PreparedAction(

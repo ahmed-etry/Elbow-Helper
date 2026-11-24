@@ -45,7 +45,7 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
                          [mentioned, self.other])
         await delivery.send_response(self.message, preview_text([self.action]), referenced,
                                      context=self.context)
-        self.assertEqual(self.message.reply.await_args.kwargs["allowed_mentions"].users, [])
+        self.assertFalse(self.message.reply.await_args.kwargs["allowed_mentions"].users)
 
 
     async def test_watcher_save_checks_the_destination_audience(self):
@@ -222,5 +222,5 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
         await prepare_preview(self.context)
         preview = preview_text(self.context.state.proposed_changes)
         self.assertNotIn(SECRET, preview)
-        self.assertIn("Change synthetic target", preview)
+        self.assertNotIn("Change synthetic target", preview)
         self.assertIn(ACTION_PREVIEW_DETAILS_HIDDEN, preview)

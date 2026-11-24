@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock
 
 from elbow_helper.agent.safety.access import ACCESS_VIEW_AUDIT_LOG
 from elbow_helper.agent.actions.answer_view import PostAnswerView
-from elbow_helper.agent.actions.combined_reply import CombinedReplyView
 from elbow_helper.agent.conversation.state import (
     ConversationRecord, ConversationStore, ConversationTurn,
 )
@@ -71,7 +70,7 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
         )
         root = self.message.reply.await_args.kwargs["view"]
         self.addCleanup(root.stop)
-        parent = root.views["answer"] if isinstance(root, CombinedReplyView) else root
+        parent = root
         check = self.interaction()
         await parent.check_privately(check)
         self.assertTrue(all(call.kwargs["ephemeral"] for call in check.followup.send.await_args_list))

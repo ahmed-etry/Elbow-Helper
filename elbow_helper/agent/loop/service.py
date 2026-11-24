@@ -54,7 +54,7 @@ from .community_map import load_meanings
 from .prior import last_result_id, prior_messages, resolve_reference
 from .results import row_pages, shape
 from .structure import Server, Structure
-from .tools import model_tools
+from .tools import REPLACES_CARD_ID, model_tools
 from .wording import BANTER_SYSTEM, COMBO_AVAILABLE
 
 LOGGER = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ If you can't tell what someone means, ask them what they mean instead of guessin
 Discord messages do not render Markdown tables.
 Use only information available to both the requester and this channel.
 Look up live Clash profiles, clans, rosters and wars, along with stored accounts, membership, activity, war, CWL and battle records. Read Discord members, channels, threads and messages, plus bot workflows, reports, attachments and command help. Search approved knowledge for other community notes. Use query_bot_data for read-only SQLite queries.
-Changes and commands you prepare appear on a Confirm card the asker sees before they run. Include any refusal, question or needed warning in your reply.
+Changes and commands you prepare appear on a Confirm card the asker sees before they run. Use text only for what the card doesn't say, such as a refusal, a question, or a needed warning. Otherwise, leave your reply empty.
 react_to_request puts one emoji on the request. submit_social_reply is the reply for banter: it sends the line, a GIF from the library and reactions, so look up what you need before calling it. set_discord_reply_target chooses which message your reply answers. Reaction and GIF pacing is automatic.
 Give no army, attack or base strategy of your own; you have no reliable source for it. Point to where the community gets it, as the notes describe: commands, channels and Coaches. When a command or channel from the notes fits what a member is trying to do and you can't do it yourself, mention it."""
 
@@ -186,6 +186,7 @@ def _request_context(context):
     mentioned = [{"member_id": member.id, "display_name": member.display_name}
                  for member in getattr(context.source_message, "mentions", ())]
     instructions = [asdict(instruction) for instruction in context.state.authorized_instructions]
+    open_cards = sorted(context.state.open_confirmation_ids)
     return (f"Request context\nElbow Helper Discord ID (you): {context.guild.me.id}\n"
             f"Requester Discord ID: {context.member.id}\n"
             f"Requester display name: {context.member.display_name}\n"
@@ -194,6 +195,7 @@ def _request_context(context):
             f"Channel Discord ID: {context.source_message.channel.id}\n"
             f"Request time: {context.source_message.created_at.isoformat()}"
             + (f"\nMentioned members: {_json(mentioned)}" if mentioned else "")
+            + (f"\nYour open Confirm card IDs: {_json(open_cards)}" if open_cards else "")
             + (f"\nInstructions remembered for this thread: {_json(instructions)}" if instructions else ""))
 
 
@@ -612,6 +614,15 @@ class LoopRun:
         if tool is None:
             return _json({"error": "unavailable_lookup"})
         acting = is_action(tool)
+        replaces_card_id = None
+        if (tool.action_class in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE)
+                and isinstance(arguments, dict) and REPLACES_CARD_ID in arguments):
+            arguments = dict(arguments)
+            replaces_card_id = arguments.pop(REPLACES_CARD_ID)
+            if type(replaces_card_id) is not int or replaces_card_id not in context.state.open_confirmation_ids:
+                return _json({"error": f"{REPLACES_CARD_ID} must be one of the asker's open Confirm card IDs."})
+            if context.state.replaces_card_id not in (None, replaces_card_id):
+                return _json({"error": "Changes on one Confirm card can replace only one earlier card."})
         step_id = f"s{len(self.calls)}"
         # A change may point at an earlier change's result, such as a thread it creates.
         earlier = {action.step_id for action in context.state.proposed_changes if action.step_id}
@@ -630,9 +641,10 @@ class LoopRun:
         if not acting:
             return await execute_tool(name=name, handler=tool.handler, arguments=arguments,
                                       capability_scope=scope, context=context)
-        return await self._act(context, tool, name, arguments, scope, step_id)
+        return await self._act(context, tool, name, arguments, scope, step_id,
+                               replaces_card_id=replaces_card_id)
 
-    async def _act(self, context, tool, name, arguments, scope, step_id):
+    async def _act(self, context, tool, name, arguments, scope, step_id, *, replaces_card_id=None):
         """Prepare a change or run a command. A bundle the confirmation could not show is taken back."""
         state = context.state
         before = len(state.proposed_changes)
@@ -672,6 +684,8 @@ class LoopRun:
         except ValueError as error:
             refusal = {"error": str(error)}
         else:
+            if replaces_card_id is not None and "error" not in result:
+                state.replaces_card_id = replaces_card_id
             return _json({**result, "step_id": step_id})
         del state.proposed_changes[before:]
         return _json({**refusal, "note": REFUSED_CHANGE_NOTE})

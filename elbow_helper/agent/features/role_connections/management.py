@@ -114,7 +114,12 @@ async def prepare_role_connection_change(context: AgentRequestContext,
     if after is not None and not workflow.connection_change_is_valid(
         after, replacing_id=connection_id if before is not None else None):
         raise ActionRefused('That role connection is unavailable.')
-    lines = [ACTION_CONNECTION_MANAGE_LINE.format(operation=operation, role=role.mention)]
+    line = {
+        "create": f"🏷️ Add a connection for {role.mention}",
+        "update": f"🏷️ Edit the connection for {role.mention}",
+        "remove": f"🏷️ Remove the connection for {role.mention}",
+    }[operation]
+    lines = [line]
     if before is not None and after is not None and before["target_role_id"] != after["target_role_id"]:
         previous = context.guild.get_role(before["target_role_id"])
         lines.append(ACTION_CONNECTION_MANAGE_TARGET.format(
@@ -137,7 +142,6 @@ async def prepare_role_connection_change(context: AgentRequestContext,
             details.append(ACTION_CONNECTION_MANAGE_NEW_RULE.format(
                 group=list_name, kind=kind,
                 role=condition_role.mention if condition_role else f"<@&{role_id}>"))
-    lines.append(ACTION_CONNECTION_MANAGE_BOARD.format(channel=channel.mention))
 
     async def recheck() -> bool:
         current = workflow.role_connection_state(connection_id)
@@ -159,9 +163,11 @@ async def prepare_role_connection_change(context: AgentRequestContext,
         elif not workflow.remove_connection(connection_id):
             raise ActionRefused('That role connection is unavailable.')
         board = await workflow.refresh_connections_message(channel)
+        verb = {"create": "Added a connection", "update": "Updated the connection",
+                "remove": "Removed the connection"}[operation]
         return ActionOutcome(
             "complete", "private",
-            text=ACTION_CONNECTION_MANAGE_DONE.format(channel=channel.mention, url=board.jump_url),
+            text=f"{verb} for {role.mention}.\n{board.jump_url}",
             after={"connection": after},
         )
 
@@ -206,11 +212,20 @@ async def prepare_role_connection_undo(context: AgentRequestContext,
         elif not workflow.replace_connection(connection_id, prior):
             raise ActionRefused('That role connection is unavailable.')
         board = await workflow.refresh_connections_message(channel)
+        verb = "Removed" if prior is None else "Restored"
         return ActionOutcome("complete", "private",
-                              text=ACTION_CONNECTION_MANAGE_DONE.format(
-                                  channel=channel.mention, url=board.jump_url),
-                              after={"connection": prior})
+                             text=f"{verb} the connection for {role.mention}.\n{board.jump_url}",
+                             after={"connection": prior})
 
+    line = (f"🏷️ Restore the earlier connection for {role.mention}" if prior is not None
+            else f"🏷️ Remove the newly added connection for {role.mention}")
+    details = []
+    if prior is not None:
+        for group in ("all", "any"):
+            for rule in prior.get(group, []):
+                kind, role_id = next(iter(rule.items()))
+                details.append(ACTION_CONNECTION_MANAGE_NEW_RULE.format(
+                    group=group, kind=kind, role=f"<@&{role_id}>"))
     return PreparedAction(
         "undo_role_connection", {"connection_id": connection_id, "channel_id": channel.id},
         ChangePreview((), recheck, summary=ACTION_CONNECTION_MANAGE_LABEL,

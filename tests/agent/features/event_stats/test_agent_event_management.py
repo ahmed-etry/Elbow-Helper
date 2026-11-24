@@ -25,10 +25,7 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
             prepare_one_time_event_values=MagicMock(return_value=(prepared, None)),
             create_one_time_event=MagicMock(return_value="event-key"),
             force_refresh=AsyncMock(),
-            build_event_detail_embed=MagicMock(return_value=SimpleNamespace(
-                title="Event", description="Created", fields=[],
-                footer=SimpleNamespace(text=None),
-            )),
+            event_management_state=MagicMock(return_value={"event": {"name": "Event"}}),
         )
         context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
@@ -42,18 +39,20 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "confirmation_required")
         action = context.state.proposed_changes[0]
         self.assertIs(action.action_class, ActionClass.CHANGE)
-        self.assertIn(f"Start: Not set to <t:{int(start.timestamp())}:f>", action.preview.details)
-        self.assertIn(f"End: Not set to <t:{int(end.timestamp())}:f>", action.preview.details)
-        self.assertIn("Event Name: Not set to Event", action.preview.details)
-        self.assertIn("Grace Period (Hours): Not set to 24", action.preview.details)
+        self.assertIn(f"Start goes from Not set to <t:{int(start.timestamp())}:f>.", action.preview.details)
+        self.assertIn(f"End goes from Not set to <t:{int(end.timestamp())}:f>.", action.preview.details)
+        self.assertIn("Event Name goes from Not set to Event.", action.preview.details)
+        self.assertIn("Grace Period (Hours) goes from Not set to 24.", action.preview.details)
         self.assertTrue(any("voice channel" in line for line in action.preview.lines))
         self.assertFalse(any(str(int(start.timestamp())) in line for line in action.preview.lines))
         self.assertEqual(action.preview.detail_access, frozenset({ACCESS_LEAD}))
         self.assertEqual(tool.contract.required_access, frozenset({ACCESS_LEAD}))
         self.assertNotIn(str(int(start.timestamp())), str(result))
         workflow.create_one_time_event.assert_not_called()
-        await action.run()
+        outcome = await action.run()
+        self.assertEqual(outcome.text, "Created event tracker **Event**.")
         workflow.create_one_time_event.assert_called_once_with(**prepared)
+        workflow.event_management_state.assert_called_once_with("event-key")
         workflow.force_refresh.assert_awaited_once()
 
     async def test_confirmed_changes_save_off_the_event_loop(self):
@@ -151,7 +150,7 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(action.action_class, ActionClass.CHANGE)
         self.assertIn("position 4 to 1", action.preview.details[0])
         self.assertFalse(any("position 4 to 1" in line for line in action.preview.lines))
-        self.assertIn("Alpha", action.preview.lines[0])
+        self.assertEqual(action.preview.details[0], "⚙️ Move **Alpha** from position 4 to 1")
         workflow.move_event_to_position.assert_not_called()
         self.assertTrue(await action.preview.recheck())
         await action.run()

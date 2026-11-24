@@ -8,7 +8,7 @@ from elbow_helper.features.achievements.raffle import RAFFLE_COLLECTION_CONTACT
 from elbow_helper.agent.discord_actions.safety import check_bot_post_access, resolve_channel
 from elbow_helper.features.help.discovery import ParameterInfo
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
-from elbow_helper.agent.conversation.wording import ACTION_RAFFLE_PRIZE_LABEL, ACTION_RAFFLE_PRIZE_LINE, ACTION_RAFFLE_PRIZE_UNDO_LABEL, ACTION_RAFFLE_PRIZE_VALUE, ACTION_RAFFLE_WINNERS_VALUE, ACTION_UNDO_CHANGED, ACTION_RAFFLE_HUB_UPDATE, ACTION_RAFFLE_CLEAR_LINE, ACTION_RAFFLE_CLEAR_TICKETS_LINE, ACTION_RAFFLE_CLEAR_WINNER, ACTION_RAFFLE_CLEAR_TICKET, ACTION_RAFFLE_CLEAR_NONE, ACTION_RAFFLE_CLEAR_LABEL, ACTION_RAFFLE_DRAW_LINE, ACTION_RAFFLE_REROLL_LINE, ACTION_RAFFLE_DRAW_ELIGIBLE, ACTION_RAFFLE_DRAW_OLD, ACTION_RAFFLE_DRAW_PRIOR, ACTION_RAFFLE_DRAW_PRIZE, ACTION_RAFFLE_DRAW_PINGS, ACTION_RAFFLE_DRAW_COLLECT, ACTION_RAFFLE_DRAW_HISTORY, ACTION_RAFFLE_DRAW_LABEL, ACTION_RAFFLE_REROLL_LABEL, ACTION_RAFFLE_WINNER_ONE, ACTION_RAFFLE_WINNER_MANY, ACTION_RAFFLE_CURRENT_MONTH, ACTION_RAFFLE_NO_PRIZE
+from elbow_helper.agent.conversation.wording import ACTION_RAFFLE_PRIZE_LABEL, ACTION_RAFFLE_PRIZE_UNDO_LABEL, ACTION_RAFFLE_PRIZE_VALUE, ACTION_RAFFLE_WINNERS_VALUE, ACTION_UNDO_CHANGED, ACTION_RAFFLE_CLEAR_LINE, ACTION_RAFFLE_CLEAR_TICKETS_LINE, ACTION_RAFFLE_CLEAR_WINNER, ACTION_RAFFLE_CLEAR_TICKET, ACTION_RAFFLE_CLEAR_NONE, ACTION_RAFFLE_CLEAR_LABEL, ACTION_RAFFLE_DRAW_ELIGIBLE, ACTION_RAFFLE_DRAW_OLD, ACTION_RAFFLE_DRAW_PRIOR, ACTION_RAFFLE_DRAW_COLLECT, ACTION_RAFFLE_DRAW_HISTORY, ACTION_RAFFLE_DRAW_LABEL, ACTION_RAFFLE_REROLL_LABEL, ACTION_RAFFLE_WINNER_ONE, ACTION_RAFFLE_WINNER_MANY, ACTION_RAFFLE_NO_PRIZE
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter
 from elbow_helper.agent.features.achievements.commands import achievement_workflow
@@ -28,7 +28,6 @@ async def prepare_raffle_clear(context: Any,
                      for member_id in state["tickets"])
     if len(lines) == 1:
         lines.append(ACTION_RAFFLE_CLEAR_NONE)
-    lines.append(ACTION_RAFFLE_HUB_UPDATE)
 
     async def recheck() -> bool:
         return await workflow.raffle_clear_state() == state
@@ -43,11 +42,13 @@ async def run_raffle_clear(context: Any,
                            values: Mapping[str, Any]) -> ActionOutcome:
     workflow = achievement_workflow(context)
     clear_tickets = bool(values.get("clear_tickets", False))
-    message = await workflow.clear_raffle(clear_tickets)
+    await workflow.clear_raffle(clear_tickets)
     after = await workflow.raffle_clear_state()
     if after["winners"] or (clear_tickets and after["tickets"]):
         raise OSError("Raffle clear could not be verified")
-    return ActionOutcome("complete", "private", text=message,
+    return ActionOutcome("complete", "private", text=(
+        "Cleared this month's raffle winners and tickets." if clear_tickets
+        else "Cleared this month's raffle winners."),
                           after={"raffle_state": after})
 
 
@@ -79,20 +80,12 @@ async def _prepare_draw(context: Any, values: Mapping[str, Any], *,
     workflow, channel, state = await _draw_state(context, values, reroll=reroll)
     count = state["winners_count"]
     winner_word = ACTION_RAFFLE_WINNER_ONE if count == 1 else ACTION_RAFFLE_WINNER_MANY
-    if reroll:
-        heading = ACTION_RAFFLE_REROLL_LINE.format(
-            count=count, winner_word=winner_word, channel=channel.mention,
-        )
-    else:
-        month = (ACTION_RAFFLE_CURRENT_MONTH if state["month_key"] == state["current_month_key"]
-                 else workflow.raffle_month_label(state["month_key"]))
-        heading = ACTION_RAFFLE_DRAW_LINE.format(
-            count=count, winner_word=winner_word, month=month,
-            channel=channel.mention,
-        )
-    lines = [heading, ACTION_RAFFLE_DRAW_PRIZE.format(
-        prize=state["reward"] or ACTION_RAFFLE_NO_PRIZE,
-    )]
+    prize = state["reward"] or ACTION_RAFFLE_NO_PRIZE
+    month = workflow.raffle_month_label(state["month_key"])
+    raffle = "this month's raffle" if reroll else f"the {month} raffle"
+    verb = "Redraw" if reroll else "Draw"
+    lines = [f"🎟️ {verb} {count} {winner_word} for **{prize}** in {raffle}",
+             f"Ping the winners in {channel.mention}."]
     lines.extend(ACTION_RAFFLE_DRAW_OLD.format(member=f"<@{member_id}>")
                  for member_id in state["active_winners"] if reroll)
     if reroll:
@@ -102,10 +95,8 @@ async def _prepare_draw(context: Any, values: Mapping[str, Any], *,
         lines.append(ACTION_RAFFLE_DRAW_HISTORY)
     lines.extend(ACTION_RAFFLE_DRAW_ELIGIBLE.format(member=f"<@{member_id}>")
                  for member_id in state["eligible"])
-    lines.append(ACTION_RAFFLE_DRAW_PINGS)
     if not reroll:
         lines.append(ACTION_RAFFLE_DRAW_COLLECT.format(contact=RAFFLE_COLLECTION_CONTACT))
-    lines.append(ACTION_RAFFLE_HUB_UPDATE)
 
     async def recheck() -> bool:
         try:
@@ -153,8 +144,12 @@ async def _run_draw(context: Any, values: Mapping[str, Any], *,
     if (not after["active_winners"] or
             (not reroll and len(after["winners"]) != state["winners_count"])):
         raise OSError("Raffle draw could not be verified")
-    return ActionOutcome("complete", result={"channel_id": channel.id,
-                                               "winners": after["active_winners"]},
+    month = workflow.raffle_month_label(state["month_key"])
+    winners = ", ".join(f"<@{member_id}>" for member_id in after["active_winners"])
+    text = (f"Redrew the {month} raffle. New winners {winners}." if reroll
+            else f"Drew {winners} for the {month} raffle.")
+    return ActionOutcome("complete", text=text, result={"channel_id": channel.id,
+                                                        "winners": after["active_winners"]},
                           after={"raffle_state": after})
 
 
@@ -169,10 +164,11 @@ async def run_raffle_reroll(context: Any,
 
 
 def _lines(before: tuple[int, str | None, str | None],
-           prize: str, winners: int) -> tuple[str, ...]:
+           prize: str, winners: int, *, undo: bool = False) -> tuple[str, ...]:
     _, old_prize, old_winners = before
     return (
-        ACTION_RAFFLE_PRIZE_LINE,
+        f"🎟️ {'Restore' if undo else 'Set'} this month's raffle prize to **{prize}** "
+        f"for {winners} {'winner' if winners == 1 else 'winners'}",
         ACTION_RAFFLE_PRIZE_VALUE.format(old=old_prize or "Prize not set", new=prize),
         ACTION_RAFFLE_WINNERS_VALUE.format(old=old_winners or "1", new=winners),
     )
@@ -204,12 +200,14 @@ async def run_raffle_prize(context: Any,
     workflow = achievement_workflow(context)
     prize = values["prize"].strip()
     winners = int(values.get("winners", 1))
-    message = await workflow.apply_raffle_prize(prize, winners)
+    await workflow.apply_raffle_prize(prize, winners)
     month_key, saved_prize, saved_winners = await workflow.raffle_prize_state()
     if saved_prize != prize or saved_winners != str(winners):
         raise OSError("Raffle prize change could not be verified")
     return ActionOutcome(
-        "complete", "private", text=message,
+        "complete", "private", text=(
+            f"This month's raffle prize is **{prize}** for {winners} "
+            f"{'winner' if winners == 1 else 'winners'}."),
         after={"month_key": month_key, "prize": saved_prize,
                "winners": saved_winners},
     )
@@ -238,13 +236,17 @@ async def prepare_raffle_prize_undo(context: Any,
         restored = await workflow.raffle_prize_state()
         if restored != (before["month_key"], before["prize"], before["winners"]):
             raise OSError("Raffle prize undo could not be verified")
-        return ActionOutcome("complete", after={"restored": True})
+        prize = before["prize"] or "Prize not set"
+        winners = int(before["winners"] or 1)
+        return ActionOutcome("complete", text=(
+            f"This month's raffle prize is **{prize}** for {winners} "
+            f"{'winner' if winners == 1 else 'winners'}."), after={"restored": True})
 
     return PreparedAction(
         "undo_raffle_prize", {"month_key": before["month_key"]},
         ChangePreview((
             *_lines(current, before["prize"] or "Prize not set",
-                    int(before["winners"] or 1)),
+                    int(before["winners"] or 1), undo=True),
             *((ACTION_UNDO_CHANGED,) if current != expected else ()),
         ), recheck, summary=ACTION_RAFFLE_PRIZE_UNDO_LABEL,
             before={"month_key": current[0], "prize": current[1],

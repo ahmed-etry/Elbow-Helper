@@ -702,8 +702,22 @@ class RosterRepository:
         max_members: int,
         min_townhall: int | None = None,
     ) -> tuple[int, int]:
+        added, count = self.add_member_tags(
+            roster_id, cycle_id, discord_user_id, accounts, max_members, min_townhall,
+        )
+        return len(added), count
+
+    def add_member_tags(
+        self,
+        roster_id: int,
+        cycle_id: int,
+        discord_user_id: int,
+        accounts: list[dict[str, object]],
+        max_members: int,
+        min_townhall: int | None = None,
+    ) -> tuple[tuple[str, ...], int]:
         now = int(time.time())
-        added = 0
+        added = []
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             count = int(conn.execute(
@@ -738,10 +752,10 @@ class RosterRepository:
                     ),
                 )
                 if cursor.rowcount:
-                    added += 1
+                    added.append(str(account["player_tag"]))
                     count += 1
             conn.commit()
-        return added, count
+        return tuple(added), count
 
     def remove_members(
         self,
@@ -751,8 +765,20 @@ class RosterRepository:
         discord_user_id: int,
         player_tags: list[str],
     ) -> int:
+        return len(self.remove_member_tags(
+            roster_id, cycle_id, discord_user_id=discord_user_id, player_tags=player_tags,
+        ))
+
+    def remove_member_tags(
+        self,
+        roster_id: int,
+        cycle_id: int,
+        *,
+        discord_user_id: int,
+        player_tags: list[str],
+    ) -> tuple[str, ...]:
         if not player_tags:
-            return 0
+            return ()
         placeholders = ", ".join("?" for _ in player_tags)
         with self.connect() as conn:
             cursor = conn.execute(
@@ -760,11 +786,13 @@ class RosterRepository:
                 DELETE FROM roster_members
                 WHERE roster_id = ? AND cycle_id = ? AND discord_user_id = ?
                     AND player_tag IN ({placeholders})
+                RETURNING player_tag
                 """,
                 (roster_id, cycle_id, discord_user_id, *player_tags),
             )
+            removed = {row[0] for row in cursor}
             conn.commit()
-        return int(cursor.rowcount)
+            return tuple(tag for tag in dict.fromkeys(player_tags) if tag in removed)
 
     def clear_members(self, roster_id: int, cycle_id: int | None) -> list[int]:
         if cycle_id is None:

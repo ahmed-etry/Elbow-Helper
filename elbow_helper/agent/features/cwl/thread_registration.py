@@ -8,7 +8,7 @@ from typing import Any
 from elbow_helper.agent.discord_actions.safety import check_bot_post_access
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
-from elbow_helper.agent.conversation.wording import ACTION_CWL_REGISTER_LABEL, ACTION_CWL_REGISTER_LINE, ACTION_CWL_REGISTER_OLD, ACTION_CWL_REGISTER_CLOSED, ACTION_CWL_REGISTER_WELCOME, ACTION_CWL_REGISTER_BOARD
+from elbow_helper.agent.conversation.wording import ACTION_CWL_REGISTER_LABEL, ACTION_CWL_REGISTER_LINE, ACTION_CWL_REGISTER_CLOSED, ACTION_CWL_REGISTER_WELCOME, ACTION_CWL_REGISTER_BOARD
 from elbow_helper.agent.actions.outcomes import ActionOutcome, embed_text
 from elbow_helper.agent.commands.registry import CommandAdapter
 
@@ -58,8 +58,9 @@ async def prepare_cwl_register(context: Any,
     if (prepared["clan_thread_id"] and
             prepared["clan_thread_id"] != thread.id):
         old_ids.add(str(prepared["clan_thread_id"]))
-    lines.extend(ACTION_CWL_REGISTER_OLD.format(thread_id=thread_id)
-                 for thread_id in sorted(old_ids))
+    if old_ids:
+        old_threads = ", ".join(f"<#{thread_id}>" for thread_id in sorted(old_ids))
+        lines.append(f"Replaces {old_threads}.")
     welcome = workflow.cwl_registration_welcome_embed(prepared["clan"])
     lines.append(ACTION_CWL_REGISTER_WELCOME.format(thread=thread.mention))
     details = list(embed_text(welcome).splitlines())
@@ -92,7 +93,8 @@ async def run_cwl_register(context: Any,
     )
     if after["issue"] or after["status"] != "already":
         raise OSError("CWL thread registration could not be verified")
-    return ActionOutcome("complete", "private", text=message,
+    return ActionOutcome("complete", "private",
+                         text=f"{prepared['clan']}'s CWL updates are set up in {prepared['thread'].mention}.",
                           after={"thread_id": prepared["thread"].id,
                                  "clan": prepared["clan"]})
 

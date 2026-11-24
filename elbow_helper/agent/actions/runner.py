@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import json
 from dataclasses import dataclass, field, replace
@@ -18,11 +19,11 @@ from elbow_helper.agent.safety.disclosure import can_disclose_provenance
 from .outcomes import ActionOutcome
 from .private_view import PrivateResultView
 from elbow_helper.agent.conversation.text import chunk_response
-from elbow_helper.agent.conversation.wording import action_progress_status, ACTION_STOP_BUTTON, ACTION_STOP_OWNER, ACTION_POST_LABEL
+from elbow_helper.agent.conversation.wording import action_progress_status, ACTION_STOP_BUTTON, ACTION_STOP_OWNER, ACTION_POST_LABEL, LONG_REPLY_FILENAME
 from .contracts import ActionClass, PreparedAction, check_bundle
 from .discord_failure import discord_failure
 from .store import AgentActionRepository
-from .report import format_run_report
+from .report import format_card_report, format_run_report
 
 
 LOGGER = logging.getLogger(__name__)
@@ -112,7 +113,8 @@ class AgentActionRunner:
 
     async def submit(self, context: Any, actions: tuple[PreparedAction, ...],
                      *, confirmer_id: int, progress_message: Any = None,
-                     private_result: PrivateResultView | None = None) -> str:
+                     private_result: PrivateResultView | None = None,
+                     confirmation: bool = False) -> str:
         if confirmer_id != context.member.id:
             raise ValueError("Only the requester may confirm")
         await self._ready.wait()
@@ -133,7 +135,7 @@ class AgentActionRunner:
             } for action in actions),
         )
         task = asyncio.create_task(self._execute(
-            run_id, context, actions, progress_message, private_result,
+            run_id, context, actions, progress_message, private_result, confirmation=confirmation,
         ))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
@@ -169,7 +171,8 @@ class AgentActionRunner:
     async def _execute(self, run_id: str, context: Any,
                        actions: tuple[PreparedAction, ...],
                        progress_message: Any = None,
-                       private_result: PrivateResultView | None = None) -> None:
+                       private_result: PrivateResultView | None = None, *,
+                       confirmation: bool = False) -> None:
         owner = uuid4().hex
         if not await asyncio.to_thread(self.repository.claim, run_id, owner=owner):
             return
@@ -185,7 +188,7 @@ class AgentActionRunner:
         try:
             progress = await self._show_progress(
                 channel, progress_message, view,
-                await self._progress_text(actions[0], 0, len(actions)),
+                await self._progress_text(actions[0], 0, len(actions)), confirmation=confirmation,
             )
             stop_task = asyncio.create_task(self._show_stop_later(progress, view, run_id))
             for index, action in enumerate(actions):
@@ -200,10 +203,8 @@ class AgentActionRunner:
                     break
                 if index:
                     try:
-                        await progress.edit(
-                            content=await self._progress_text(action, index, len(actions)),
-                            view=view,
-                        )
+                        status = await self._progress_text(action, index, len(actions))
+                        await progress.edit(**self._progress_options(status, confirmation), view=view)
                     except discord.DiscordException:
                         LOGGER.warning("Agent action progress could not be posted: run=%s", run_id)
                 step_status = await self._run_step(
@@ -230,20 +231,29 @@ class AgentActionRunner:
                 stop_task.cancel()
                 await asyncio.gather(stop_task, return_exceptions=True)
             view.disable()
-            await self._post_report(run_id, context, channel, progress, output)
+            await self._post_report(run_id, context, channel, progress, output,
+                                    confirmation=confirmation)
             view.stop()
 
     @staticmethod
     async def _show_progress(channel: Any, progress_message: Any, view: discord.ui.View,
-                             status: str):
+                             status: str, *, confirmation: bool):
         if progress_message is not None:
             try:
-                await progress_message.edit(content=status, view=view)
+                await progress_message.edit(**AgentActionRunner._progress_options(status, confirmation), view=view)
                 return progress_message
             except discord.DiscordException:
                 LOGGER.warning("Agent preview could not show run progress")
+                if confirmation:
+                    return progress_message
         return await channel.send(status, view=view,
                                   allowed_mentions=discord.AllowedMentions.none())
+
+    @staticmethod
+    def _progress_options(status, confirmation):
+        if confirmation:
+            return {"embed": discord.Embed(description=status[:4096], colour=discord.Colour.blue())}
+        return {"content": status}
 
     async def _progress_text(self, action, index, total):
         label = action.preview.summary
@@ -376,13 +386,13 @@ class AgentActionRunner:
         return status
 
     async def _post_report(
-        self, run_id, context, channel, progress, output: ActionRunOutput,
+        self, run_id, context, channel, progress, output: ActionRunOutput, *, confirmation=False,
     ) -> None:
         run = await asyncio.to_thread(self.repository.run, run_id)
         for index, (status, outcome) in output.step_outcomes.items():
             run["steps"][index] = {**run["steps"][index], "status": status,
                                    "outcome_json": json.dumps(outcome)}
-        if (progress is not None and not getattr(progress, "preserves_other_text", False)
+        if (not confirmation and progress is not None
                 and self._only_posted_here(run, output)):
             try:
                 await progress.delete()
@@ -393,6 +403,7 @@ class AgentActionRunner:
                 return
         tracker = getattr(getattr(context, "state", None), "reply_delivery", None)
         replies = getattr(tracker, "posts", ())
+        confirmed_steps = run["steps"]
         run["steps"] = [*({
             "action_name": "post_discord_message", "action_label": ACTION_POST_LABEL,
             "action_class": ActionClass.OUTPUT.value, "status": "completed",
@@ -401,8 +412,6 @@ class AgentActionRunner:
             }),
             "outcome_json": json.dumps({"status": "complete", "result": post}),
         } for post in replies), *run["steps"]]
-        report = self._report(run)
-        chunks = chunk_response(report) or [report]
         previous = output.private_result
         private_view = (PrivateResultView(
             context.member.id,
@@ -412,15 +421,45 @@ class AgentActionRunner:
             panels=previous.panels if previous else (),
             panel_labels=previous.panel_labels if previous else (),
         ) if previous or output.private_parts or output.private_files else None)
+        if confirmation:
+            reported = await self._post_card_result(channel, progress, confirmed_steps, private_view)
+        else:
+            reported = await self._post_text_result(run_id, run, channel, progress, private_view)
+        if private_view is not None:
+            private_view.message = reported
+        await self._call_on_finish(context, run, reported, run_id)
+
+    @staticmethod
+    async def _post_card_result(channel, progress, steps, private_view):
+        embeds, overflow = format_card_report(steps)
+        file = discord.File(io.BytesIO(overflow.encode("utf-8")), filename=LONG_REPLY_FILENAME) if overflow else None
+        options = {"embeds": embeds, "view": private_view, "allowed_mentions": discord.AllowedMentions.none()}
+        try:
+            if progress is not None:
+                try:
+                    await progress.edit(**options, **({"attachments": [file]} if file else {}))
+                    return progress
+                except discord.DiscordException:
+                    LOGGER.warning("Agent confirmation card could not show the run result")
+                    if file:
+                        file.reset(seek=True)
+            return await channel.send(**options, **({"file": file} if file else {}))
+        except discord.DiscordException:
+            LOGGER.exception("Agent confirmation result could not be posted")
+            return None
+        finally:
+            if file:
+                file.close()
+
+    async def _post_text_result(self, run_id, run, channel, progress, private_view):
+        report = self._report(run)
+        chunks = chunk_response(report) or [report]
         reported = None
         try:
             if progress is not None:
-                if getattr(progress, "preserves_other_text", False):
-                    remaining = await progress.replace_report(report, private_view)
-                else:
-                    await progress.edit(content=chunks[0],
-                                        view=private_view if len(chunks) == 1 else None)
-                    remaining = chunks[1:]
+                await progress.edit(content=chunks[0],
+                                    view=private_view if len(chunks) == 1 else None)
+                remaining = chunks[1:]
                 reported = progress
                 for index, chunk in enumerate(remaining):
                     reported = await channel.send(
@@ -435,11 +474,9 @@ class AgentActionRunner:
                         view=private_view if index == len(chunks) - 1 else None,
                         allowed_mentions=discord.AllowedMentions.none(),
                     )
-            if private_view is not None:
-                private_view.message = reported
         except discord.DiscordException:
             LOGGER.exception("Agent action result could not be posted: run=%s", run_id)
-        await self._call_on_finish(context, run, reported, run_id)
+        return reported
 
     @staticmethod
     def _only_posted_here(run, output: ActionRunOutput) -> bool:

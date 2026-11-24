@@ -13,7 +13,7 @@ from elbow_helper.agent.safety.access import require_evidence_access
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome, embed_text
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_CWL_BONUS_REVIEW_LINE, ACTION_CWL_BONUS_REVIEW_STATUS, ACTION_CWL_BONUS_REVIEW_MEMBER, ACTION_CWL_BONUS_REVIEW_SOURCE, ACTION_CWL_BONUS_REVIEW_LABEL, ACTION_CWL_BONUS_REVIEW_POST, ACTION_PREVIEW_BLANK
+from elbow_helper.agent.conversation.wording import ACTION_CWL_BONUS_REVIEW_STATUS, ACTION_CWL_BONUS_REVIEW_SOURCE, ACTION_CWL_BONUS_REVIEW_LABEL, ACTION_CWL_BONUS_REVIEW_POST
 
 
 def cwl_bonus_review_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -59,13 +59,19 @@ async def prepare_cwl_bonus_review(context: AgentRequestContext,
             clan_code, month_key=month_key, source=source, text=source_text)
         if candidate is None:
             raise ActionRefused(issue or 'That CWL bonus review is unavailable.')
-    lines = [ACTION_CWL_BONUS_REVIEW_LINE.format(
-        decision=decision, clan=clan_code, month=state["month_label"], mode=mode)]
+    bonus = f"{clan_code}'s {mode} CWL bonus for {state['month_label']}"
+    if candidate is not None:
+        members = ", ".join(f"<@{member_id}>" for member_id in candidate.recipient_ids)
+        line = f"🏆 Grant {bonus} to {members}"
+    elif decision == "skip":
+        line = f"🏆 Skip {bonus}"
+    else:
+        line = f"🏆 Put {bonus} on hold"
+    lines = [line]
     details = [ACTION_CWL_BONUS_REVIEW_STATUS.format(
         old=state["clan"].get("status", "not started"), new=decision)]
+    message_body = None
     if candidate is not None:
-        lines.extend(ACTION_CWL_BONUS_REVIEW_MEMBER.format(member=f"<@{member_id}>")
-                     for member_id in candidate.recipient_ids)
         lines.append(ACTION_CWL_BONUS_REVIEW_SOURCE.format(
             source=candidate.source_url or source))
         preview = workflow.bonus_review_preview(candidate)
@@ -73,8 +79,8 @@ async def prepare_cwl_bonus_review(context: AgentRequestContext,
             if field.name == "Rewards":
                 details.extend(line for line in str(field.value).splitlines() if line.strip())
         details.append(ACTION_CWL_BONUS_REVIEW_POST)
-        details.extend(line if line.strip() else ACTION_PREVIEW_BLANK
-                     for line in candidate.source_text.splitlines())
+        message_body = slice(len(details), None)
+        details.extend(candidate.source_text.split("\n"))
 
     async def recheck() -> bool:
         live = workflow.bonus_review_state(clan_code, mode=mode, month_key=month_key)
@@ -93,20 +99,23 @@ async def prepare_cwl_bonus_review(context: AgentRequestContext,
             if status != "complete":
                 raise ActionRefused(str(detail or 'That CWL bonus review is unavailable.'))
             result = workflow.bonus_review_result(candidate, detail, context.member)
-            return ActionOutcome("complete", "private", text=embed_text(result))
+            return ActionOutcome("complete", "private", text=f"Granted {bonus} to {members}.\n{embed_text(result)}")
         status = "skipped" if decision == "skip" else "on_hold"
         try:
-            text = await workflow.set_bonus_review_status(
+            await workflow.set_bonus_review_status(
                 state["board_key"], clan_code, status, context.member)
         except ValueError as error:
             raise ActionRefused(str(error)) from error
+        text = f"Skipped {bonus}." if decision == "skip" else f"Put {bonus} on hold."
         return ActionOutcome("complete", "private", text=text)
 
     context.state.proposed_changes.append(PreparedAction(
         "review_cwl_bonus", {"clan_code": clan_code, "mode": mode,
                               "month_key": month_key, "decision": decision},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_CWL_BONUS_REVIEW_LABEL,
-                      details=tuple(details), detail_sources=frozenset({CWL_HQ_CHANNEL_ID})
+        ChangePreview((), recheck, summary=ACTION_CWL_BONUS_REVIEW_LABEL,
+                      details=(*lines, *details), message_body=(
+                          slice(len(lines) + message_body.start, None) if message_body else None),
+                      detail_sources=frozenset({CWL_HQ_CHANNEL_ID})
                       | frozenset({candidate.source_channel_id} if candidate is not None
                                   and candidate.source_channel_id is not None else ())),
         run, action_class=ActionClass.CHANGE,

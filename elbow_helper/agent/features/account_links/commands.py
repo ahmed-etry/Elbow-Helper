@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
-from elbow_helper.agent.conversation.wording import ACTION_ACCOUNT_ADD_LABEL, ACTION_ACCOUNT_ADD_LINE, ACTION_ACCOUNT_ADD_UNDO_LABEL, ACTION_ACCOUNT_BOARD, ACTION_ACCOUNT_LOCATION_CLEAR, ACTION_ACCOUNT_NAME_LINE, ACTION_ACCOUNT_NO_LINK, ACTION_ACCOUNT_REASSIGN_LINE, ACTION_ACCOUNT_REMOVE_LABEL, ACTION_ACCOUNT_REMOVE_LINE, ACTION_UNDO_CHANGED
+from elbow_helper.agent.conversation.wording import ACTION_ACCOUNT_ADD_LABEL, ACTION_ACCOUNT_ADD_LINE, ACTION_ACCOUNT_ADD_UNDO_LABEL, ACTION_ACCOUNT_LOCATION_CLEAR, ACTION_ACCOUNT_NAME_LINE, ACTION_ACCOUNT_NO_LINK, ACTION_ACCOUNT_REMOVE_LABEL, ACTION_ACCOUNT_REMOVE_LINE, ACTION_UNDO_CHANGED
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter
 from elbow_helper.agent.discord_actions.safety import find_member
@@ -26,15 +26,11 @@ def _add_lines(prepared: Mapping[str, Any], member: Any) -> tuple[str, ...]:
     for row in prepared["rows"]:
         tag = row["player_tag"]
         old = prepared["before"].get(tag)
+        lines.append(ACTION_ACCOUNT_ADD_LINE.format(
+            name=row["player_name_last_seen"], tag=tag, member=member.mention,
+        ))
         if old and int(old["discord_user_id"]) != member.id:
-            lines.append(ACTION_ACCOUNT_REASSIGN_LINE.format(
-                name=row["player_name_last_seen"], tag=tag,
-                old=f"<@{int(old['discord_user_id'])}>", member=member.mention,
-            ))
-        else:
-            lines.append(ACTION_ACCOUNT_ADD_LINE.format(
-                name=row["player_name_last_seen"], tag=tag, member=member.mention,
-            ))
+            lines.append(f"Moves from <@{int(old['discord_user_id'])}>.")
         if old and old.get("player_name_last_seen") != row["player_name_last_seen"]:
             lines.append(ACTION_ACCOUNT_NAME_LINE.format(
                 old=old.get("player_name_last_seen") or tag,
@@ -47,8 +43,6 @@ def _add_lines(prepared: Mapping[str, Any], member: Any) -> tuple[str, ...]:
         lines.append('Invalid player tags: {tags}'.format(
             tags=", ".join(prepared["invalid_tags"]),
         ))
-    if prepared["refresh_boards"]:
-        lines.append(ACTION_ACCOUNT_BOARD)
     return tuple(lines)
 
 
@@ -96,7 +90,12 @@ async def run_account_add(context: Any,
         for row in result["rows"]
     ):
         raise OSError("Account links could not be verified")
-    return ActionOutcome("complete", "private", text=result["message"],
+    accounts = ", ".join(f"**{row['player_name_last_seen']}** `{row['player_tag']}`"
+                         for row in result["rows"])
+    lines = [f"Linked {accounts} to {member.mention}."] if accounts else []
+    if result["invalid_tags"]:
+        lines.append(f"Invalid player tags: {', '.join(result['invalid_tags'])}")
+    return ActionOutcome("complete", "private", text="\n".join(lines),
                           after={"links": after})
 
 
@@ -120,7 +119,12 @@ async def prepare_account_add_undo(context: Any,
         after = (await asyncio.to_thread(workflow.get_links_by_tags, tags))
         if after != before:
             raise OSError("Account link undo could not be verified")
-        return ActionOutcome("complete", "private", after={"links": after})
+        text = [
+            (f"Restored the link for `{tag}` to <@{old['discord_user_id']}>." if old is not None
+             else f"Unlinked `{tag}` from <@{expected[tag]['discord_user_id']}>.")
+            for tag, old in before.items()
+        ]
+        return ActionOutcome("complete", "private", text="\n".join(text), after={"links": after})
 
     lines = []
     for tag, old in before.items():
@@ -129,12 +133,14 @@ async def prepare_account_add_undo(context: Any,
                 tag=tag, member=f"<@{int(expected[tag]['discord_user_id'])}>",
             ))
         else:
-            lines.append(ACTION_ACCOUNT_ADD_LINE.format(
-                name=old.get("player_name_last_seen") or tag, tag=tag,
-                member=f"<@{int(old['discord_user_id'])}>",
-            ))
-    if refresh_boards:
-        lines.append(ACTION_ACCOUNT_BOARD)
+            name = old.get("player_name_last_seen") or tag
+            previous = int(old["discord_user_id"])
+            current_owner = int(expected[tag]["discord_user_id"])
+            if previous == current_owner:
+                lines.append(ACTION_ACCOUNT_ADD_LINE.format(
+                    name=name, tag=tag, member=f"<@{previous}>"))
+            else:
+                lines.append(f"🔗 Move **{name}** `{tag}` from <@{current_owner}> back to <@{previous}>")
     if current != expected:
         lines.append(ACTION_UNDO_CHANGED)
     return PreparedAction(
@@ -163,8 +169,6 @@ async def prepare_account_remove(context: Any,
         lines.append('Invalid player tags: {tags}'.format(
             tags=", ".join(prepared["invalid_tags"]),
         ))
-    if prepared["refresh_boards"]:
-        lines.append(ACTION_ACCOUNT_BOARD)
 
     async def recheck() -> bool:
         current = await workflow.account_remove_operation(values["tags"], commit=False)
@@ -186,17 +190,25 @@ async def run_account_remove(context: Any,
     after = (await asyncio.to_thread(workflow.get_links_by_tags, result["tags_to_remove"]))
     if any(after.values()):
         raise OSError("Account unlink could not be verified")
-    return ActionOutcome("complete", "private", text=result["message"],
-                          after={"links": after})
+    lines = [
+        (f"Unlinked `{tag}` from <@{owner['discord_user_id']}>." if owner is not None
+         else ACTION_ACCOUNT_NO_LINK.format(tag=tag))
+        for tag, owner in result["before"].items()
+    ]
+    if result["invalid_tags"]:
+        lines.append(f"Invalid player tags: {', '.join(result['invalid_tags'])}")
+    return ActionOutcome("complete", "private", text="\n".join(lines), after={"links": after})
 
 
 def account_link_adapters() -> tuple[CommandAdapter, ...]:
     return (
         CommandAdapter("/account add", "confirm", run_account_add,
-                       prepare=prepare_account_add),
+                       prepare=prepare_account_add,
+                       tool_description="Carry out /account add for an authorized requester to link Clash accounts to a Discord member."),
         CommandAdapter("/account remove", "confirm", run_account_remove,
                        prepare=prepare_account_remove,
-                       action_class=ActionClass.CHANGE),
+                       action_class=ActionClass.CHANGE,
+                       tool_description="Carry out /account remove for an authorized requester to unlink Clash accounts."),
     )
 
 

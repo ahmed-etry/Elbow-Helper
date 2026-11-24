@@ -5,11 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from elbow_helper.configuration.channels import TRANSFER_REQUESTS
 from elbow_helper.features.clan_transfers.config import CLAN_TRANSFER_QUEUES
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
-from elbow_helper.agent.conversation.wording import ACTION_TRANSFER_BOARD, ACTION_TRANSFER_CANCEL_LABEL, ACTION_TRANSFER_CANCEL_LINE, ACTION_TRANSFER_COUNT, ACTION_TRANSFER_PING, ACTION_TRANSFER_REQUEST_LABEL, ACTION_TRANSFER_REQUEST_LINE
+from elbow_helper.agent.conversation.wording import ACTION_TRANSFER_CANCEL_LABEL, ACTION_TRANSFER_CANCEL_LINE, ACTION_TRANSFER_PING, ACTION_TRANSFER_REQUEST_LABEL, ACTION_TRANSFER_REQUEST_LINE
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter, PreparedCommandChange
 
@@ -31,12 +30,6 @@ async def _prepare(context: Any, values: Mapping[str, Any],
         (ACTION_TRANSFER_CANCEL_LINE if cancel else ACTION_TRANSFER_REQUEST_LINE).format(
             clan=clan_code, member=context.member.mention,
         ),
-        ACTION_TRANSFER_BOARD.format(
-            thread=f"<#{state['thread_id']}>", board=f"<#{TRANSFER_REQUESTS}>",
-        ),
-        ACTION_TRANSFER_COUNT.format(
-            count=state["pending_count"] - 1 if cancel else state["pending_count"] + 1,
-        ),
     ]
     if state["notify_role_ids"]:
         lines.append(ACTION_TRANSFER_PING.format(
@@ -50,9 +43,11 @@ async def _prepare(context: Any, values: Mapping[str, Any],
         ) == state
 
     async def run() -> ActionOutcome:
-        message = (await workflow.cancel_transfer(clan_code, context.member.id, via="agent")
-                   if cancel else
-                   await workflow.request_transfer(clan_code, context.member.id, via="agent"))
+        change = workflow.cancel_transfer if cancel else workflow.request_transfer
+        await change(clan_code, context.member.id, via="agent")
+        member = context.member.mention
+        message = (f"Removed {member} from the {clan_code} transfer queue." if cancel
+                   else f"{member} is in the {clan_code} transfer queue.")
         if workflow.transfer_request_status(clan_code, context.member.id) == cancel:
             raise OSError("Transfer request could not be verified")
         return ActionOutcome("complete", "private", text=message,
@@ -91,8 +86,10 @@ def clan_transfer_adapters() -> tuple[CommandAdapter, ...]:
     return (
         CommandAdapter("/transfer request", "confirm", run_transfer_request,
                        prepare=prepare_transfer_request,
-                       action_class=ActionClass.CHANGE),
+                       action_class=ActionClass.CHANGE,
+                       tool_description="Use /transfer request on the requester's behalf to join the destination clan's transfer queue."),
         CommandAdapter("/transfer cancel", "confirm", run_transfer_cancel,
                        prepare=prepare_transfer_cancel,
-                       action_class=ActionClass.CHANGE),
+                       action_class=ActionClass.CHANGE,
+                       tool_description="Use /transfer cancel on the requester's behalf to remove their request from the destination clan's queue."),
     )

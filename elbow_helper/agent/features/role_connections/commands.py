@@ -54,7 +54,8 @@ async def run_connections(context: Any, values: Mapping[str, Any]) -> ActionOutc
     workflow, channel = await _target(context, values)
     message = await workflow.post_connections_message(channel)
     return ActionOutcome(
-        "complete", result={"message_id": message.id, "channel_id": channel.id},
+        "complete", text=f"Role connections board posted in {channel.mention}.",
+        result={"message_id": message.id, "channel_id": channel.id},
         after={"message_id": message.id},
     )
 
@@ -66,4 +67,5 @@ def role_connection_adapters() -> tuple[CommandAdapter, ...]:
             "channel", "Channel for the role connections board; defaults to this channel.",
             False, "channel",
         ),),
-        prepare=prepare_connections, capability_name="post_role_connections_board"),)
+        prepare=prepare_connections, capability_name="post_role_connections_board",
+        tool_description="Carry out /connections for an authorized requester to post the role connections board."),)

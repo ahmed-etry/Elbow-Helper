@@ -7,9 +7,20 @@ import discord
 from elbow_helper.agent.discord_actions.safety import check_member, check_role
 from elbow_helper.agent.safety.access import ACCESS_LEAD_PLUS
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
-from elbow_helper.agent.conversation.wording import ACTION_ROSTER_NO_ROLE, ACTION_VALUE_YES, ACTION_VALUE_NO, ACTION_MEMBER_LINE, ACTION_FIELD_CHANGE, ACTION_ROSTER_POST_REFRESH, ACTION_ROSTER_TIMING_CLEAR, ACTION_ROSTER_TIMING_SET, ACTION_ROSTER_TIMING_RESET, ACTION_ROSTER_TIMING_KEEP, ACTION_ROSTER_TIMING_ROLE, ACTION_ROSTER_TIMING_LABEL, ACTION_ROSTER_TIMING_ROLE_KEEP, ACTION_ROSTER_SCHEDULE_DISABLE, ACTION_ROSTER_SCHEDULE_ENABLE, ACTION_ROSTER_SCHEDULE_RULE, ACTION_ROSTER_SCHEDULE_WINDOW, ACTION_ROSTER_SCHEDULE_RESET, ACTION_ROSTER_SCHEDULE_KEEP, ACTION_ROSTER_SCHEDULE_LABEL, ACTION_ROSTER_SCHEDULE_FIELDS, ACTION_VALUE_CURRENT, ACTION_VALUE_NEXT
+from elbow_helper.agent.conversation.wording import ACTION_ROSTER_NO_ROLE, ACTION_VALUE_YES, ACTION_VALUE_NO, ACTION_FIELD_CHANGE, ACTION_ROSTER_TIMING_CLEAR, ACTION_ROSTER_TIMING_SET, ACTION_ROSTER_TIMING_RESET, ACTION_ROSTER_TIMING_KEEP, ACTION_ROSTER_TIMING_LABEL, ACTION_ROSTER_SCHEDULE_DISABLE, ACTION_ROSTER_SCHEDULE_RULE, ACTION_ROSTER_SCHEDULE_WINDOW, ACTION_ROSTER_SCHEDULE_RESET, ACTION_ROSTER_SCHEDULE_KEEP, ACTION_ROSTER_SCHEDULE_LABEL, ACTION_ROSTER_SCHEDULE_FIELDS, ACTION_VALUE_CURRENT, ACTION_VALUE_NEXT
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter, PreparedCommandChange
+
+
+async def _opening_role_lines(workflow, roster, member_ids, *, reset):
+    if roster.role_id is None:
+        return ()
+    verb = "lose" if reset else "get"
+    return tuple([
+        f"<@{member_id}> will {verb} <@&{roster.role_id}>."
+        for member_id in member_ids
+        if await workflow.roster_signup_role_changes(roster, member_id, should_have=not reset)
+    ])
 
 
 async def prepare_roster_timing(context: Any,
@@ -35,7 +46,13 @@ async def prepare_roster_timing(context: Any,
         raise ActionRefused(plan["issue"])
     state = await workflow.roster_edit_state(roster)
     opens_now = (not plan["clear"]
-                 and plan["window"].opens_at <= plan["now"])
+                 and plan["window"].opens_at <= plan["now"] < plan["window"].closes_at)
+
+    async def role_lines():
+        if not opens_now:
+            return ()
+        return await _opening_role_lines(workflow, roster, state["member_ids"],
+                                         reset=options["reset_on_open"])
 
     def check_targets() -> None:
         if plan["clear"] or not roster.role_id:
@@ -62,15 +79,8 @@ async def prepare_roster_timing(context: Any,
         )]
         lines.append(ACTION_ROSTER_TIMING_RESET if options["reset_on_open"]
                      else ACTION_ROSTER_TIMING_KEEP)
-        if opens_now and roster.role_id:
-            lines.append((ACTION_ROSTER_TIMING_ROLE if options["reset_on_open"]
-                          else ACTION_ROSTER_TIMING_ROLE_KEEP).format(
-                role=f"<@&{roster.role_id}>",
-            ))
-            lines.extend(ACTION_MEMBER_LINE.format(member=f"<@{member_id}>")
-                         for member_id in state["member_ids"])
-    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        channel=f"<#{channel_id}>", ) for channel_id, message_id in state["posts"])
+    affected_roles = await role_lines()
+    lines.extend(affected_roles)
 
     async def recheck() -> bool:
         current = await workflow.get_roster(roster_id)
@@ -82,19 +92,20 @@ async def prepare_roster_timing(context: Any,
         if not plan["clear"] and live_plan["window"] != plan["window"]:
             return False
         if not plan["clear"] and (
-            live_plan["window"].opens_at <= live_plan["now"]
+            live_plan["window"].opens_at <= live_plan["now"] < live_plan["window"].closes_at
         ) != opens_now:
             return False
         try:
             check_targets()
         except ValueError:
             return False
-        return await workflow.roster_edit_state(roster) == state
+        return (await workflow.roster_edit_state(roster) == state
+                and await role_lines() == affected_roles)
 
     async def run() -> ActionOutcome:
         live_plan = workflow.plan_roster_timing(roster, **options)
         if live_plan["issue"] or (not plan["clear"] and (
-            live_plan["window"].opens_at <= live_plan["now"]
+            live_plan["window"].opens_at <= live_plan["now"] < live_plan["window"].closes_at
         ) != opens_now):
             raise ValueError("Roster timing changed before execution")
         updated = await workflow.apply_roster_timing(roster, live_plan)
@@ -104,14 +115,14 @@ async def prepare_roster_timing(context: Any,
         if plan["clear"]:
             if actual.one_off_open_ts is not None or actual.one_off_close_ts is not None:
                 raise OSError("Roster timing could not be verified")
-            text = f"Cleared one-off timing for **{updated.name}**."
+            text = f"Cleared one-off times for **{updated.name}**."
         else:
             window = plan["window"]
             if (actual.one_off_open_ts != int(window.opens_at.timestamp())
                     or actual.one_off_close_ts != int(window.closes_at.timestamp())):
                 raise OSError("Roster timing could not be verified")
-            text = (f"Set **{updated.name}** to open {discord.utils.format_dt(window.opens_at)} "
-                    f"and close {discord.utils.format_dt(window.closes_at)}.")
+            text = (f"Scheduled **{updated.name}** from {discord.utils.format_dt(window.opens_at)} "
+                    f"to {discord.utils.format_dt(window.closes_at)}.")
         return ActionOutcome("complete", "private", text=text,
                               after={"roster_id": roster_id,
                                      "one_off_open_ts": actual.one_off_open_ts,
@@ -173,11 +184,14 @@ async def prepare_roster_schedule(context: Any,
                 check_member(member, context.guild.me,
                     requester=context.member, guild=context.guild)
 
+    async def role_lines():
+        if not plan["enabled"] or not effect["starts_cycle"]:
+            return ()
+        return await _opening_role_lines(workflow, roster, state["member_ids"],
+                                         reset=plan["reset_on_open"])
+
     check_targets()
-    lines = [
-        (ACTION_ROSTER_SCHEDULE_ENABLE if plan["enabled"]
-         else ACTION_ROSTER_SCHEDULE_DISABLE).format(name=roster.name),
-    ]
+    lines = [] if plan["enabled"] else [ACTION_ROSTER_SCHEDULE_DISABLE.format(name=roster.name)]
     details = []
     for key, new in plan["changes"].items():
         old = getattr(roster, key)
@@ -192,7 +206,7 @@ async def prepare_roster_schedule(context: Any,
     if plan["enabled"]:
         effective = plan["effective"]
         lines.append(ACTION_ROSTER_SCHEDULE_RULE.format(
-            open_day=effective["open_day"], open_time=effective["open_time"],
+            name=roster.name, open_day=effective["open_day"], open_time=effective["open_time"],
             close_day=effective["close_day"], close_time=effective["close_time"],
             timezone=effective["timezone_name"],
         ))
@@ -204,15 +218,8 @@ async def prepare_roster_schedule(context: Any,
                 opens=discord.utils.format_dt(effect["window"].opens_at),
                 closes=discord.utils.format_dt(effect["window"].closes_at),
             ))
-        if effect["starts_cycle"] and roster.role_id:
-            lines.append((ACTION_ROSTER_TIMING_ROLE if plan["reset_on_open"]
-                          else ACTION_ROSTER_TIMING_ROLE_KEEP).format(
-                role=f"<@&{roster.role_id}>",
-            ))
-            lines.extend(ACTION_MEMBER_LINE.format(member=f"<@{member_id}>")
-                         for member_id in state["member_ids"])
-    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        channel=f"<#{channel_id}>", ) for channel_id, message_id in state["posts"])
+    affected_roles = await role_lines()
+    lines.extend(affected_roles)
 
     async def recheck() -> bool:
         current = await workflow.get_roster(roster_id)
@@ -227,12 +234,13 @@ async def prepare_roster_schedule(context: Any,
             check_targets()
         except ValueError:
             return False
-        return await workflow.roster_edit_state(roster) == state
+        return (await workflow.roster_edit_state(roster) == state
+                and await role_lines() == affected_roles)
 
     async def run() -> ActionOutcome:
         if workflow.roster_schedule_preview(roster, plan) != effect:
             raise ValueError("Roster schedule changed before execution")
-        updated, message = await workflow.apply_roster_schedule(roster, plan)
+        updated, _ = await workflow.apply_roster_schedule(roster, plan)
         actual = await workflow.get_roster(roster_id)
         if actual is None or actual.schedule_enabled != plan["enabled"]:
             raise OSError("Roster schedule could not be verified")
@@ -243,7 +251,9 @@ async def prepare_roster_schedule(context: Any,
             if not matches:
                 raise OSError("Roster schedule could not be verified")
         return ActionOutcome(
-            "complete", "private", text=message,
+            "complete", "private",
+            text=(f"Saved the monthly schedule for **{updated.name}**." if plan["enabled"]
+                  else f"Turned off monthly scheduling for **{updated.name}**."),
             after={"roster_id": updated.id,
                    "schedule_enabled": updated.schedule_enabled},
         )
@@ -268,9 +278,11 @@ def timing_adapters() -> tuple[CommandAdapter, ...]:
         CommandAdapter("/roster timing", "confirm", run_roster_timing,
                        prepare=prepare_roster_timing,
                        action_class=ActionClass.CHANGE,
+                       tool_description="Carry out /roster timing for an authorized requester to set one opening and closing window.",
                        entity_options=(("roster", "roster"),)),
         CommandAdapter("/roster schedule", "confirm", run_roster_schedule,
                        prepare=prepare_roster_schedule,
                        action_class=ActionClass.CHANGE,
+                       tool_description="Carry out /roster schedule for an authorized requester to set monthly opening and closing times.",
                        entity_options=(("roster", "roster"),)),
     )

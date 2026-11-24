@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 from elbow_helper.agent.discord_actions.safety import check_member, check_role
 from elbow_helper.features.rosters.config import DEFAULT_MAX_MEMBERS
 from elbow_helper.features.rosters import settings as roster_settings
 from elbow_helper.agent.safety.access import ACCESS_LEAD_PLUS
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
-from elbow_helper.agent.conversation.wording import ACTION_ROSTER_CREATE_CLAN, ACTION_ROSTER_CREATE_LABEL, ACTION_ROSTER_CREATE_LINE, ACTION_ROSTER_CREATE_LIMIT, ACTION_SIGNUP_ROLE, ACTION_ROSTER_CLONE_CONTROLS, ACTION_ROSTER_CLONE_LABEL, ACTION_ROSTER_CLONE_LINE, ACTION_ROSTER_CLONE_MINIMUM, ACTION_ROSTER_CLONE_RESET, ACTION_ROSTER_CLONE_SCHEDULE, ACTION_ROSTER_CLONE_START, ACTION_ROSTER_NO_ROLE, ACTION_VALUE_YES, ACTION_VALUE_NO, ACTION_VALUE_HIDDEN, ACTION_VALUE_VISIBLE, ACTION_VALUE_OFF, ACTION_ROSTER_DELETE_LABEL, ACTION_ROSTER_DELETE_LINE, ACTION_MEMBER_LINE, ACTION_ROSTER_DELETE_POST, ACTION_ROSTER_DELETE_ROLE, ACTION_ROSTER_DELETE_HISTORY, ACTION_ROSTER_CYCLE_ONE, ACTION_ROSTER_CYCLE_MANY, ACTION_ROSTER_SIGNUP_ONE, ACTION_ROSTER_SIGNUP_MANY, ACTION_FIELD_CHANGE, ACTION_ROSTER_EDIT_FIELDS, ACTION_ROSTER_EDIT_LABEL, ACTION_ROSTER_EDIT_LINE, ACTION_ROSTER_POST_REFRESH, ACTION_ROSTER_EDIT_ROLE_SYNC
+from elbow_helper.agent.conversation.wording import ACTION_ROSTER_CREATE_CLAN, ACTION_ROSTER_CREATE_LABEL, ACTION_ROSTER_CREATE_LINE, ACTION_ROSTER_CREATE_LIMIT, ACTION_SIGNUP_ROLE, ACTION_ROSTER_CLONE_CONTROLS, ACTION_ROSTER_CLONE_LABEL, ACTION_ROSTER_CLONE_LINE, ACTION_ROSTER_CLONE_MINIMUM, ACTION_ROSTER_CLONE_RESET, ACTION_ROSTER_CLONE_SCHEDULE, ACTION_ROSTER_CLONE_START, ACTION_ROSTER_NO_ROLE, ACTION_VALUE_YES, ACTION_VALUE_NO, ACTION_VALUE_HIDDEN, ACTION_VALUE_VISIBLE, ACTION_VALUE_OFF, ACTION_ROSTER_DELETE_LABEL, ACTION_ROSTER_DELETE_LINE, ACTION_MEMBER_LINE, ACTION_ROSTER_DELETE_POST, ACTION_ROSTER_DELETE_ROLE, ACTION_ROSTER_CYCLE_ONE, ACTION_ROSTER_CYCLE_MANY, ACTION_ROSTER_SIGNUP_ONE, ACTION_ROSTER_SIGNUP_MANY, ACTION_FIELD_CHANGE, ACTION_ROSTER_EDIT_FIELDS, ACTION_ROSTER_EDIT_LABEL, ACTION_ROSTER_EDIT_LINE
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.commands.registry import CommandAdapter, PreparedCommandChange
 
@@ -49,10 +50,9 @@ async def prepare_roster_create(context: Any,
     await _available_name(workflow, context.guild.id, name)
     clan_code = values["clan"]
     lines = [
-        ACTION_ROSTER_CREATE_LINE.format(name=name),
-        ACTION_ROSTER_CREATE_CLAN.format(clan=clan_code),
-        ACTION_ROSTER_CREATE_LIMIT.format(count=max_members),
-        ACTION_SIGNUP_ROLE.format(role=role.mention if role else ACTION_ROSTER_NO_ROLE),
+        ACTION_ROSTER_CREATE_LINE.format(name=name, clan=clan_code),
+        f"Up to {max_members} {'account' if max_members == 1 else 'accounts'}"
+        + (f" with {role.mention} as the signup role." if role else "."),
     ]
 
     async def recheck() -> bool:
@@ -72,7 +72,7 @@ async def prepare_roster_create(context: Any,
         if await workflow.get_roster(roster.id) is None:
             raise OSError("Roster creation could not be verified")
         return ActionOutcome(
-            "complete", "private", text=roster_settings.roster_setup_confirmation("create", roster),
+            "complete", "private", text=f"Created **{roster.name}** for {clan_code}.",
             result={"roster_id": roster.id}, after={"roster_id": roster.id},
         )
 
@@ -160,7 +160,7 @@ async def prepare_roster_clone(context: Any,
             raise OSError("Roster clone could not be verified")
         return ActionOutcome(
             "complete", "private",
-            text=roster_settings.roster_setup_confirmation("clone", clone, source=source),
+            text=f"Created **{clone.name}** using settings from **{source.name}**.",
             result={"roster_id": clone.id}, after={"roster_id": clone.id},
         )
 
@@ -196,19 +196,26 @@ async def prepare_roster_delete(context: Any,
                     requester=context.member, guild=context.guild)
 
     check_targets()
-    lines = [ACTION_ROSTER_DELETE_LINE.format(name=roster.name)]
     cycle_count = len(state["history"])
     signup_count = sum(len(members) for _, members in state["history"])
-    lines.append(ACTION_ROSTER_DELETE_HISTORY.format(
-        cycle_count=cycle_count,
+    lines = [ACTION_ROSTER_DELETE_LINE.format(
+        name=roster.name, cycle_count=cycle_count,
         cycle_word=ACTION_ROSTER_CYCLE_ONE if cycle_count == 1 else ACTION_ROSTER_CYCLE_MANY,
         signup_count=signup_count,
         signup_word=ACTION_ROSTER_SIGNUP_ONE if signup_count == 1 else ACTION_ROSTER_SIGNUP_MANY,
-    ))
-    if roster.role_id and state["member_ids"]:
+    )]
+    async def role_losses():
+        if roster.role_id is None:
+            return ()
+        return tuple([member_id for member_id in state["member_ids"]
+                      if await workflow.roster_signup_role_changes(
+                          roster, member_id, should_have=False)])
+
+    losing_role = await role_losses()
+    if losing_role:
         lines.append(ACTION_ROSTER_DELETE_ROLE.format(role=f"<@&{roster.role_id}>"))
-    lines.extend(ACTION_MEMBER_LINE.format(member=f"<@{member_id}>")
-                 for member_id in state["member_ids"])
+        lines.extend(ACTION_MEMBER_LINE.format(member=f"<@{member_id}>")
+                     for member_id in losing_role)
     lines.extend(ACTION_ROSTER_DELETE_POST.format(
         channel=f"<#{channel_id}>", ) for channel_id, message_id in state["posts"])
 
@@ -220,14 +227,15 @@ async def prepare_roster_delete(context: Any,
             check_targets()
         except ValueError:
             return False
-        return await workflow.roster_deletion_state(roster) == state
+        return (await workflow.roster_deletion_state(roster) == state
+                and await role_losses() == losing_role)
 
     async def run() -> ActionOutcome:
         await workflow.delete_roster(roster)
         if await workflow.get_roster(roster_id) is not None:
             raise OSError("Roster deletion could not be verified")
         return ActionOutcome(
-            "complete", "private", text=roster_settings.roster_setup_confirmation("delete", roster),
+            "complete", "private", text=f"Deleted **{roster.name}** and its signup history.",
             after={"roster_id": roster.id, "deleted": True},
         )
 
@@ -295,11 +303,22 @@ async def prepare_roster_edit(context: Any,
         field=ACTION_ROSTER_EDIT_FIELDS[key],
         old=display(key, getattr(roster, key)), new=display(key, new),
     ) for key, new in changes.items())
-    if "role_id" in changes and changes["role_id"] != roster.role_id:
-        lines.extend(ACTION_ROSTER_EDIT_ROLE_SYNC.format(member=f"<@{member_id}>")
-                     for member_id in state["member_ids"])
-    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        channel=f"<#{channel_id}>", ) for channel_id, message_id in state["posts"])
+    async def role_changes():
+        if "role_id" not in changes or changes["role_id"] == roster.role_id:
+            return ()
+        updated = replace(roster, role_id=changes["role_id"])
+        changes_to_show = []
+        for item, should_have in ((roster, False), (updated, True)):
+            if item.role_id is None:
+                continue
+            for member_id in state["member_ids"]:
+                if await workflow.roster_signup_role_changes(item, member_id, should_have=should_have):
+                    verb = "get" if should_have else "lose"
+                    changes_to_show.append(f"<@{member_id}> will {verb} <@&{item.role_id}>.")
+        return tuple(changes_to_show)
+
+    affected_roles = await role_changes()
+    lines.extend(affected_roles)
 
     async def recheck() -> bool:
         current = await workflow.get_roster(roster_id)
@@ -315,7 +334,8 @@ async def prepare_roster_edit(context: Any,
             check_targets()
         except ValueError:
             return False
-        return await workflow.roster_edit_state(roster) == state
+        return (await workflow.roster_edit_state(roster) == state
+                and await role_changes() == affected_roles)
 
     async def run() -> ActionOutcome:
         updated = await workflow.update_roster_settings(roster, changes)
@@ -324,7 +344,7 @@ async def prepare_roster_edit(context: Any,
                                  for key, value in changes.items()):
             raise OSError("Roster update could not be verified")
         return ActionOutcome(
-            "complete", "private", text=roster_settings.roster_setup_confirmation("edit", updated),
+            "complete", "private", text=f"Updated **{updated.name}**.",
             after={"roster_id": roster_id, "changes": changes},
         )
 

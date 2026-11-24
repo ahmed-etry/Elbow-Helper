@@ -35,6 +35,6 @@ class CwlBonusReviewActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await action.preview.recheck())
         workflow.set_bonus_review_status.assert_not_awaited()
         outcome = await action.run()
-        self.assertEqual(outcome.text, "BEH put on hold for now.")
+        self.assertEqual(outcome.text, "Put BEH's review CWL bonus for October 2026 on hold.")
         workflow.set_bonus_review_status.assert_awaited_once_with(
             "review:22", "BEH", "on_hold", context.member)

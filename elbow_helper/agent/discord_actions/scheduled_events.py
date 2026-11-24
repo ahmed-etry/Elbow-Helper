@@ -153,11 +153,17 @@ async def event_action(context, arguments, *, create=False, undo=False):
                      or changed_kind and key in ("entity_type", "channel", "location", "end_time")
                  )}
         await current.edit(reason=reason, **edits)
-        return complete(desired)
+        return complete(desired, text=(
+            f"{'Restored earlier details for' if undo else 'Updated'} https://discord.com/events/{context.guild.id}/{current.id}."))
 
-    line = (f"Create scheduled event **{desired["name"]}**." if create else
-            f"Restore the previous settings for scheduled event **{event.name}**." if undo
-            else f"Change scheduled event **{event.name}**.")
+    if create:
+        start = display_value(parsed_time(desired["start_time"]))
+        place = (desired["location"] if desired["kind"] == "external" else
+                 (await resolve_channel(context, desired["channel_id"])).mention)
+        line = f"📅 Schedule **{desired['name']}** for {start} in {place}"
+    else:
+        line = (f"📅 Restore earlier details for **{event.name}**" if undo
+                else f"📅 Change **{event.name}**")
     labels = {"name": "Name", "description": "Description", "kind": "Type",
               "channel_id": "Channel", "location": "Location",
               "start_time": "Start", "end_time": "End"}
@@ -247,7 +253,7 @@ async def undo_create(context, log):
 
     return state_action(context, "undo_scheduled_event_creation", {"event_id": identifier},
                         "Undo scheduled event creation",
-                        (f"Delete the scheduled event created by this change: **{event.name}**.",),
+                        (f"🗑️ Delete the new event **{event.name}**",),
                         before, load, apply)
 
 

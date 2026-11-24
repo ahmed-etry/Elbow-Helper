@@ -20,6 +20,7 @@ from ..actions.contracts import (
 from ..actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from elbow_helper.agent.conversation.wording import ACTION_THREAD_ACTIONS, ACTION_THREAD_MEMBER_ADD, ACTION_THREAD_MEMBER_REMOVE, ACTION_THREAD_CREATE_LABEL, ACTION_THREAD_CREATE_LINE, ACTION_THREAD_NEW_LABEL, ACTION_THREAD_MEMBER_LABEL, ACTION_THREAD_MEMBER_LINE, ACTION_THREAD_UPDATE_LABEL, ACTION_THREAD_UPDATE_LINE, ACTION_UNDO_CHANGED
+from .management import guard
 from .safety import (DiscordActionRefused, check_member, check_view_access,
                              resolve_channel, resolve_member)
 
@@ -199,7 +200,7 @@ async def prepare_create_thread(context: AgentRequestContext,
         "create_discord_thread", dict(arguments),
         ChangePreview(lines, recheck, summary=ACTION_THREAD_CREATE_LABEL,
                       result_label=ACTION_THREAD_NEW_LABEL.format(name=name), details=details,
-                      detail_sources=frozenset({parent.id})),
+                      message_body=slice(None), detail_sources=frozenset({parent.id})),
         run, verify=verify, permission="Manage Threads",
     ))
     return {"status": "confirmation_required"}
@@ -221,8 +222,10 @@ def _thread_change(operation: str, name: str | None = None) -> tuple[str, Any, s
 def _thread_update_action(context: AgentRequestContext, thread_id: int,
                           *, field: str, before: Any, after: Any,
                           operation: str, detail: str = "", undo: bool = False,
-                          changed: bool = False) -> PreparedAction:
-    verb = ACTION_THREAD_ACTIONS[operation][0]
+                          changed: bool = False,
+                          created_here: bool = False) -> PreparedAction:
+    verb, finished = ACTION_THREAD_ACTIONS[operation]
+    owner_may = operation in ("rename", "archive", "unarchive")
     async def recheck() -> bool:
         try:
             thread = await _thread(context, thread_id, fresh=True)
@@ -343,9 +346,10 @@ async def _member_ids(thread: Any) -> frozenset[int]:
 
 def _thread_member_action(context: AgentRequestContext, thread_id: int,
                           member_id: int, *, add: bool, before: bool,
-                          undo: bool = False, changed: bool = False) -> PreparedAction:
-    verb, _, relation = (ACTION_THREAD_MEMBER_ADD if add
-                            else ACTION_THREAD_MEMBER_REMOVE)
+                          undo: bool = False, changed: bool = False,
+                          created_here: bool = False) -> PreparedAction:
+    verb, finished, relation = (ACTION_THREAD_MEMBER_ADD if add
+                                else ACTION_THREAD_MEMBER_REMOVE)
     async def recheck() -> bool:
         try:
             thread = await _thread(context, thread_id, fresh=True)

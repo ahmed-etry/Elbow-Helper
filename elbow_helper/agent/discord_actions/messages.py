@@ -319,7 +319,7 @@ def _deferred_post_part(context: AgentRequestContext, reference: Mapping[str, An
     return PreparedAction(
         "post_discord_message", {"channel_id": dict(reference), "text": text},
         ChangePreview(lines, recheck, summary=ACTION_POST_LABEL,
-                      details=details, result_label=target_label),
+                      details=details, result_label=target_label, message_body=body),
         unavailable, permission="Send Messages", bind=bind,
     )
 
@@ -381,6 +381,8 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
                 file.close()
         return ActionOutcome(
             "complete",
+            text=(f"Posted in {label}. https://discord.com/channels/{context.guild.id}/{channel_id}/{sent_id}"
+                  if channel_id != getattr(getattr(context.source_message, "channel", None), "id", None) else ""),
             after={"message_id": sent_id},
             result={"message_id": sent_id, "channel_id": channel_id},
             posted_in=channel_id,
@@ -408,7 +410,7 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
     return PreparedAction(
         "post_discord_message", {"channel_id": channel_id, "text": text, "nonce": nonce},
         ChangePreview(lines, recheck, summary=ACTION_POST_LABEL,
-                      details=details, result_label=label,
+                      details=details, result_label=label, message_body=body,
                       detail_sources=frozenset({channel_id}) if reply is not None else frozenset()),
         run, verify=verify, permission="Send Messages",
     )
@@ -506,6 +508,7 @@ def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
             )
         return ActionOutcome(
             "complete",
+            text=f"{'Restored the earlier text of' if undo else 'Edited'} {target}.",
             after={"content": primary},
             result={"message_id": message_id, "channel_id": channel_id},
         )
@@ -519,14 +522,14 @@ def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
 
     channel = context.guild.get_channel_or_thread(channel_id)
     label = channel.mention if channel is not None else f"<#{channel_id}>"
-    lines = (ACTION_EDIT_LINE.format(channel=label),
+    lines = (ACTION_EDIT_LINE.format(operation=operation, message=target, channel=label),
              *_ping_line(context, mention_values, text=primary, member_labels=member_labels),
              *((ACTION_UNDO_CHANGED,) if changed else ()))
     return PreparedAction(
         "undo_agent_message_edit" if undo else "edit_agent_message",
         {"channel_id": channel_id, "message_id": message_id, "text": new_text},
         ChangePreview(lines, recheck, summary=ACTION_EDIT_LABEL,
-                      details=(primary,),
+                      details=(primary,), message_body=slice(None),
                       detail_sources=frozenset({channel_id}), before={"content": old_text}),
         run, verify=verify, permission="Send Messages",
     )
@@ -574,7 +577,8 @@ async def prepare_delete(context: AgentRequestContext,
             context.action_repository.mark_message_deleted,
             message_id=message.id, guild_id=context.guild.id, channel_id=channel.id,
         )
-        return ActionOutcome("complete", after={"deleted": True})
+        return ActionOutcome("complete", text=f"Deleted the message from {channel.mention}.",
+                             after={"deleted": True})
 
     async def verify() -> bool:
         try:
@@ -587,7 +591,9 @@ async def prepare_delete(context: AgentRequestContext,
             return True
         return False
 
-    lines = (ACTION_DELETE_LINE.format(channel=channel.mention),)
+    lines = (ACTION_DELETE_LINE.format(
+        message=f"[message](https://discord.com/channels/{context.guild.id}/{channel.id}/{message.id})",
+        channel=channel.mention),)
     context.state.proposed_changes.append(PreparedAction(
         "delete_agent_message", dict(arguments),
         ChangePreview(lines, recheck, summary=ACTION_DELETE_LABEL,

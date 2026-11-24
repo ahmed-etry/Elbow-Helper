@@ -12,7 +12,7 @@ from elbow_helper.agent.safety.access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audit_reason
 from ..actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_ROLE_ADD_LABEL, ACTION_ROLE_ADD_LINE, ACTION_ROLE_REMOVE_LABEL, ACTION_ROLE_REMOVE_LINE, ACTION_ROLE_UNDO_LABEL, ACTION_UNDO_CHANGED
+from elbow_helper.agent.conversation.wording import ACTION_ROLE_ADD_LABEL, ACTION_ROLE_REMOVE_LABEL, ACTION_ROLE_UNDO_LABEL, ACTION_UNDO_CHANGED
 from .safety import (
     DiscordActionRefused, check_member, check_member_role_ownership, check_raw_role,
     managed_role_commands, resolve_member,
@@ -171,7 +171,6 @@ def _role_action(
     before: bool, label_role: str, label_member: str,
     undo: bool = False, changed: bool = False,
 ) -> PreparedAction:
-    line_template = ACTION_ROLE_ADD_LINE if add else ACTION_ROLE_REMOVE_LINE
     summary = ACTION_ROLE_UNDO_LABEL if undo else (
         ACTION_ROLE_ADD_LABEL if add else ACTION_ROLE_REMOVE_LABEL
     )
@@ -215,7 +214,8 @@ def _role_action(
         member = await resolve_member(context.guild, member_id, fresh=True)
         return (role in member.roles) == add
 
-    line = line_template.format(role=label_role, member=label_member)
+    line = (f"🏷️ Give {label_role} to {label_member}" if add
+            else f"🏷️ Remove {label_role} from {label_member}")
     return PreparedAction(
         path, {"role_id": role_id, "member_id": member_id},
         ChangePreview((line, *((ACTION_UNDO_CHANGED,) if changed else ())),

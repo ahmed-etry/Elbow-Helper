@@ -48,8 +48,6 @@ async def prepare_missing_elder_board(context: AgentRequestContext,
     check_bot_post_access(channel, context.guild.me)
     lines = [ACTION_ELDER_REFRESH_LINE.format(clan=values["clan_code"],
                                              channel=channel.mention)]
-    if location["message_id"]:
-        lines.append(ACTION_ELDER_REFRESH_BOARD.format())
 
     async def recheck() -> bool:
         try:
@@ -62,7 +60,7 @@ async def prepare_missing_elder_board(context: AgentRequestContext,
     async def run() -> ActionOutcome:
         if not await workflow.refresh_missing_elder_board_from_accounts(values["clan_code"]):
             raise ActionRefused("That Missing Elder board couldn't be refreshed.")
-        return ActionOutcome("complete", "private", text=ACTION_ELDER_REFRESH_LABEL)
+        return ActionOutcome("complete", "private", text=f"Refreshed {values['clan_code']}'s Missing Elder board in {channel.mention}.")
 
     context.state.proposed_changes.append(PreparedAction(
         "refresh_missing_elder_board", dict(values),

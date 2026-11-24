@@ -13,10 +13,10 @@ from elbow_helper.features.event_stats.config import MAX_EVENT_NAME_LENGTH, MAX_
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.safety.access import ACCESS_LEAD, require_evidence_access
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
-from elbow_helper.agent.actions.outcomes import ActionOutcome, embed_text
+from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.actions.values import display_value
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_EVENT_MANAGE_CATEGORY, ACTION_EVENT_MANAGE_DELETE, ACTION_EVENT_MANAGE_ON, ACTION_EVENT_MANAGE_OFF, ACTION_EVENT_MANAGE_MOVE, ACTION_EVENT_MANAGE_RESET, ACTION_EVENT_MANAGE_CHANNEL, ACTION_EVENT_MANAGE_LABEL, ACTION_EVENT_FORM_CREATE, ACTION_EVENT_FORM_EDIT, ACTION_FIELD_CHANGE, ACTION_EVENT_FORM_CHANNEL, ACTION_EVENT_FORM_LABEL, ACTION_EVENT_FORM_REFRESH, ACTION_EVENT_REFRESH_LINE, ACTION_EVENT_REFRESH_ITEM, ACTION_EVENT_REFRESH_LABEL, ACTION_EVENT_FORM_FIELDS, ACTION_EVENT_PRESET_FIELDS
+from elbow_helper.agent.conversation.wording import ACTION_EVENT_MANAGE_ON, ACTION_EVENT_MANAGE_OFF, ACTION_EVENT_MANAGE_MOVE, ACTION_EVENT_MANAGE_RESET, ACTION_EVENT_MANAGE_LABEL, ACTION_EVENT_FORM_CREATE, ACTION_EVENT_FORM_EDIT, ACTION_FIELD_CHANGE, ACTION_EVENT_FORM_CHANNEL, ACTION_EVENT_FORM_LABEL, ACTION_EVENT_REFRESH_ITEM, ACTION_EVENT_REFRESH_LABEL, ACTION_EVENT_FORM_FIELDS, ACTION_EVENT_PRESET_FIELDS
 
 
 TOOL_CONTRACTS = {
@@ -137,8 +137,8 @@ async def prepare_event_refresh(context: AgentRequestContext,
     snapshot = workflow.event_refresh_snapshot()
     if not snapshot:
         return {"status": "no_change"}
-    lines = [ACTION_EVENT_REFRESH_LINE.format(
-        count=len(snapshot), noun="tracker" if len(snapshot) == 1 else "trackers")]
+    trackers = ", ".join(event["name"] for event in snapshot)
+    lines = [f"🔄 Refresh {trackers}"]
     lines.extend(ACTION_EVENT_REFRESH_ITEM.format(
         name=event["name"], status="enabled" if event["enabled"] else "disabled",
         channel=f"<#{event['channel_id']}>" if event["channel_id"] else "no channel")
@@ -189,8 +189,6 @@ async def _prepare_form(context: AgentRequestContext, values: Mapping[str, Any],
                 new=display_value(value)))
     if current is None or not before.get("channel_id"):
         lines.append(ACTION_EVENT_FORM_CHANNEL)
-    elif before.get("channel_id"):
-        lines.append(ACTION_EVENT_FORM_REFRESH.format(channel=f"<#{before['channel_id']}>"))
 
     async def recheck() -> bool:
         if current is None:
@@ -205,8 +203,11 @@ async def _prepare_form(context: AgentRequestContext, values: Mapping[str, Any],
             if not await asyncio.to_thread(workflow.update_one_time_event, key, **prepared):
                 raise ActionRefused('That event tracker is unavailable.')
         await workflow.force_refresh(context.guild)
-        return ActionOutcome("complete", "private",
-                              text=embed_text(workflow.build_event_detail_embed(context.guild, key)))
+        saved = workflow.event_management_state(key)
+        if saved is None:
+            raise ActionRefused('That event tracker is unavailable.')
+        verb = "Created" if current is None else "Updated"
+        return ActionOutcome("complete", "private", text=f"{verb} event tracker **{saved['event']['name']}**.")
 
     context.state.proposed_changes.append(PreparedAction(
         "create_event_tracker" if current is None else "edit_event_tracker",
@@ -239,7 +240,7 @@ async def _prepare_preset(context: AgentRequestContext,
         raise ActionRefused(f"Grace hours must be a whole number between 0 and {MAX_GRACE_HOURS}.")
     if name == event["name"] and (grace is None or grace == event.get("grace_period_hours")):
         return {"status": "no_change"}
-    lines = [ACTION_EVENT_FORM_EDIT.format(name=event["name"])]
+    lines = [f"⚙️ Edit preset tracker **{event['name']}**"]
     details = []
     if name != event["name"]:
         details.append(ACTION_FIELD_CHANGE.format(
@@ -257,8 +258,7 @@ async def _prepare_preset(context: AgentRequestContext,
         if not await asyncio.to_thread(workflow.update_preset_event, event["key"], name=name, grace_hours=grace):
             raise ActionRefused('That event tracker is unavailable.')
         await workflow.force_refresh(context.guild)
-        return ActionOutcome("complete", "private", text=embed_text(
-            workflow.build_event_detail_embed(context.guild, event["key"])))
+        return ActionOutcome("complete", "private", text=f"Updated preset tracker **{name}**.")
 
     context.state.proposed_changes.append(PreparedAction(
         "edit_preset_event", {"event": event["key"]},
@@ -280,13 +280,13 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         raise ActionRefused('That event tracker is unavailable.')
     event = state["event"]
     key = event["key"]
-    lines: list[str] = []
+    name = f"**{event['name']}**"
     if operation == "set_event_enabled":
         enabled = values["enabled"]
         if event["enabled"] == enabled:
             return {"status": "no_change"}
-        lines.append((ACTION_EVENT_MANAGE_ON if enabled else ACTION_EVENT_MANAGE_OFF).format(
-            name=event["name"]))
+        line = (ACTION_EVENT_MANAGE_ON if enabled else ACTION_EVENT_MANAGE_OFF).format(name=event["name"])
+        text = f"{name} is {'on' if enabled else 'off'}."
     elif operation == "set_event_category":
         category_id = values.get("category_id")
         if category_id is not None:
@@ -298,9 +298,13 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         if event.get("category_id") == category_id:
             return {"status": "no_change"}
         old = context.guild.get_channel(event.get("category_id")) if event.get("category_id") else None
-        lines.append(ACTION_EVENT_MANAGE_CATEGORY.format(
-            name=event["name"], old=old.name if old else "None",
-            new=category.name if category else "None"))
+        if category is not None:
+            line = f"⚙️ Move the {name} tracker to {category.mention}"
+            text = f"{name} is in {category.mention}."
+        else:
+            place = old.mention if old else f"<#{event['category_id']}>"
+            line = f"⚙️ Move the {name} tracker out of {place}"
+            text = f"{name} is outside any category."
     elif operation == "move_event":
         edge = values.get("edge")
         position = values.get("position")
@@ -311,18 +315,22 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
             raise ActionRefused('That event tracker is unavailable.')
         if state["position"] == target:
             return {"status": "no_change"}
-        lines.append(ACTION_EVENT_MANAGE_MOVE.format(
-            name=event["name"], old=state["position"] + 1, new=target + 1))
+        line = ACTION_EVENT_MANAGE_MOVE.format(
+            name=event["name"], old=state["position"] + 1, new=target + 1)
+        text = f"Moved {name} to position {target + 1}."
     elif operation == "restore_event_defaults":
         if event["source"] != "preset":
             raise ActionRefused('That event tracker is unavailable.')
-        lines.append(ACTION_EVENT_MANAGE_RESET.format(name=event["name"]))
+        line = ACTION_EVENT_MANAGE_RESET.format(name=event["name"])
+        text = f"Restored default settings for {name}."
     elif operation == "delete_event":
         if event["source"] != "custom":
             raise ActionRefused('That event tracker is unavailable.')
-        lines.append(ACTION_EVENT_MANAGE_DELETE.format(name=event["name"]))
+        line = f"🗑️ Delete the {name} tracker"
+        text = f"Deleted {name}."
         if event.get("channel_id"):
-            lines.append(ACTION_EVENT_MANAGE_CHANNEL.format(channel=f"<#{event['channel_id']}>"))
+            line += f" and its voice channel <#{event['channel_id']}>"
+            text = f"Deleted {name} and its voice channel."
     else:
         raise ActionRefused('That event tracker is unavailable.')
 
@@ -340,12 +348,11 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         elif operation == "restore_event_defaults":
             ok = await asyncio.to_thread(workflow.reset_preset_event, key)
         else:
-            ok, message = await workflow.delete_custom_event(context.guild, key)
+            ok, _ = await workflow.delete_custom_event(context.guild, key)
         if not ok:
             raise ActionRefused('That event tracker is unavailable.')
         await workflow.force_refresh(context.guild)
-        return ActionOutcome("complete", "private", text=(
-            message if operation == "delete_event" else lines[0]))
+        return ActionOutcome("complete", "private", text=text)
 
     context.state.proposed_changes.append(PreparedAction(
         operation, {"event": key},

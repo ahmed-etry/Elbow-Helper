@@ -19,7 +19,6 @@ from elbow_helper.agent.actions.runner import AgentActionRunner, StopActionRunVi
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.actions.preview import preview_text
 from elbow_helper.agent.actions.private_view import PrivateResultView
-from elbow_helper.agent.actions.combined_reply import CombinedReplyView
 from elbow_helper.agent.actions.preview import ConfirmationView
 
 
@@ -62,50 +61,42 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(access.called)
         self.assertTrue(all(call.args[2] is self.channel for call in access.call_args_list))
 
-    async def test_combined_confirmation_keeps_dispatch_alive_until_the_run_finishes(self):
-        action = self.action("synthetic change", outcome=ActionOutcome("complete"))[0]
-        preview = ConfirmationView(4, (action,), self.context, runner=self.runner)
-        combined = CombinedReplyView(preview_text([action]), "Synthetic answer", preview, None,
-                                     preview_first=True, on_change=AsyncMock())
-        self.addCleanup(combined.stop)
-        message = SimpleNamespace(id=701, edit=AsyncMock())
-        running_controls = []
-        async def edit(**kwargs):
-            if isinstance(combined.views["preview"], StopActionRunView):
-                running_controls.append((combined.views["preview"], combined.is_finished()))
-            return message
-        message.edit.side_effect = edit
-        combined.start(message)
+    async def test_confirmation_uses_the_card_for_progress_and_mixed_results(self):
+        first = self.action("first", outcome=ActionOutcome("complete", text="Synthetic result"))[0]
+        second = self.action("second", allowed=False)[0]
+        view = ConfirmationView(4, (first, second), self.context, runner=self.runner)
+        view.message = self.progress
         interaction = SimpleNamespace(user=SimpleNamespace(id=4), response=SimpleNamespace(defer=AsyncMock()))
         with (patch("elbow_helper.agent.actions.runner.require_access"),
               patch("elbow_helper.agent.actions.runner.require_evidence_access", AsyncMock())):
-            await preview.confirm(interaction)
+            await view.confirm(interaction)
             await asyncio.gather(*tuple(self.runner._tasks))
-        self.assertEqual(combined.parts["preview"], "Done: synthetic change.")
-        self.assertEqual(combined.parts["answer"], "Synthetic answer")
-        self.assertEqual(len(running_controls), 1)
-        self.assertFalse(running_controls[0][1])
+        initial = self.progress.edit.await_args_list[0].kwargs
+        self.assertIsInstance(initial["view"], StopActionRunView)
+        self.assertEqual(initial["embed"].colour, discord.Colour.blue())
+        result = self.progress.edit.await_args.kwargs["embeds"][0]
+        self.assertEqual(result.title, "Partly done")
+        self.assertEqual(result.colour, discord.Colour.red())
+        self.assertEqual(result.description, "\u2713 Synthetic result\n\u2717 Not done: second.")
         self.channel.send.assert_not_awaited()
 
+    async def test_long_card_result_keeps_the_full_report_on_the_same_message(self):
+        detail = "x" * 6100
+        action = self.action("first", outcome=ActionOutcome("complete", text=detail))[0]
+        result_files = []
 
-    async def test_long_combined_run_report_uses_remaining_room_without_losing_text(self):
-        action = self.action("long", allowed=False)[0]
-        action = replace(action, preview=replace(action.preview, summary="Set " + "x" * 2500))
-        # The initial preview was short; a later run report can grow beyond its part.
-        preview = ConfirmationView(4, (self.action("long")[0],), self.context)
-        combined = CombinedReplyView("Synthetic preview", "Synthetic answer " + "y" * 1800,
-                                     preview, None, preview_first=True, on_change=AsyncMock())
-        self.addCleanup(combined.stop)
-        message = SimpleNamespace(id=701, edit=AsyncMock())
-        message.edit.return_value = message
-        combined.start(message)
-        await self.run_actions(action, progress_message=preview._progress_message())
-        self.assertTrue(all(len(call.kwargs["content"]) <= 2000 for call in message.edit.await_args_list))
-        self.assertTrue(all(len(call.args[0]) <= 2000 for call in self.channel.send.await_args_list))
-        self.assertEqual(sum(call.args[0].count("x") for call in self.channel.send.await_args_list)
-                         + combined.parts["preview"].count("x"), 2500)
-        self.assertEqual(combined.parts["answer"], "Synthetic answer " + "y" * 1800)
+        async def edit(**kwargs):
+            if kwargs.get("attachments"):
+                result_files.append(kwargs["attachments"][0].fp.read().decode("utf8"))
+            return self.progress
 
+        self.progress.edit.side_effect = edit
+        await self.run_actions(action, progress_message=self.progress, confirmation=True)
+        result = self.progress.edit.await_args.kwargs["embeds"][0]
+        self.assertEqual(result.title, "Done")
+        self.assertEqual(result.colour, discord.Colour.green())
+        self.assertEqual(result_files, ["\u2713 " + detail])
+        self.channel.send.assert_not_awaited()
 
     async def test_transport_failures_are_unconfirmed(self):
         for error in (TimeoutError("Synthetic"), discord.HTTPException(
@@ -181,13 +172,13 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.runner.recover()
 
-    async def run_actions(self, *actions, progress_message=None):
+    async def run_actions(self, *actions, progress_message=None, confirmation=False):
         with (patch("elbow_helper.agent.actions.runner.require_access"),
               patch("elbow_helper.agent.actions.runner.require_evidence_access",
                     new_callable=AsyncMock)):
             run_id = await self.runner.submit(
                 self.context, tuple(actions), confirmer_id=self.context.member.id,
-                progress_message=progress_message,
+                progress_message=progress_message, confirmation=confirmation,
             )
             await asyncio.gather(*tuple(self.runner._tasks))
         return self.repository.run(run_id)

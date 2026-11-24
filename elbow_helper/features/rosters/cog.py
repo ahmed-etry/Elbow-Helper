@@ -493,6 +493,11 @@ class Rosters(commands.Cog):
         roster = await self.service.get(roster_id)
         return await self.roster_edit_state(roster) if roster is not None else None
 
+    def manual_open_resets_signups(self, roster: Roster) -> bool:
+        opens, cycle_key = self.automation.manual_open_window(roster, datetime.now(dt_timezone.utc))
+        return (opens and cycle_key is not None and cycle_key != roster.last_open_cycle_key
+                and roster.reset_on_open)
+
     async def change_roster_management(self, roster_id: int, action: str) -> str:
         """Apply a roster management control and return its existing reply text."""
         if action not in {"open", "close", "toggle_buttons"}:
@@ -874,6 +879,10 @@ class Rosters(commands.Cog):
             bypass_min_townhall=bypass_min_townhall,
         )
 
+    async def roster_signup_role_changes(self, roster: Roster, member_id: int,
+                                         *, should_have: bool) -> bool:
+        return await self._roles.will_change(roster, member_id, should_have=should_have)
+
     @staticmethod
     def resolve_roster_account_choices(accounts: tuple[LinkedAccount, ...],
                                        requested: list[str]) -> tuple[list[str], str | None]:
@@ -932,7 +941,18 @@ class Rosters(commands.Cog):
             if account is None:
                 raise ValueError(f"{tag} isn't linked to a member.")
             rows.append((tag, account.player_name, member_id, tag in signed))
-        return {"roster": roster, "accounts": tuple(rows),
+        # Bulk signup writes each member's accounts together, in first-seen member order.
+        pending = {}
+        for _, _, member_id, already_signed in rows:
+            pending.setdefault(member_id, 0)
+            pending[member_id] += not already_signed
+        available = roster.max_members - len(signed)
+        adding_members = []
+        for member_id, count in pending.items():
+            if count and available > 0:
+                adding_members.append(member_id)
+                available -= count
+        return {"roster": roster, "accounts": tuple(rows), "adding_members": tuple(adding_members),
                 "posts": (await self.roster_edit_state(roster))["posts"]}
 
     async def bulk_add_roster_tags(self, roster_id: int, raw_tags: str):

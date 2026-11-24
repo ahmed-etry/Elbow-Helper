@@ -81,7 +81,7 @@ async def prepare_poll(context, arguments):
     hours = arguments["duration_hours"]
     unit = "hour" if hours == 1 else "hours"
     multiple = display_value(arguments.get("multiple_choice", False))
-    lines = [f"Post this poll in {channel.mention}:", f"Question: {arguments["question"]}"]
+    lines = [f"📢 Post “{arguments['question']}” in {channel.mention} for {hours} {unit}"]
     lines.extend(f"{index}. {answer}" for index, answer in enumerate(arguments["answers"], 1))
     lines.append(f"Multiple answers: {multiple}")
     return await queue(context, state_action(
@@ -129,7 +129,7 @@ async def undo_poll(context, log):
 
     message = await channel.fetch_message(identifier)
     return state_action(context, "undo_poll_post", {"channel_id": channel.id}, "Undo poll post",
-                        (f"Delete the poll posted by this change: {message.jump_url}.",),
+                        (f"🗑️ Delete the poll at {message.jump_url}",),
                         before, load, apply, sources=(channel.id,))
 
 

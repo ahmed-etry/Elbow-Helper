@@ -161,14 +161,14 @@ class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await change.preview.recheck())
             self.assertIn("Remove <@&" + str(TRIAL_ROLE_ID) + "> from <@3>.",
                           change.preview.lines)
-            self.assertTrue(any("🤔-trial to ✅-trial" in line
+            self.assertTrue(any("✅-trial" in line
                                 for line in change.preview.lines))
             self.assertIs(next(adapter for adapter in recruitment_adapters()
                                if adapter.path == "/finalize").classification,
                           ActionClass.IRREVERSIBLE)
             channel.send.assert_not_awaited()
             result = await change.run()
-        self.assertIn("Completed Recruit's trial", result.text)
+        self.assertIn("Finalized <@3>'s trial and posted the decision in <#4>.", result.text)
         channel.send.assert_awaited_once()
         await self.assert_agent_event(workflow, "finalized")
 
@@ -214,7 +214,7 @@ class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
                           ActionClass.IRREVERSIBLE)
             channel.send.assert_not_awaited()
             result = await change.run()
-        self.assertIn("Declined Applicant", result.text)
+        self.assertIn("Declined <@3> and posted the decision in <#4>.", result.text)
         channel.send.assert_awaited_once()
         await self.assert_agent_event(workflow, "declined")
 

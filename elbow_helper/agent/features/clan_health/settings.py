@@ -75,8 +75,8 @@ async def read_health_settings(context: AgentRequestContext,
 
 
 def _lines(clan: str, block: str, before: Mapping[str, Any],
-           after: Mapping[str, Any]) -> tuple[str, ...]:
-    lines = [ACTION_HEALTH_SETTINGS_LINE.format(clan=clan,
+           after: Mapping[str, Any], *, action: str) -> tuple[str, ...]:
+    lines = [ACTION_HEALTH_SETTINGS_LINE.format(action=action, clan=clan,
                                                 section=PLAYER_LABELS[block]["_title"])]
     lines.extend(ACTION_FIELD_CHANGE.format(
         field=PLAYER_LABELS[block][key]["label"], old=before[key], new=value)
@@ -96,7 +96,8 @@ async def prepare_health_settings(context: AgentRequestContext,
         return {"status": "needs_input", "issue": str(exc)}
     if before == after:
         return {"status": "no_change"}
-    lines = _lines(clan, block, before[block], after[block])
+    result_verb = "Updated"
+    lines = _lines(clan, block, before[block], after[block], action="Set")
 
     async def recheck() -> bool:
         try:
@@ -110,7 +111,7 @@ async def prepare_health_settings(context: AgentRequestContext,
         saved = save_player_config_block(
             clan, block, dict(values["values"]), context.member,
             expected_updated_at=revision)
-        return ActionOutcome("complete", "private", text=ACTION_HEALTH_SETTINGS_LABEL,
+        return ActionOutcome("complete", "private", text=f"{result_verb} {clan}'s {PLAYER_LABELS[block]['_title']}.",
                               after={"payload": saved[block]})
 
     context.state.proposed_changes.append(PreparedAction(
@@ -132,7 +133,8 @@ async def prepare_health_settings_undo(context: AgentRequestContext,
         raise ActionRefused('Those Clan Health settings have changed.') from exc
     if current[block] != expected:
         raise ActionRefused('Those Clan Health settings have changed.')
-    lines = _lines(clan, block, expected, prior)
+    result_verb = "Restored"
+    lines = _lines(clan, block, expected, prior, action="Restore")
 
     async def recheck() -> bool:
         live, _, live_revision = prepare_player_config_block(clan, block, prior)
@@ -141,7 +143,7 @@ async def prepare_health_settings_undo(context: AgentRequestContext,
     async def run() -> ActionOutcome:
         saved = save_player_config_block(clan, block, prior, context.member,
                                          expected_updated_at=revision)
-        return ActionOutcome("complete", "private", text=ACTION_HEALTH_SETTINGS_LABEL,
+        return ActionOutcome("complete", "private", text=f"{result_verb} {clan}'s {PLAYER_LABELS[block]['_title']}.",
                               after={"payload": saved[block]})
 
     return PreparedAction(

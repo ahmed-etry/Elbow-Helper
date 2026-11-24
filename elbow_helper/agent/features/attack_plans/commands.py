@@ -75,7 +75,7 @@ async def prepare_attack_plan(context: Any,
             )
 
         message = await workflow.post_attack_plan(prepared, send)
-        return ActionOutcome("complete", result={
+        return ActionOutcome("complete", text=f"Attack plan posted in {channel.mention}.", result={
             "channel_id": channel.id, "message_id": message.id,
         }, after={"channel_id": channel.id, "message_id": message.id})
 
@@ -93,4 +93,5 @@ async def run_attack_plan(context: Any,
 def attack_plan_adapters() -> tuple[CommandAdapter, ...]:
     return (CommandAdapter("/plan", "confirm", run_attack_plan,
                            prepare=prepare_attack_plan,
-                           action_class=ActionClass.CHANGE, capability_name="attack_plan_help"),)
+                           action_class=ActionClass.CHANGE, capability_name="attack_plan_help",
+                           tool_description="Post a /plan request for the requester using their attached screenshots."),)

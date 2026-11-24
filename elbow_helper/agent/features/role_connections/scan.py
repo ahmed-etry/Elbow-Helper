@@ -12,7 +12,7 @@ from elbow_helper.agent.safety.access import ACCESS_LEAD, require_evidence_acces
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_ROLE_ADD_LINE, ACTION_ROLE_REMOVE_LINE, ACTION_ROLE_SCAN_LABEL
+from elbow_helper.agent.conversation.wording import ACTION_ROLE_SCAN_LABEL
 from elbow_helper.agent.discord_actions.safety import check_member, check_role, resolve_member
 
 
@@ -84,8 +84,8 @@ def _scan_action(context: AgentRequestContext, workflow: Any,
                 else f"Removed {role_label} from {member_label}.")
         return ActionOutcome("complete", text=text, after={"has_role": add})
 
-    line = (ACTION_ROLE_ADD_LINE if add else ACTION_ROLE_REMOVE_LINE).format(
-        role=role_label, member=member_label)
+    line = (f"🏷️ Give {role_label} to {member_label}" if add
+            else f"🏷️ Remove {role_label} from {member_label}")
     return PreparedAction(
         "undo_role_connection_scan" if undo else "apply_role_connections",
         {"member_id": member_id, "role_id": role_id, "add": add},

@@ -12,13 +12,13 @@ from elbow_helper.agent.safety.access import require_evidence_access
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_RAFFLE_BUY_LINE, ACTION_RAFFLE_BUY_BALANCE, ACTION_RAFFLE_HUB_UPDATE, ACTION_RAFFLE_BUY_LABEL
+from elbow_helper.agent.conversation.wording import ACTION_RAFFLE_BUY_LINE, ACTION_RAFFLE_BUY_BALANCE, ACTION_RAFFLE_BUY_LABEL
 
 
 def raffle_purchase_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="buy_raffle_ticket",
-        description="Buy this month's raffle ticket with the requester's own coins.",
+        description="Use the raffle hub's Buy Ticket action to buy this month's ticket for the requester with their own coins.",
         parameters={"type": "object", "properties": {}, "required": [],
                     "additionalProperties": False},
     ), prepare_raffle_purchase, AgentCapabilityEffect.COMMAND,
@@ -36,12 +36,12 @@ async def prepare_raffle_purchase(context: AgentRequestContext,
     before = await workflow.raffle_purchase_state(context.member.id)
     if before["issue"]:
         return {"status": "needs_input", "issue": before["issue"]}
+    cost = before["cost"]
+    coin_word = "coin" if cost == 1 else "coins"
+    balance = before["balance"] - cost
     lines = (
-        ACTION_RAFFLE_BUY_LINE.format(member=context.member.mention,
-                                     cost=before["cost"]),
-        ACTION_RAFFLE_BUY_BALANCE.format(
-            old=before["balance"], new=before["balance"] - before["cost"]),
-        ACTION_RAFFLE_HUB_UPDATE,
+        ACTION_RAFFLE_BUY_LINE.format(member=context.member.mention, cost=cost, coin_word=coin_word),
+        ACTION_RAFFLE_BUY_BALANCE.format(new=balance, coin_word="coin" if balance == 1 else "coins"),
     )
 
     async def recheck() -> bool:
@@ -51,8 +51,9 @@ async def prepare_raffle_purchase(context: AgentRequestContext,
         ok, message = await workflow.buy_raffle_ticket(context.member.id)
         if not ok:
             raise ActionRefused(message)
-        return ActionOutcome("complete", "private", text=message,
-                              after={"balance": before["balance"] - before["cost"],
+        return ActionOutcome("complete", "private", text=(
+            f"Bought this month's raffle ticket for {context.member.mention} for {cost} {coin_word}."),
+                              after={"balance": balance,
                                      "has_ticket": True})
 
     context.state.proposed_changes.append(PreparedAction(

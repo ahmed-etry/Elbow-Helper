@@ -19,8 +19,7 @@ from ..actions.outcomes import ActionOutcome
 from elbow_helper.agent.safety.access import accessible_message_channel
 from elbow_helper.agent.safety.disclosure import can_show, request_scope
 from elbow_helper.agent.engine.models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from elbow_helper.agent.conversation.wording import ACTION_STANDING_POST_PING
-from elbow_helper.agent.conversation.wording import ACTION_STANDING_DESTINATION, ACTION_STANDING_MANAGE, ACTION_STANDING_ONCE, ACTION_STANDING_REPEAT, ACTION_STANDING_SAVE, ACTION_STANDING_SCOPE, ACTION_STANDING_NO_CHANGES, ACTION_STANDING_FIXED, ACTION_STANDING_ACTION, ACTION_STANDING_TIME, ACTION_STANDING_WATCHER, ACTION_STANDING_REQUEST_NAME, ACTION_STANDING_WATCHER_NAME, ACTION_STANDING_REQUEST_NOUN, ACTION_STANDING_WATCHER_NOUN, ACTION_STANDING_SAVE_LABELS, ACTION_STANDING_MANAGE_LABELS, ACTION_STANDING_OPERATIONS, ACTION_STANDING_TARGET_ONE, ACTION_STANDING_TARGET_MANY, ACTION_VALUE_YES, ACTION_VALUE_NO, ACTION_STANDING_REMINDER_NAME, ACTION_STANDING_REMINDER_NOUN, ACTION_STANDING_POST_DESTINATION, ACTION_STANDING_DM_DESTINATION, ACTION_STANDING_DM_SELF, ACTION_UNAVAILABLE, ACTION_SCHEDULE_END, ACTION_SCHEDULE_RUNS_ONE, ACTION_SCHEDULE_RUNS_MANY
+from elbow_helper.agent.conversation.wording import ACTION_STANDING_ONCE, ACTION_STANDING_REPEAT, ACTION_STANDING_SAVE, ACTION_STANDING_SCOPE, ACTION_STANDING_NO_CHANGES, ACTION_STANDING_FIXED, ACTION_STANDING_ACTION, ACTION_STANDING_TIME, ACTION_STANDING_WATCHER_NAME, ACTION_STANDING_SAVE_LABELS, ACTION_STANDING_MANAGE_LABELS, ACTION_STANDING_OPERATIONS, ACTION_STANDING_TARGET_ONE, ACTION_STANDING_TARGET_MANY, ACTION_VALUE_YES, ACTION_VALUE_NO, ACTION_STANDING_REMINDER_NAME, ACTION_UNAVAILABLE, ACTION_SCHEDULE_END, ACTION_SCHEDULE_RUNS_ONE, ACTION_SCHEDULE_RUNS_MANY
 from ..discord_actions.safety import check_post_access, resolve_channel
 from ..discord_actions.messages import content_options, post_mentions
 from ..discord_actions.direct_messages import dm_recipients
@@ -252,29 +251,49 @@ def _fixed_display(context: AgentRequestContext, name: str, value: Any) -> str:
 
 
 def _preview_lines(values: Mapping[str, Any], *, kind: str, request: str,
-                   zone: str, times: tuple[datetime, ...], channel: Any,
+                   times: tuple[datetime, ...], channel: Any,
                    actions: list[Mapping[str, Any]], context: AgentRequestContext) -> tuple[str, ...]:
     formatted = ", ".join(f"<t:{int(item.timestamp())}:f>" for item in times)
-    lines = [
-        ACTION_STANDING_SAVE.format(
-            kind=(ACTION_STANDING_REQUEST_NAME if kind == "request"
-                  else ACTION_STANDING_REMINDER_NAME if kind == "reminder"
-                  else ACTION_STANDING_WATCHER_NAME),
-            request=request),
-        ACTION_STANDING_TIME.format(times=formatted),
-        (ACTION_STANDING_DM_DESTINATION.format(members=", ".join(
-            member.mention for member in dm_recipients(context, values["dm_member_ids"])
-        )) if kind == "reminder" and values.get("dm_member_ids")
-         else ACTION_STANDING_POST_PING.format(
-             channel=channel.mention, members=", ".join(
-                 member.mention for member in reminder_members(context.guild, values["member_ids"])
-             )) if kind == "reminder" and values.get("member_ids")
-         else ACTION_STANDING_POST_DESTINATION.format(channel=channel.mention) if kind == "reminder"
-         else ACTION_STANDING_DM_SELF if values.get("deliver_to") == "dm"
-         else ACTION_STANDING_DESTINATION.format(channel=channel.mention)),
-        ACTION_STANDING_SCOPE if actions else ACTION_STANDING_NO_CHANGES,
-    ]
+    destination = "your DMs" if values.get("deliver_to") == "dm" else channel.mention
     schedule = values["schedule"]
+    if kind == "reminder":
+        if values.get("dm_member_ids"):
+            members = ", ".join(member.mention for member in dm_recipients(
+                context, values["dm_member_ids"]))
+            line = f"⏰ Send a reminder to {members} by DM at {formatted}"
+        elif values.get("member_ids"):
+            members = ", ".join(member.mention for member in reminder_members(
+                context.guild, values["member_ids"]))
+            line = f"⏰ Remind {members} in {channel.mention} at {formatted}"
+        else:
+            line = f"⏰ Post a reminder in {channel.mention} at {formatted}"
+        lines = [line, ACTION_STANDING_SAVE.format(kind=ACTION_STANDING_REMINDER_NAME, request=request)]
+    elif kind == "watcher":
+        repeat = ACTION_STANDING_REPEAT if values.get("repeat", False) else ACTION_STANDING_ONCE
+        lines = [f"⏰ Alert {destination} when {values['condition']}", repeat,
+                 ACTION_STANDING_SAVE.format(kind=ACTION_STANDING_WATCHER_NAME, request=request),
+                 ACTION_STANDING_TIME.format(times=formatted)]
+    else:
+        timing = f"on {formatted}"
+        if schedule["kind"] == "interval":
+            seconds = schedule["seconds"]
+            for size, unit in ((3600, "hour"), (60, "minute"), (1, "second")):
+                if seconds % size == 0:
+                    count = seconds // size
+                    timing = f"every {count} {unit}{'s' if count != 1 else ''}"
+                    break
+        elif schedule["kind"] in ("weekly", "monthly"):
+            days = sorted(set(schedule["days"]))
+            if schedule["kind"] == "weekly":
+                cadence = ", ".join(day_name[day] for day in days) + " each week"
+            else:
+                label = "day" if len(days) == 1 else "days"
+                cadence = f"{label} {', '.join(map(str, days))} each month"
+            timing = f"on {cadence} at {schedule['time']} ({schedule['timezone']})"
+        lines = [f"📅 Run “{request}” {timing} and send results to {destination}"]
+        if schedule["kind"] != "once":
+            lines.append(ACTION_STANDING_TIME.format(times=formatted))
+    lines.append(ACTION_STANDING_SCOPE if actions else ACTION_STANDING_NO_CHANGES)
     if "end_utc" in schedule:
         end = datetime.fromisoformat(schedule["end_utc"].replace("Z", "+00:00"))
         lines.append(ACTION_SCHEDULE_END.format(time=f"<t:{int(end.timestamp())}:f>"))
@@ -294,12 +313,6 @@ def _preview_lines(values: Mapping[str, Any], *, kind: str, request: str,
                 for name, value in fixed.items()
             )
             lines.append(ACTION_STANDING_FIXED.format(values=rendered))
-    if kind == "watcher":
-        lines.append(ACTION_STANDING_WATCHER.format(
-            condition=values["condition"],
-            repeat=ACTION_STANDING_REPEAT if values.get("repeat", False)
-                   else ACTION_STANDING_ONCE,
-        ))
     return tuple(lines)
 
 
@@ -372,7 +385,7 @@ async def prepare_save(
         _validate_watcher(values, actions, registry_factory)
         await _watcher_destination(context, values, channel, registry_factory)
     _check_spacing(context, values, times[0].timestamp())
-    lines = _preview_lines(values, kind=kind, request=request, zone=zone,
+    lines = _preview_lines(values, kind=kind, request=request,
                            times=times, channel=channel, actions=actions,
                            context=context)
     rule = dict(values)
@@ -450,8 +463,8 @@ async def prepare_save(
 
     context.state.proposed_changes.append(PreparedAction(
         "save_standing_rule", rule,
-        ChangePreview(lines[1:4], recheck, summary=ACTION_STANDING_SAVE_LABELS[kind],
-                      details=(lines[0], *lines[4:]),
+        ChangePreview((), recheck, summary=ACTION_STANDING_SAVE_LABELS[kind],
+                      details=lines,
                       detail_sources=detail_sources, detail_access=detail_access,
                       count=len(values.get("dm_member_ids", ())) or 1),
         run, action_class=ActionClass.CHANGE,
@@ -500,12 +513,10 @@ async def prepare_manage(context: AgentRequestContext,
         _check_spacing(context, {**current["rule"], "replace_id": identifier,
                                  "destination_channel_id": current["destination_channel_id"]},
                        current.get("next_run_at", current.get("next_check_at")))
-    line = ACTION_STANDING_MANAGE.format(
-        operation=ACTION_STANDING_OPERATIONS[operation],
-        kind=(ACTION_STANDING_REQUEST_NOUN if kind == "request"
-              else ACTION_STANDING_REMINDER_NOUN if kind == "reminder"
-              else ACTION_STANDING_WATCHER_NOUN),
-        request=current["rule"]["request"])
+    icon = "📅" if kind == "request" else "⏰"
+    subject = {"request": "", "watcher": " the watcher for", "reminder": " the reminder"}[kind]
+    description = f"{subject} “{current['rule']['request']}”"
+    line = f"{icon} {ACTION_STANDING_OPERATIONS[operation]}{description}"
 
     async def recheck() -> bool:
         refreshed = repository.standing(kind=kind, identifier=identifier,

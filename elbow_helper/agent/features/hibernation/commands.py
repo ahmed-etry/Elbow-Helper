@@ -10,7 +10,7 @@ import discord
 from elbow_helper.agent.discord_actions.safety import check_member, check_role, resolve_member
 
 from elbow_helper.agent.actions.contracts import ActionRefused, ActionClass, ChangePreview
-from elbow_helper.agent.conversation.wording import ACTION_HIBERNATE_FALLBACK, ACTION_HIBERNATE_LABEL, ACTION_HIBERNATE_LINE, ACTION_HIBERNATE_LOG, ACTION_HIBERNATE_MISSING_ROLE, ACTION_HIBERNATE_NOTICE, ACTION_ROLE_ADD_LINE, ACTION_ROLE_REMOVE_LINE, ACTION_HIBERNATE_SAVE_ROLE, ACTION_HIBERNATE_SAVE_RANK, ACTION_PREVIEW_BLANK, ACTION_REACTIVATE_LINE, ACTION_REACTIVATE_ACHIEVEMENT, ACTION_REACTIVATE_TICKET, ACTION_REACTIVATE_CATEGORY, ACTION_NO_CATEGORY, ACTION_TICKET_MEMBER, ACTION_TICKET_SUPPORT_ROLE, ACTION_TICKET_CONTROLS, ACTION_REACTIVATE_FALLBACK, ACTION_REACTIVATE_LABEL
+from elbow_helper.agent.conversation.wording import ACTION_HIBERNATE_FALLBACK, ACTION_HIBERNATE_LABEL, ACTION_HIBERNATE_LINE, ACTION_HIBERNATE_MISSING_ROLE, ACTION_HIBERNATE_NOTICE, ACTION_ROLE_ADD_LINE, ACTION_ROLE_REMOVE_LINE, ACTION_HIBERNATE_SAVE_ROLE, ACTION_HIBERNATE_SAVE_RANK, ACTION_PREVIEW_BLANK, ACTION_REACTIVATE_LINE, ACTION_REACTIVATE_ACHIEVEMENT, ACTION_TICKET_CONTROLS, ACTION_REACTIVATE_FALLBACK, ACTION_REACTIVATE_LABEL
 from elbow_helper.agent.actions.outcomes import ActionOutcome, embed_text
 from elbow_helper.agent.commands.registry import CommandAdapter, PreparedCommandChange
 
@@ -37,7 +37,8 @@ async def prepare_hibernate(context: Any,
     check_roles(plan)
     notice = workflow.hibernation_notice_preview(member)
     lines = [ACTION_HIBERNATE_LINE.format(member=member.mention,
-                                          date=f"<t:{plan['unix_ts']}:F>")]
+                                          date=f"<t:{plan['unix_ts']}:F>"),
+             ACTION_HIBERNATE_NOTICE.format(member=member.mention)]
     lines.extend(ACTION_HIBERNATE_SAVE_ROLE.format(role=f"<@&{role_id}>")
                  for role_id in plan["stored_role_ids"])
     lines.extend(ACTION_HIBERNATE_SAVE_RANK.format(role=f"<@&{role_id}>")
@@ -48,12 +49,10 @@ async def prepare_hibernate(context: Any,
     lines.extend(ACTION_ROLE_ADD_LINE.format(
         role=role.mention, member=member.mention,
     ) for role in plan["to_add"])
-    lines.append(ACTION_HIBERNATE_LOG.format(channel=f"<#{plan['log_channel_id']}>"))
-    lines.append(ACTION_HIBERNATE_NOTICE.format(member=member.mention))
     lines.append(ACTION_HIBERNATE_FALLBACK.format(
         channel=f"<#{plan['fallback_channel_id']}>",
     ))
-    details = tuple(line or ACTION_PREVIEW_BLANK for line in notice.splitlines())
+    details = tuple(notice.split("\n"))
     signature = (
         tuple(plan["stored_role_ids"]), tuple(plan["snapshot_role_ids"]),
         tuple(role.id for role in plan["to_remove"]),
@@ -80,18 +79,20 @@ async def prepare_hibernate(context: Any,
 
     async def run() -> ActionOutcome:
         plan["via"] = "agent"
-        message = await workflow.hibernate_member(context.guild, context.member, plan)
+        await workflow.hibernate_member(context.guild, context.member, plan)
         state = workflow.hibernation_member_state(member.id)
-        if state is None or state.get("roles") != list(plan["stored_role_ids"]):
+        if (state is None or state.get("roles") != list(plan["stored_role_ids"])
+                or "hibernation_progress" in state):
             raise OSError("Hibernation state could not be verified")
         return ActionOutcome(
-            "complete", "private", text=message,
+            "complete", "private", text=f"Moved {member.mention} into hibernation.",
             result={"member_id": member.id},
             after={"member_id": member.id, "state": state},
         )
 
     return PreparedCommandChange(
         ChangePreview(tuple(lines), recheck, summary=ACTION_HIBERNATE_LABEL, details=details,
+                      message_body=slice(None),
                       before={"member_id": member.id,
                               "role_ids": tuple(role.id for role in member.roles)}),
         run,
@@ -130,7 +131,10 @@ async def prepare_reactivate(context: Any,
     check_roles(plan)
     ticket = plan["ticket"]
     category = ticket["category"]
-    lines = [ACTION_REACTIVATE_LINE.format(member=target.mention)]
+    recipients = ", ".join((target.mention, *(f"<@&{role_id}>" for role_id in ticket["visible_role_ids"])))
+    place = f" in {category.mention}" if category else ""
+    lines = [ACTION_REACTIVATE_LINE.format(member=target.mention),
+             f"Open **{ticket['name']}**{place} for {recipients}."]
     lines.extend(ACTION_ROLE_REMOVE_LINE.format(
         role=role.mention, member=target.mention,
     ) for role in plan["to_remove"])
@@ -138,17 +142,8 @@ async def prepare_reactivate(context: Any,
         role=role.mention, member=target.mention,
     ) for role in plan["to_add"])
     lines.append(ACTION_REACTIVATE_ACHIEVEMENT.format(member=target.mention))
-    lines.append(ACTION_REACTIVATE_TICKET.format(name=ticket["name"]))
-    lines.append(ACTION_REACTIVATE_CATEGORY.format(
-        category=category.mention if category else ACTION_NO_CATEGORY,
-    ))
-    lines.extend((
-        ACTION_TICKET_MEMBER.format(member=target.mention),
-    ))
-    lines.extend(ACTION_TICKET_SUPPORT_ROLE.format(role=f"<@&{role_id}>")
-                 for role_id in ticket["visible_role_ids"])
-    details = [line or ACTION_PREVIEW_BLANK
-               for line in ticket["welcome"].splitlines()]
+    details = ticket["welcome"].split("\n")
+    message_body = slice(0, len(details))
     details.extend(line or ACTION_PREVIEW_BLANK
                    for line in embed_text(ticket["embed"]).splitlines())
     lines.append(ACTION_TICKET_CONTROLS)
@@ -195,7 +190,7 @@ async def prepare_reactivate(context: Any,
         if channel.id != result["ticket_channel_id"]:
             raise OSError("Reactivation ticket could not be verified")
         return ActionOutcome(
-            "complete", "private", text=result["message"],
+            "complete", "private", text=f"Reactivated {target.mention}.\n{result['message']}",
             result={"member_id": target.id,
                     "ticket_channel_id": result["ticket_channel_id"]},
             after={"member_id": target.id,
@@ -205,6 +200,7 @@ async def prepare_reactivate(context: Any,
     return PreparedCommandChange(
         ChangePreview(tuple(lines), recheck,
                       summary=ACTION_REACTIVATE_LABEL, details=tuple(details),
+                      message_body=message_body,
                       before={"member_id": target.id, "state": plan["info"],
                               "role_ids": tuple(role.id for role in target.roles)}),
         run,
@@ -221,9 +217,14 @@ def hibernation_adapters() -> tuple[CommandAdapter, ...]:
         CommandAdapter(
             "/hibernate", "confirm", run_hibernate,
             prepare=prepare_hibernate, action_class=ActionClass.CHANGE,
-            entity_options=(("user", "discord_member"),), capability_name="hibernate_member"),
+            entity_options=(("user", "discord_member"),), capability_name="hibernate_member",
+            tool_description="Carry out /hibernate for an authorized requester to save a member's roles and move them into hibernation."),
         CommandAdapter(
             "/reactivate", "confirm", run_reactivate,
             prepare=prepare_reactivate, action_class=ActionClass.CHANGE,
-            entity_options=(("user", "discord_member"),), capability_name="reactivate_member"),
+            entity_options=(("user", "discord_member"),), capability_name="reactivate_member",
+            tool_description=(
+                "Restore roles and open a reactivation ticket for the requester as /reactivate or Reactivate Me does, "
+                "or for another member when the requester has Lead Plus access."
+            )),
     )

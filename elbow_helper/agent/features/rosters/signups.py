@@ -32,7 +32,11 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
     return (
         RegisteredAgentTool(AgentToolDefinition(
             name="signup_roster_accounts",
-            description="Sign up selected linked Clash accounts for an open roster.",
+            description=(
+                "Perform the Sign Up button's action on an open roster post, including CWL signup, "
+                "for the requester's selected linked Clash accounts or another member's "
+                "when the roster's rules allow it."
+            ),
             parameters=schema,
         ), prepare_roster_signup, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(entity_fields=(
@@ -43,7 +47,11 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="remove_roster_accounts",
-            description="Remove selected Clash accounts from an open roster.",
+            description=(
+                "Perform the Opt-out button's action on an open roster post, including CWL signup, "
+                "for the requester's selected linked Clash accounts or another member's "
+                "when the roster's rules allow it."
+            ),
             parameters=schema,
         ), prepare_roster_removal, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(entity_fields=(
@@ -64,7 +72,6 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
             contract=CapabilityContract(
                 entity_fields=(("roster_id", "roster"), ("player_tags", "clash_account_set")),
                 source_scope="request_context",
-                required_access=frozenset({ACCESS_LEAD_PLUS}),
             ),
         ),
         RegisteredAgentTool(AgentToolDefinition(
@@ -80,7 +87,6 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
             contract=CapabilityContract(
                 entity_fields=(("roster_id", "roster"), ("accounts", "clash_account_set")),
                 source_scope="request_context",
-                required_access=frozenset({ACCESS_LEAD_PLUS}),
             ),
         ),
     )
@@ -89,6 +95,7 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
 async def prepare_roster_row_removal(context: AgentRequestContext,
                                      values: Mapping[str, Any]) -> Mapping[str, Any]:
     await require_evidence_access(context)
+    require_roster_management_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
         raise ActionRefused('That roster is unavailable.')
@@ -137,10 +144,8 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
         for row in selected
     ]
     if role is not None:
-        lines.append(ACTION_ROSTER_ACCOUNT_ROLE.format(role=role.mention))
-    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        channel=f"<#{channel_id}>")
-        for channel_id, message_id in state["posts"])
+        lines.extend(f"<@{member_id}> will lose {role.mention}."
+                     for member_id in owners if member_id in losing_role)
 
     async def recheck() -> bool:
         current = await workflow.roster_signed_rows(values["roster_id"])
@@ -161,14 +166,17 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
             await check_roster_posts(context, current["posts"])
         except (discord.DiscordException, ValueError):
             return False
-        return True
+        return can_manage_roster(context)
 
     async def run() -> ActionOutcome:
         result = await workflow.remove_roster_signup_rows(
             values["roster_id"], [row.player_tag for row in selected])
         if not result.changed:
             raise ActionRefused(result.message)
-        return ActionOutcome("complete", "private", text=result.message)
+        accounts = ", ".join(f"**{row.player_name}** `{row.player_tag}`"
+                             for row in selected if row.player_tag in result.affected_tags)
+        text = f"Removed {accounts} from **{roster.name}**."
+        return ActionOutcome("complete", "private", text="\n".join((text, *result.notices)))
 
     context.state.proposed_changes.append(PreparedAction(
         "remove_roster_signup_rows", {"roster_id": roster.id,
@@ -183,6 +191,9 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
 async def prepare_bulk_roster_add(context: AgentRequestContext,
                                   values: Mapping[str, Any]) -> Mapping[str, Any]:
     await require_evidence_access(context)
+    if not can_manage_roster(context):
+        return {"error": ACTION_UNAVAILABLE, "required_access": [ACCESS_LEAD_PLUS],
+                "cause": "access_denied"}
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
         raise ActionRefused('That roster is unavailable.')
@@ -210,12 +221,15 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
                     for tag, name, member_id, signed in state["accounts"] if signed)
     gaining_role = set()
     if role is not None:
-        lines.append(ACTION_ROSTER_ACCOUNT_ROLE.format(role=role.mention))
-    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        channel=f"<#{channel_id}>")
-        for channel_id, message_id in state["posts"])
+        gaining_role = {member_id for member_id in state["adding_members"]
+                        if await workflow.roster_signup_role_changes(
+                            roster, member_id, should_have=True)}
+        lines.extend(f"<@{member_id}> will get {role.mention}."
+                     for member_id in state["adding_members"] if member_id in gaining_role)
 
     async def recheck() -> bool:
+        if not can_manage_roster(context):
+            return False
         try:
             current = await workflow.bulk_add_roster_preview(values["roster_id"], raw_tags)
             if current != state:
@@ -238,11 +252,16 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
 
     async def run() -> ActionOutcome:
         result = await workflow.bulk_add_roster_tags(values["roster_id"], raw_tags)
-        return ActionOutcome("complete", "private", text=result.message)
+        if not result.changed:
+            raise ActionRefused(result.message)
+        accounts = ", ".join(f"**{name}** `{tag}`" for tag, name, _, _ in state["accounts"]
+                             if tag in result.affected_tags)
+        text = f"Signed up {accounts} for **{roster.name}**."
+        return ActionOutcome("complete", "private", text="\n".join((text, *result.notices)))
 
     context.state.proposed_changes.append(PreparedAction(
         "bulk_add_roster_accounts", {"roster_id": roster.id},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_BULK_LABEL,
+        ChangePreview((), recheck, summary=ACTION_ROSTER_BULK_LABEL, details=(*lines, *details),
                       detail_access=frozenset({ACCESS_LEAD_PLUS})),
         run, action_class=ActionClass.CHANGE,
     ))
@@ -267,11 +286,14 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         raise ActionRefused('That roster is unavailable.')
     roster_id = values["roster_id"]
     member_id = values.get("member_id") or context.member.id
+    for_other_member = member_id != context.member.id
+    if for_other_member:
+        require_roster_management_access(context)
     member = await resolve_member(context.guild, member_id)
     check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     state = await workflow.prepare_roster_account_selection(
         roster_id, member_id, mode=mode,
-        for_other_member=member_id != context.member.id)
+        for_other_member=for_other_member)
     roster, picker = state
     if roster is None or roster.guild_id != context.guild.id or not picker.accounts:
         return {"status": "needs_input", "issue": picker.message if picker else 'That roster is unavailable.'}
@@ -313,6 +335,8 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     snapshots = {account.player_tag: account for account in picker.accounts}
 
     async def recheck() -> bool:
+        if for_other_member and not can_manage_roster(context):
+            return False
         try:
             check_member(member, context.guild.me, requester=context.member, guild=context.guild)
             if role is not None:
@@ -320,10 +344,11 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
             await check_roster_posts(context, posts)
             current_roster, current = await workflow.prepare_roster_account_selection(
                 roster_id, member_id, mode=mode,
-                for_other_member=member_id != context.member.id)
+                for_other_member=for_other_member)
             if current_roster != roster or current is None:
                 return False
-            return all(snapshots[tag] in current.accounts for tag in selected)
+            return (all(snapshots[tag] in current.accounts for tag in selected)
+                    and await role_changes(current) == changes_role)
         except (discord.DiscordException, ValueError):
             return False
 
@@ -331,12 +356,17 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         result = await workflow.change_roster_accounts(
             roster_id, member_id=member_id, player_tags=selected,
             mode=mode, account_snapshots=snapshots,
-            bypass_min_townhall=member_id != context.member.id,
+            bypass_min_townhall=for_other_member,
         )
         if not result.changed:
             raise ActionRefused(result.message)
-        return ActionOutcome("complete", "private", text=result.message,
-                              after={"accounts": selected})
+        text = [
+            (f"{accounts[tag]} is signed up for **{roster.name}**." if signing_up
+             else f"Removed {accounts[tag]} from **{roster.name}**.")
+            for tag in result.affected_tags
+        ]
+        return ActionOutcome("complete", "private", text="\n".join((*text, *result.notices)),
+                              after={"accounts": list(result.affected_tags)})
 
     context.state.proposed_changes.append(PreparedAction(
         "signup_roster_accounts" if mode == "signup" else "remove_roster_accounts",
