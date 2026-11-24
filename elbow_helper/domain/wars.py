@@ -16,6 +16,14 @@ def attacks_per_member(data: Dict[str, Any]) -> int:
     return 1 if data.get("warTag") or data.get("_warTag") else 2
 
 
+def score_result(own: Any, other: Any) -> str | None:
+    """A final war's result for ``own``: stars, then destruction, equal is a tie; None if either score is unknown."""
+    scores = (own["stars"], own["destruction"]), (other["stars"], other["destruction"])
+    if None in scores[0] or None in scores[1]:
+        return None
+    return "win" if scores[0] > scores[1] else "lose" if scores[0] < scores[1] else "tie"
+
+
 def normalize_war_state(value: object) -> str:
     return str(value or "").replace("_", "").casefold()
 

@@ -14,11 +14,11 @@ from .battle_coverage import create_watch_schema
 from .profile_schema import create_profile_history_schema
 from .raids import create_raid_schema
 from .imported_history_schema import create_imported_history_schema
-from .war_completeness import fill_cwl_allowance, upgrade_cwl_completeness
+from .war_completeness import fill_blank_war_facts, fill_cwl_allowance, upgrade_cwl_completeness
 
 
 # Later subjects add migrations; they must not rewrite this baseline.
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 STATEMENTS = (
     """CREATE TABLE collection_runs (
         id INTEGER PRIMARY KEY, collector TEXT NOT NULL, scope_kind TEXT NOT NULL,
@@ -285,6 +285,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
     create_review_schema(connection)
     create_saved_payload_schema(connection)
     merge_drifted_log_copies(connection)
+    fill_blank_war_facts(connection)
 
 
 MIGRATIONS = (
@@ -313,4 +314,5 @@ MIGRATIONS = (
     # scan them all; the foreign-key check after the step stands in for the per-row check.
     SQLiteMigration(22, "account-link refreshes that changed nothing removed", remove_unchanged_refreshes,
                     enforce_foreign_keys=False),
+    SQLiteMigration(23, "blank war results, family clan names and league-week opponent zeros filled", fill_blank_war_facts),
 )

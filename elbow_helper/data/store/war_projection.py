@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import math
 
 from elbow_helper.domain.player_tags import normalize_player_tag
+from elbow_helper.domain.wars import score_result
 from .projections import canonical_json, nonnegative_int
 
 
@@ -218,6 +219,11 @@ def project_war(raw, *, war_tag=None, aggregate=False):
     if modifier is not None and not isinstance(modifier, str):
         raise ValueError("invalid_battle_modifier")
     kind, basis = war_type(preparation, start, end, war_tag=war_tag, logged=aggregate)
+    # Clash's war log gives a result; a war it has not logged yet is decided by its final score.
+    if state == "warEnded" and all(p["stars"] is not None and p["destruction"] is not None for p, _ in sides):
+        for projected, _ in sides:
+            if projected["result"] is None:
+                projected["result"] = score_result(projected, next(o for o, _ in sides if o is not projected))
     return {"type": kind, "type_basis": basis, "war_tag": war_tag,
             "preparation_at": preparation, "start_at": start, "war_start_at": war_start, "end_at": end, "state": state,
             "team_size": size, "attacks_per_member": per_member,
@@ -260,5 +266,6 @@ def project_log_entry(raw):
             "team_size": raw["teamSize"], "attacks_per_member": 1, "result": result,
             "battle_modifier_json": canonical_json(modifier) if modifier is not None else None,
             **{key: clan[key] for key in ("name", "level", "badge_json", "attacks", "stars", "destruction", "xp_earned")},
-            "opponent_level": 0, "opponent_badge_json": badge(opponent),
-            "opponent_stars": opponent_stars, "opponent_destruction": opponent["destructionPercentage"]}
+            # The opponent is an unnamed total: Clash sends 0 for what it does not have.
+            "opponent_level": None, "opponent_badge_json": badge(opponent),
+            "opponent_stars": opponent_stars, "opponent_destruction": None}

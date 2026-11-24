@@ -187,6 +187,9 @@ def save_war(connection, war, run, at):
     for side, row in enumerate(war["sides"]):
         previous = connection.execute("SELECT * FROM war_sides WHERE war_id=? AND side=?", (war_id, side)).fetchone()
         values = {key: value for key, value in row.items() if value is not None or previous is None}
+        if not war["aggregate"] and previous is not None and previous["result"] is not None:
+            # A live capture's result comes from the score; one already saved may be Clash's own from the log.
+            values.pop("result", None)
         put(connection, "war_sides", {"war_id": war_id, "side": side}, {**values, "source_run_id": run})
     member_ids = {}
     for member in war["members"]:

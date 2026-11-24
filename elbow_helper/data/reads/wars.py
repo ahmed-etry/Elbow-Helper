@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from elbow_helper.infrastructure.persistence.revisions import sqlite_revision
 from elbow_helper.domain.player_tags import normalize_player_tag
+from elbow_helper.domain.wars import score_result
 
 from .core import RecordReads, page, pagination, placeholders, tags, timestamp
 from .coverage import envelope, war_side_coverage, war_signal
@@ -46,13 +47,6 @@ def window(after, before):
     if before <= after:
         raise ValueError("Expected a window that ends after it starts")
     return after, before
-
-
-def score_result(own, other):
-    scores = (own["stars"], own["destruction"]), (other["stars"], other["destruction"])
-    if None in scores[0] or None in scores[1]:
-        return None
-    return "win" if scores[0] > scores[1] else "lose" if scores[0] < scores[1] else "tie"
 
 
 def side_view(connection, war, row):
@@ -95,8 +89,13 @@ def war_view(connection, war, clan, at, lineups=False):
     sides = {row["clan_tag"]: row for row in connection.execute("SELECT * FROM war_sides WHERE war_id=?", (war["id"],))}
     own, other = sides[clan], next(row for tag, row in sides.items() if tag != clan)
     # Clash's log result wins; a final score decides only when the log has none.
-    result, basis = own["result"], "war_log" if own["result"] else None
-    if result is None and war["state"] == "warEnded" and war["result_complete"]:
+    result, basis = own["result"], None
+    if result is not None:
+        # A score-based result is stored too, so only a war the log listed has the log's.
+        logged = connection.execute("SELECT 1 FROM war_source_keys WHERE war_id=? AND source_kind='war_log'",
+                                    (war["id"],)).fetchone()
+        basis = "war_log" if logged else "final_score"
+    elif war["state"] == "warEnded" and war["result_complete"]:
         result = score_result(own, other)
         basis = "final_score" if result else None
     coverage = war_side_coverage(connection, war["id"], clan)

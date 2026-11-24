@@ -1,6 +1,9 @@
 """Side evidence and whole-war completeness from stored facts, for every writer."""
 
 import json
+import sqlite3
+
+from elbow_helper.domain.wars import score_result
 
 
 def war_side_coverages(connection, war_ids):
@@ -69,6 +72,34 @@ def upgrade_cwl_completeness(connection):
         attacks = all(coverage[side]["attacks_complete"] for side in ("own", "opponent"))
         connection.execute("UPDATE wars SET roster_complete=?,attacks_complete=? WHERE id=?",
                            (int(roster), int(attacks), war["id"]))
+
+
+def fill_blank_war_facts(connection):
+    """Version 23: facts that follow from what is stored, filled where an old save left them blank.
+
+    A final war with both scores gets the result its score gives, as a new save now does. Family
+    clan names come from the clan list. The war log's league-week entry has no real opponent, so
+    its opponent's level and destruction were saved as Clash's 0 and are now unknown.
+    """
+    named = connection.cursor()
+    named.row_factory = sqlite3.Row
+    for war_id, in named.execute(
+            "SELECT id FROM wars WHERE state='warEnded' AND result_complete=1 AND EXISTS "
+            "(SELECT 1 FROM war_sides WHERE war_id=wars.id AND result IS NULL)").fetchall():
+        sides = named.execute("SELECT side,stars,destruction,result FROM war_sides WHERE war_id=?", (war_id,)).fetchall()
+        if len(sides) != 2:
+            continue
+        for own, other in ((sides[0], sides[1]), (sides[1], sides[0])):
+            result = score_result(own, other) if own["result"] is None else None
+            if result is not None:
+                connection.execute("UPDATE war_sides SET result=? WHERE war_id=? AND side=?", (result, war_id, own["side"]))
+    for table, key in (("war_sides", "clan_tag"), ("cwl_clans", "clan_tag")):
+        connection.execute(
+            f"UPDATE {table} SET name=(SELECT c.name FROM clans c WHERE c.tag={table}.{key}) "
+            f"WHERE (name IS NULL OR name='') AND EXISTS (SELECT 1 FROM clans c WHERE c.tag={table}.{key} "
+            "AND c.name IS NOT NULL AND c.name<>'')")
+    connection.execute("UPDATE cwl_log_summaries SET opponent_level=NULL WHERE opponent_level=0")
+    connection.execute("UPDATE cwl_log_summaries SET opponent_destruction=NULL WHERE opponent_destruction=0")
 
 
 def fill_cwl_allowance(connection):

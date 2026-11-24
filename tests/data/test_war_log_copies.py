@@ -10,6 +10,7 @@ from elbow_helper.agent.reads.record_wars import combine
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store import wars as war_store
 from elbow_helper.data.store.schema import MIGRATIONS, SCHEMA_VERSION
+from elbow_helper.data.store.war_completeness import fill_blank_war_facts
 from elbow_helper.data.store.war_schema import merge_drifted_log_copies
 from elbow_helper.domain.war_views import war_entry
 
@@ -162,6 +163,22 @@ class LogMatchTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         before = await self.dump()
         self.assertEqual(await self.store.call(upgrade), 0)
         self.assertEqual(before, await self.dump())
+
+
+class BlankFactTests(WarFixture, unittest.IsolatedAsyncioTestCase):
+    async def results(self):
+        return [r["result"] for r in await self.rows("SELECT result FROM war_sides ORDER BY side")]
+
+    async def test_a_final_war_without_a_log_entry_stores_its_score_result_and_the_upgrade_fills_old_ones(self):
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        self.assertEqual(await self.results(), ["tie", "tie"])
+        await self.execute("UPDATE war_sides SET result=NULL")
+
+        def upgrade_step(connection):
+            with connection:
+                fill_blank_war_facts(connection)
+        await self.store.call(upgrade_step)
+        self.assertEqual(await self.results(), ["tie", "tie"])
 
 
 class WarListTests(unittest.TestCase):
