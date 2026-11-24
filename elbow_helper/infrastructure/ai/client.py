@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import base64
 from .agent import AgentImage
 
+from collections.abc import Awaitable
+from collections.abc import Callable
+from collections.abc import Mapping
 from collections.abc import Sequence
 from enum import StrEnum
 import json
@@ -67,6 +71,36 @@ class TextGenerationError(RuntimeError):
     """Raised when a configured text-generation request fails."""
 
 
+class OutOfCreditError(TextGenerationError):
+    """Raised when the provider refuses a request because the balance is empty."""
+
+
+def _provider_failure(error: OpenAIError) -> TextGenerationError:
+    # DeepSeek answers an empty balance with HTTP 402 (Insufficient Balance).
+    failure = (
+        OutOfCreditError
+        if getattr(error, "status_code", None) == 402
+        else TextGenerationError
+    )
+    return failure(DeepSeekTextClient._format_provider_error(error))
+
+
+async def _request_completion(
+    client: AsyncOpenAI,
+    options: dict[str, Any],
+    record_credit: Callable[[bool], None] | None = None,
+):
+    try:
+        response = await client.chat.completions.create(**options)
+    except OpenAIError as error:
+        if record_credit is not None and getattr(error, "status_code", None) == 402:
+            record_credit(True)
+        raise
+    if record_credit is not None:
+        record_credit(False)
+    return response
+
+
 class GenerationTier(StrEnum):
     """Provider-neutral amount of generation work requested by a feature."""
 
@@ -98,7 +132,15 @@ class AIClient(TextGenerator, AgentModel, Protocol):
 class DeepSeekTextClient:
     """Generate text through DeepSeek's OpenAI-compatible API."""
 
-    def __init__(self, api_key: str | None):
+    def __init__(
+        self,
+        api_key: str | None,
+        *,
+        notify_credit_change: Callable[[bool], Awaitable[None]] | None = None,
+    ):
+        self._notify_credit_change = notify_credit_change
+        self._out_of_credit = False
+        self._credit_notice: asyncio.Task[None] | None = None
         self._client = (
             AsyncOpenAI(
                 api_key=api_key,
@@ -109,6 +151,29 @@ class DeepSeekTextClient:
             if api_key
             else None
         )
+
+    def _record_credit(self, out_of_credit: bool) -> None:
+        if self._notify_credit_change is None or self._out_of_credit == out_of_credit:
+            return
+        self._out_of_credit = out_of_credit
+        # Claim the transition before any await and send notices in order.
+        self._credit_notice = asyncio.create_task(
+            self._send_credit_notice(self._notify_credit_change, out_of_credit, self._credit_notice)
+        )
+
+    async def _send_credit_notice(
+        self,
+        notify: Callable[[bool], Awaitable[None]],
+        out_of_credit: bool,
+        previous: asyncio.Task[None] | None,
+    ) -> None:
+        if previous is not None:
+            await previous
+        try:
+            async with asyncio.timeout(10):
+                await notify(out_of_credit)
+        except Exception:
+            LOGGER.warning("DeepSeek credit notice to application owner failed", exc_info=True)
 
     @property
     def configured(self) -> bool:
@@ -146,7 +211,7 @@ class DeepSeekTextClient:
         if max_output_tokens is not None:
             options["max_tokens"] = max_output_tokens
         try:
-            response = await self._client.chat.completions.create(**options)
+            response = await _request_completion(self._client, options, self._record_credit)
             choice = response.choices[0]
             message = getattr(choice, "message", None)
             if isinstance(message, dict):
@@ -158,9 +223,7 @@ class DeepSeekTextClient:
             if not content:
                 content = getattr(choice, "text", None)
         except OpenAIError as error:
-            raise TextGenerationError(
-                self._format_provider_error(error)
-            ) from error
+            raise _provider_failure(error) from error
         except (
             AttributeError,
             IndexError,
@@ -223,6 +286,9 @@ class DeepSeekTextClient:
             max_output_tokens=max_output_tokens,
             images=images,
             image_failure_fallback=image_failure_fallback,
+            prior_messages=prior_messages,
+            sent_reasoning_effort=sent_reasoning_effort,
+            record_credit=self._record_credit,
         )
 
     async def close(self) -> None:
@@ -230,6 +296,8 @@ class DeepSeekTextClient:
 
         if self._client is not None:
             await self._client.close()
+        if self._credit_notice is not None:
+            await self._credit_notice
 
     async def __aenter__(self) -> DeepSeekTextClient:
         return self
@@ -273,8 +341,12 @@ class _DeepSeekAgentSession:
         max_output_tokens: int | None,
         images: Sequence[AgentImage] = (),
         image_failure_fallback: bool = True,
+        prior_messages: Sequence[Mapping[str, Any]] = (),
+        sent_reasoning_effort: str | None = None,
+        record_credit: Callable[[bool], None] | None = None,
     ):
         self._client = client
+        self._record_credit = record_credit
         self._system_prompt, self._prompt = system_prompt, prompt
         self._prior_messages = tuple(prior_messages)
         self._sent_reasoning_effort = sent_reasoning_effort
@@ -372,7 +444,7 @@ class _DeepSeekAgentSession:
 
         started_at = time.monotonic()
         try:
-            response = await self._client.chat.completions.create(**options)
+            response = await _request_completion(self._client, options, self._record_credit)
             choice = response.choices[0]
             message = choice.message
             content = _message_value(message, "content")
@@ -435,6 +507,9 @@ class _DeepSeekAgentSession:
                     client=self._client, system_prompt=self._system_prompt,
                     prompt=self._prompt + "\nImages were attached but could not be viewed.",
                     tools=self._tool_definitions, max_output_tokens=self._max_output_tokens,
+                    prior_messages=self._prior_messages,
+                    sent_reasoning_effort=self._sent_reasoning_effort,
+                    record_credit=self._record_credit,
                 )
                 return await self._replacement.advance(
                     allow_tools=allow_tools, reasoning_effort=reasoning_effort,
@@ -442,9 +517,7 @@ class _DeepSeekAgentSession:
                     continuation_instruction=continuation_instruction,
                     timeout_seconds=timeout_seconds,
                 )
-            raise TextGenerationError(
-                DeepSeekTextClient._format_provider_error(error)
-            ) from error
+            raise _provider_failure(error) from error
         except (
             AttributeError,
             IndexError,

@@ -11,7 +11,7 @@ from uuid import uuid4
 import discord
 
 from elbow_helper.agent.safety.access import AgentAccessLost, require_access, require_evidence_access
-from ..engine.tool_call import AgentUnavailableError
+from ..engine.tool_call import AgentOutOfCreditError, AgentUnavailableError
 from ..engine.models import AgentDelivery
 from elbow_helper.core.logging import TransientExternalFailurePolicy
 from ..discord_actions.safety import check_post_access
@@ -340,10 +340,16 @@ class ScheduledRunner:
                 or rule["rule"].get("deliver_to") == "dm" and kind != "reminder"
                 else ACTION_STANDING_RUN_FAILED
             ).format(kind=self._name(kind))
-        except AgentUnavailableError:
-            LOGGER.exception(
-                "Agent standing model unavailable: kind=%s rule=%s", kind, identifier
-            )
+        except AgentUnavailableError as error:
+            if isinstance(error, AgentOutOfCreditError):
+                LOGGER.warning(
+                    "Agent standing run skipped, AI provider out of credit: kind=%s rule=%s",
+                    kind, identifier,
+                )
+            else:
+                LOGGER.exception(
+                    "Agent standing model unavailable: kind=%s rule=%s", kind, identifier
+                )
             await self._finish(kind, rule, owner, status="active", notice_sent=True)
             if not rule.get("notice_sent"):
                 await self._notify(channel, member.id,

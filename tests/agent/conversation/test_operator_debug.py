@@ -14,8 +14,8 @@ from elbow_helper.agent.conversation.transcripts import TranscriptArchive
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.agent.engine.models import AgentTurnState, RegisteredAgentTool
-from elbow_helper.agent.engine.tool_call import AgentUnavailableError
-from elbow_helper.infrastructure.ai import AgentToolDefinition, TextGenerationError
+from elbow_helper.agent.engine.tool_call import AgentOutOfCreditError, AgentUnavailableError
+from elbow_helper.infrastructure.ai import AgentToolDefinition, OutOfCreditError, TextGenerationError
 from tests.agent.loop_stub import StubModel, StubSession, call, final, loop_service, without_server_notes
 from tests.agent.request_fixtures import flow_context as _context
 
@@ -74,6 +74,13 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(records[0]["error"], "Synthetic provider failure")
         self.assertEqual(records[0]["rounds"][0]["outcome"], "failed")
         self.assertEqual(records[0]["usage"]["unknown_token_rounds"], 1)
+
+    async def test_loop_empty_balance_is_an_out_of_credit_request(self):
+        with ExitStack() as stack:
+            without_server_notes(stack)
+            with self.assertRaises(AgentOutOfCreditError):
+                await loop_service(StubModel(StubSession(OutOfCreditError("Synthetic 402")))).answer(
+                    question="Synthetic question", context=self.context)
 
     async def test_loop_empty_text_is_fine_when_a_gif_is_the_reply_but_not_for_a_reaction_alone(self):
         with ExitStack() as stack:

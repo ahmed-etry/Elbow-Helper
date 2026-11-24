@@ -31,7 +31,7 @@ from elbow_helper.agent.engine.prompts import CONTINUE_ANSWER_INSTRUCTION, REPEA
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.social_reply import SOCIAL_REPLY_NAME
 from elbow_helper.agent.engine.tool_call import (
-    AgentUnavailableError, execute_tool, restore_tool_state, tool_state_snapshot,
+    AgentOutOfCreditError, AgentUnavailableError, execute_tool, restore_tool_state, tool_state_snapshot,
 )
 from elbow_helper.agent.engine.usage import RequestUsage
 from .lookup_access import disclosure_issue
@@ -44,7 +44,7 @@ from elbow_helper.agent.reads.snapshots import SLICE_COLUMNS
 from elbow_helper.agent.reports.tools import original_tool
 from elbow_helper.agent.safety.access import AgentAccessLost, leadership_asker, require_access, require_evidence_access
 from elbow_helper.agent.safety.disclosure import log_scope, request_scope
-from elbow_helper.infrastructure.ai import TextGenerationError
+from elbow_helper.infrastructure.ai import OutOfCreditError, TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort, AgentToolDefinition, AgentToolResult
 
 from elbow_helper.agent.conversation.identity import guild_identity
@@ -385,6 +385,8 @@ class LoopRun:
             return step
         except TextGenerationError as error:
             record.status = "provider_error"
+            if isinstance(error, OutOfCreditError):
+                raise AgentOutOfCreditError(str(error)) from error
             raise AgentUnavailableError(str(error)) from error
         finally:
             record.rounds.append({

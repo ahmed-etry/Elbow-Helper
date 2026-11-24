@@ -9,13 +9,13 @@ import discord
 
 from elbow_helper.agent.safety.access import ACCESS_VIEW_AUDIT_LOG, AgentAccessLost, assert_answer_scope, require_evidence_access
 from elbow_helper.agent.safety.disclosure import log_scope_override
-from elbow_helper.agent.conversation.wording import ACTION_POST_HERE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER, ACTION_UNAVAILABLE, FAILURE_MESSAGE, AGENT_PRIVATE_CHECK_BUTTON
+from elbow_helper.agent.conversation.wording import ACTION_POST_HERE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER, ACTION_UNAVAILABLE, FAILURE_MESSAGE, OUT_OF_CREDIT_MESSAGE, AGENT_PRIVATE_CHECK_BUTTON
 from ..files.delivery import (
     add_spreadsheet_downloads, attachment_files, has_spreadsheet_download, spreadsheet_links,
 )
 from ..discord_actions.message_parts import image_attachment
 from elbow_helper.agent.conversation.text import chunk_response
-from ..engine.tool_call import AgentUnavailableError
+from ..engine.tool_call import AgentOutOfCreditError, AgentUnavailableError
 from .message_cleanup import log_cleanup_failure
 from .private_view import PRIVATE_RESULT_TIMEOUT, PrivateResultView
 
@@ -75,8 +75,10 @@ class PrivateAnswerView(PrivateResultView):
             except AgentAccessLost:
                 await interaction.followup.send(ACTION_RESULT_EXPIRED, ephemeral=True)
                 return
-            except AgentUnavailableError:
-                await interaction.followup.send(FAILURE_MESSAGE, ephemeral=True)
+            except AgentUnavailableError as error:
+                await interaction.followup.send(
+                    OUT_OF_CREDIT_MESSAGE if isinstance(error, AgentOutOfCreditError) else FAILURE_MESSAGE,
+                    ephemeral=True)
                 return
             except Exception:
                 LOGGER.exception("Agent private check failed: request=%s", self.context.source_message.id)

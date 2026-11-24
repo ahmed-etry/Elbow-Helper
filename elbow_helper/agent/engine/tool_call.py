@@ -32,6 +32,10 @@ class AgentUnavailableError(RuntimeError):
     """Raised when an agent request cannot produce a final answer."""
 
 
+class AgentOutOfCreditError(AgentUnavailableError):
+    """Raised when the AI provider has no credit left."""
+
+
 async def execute_tool(
     *,
     name: str,

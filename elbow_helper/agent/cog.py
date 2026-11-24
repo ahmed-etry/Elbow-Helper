@@ -26,8 +26,8 @@ from .conversation.state import Conversation, ConversationStore
 from elbow_helper.agent.conversation.text import message_text
 from elbow_helper.agent.engine.models import AgentRequestContext, AgentIdentity, ChannelReactions
 from elbow_helper.agent.conversation.identity import agent_identity, member_identity
-from .conversation.wording import FAILURE_MESSAGE
-from .engine.tool_call import AgentUnavailableError
+from .conversation.wording import FAILURE_MESSAGE, OUT_OF_CREDIT_MESSAGE
+from .engine.tool_call import AgentOutOfCreditError, AgentUnavailableError
 from .loop import LoopService
 from .discord_actions.gifs import GIF_CONTEXT_MESSAGES, channel_gif_history
 from .discord_actions.gif_library import channel_gif_urls, own_message_text
@@ -489,7 +489,8 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
                 error,
             )
             await reply_activity.aclose()
-            await self._send_failure(message)
+            await self._send_failure(
+                message, OUT_OF_CREDIT_MESSAGE if isinstance(error, AgentOutOfCreditError) else FAILURE_MESSAGE)
         finally:
             await reply_activity.aclose()
 

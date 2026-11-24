@@ -9,10 +9,10 @@ import logging
 import discord
 
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from elbow_helper.infrastructure.ai import TextGenerationError
+from elbow_helper.infrastructure.ai import OutOfCreditError, TextGenerationError
 
 from ..engine.capability_contract import compile_capability_call
-from ..engine.tool_call import AgentUnavailableError, execute_tool
+from ..engine.tool_call import AgentOutOfCreditError, AgentUnavailableError, execute_tool
 from ..engine.registry import build_agent_tools
 from elbow_helper.agent.engine.prompts import WATCHER_SYSTEM_PROMPT
 from elbow_helper.agent.conversation.text import chunk_response
@@ -93,6 +93,8 @@ async def evaluate(context, condition: str, results):
                         else {}
                     ),
                 )
+        except OutOfCreditError as error:
+            raise AgentOutOfCreditError("Watcher AI service is out of credit") from error
         except TextGenerationError as error:
             raise AgentUnavailableError("Watcher AI service is unavailable") from error
         content += step.content

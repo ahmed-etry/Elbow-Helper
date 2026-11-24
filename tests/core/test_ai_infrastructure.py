@@ -11,11 +11,13 @@ from openai import OpenAIError
 from openai import AsyncOpenAI
 import httpx
 
+from elbow_helper.app import _send_ai_credit_dm
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.infrastructure.ai import AgentToolResult
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import DeepSeekTextClient
 from elbow_helper.infrastructure.ai import GenerationTier
+from elbow_helper.infrastructure.ai import OutOfCreditError
 from elbow_helper.infrastructure.ai import TextGenerationError
 from elbow_helper.infrastructure.ai.client import DEEPSEEK_MODEL
 
@@ -37,6 +39,65 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(TextGenerationError):
                     await session.advance(reasoning_effort=AgentReasoningEffort.MAX)
         self.assertEqual(len(attempts), 1)
+
+    async def test_empty_balance_response_is_out_of_credit_and_other_errors_are_not(self):
+        for status, expected in ((402, OutOfCreditError), (500, TextGenerationError)):
+            with self.subTest(status=status):
+                async def respond(request, status=status):
+                    return httpx.Response(status, json={"error": {"message": "Insufficient Balance"}})
+                api = AsyncOpenAI(api_key="test-key",
+                    http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+                with patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI", return_value=api):
+                    async with DeepSeekTextClient("test-key") as client:
+                        session = client.create_agent_session(system_prompt="Instructions",
+                            prompt="Request", tools=())
+                        with self.assertRaises(TextGenerationError) as caught:
+                            await session.advance()
+                self.assertIs(type(caught.exception), expected)
+
+    async def test_application_owner_receives_one_notice_per_credit_change(self):
+        statuses = iter((402, 402, 200, 402))
+
+        async def respond(request):
+            status = next(statuses)
+            if status == 402:
+                return httpx.Response(status, json={"error": {"message": "Insufficient Balance"}})
+            return httpx.Response(status, json={"choices": [
+                {"message": {"role": "assistant", "content": "Hi"}, "finish_reason": "stop"}
+            ]})
+
+        recipient = SimpleNamespace(send=AsyncMock())
+        agent = SimpleNamespace(application_owner=SimpleNamespace(member_id=123))
+        bot = SimpleNamespace(
+            get_cog=MagicMock(return_value=agent),
+            get_user=MagicMock(return_value=None),
+            fetch_user=AsyncMock(return_value=recipient),
+        )
+        api = AsyncOpenAI(
+            api_key="test-key",
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+        )
+        with patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI", return_value=api):
+            async with DeepSeekTextClient(
+                "test-key", notify_credit_change=partial(_send_ai_credit_dm, bot),
+            ) as client:
+                for _ in range(2):
+                    session = client.create_agent_session(
+                        system_prompt="Instructions", prompt="Request", tools=(),
+                    )
+                    with self.assertRaises(OutOfCreditError):
+                        await session.advance()
+                self.assertEqual(await client.complete(
+                    tier=GenerationTier.ROUTINE, prompt="Request", temperature=0,
+                ), "Hi")
+                with self.assertRaises(OutOfCreditError):
+                    await client.complete(tier=GenerationTier.ROUTINE, prompt="Request", temperature=0)
+
+        outage = "DeepSeek is out of credit, so I can't answer anyone until it's topped up."
+        self.assertEqual([notice.args[0] for notice in recipient.send.await_args_list], [
+            outage, "DeepSeek is working again.", outage,
+        ])
+        self.assertEqual(bot.fetch_user.await_args_list, [call(123)] * 3)
 
     async def test_round_timeout_reaches_transport_without_retries_or_changing_later_rounds(self):
         timeouts = []

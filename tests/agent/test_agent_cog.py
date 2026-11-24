@@ -18,7 +18,7 @@ from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import CORE, LEAD_PLUS
 from elbow_helper.agent.safety.access import ACCESS_LEAD_PLUS, AgentAccessLost
 from elbow_helper.agent.cog import AgentCog
-from elbow_helper.agent.engine.tool_call import AgentUnavailableError
+from elbow_helper.agent.engine.tool_call import AgentOutOfCreditError, AgentUnavailableError
 from elbow_helper.agent.conversation.delivery import _delivery_nonce, _needs_file
 from elbow_helper.agent.conversation.state import ConversationTurn
 from elbow_helper.agent.engine.models import AgentDelivery, AgentTurnState
@@ -266,6 +266,24 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(conversation.pending, 0)
                 self.assertFalse(conversation.turns)
 
+
+    async def test_out_of_credit_gets_its_own_reply_and_other_outages_keep_the_old_one(self):
+        for error, expected in (
+            (AgentOutOfCreditError("402"), "I'm out of juice right now, so I can't answer."),
+            (AgentUnavailableError("500"), "I couldn't finish that right now. Try again in a moment."),
+        ):
+            with self.subTest(error=type(error).__name__):
+                self.setUp()
+                member = _Member(42, (next(iter(CORE)),))
+                make_message = self._real_handler_scenario(member)
+                message = make_message(member, 1, "<@999> hello")
+                self.cog.service.answer.side_effect = error
+                with (
+                    patch("elbow_helper.agent.cog.discord.Member", _Member),
+                    self.assertLogs("elbow_helper.agent.cog", level="WARNING"),
+                ):
+                    await self.cog.on_message(message)
+                self.assertEqual(message.reply.await_args.args, (expected,))
 
     async def test_failure_delivery_errors_are_logged_without_retry(self):
         for error in (

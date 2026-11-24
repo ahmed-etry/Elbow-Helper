@@ -10,7 +10,7 @@ from .agent import AgentUsage
 from .client import AIClient
 from .client import DeepSeekTextClient
 from .client import GenerationTier
-from .client import TextGenerationError
+from .client import OutOfCreditError, TextGenerationError
 from .client import TextGenerator
 
 __all__ = [
@@ -24,6 +24,7 @@ __all__ = [
     "AIClient",
     "DeepSeekTextClient",
     "GenerationTier",
+    "OutOfCreditError",
     "TextGenerationError",
     "TextGenerator",
 ]

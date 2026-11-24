@@ -129,6 +129,22 @@ def create_bot(
     return bot
 
 
+async def _send_ai_credit_dm(bot: ElbowHelperBot, out_of_credit: bool) -> None:
+    agent = bot.get_cog("AgentCog")
+    owner = agent.application_owner if agent is not None else None
+    if owner is None:
+        raise RuntimeError("Application owner identity is unavailable")
+    recipient = bot.get_user(owner.member_id)
+    if recipient is None:
+        recipient = await bot.fetch_user(owner.member_id)
+    message = (
+        "DeepSeek is out of credit, so I can't answer anyone until it's topped up."
+        if out_of_credit
+        else "DeepSeek is working again."
+    )
+    await recipient.send(message, allowed_mentions=discord.AllowedMentions.none())
+
+
 async def main() -> None:
     """Load process configuration, assemble the application, and run the bot."""
 
@@ -145,7 +161,10 @@ async def main() -> None:
         folder_id=settings.google_drive_folder_id,
     )
     workbook_writer = WorkbookWriter()
-    ai_client = DeepSeekTextClient(settings.deepseek_api_key)
+    ai_client = DeepSeekTextClient(
+        settings.deepseek_api_key,
+        notify_credit_change=lambda out_of_credit: _send_ai_credit_dm(bot, out_of_credit),
+    )
     async with (
         ai_client,
         ClashClient(settings.coc_api_key) as clash_client,
