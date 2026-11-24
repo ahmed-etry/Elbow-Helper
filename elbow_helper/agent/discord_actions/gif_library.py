@@ -5,6 +5,7 @@ import logging
 from importlib.resources import files
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import discord
 
@@ -55,6 +56,47 @@ def _entry_key(entry):
     except ValueError:
         pass
     return None
+
+
+ITEM_BY_KEY = {key: item for item in LIBRARY if (key := _entry_key(item["media"]))}
+
+
+def sent_gif_text(item):
+    return f"[GIF you sent: {item['shows']}]"
+
+
+def describe_sent_gifs(text):
+    """Name each library GIF in a line of an earlier reply by what it shows, not by its link or file name."""
+    return "\n".join(sent_gif_text(ITEM_BY_KEY[line.strip()]) if line.strip() in ITEM_BY_KEY else line
+                     for line in text.split("\n"))
+
+
+def sent_gif_name_lines(names):
+    """One line for each library GIF among these file names, saying what it shows."""
+    return [sent_gif_text(ITEM_BY_KEY["attachment://" + name]) for name in names
+            if "attachment://" + name in ITEM_BY_KEY]
+
+
+def sent_gif_lines(message):
+    """One line for each library GIF a message of the bot's own carries, saying what it shows."""
+    return sent_gif_name_lines(item.filename for item in getattr(message, "attachments", ()))
+
+
+def with_sent_gifs(content, names):
+    """A row of the bot's own message: its content, then a line for each library GIF it carries."""
+    return "\n".join(filter(None, (content, *sent_gif_name_lines(names))))
+
+
+def own_message_text(message, identity=None):
+    """The bot's own message as the model reads it: each library GIF it carries named by what it shows."""
+    from elbow_helper.agent.conversation.text import message_text
+    others = SimpleNamespace(
+        content=describe_sent_gifs(message.content or ""), stickers=getattr(message, "stickers", ()),
+        embeds=getattr(message, "embeds", ()),
+        attachments=[item for item in getattr(message, "attachments", ())
+                     if "attachment://" + item.filename not in ITEM_BY_KEY],
+        mentions=getattr(message, "mentions", ()), guild=getattr(message, "guild", None))
+    return "\n".join(filter(None, (message_text(others, identity=identity), *sent_gif_lines(message))))
 
 
 def _read_media(context, entry):

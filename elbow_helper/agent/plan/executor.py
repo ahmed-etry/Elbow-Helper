@@ -1,19 +1,14 @@
-"""Run checked capability steps without model calls between them."""
+"""Resolve an action argument against earlier confirmed results."""
 
 from __future__ import annotations
 
-import asyncio
-import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from typing import Any
 
-from .checker import _valid_value, step_dependencies
+from .checker import _valid_value
 from .arguments import takes_single_value
 from .results import is_record_table
 from .reference_paths import path_key, valid_path
-
-
-LOGGER = logging.getLogger(__name__)
 
 
 class UnresolvedReferenceError(KeyError):
@@ -163,115 +158,3 @@ def resolve_arguments(
             return items
         return value
     return resolve(dict(arguments), schema or {})
-
-
-def referenced_report_ids(
-    arguments: Any, results: Mapping[str, Mapping[str, Any]], report_ids: set[str],
-) -> set[str]:
-    """Retained report identities that unfinished arguments name or resolve to."""
-    found: set[str] = set()
-
-    def visit(value):
-        if isinstance(value, dict) and set(value) == {"step", "path"}:
-            try:
-                value = _walk(results[value["step"]], value["path"])
-            except (KeyError, IndexError, TypeError):
-                return
-            if isinstance(value, dict) and set(value) == {"step", "path"}:
-                return
-            visit(value)
-        elif isinstance(value, dict):
-            for item in value.values():
-                visit(item)
-        elif isinstance(value, list):
-            for item in value:
-                visit(item)
-        elif isinstance(value, str) and value in report_ids:
-            found.add(value)
-    visit(arguments)
-    return found
-
-
-async def execute_plan(
-    plan: Mapping[str, Any],
-    run: Callable[[Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]], Awaitable[Mapping[str, Any]]],
-    *, max_concurrency: int = 4,
-    earlier_results: Mapping[str, Mapping[str, Any]] | None = None,
-    parallel: Callable[[Mapping[str, Any]], bool] | None = None,
-    step_errors: Mapping[str, str] | None = None,
-    argument_schema: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
-    step_fields: Mapping[str, tuple[str, ...]] | None = None,
-    step_missing_fields: Mapping[str, tuple[str, ...]] | None = None,
-) -> dict[str, Mapping[str, Any]]:
-    """Run independent steps together and wait for dependencies."""
-    if max_concurrency < 1:
-        raise ValueError("Concurrency must be positive")
-    steps = {step["id"]: step for step in plan["steps"]}
-    pending = set(steps)
-    results: dict[str, Mapping[str, Any]] = {
-        step_id: result for step_id, result in (earlier_results or {}).items()
-        if step_id not in steps
-    }
-    semaphore = asyncio.Semaphore(max_concurrency)
-
-    async def run_step(step: Mapping[str, Any]) -> tuple[str, Mapping[str, Any]]:
-        for dependency in step_dependencies(step):
-            if "error" in results[dependency]:
-                return step["id"], {
-                    "error": f"Step {dependency} failed, so this step could not run.",
-                    "execution_status": "not_run",
-                }
-        if step["id"] in (step_errors or {}):
-            return step["id"], {
-                "error": step_errors[step["id"]], "cause": "invalid_arguments",
-                "execution_status": "not_run",
-                "capability": step["capability"],
-                **({"invalid_fields": list(step_fields[step["id"]])}
-                   if step["id"] in (step_fields or {}) else {}),
-                **({"missing_fields": list(step_missing_fields[step["id"]])}
-                   if step["id"] in (step_missing_fields or {}) else {}),
-                **({"argument_schema": argument_schema(step)} if argument_schema else {}),
-            }
-        try:
-            arguments = resolve_arguments(
-                step["arguments"], results,
-                schema=argument_schema(step) if argument_schema else None,
-            )
-        except UnresolvedReferenceError as error:
-            LOGGER.warning("Agent step %s has unresolved reference to step %s path %s",
-                           step["id"], error.step_id, error.path)
-            return step["id"], {"error": "A required earlier result is unavailable.",
-                                "execution_status": "not_run"}
-        except (SingleValueReferenceError, MalformedReferenceError) as error:
-            return step["id"], {
-                "error": str(error), "cause": "invalid_arguments",
-                "execution_status": "not_run",
-                "capability": step["capability"],
-                **({"argument_schema": argument_schema(step)} if argument_schema else {}),
-            }
-        async with semaphore:
-            return step["id"], await run(step, arguments, results)
-
-    while pending:
-        ready = [steps[step_id] for step_id in steps if step_id in pending
-                 and set(step_dependencies(steps[step_id])) <= results.keys()]
-        if not ready:
-            raise ValueError("Step dependencies cannot be resolved")
-        if parallel is not None:
-            reads = [step for step in ready if parallel(step)]
-            ready = reads or [ready[0]]
-        tasks = [asyncio.create_task(run_step(step)) for step in ready]
-        try:
-            outcomes = await asyncio.gather(*tasks, return_exceptions=True)
-        except BaseException:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            raise
-        for outcome in outcomes:
-            if isinstance(outcome, BaseException):
-                raise outcome
-        for step_id, result in outcomes:
-            results[step_id] = result
-            pending.remove(step_id)
-    return {step_id: results[step_id] for step_id in steps}

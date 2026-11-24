@@ -71,6 +71,7 @@ def compact_member(row, view):
 def select_regular(connection, request):
     # Import here keeps WarReads' general selectors independent of this composition.
     from .wars import member_rows, select_wars, war_view, window_coverage
+    from .war_facts import account_war_fact
 
     selected, identities, checked, friendly = {}, set(), [], set()
     requested = set(request.war_ids)
@@ -90,7 +91,8 @@ def select_regular(connection, request):
         end, found = before, set()
         while end > after and (enough is None or len(found) < enough):
             start = max(after, end - CHUNK)
-            wars = select_wars(connection, [clan], start, end, ('REG',), request.as_of, player_tags=request.player_tags)
+            wars = select_wars(connection, [clan], start, end, ('REG',), request.as_of, player_tags=request.player_tags,
+                               states=('warEnded',) if request.latest_completed else None)
             for row, facing, _, _ in wars:
                 if requested:
                     view = war_view(connection, row, facing, request.as_of)
@@ -147,7 +149,9 @@ def select_regular(connection, request):
     rows = []
     for war, view in entries:
         checked.append((war, view['clan_tag'], view['coverage']))
-        rows.extend(compact_member(row, view) for row in member_rows(connection, war, view['clan_tag'], view['coverage']))
+        rows.extend({**compact_member(row, view), 'account_war': account_war_fact(
+            connection, war['id'], view['clan_tag'], row, request.as_of)}
+            for row in member_rows(connection, war, view['clan_tag'], view['coverage']))
     return {'wars': [view for _, view in entries], 'rows': rows, 'as_of': request.as_of,
             'friendly_wars_not_counted': len(friendly) if not requested and not request.latest_completed else None,
             'coverage': window_coverage(connection, request.clans, ('REG',), request.after, request.before,

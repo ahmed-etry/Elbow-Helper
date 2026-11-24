@@ -8,7 +8,7 @@ from unittest.mock import Mock
 
 from elbow_helper.agent.reads import war_tools as war_reads
 from elbow_helper.features.cwl.results import CwlResults, PERIOD_SETTINGS
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.features.cwl_record_stub import LeagueRecord, league_war, member
 
 END = 1788000000

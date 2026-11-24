@@ -124,13 +124,6 @@ class ScopeAudit:
 
 
 @dataclass(frozen=True, slots=True)
-class RequestCatalogue:
-    opened: frozenset[str] = frozenset()
-    data_guide: str = ""
-    withheld: dict[str, Mapping[str, Any]] = field(default_factory=dict)
-
-
-@dataclass(frozen=True, slots=True)
 class EvidenceScope:
     destination_id: int
     destination_levels: frozenset[str]
@@ -150,9 +143,9 @@ class AgentTurnState:
     source_access: dict[int, frozenset[str]] = field(default_factory=dict)
     scope: EvidenceScope | None = None
     scope_audit: ScopeAudit = field(default_factory=ScopeAudit)
-    catalogue: RequestCatalogue = field(default_factory=RequestCatalogue)
     private_answer_run: Callable[[], Awaitable[Any]] | None = None
     evidence: list[str] = field(default_factory=list)
+    lookup_results: list[str] = field(default_factory=list)
     grounding_evidence: dict[str, Any] = field(default_factory=dict)
     local_messages: list[dict[str, Any]] = field(default_factory=list)
     reply_context: dict[str, Any] = field(default_factory=dict)
@@ -194,6 +187,7 @@ class AgentTurnState:
     gif_requested: bool = False
     gif_attachment: AgentAttachment | None = None
     gif_fallback_text: str = ""
+    gif_recipient_id: int | None = None
     reply_to: int | None = None
     ping_author: bool = False
     used_gif_urls: set[str] = field(default_factory=set)
@@ -206,6 +200,8 @@ class AgentTurnState:
     terminal_cause: str | None = None
     family_catalogue: bool = False
     proposed_changes: list[Any] = field(default_factory=list)
+    open_confirmation_ids: frozenset[int] = frozenset()
+    replaces_card_id: int | None = None
     preview_reply: str | None = None
     preview_first: bool = False
 
@@ -293,3 +289,4 @@ class RegisteredAgentTool:
     returns: str | None = None
     default_visible: bool = True
     specialist_group: str = "records"
+    finishes_reply_with_text: bool = False

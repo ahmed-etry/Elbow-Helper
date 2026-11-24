@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock
 
 from elbow_helper.agent.discord_actions.reaction_pacing import channel_combo_history, reply_combo_due, combo_slot_status
 from elbow_helper.agent.discord_actions.reactions import react_to_request
-from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.social_reply import salvage_choice, social_reply_definition
 from elbow_helper.agent.engine.models import ChannelReactions
 from tests.agent.engine.helpers import social_step
-from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
+from tests.agent.request_fixtures import member_context as _context
+from tests.agent.loop_stub import banter_answer
 
 
 class ReactionComboPacingTests(unittest.IsolatedAsyncioTestCase):
@@ -81,16 +81,13 @@ class ReactionComboPacingTests(unittest.IsolatedAsyncioTestCase):
                 history=channel_combo_history(rows, 999, last_combo_message_id=channel.combo_message_id))
             due = reply_combo_due(context)
             emojis = pairs[len(combos) % 2] if due else ("\U0001f440",)
-            session = _AgentSession([social_step("Synthetic line.", meme_id=None,
-                form="text_reaction_combo" if due else "text_reactions", reactions=emojis)])
-            model = _AgentModel(session, route="social")
-            answer = await AgentService(model).answer(question="Synthetic exchange", local_context="", context=context)
+            answer, session, model = await banter_answer(context, social_step(
+                "Synthetic line.", meme_id=None,
+                form="text_reaction_combo" if due else "text_reactions", reactions=emojis))
             self.assertEqual(answer, "Synthetic line.")
             self.assertEqual(len(session.calls), 1)
-            schema = model.request["tools"][0].parameters["properties"]
+            schema = model.requests[0]["tools"][-1].parameters["properties"]
             self.assertEqual("text_reaction_combo" in schema["reply_form"]["enum"], due)
-            self.assertIn('Reaction combinations are available as an option' if due else 'Reaction combinations are unavailable',
-                          model.request['prompt'])
             self.assertEqual(context.source_message.add_reaction.await_count, 2 if due else 1)
             if due:
                 combos.append(position)
@@ -103,12 +100,11 @@ class ReactionComboPacingTests(unittest.IsolatedAsyncioTestCase):
         for history, route in (((True,), "social"), (None, "social"), ((), "research")):
             context = self.context(history=history)
             if route == "social":
-                session = _AgentSession([social_step("Synthetic line.", meme_id=None,
-                    form="text_reaction_combo", reactions=["\U0001f914", "\U0001f4a1"])])
-                model = _AgentModel(session, route=route)
-                answer = await AgentService(model).answer(question="Synthetic exchange", local_context="", context=context)
+                answer, _, model = await banter_answer(context, social_step(
+                    "Synthetic line.", meme_id=None, form="text_reaction_combo",
+                    reactions=["\U0001f914", "\U0001f4a1"]))
                 self.assertEqual(answer, "Synthetic line.")
-                self.assertNotIn("text_reaction_combo", model.request["tools"][0].parameters["properties"]["reply_form"]["enum"])
+                self.assertNotIn("text_reaction_combo", model.requests[0]["tools"][-1].parameters["properties"]["reply_form"]["enum"])
                 self.assertLessEqual(context.source_message.add_reaction.await_count, 1)
             result = await react_to_request(context, {"emoji": ["\U0001f680", "\U0001f389"]})
             self.assertEqual(result["cause"], "combo_not_offered")
@@ -144,8 +140,6 @@ class ReactionComboPacingTests(unittest.IsolatedAsyncioTestCase):
         first = self.context(channel=channel)
         first.state.reaction_combo_due = True
         await react_to_request(first, {"emoji": ["\U0001f914", "\U0001f4a1"]})
-        session = _AgentSession([social_step("Synthetic line.", meme_id=None)])
-        model = _AgentModel(session, route="social")
-        await AgentService(model).answer(question="Synthetic exchange", local_context="", context=stale)
-        self.assertNotIn("text_reaction_combo", model.request["tools"][0].parameters["properties"]["reply_form"]["enum"])
+        _, _, model = await banter_answer(stale, social_step("Synthetic line.", meme_id=None))
+        self.assertNotIn("text_reaction_combo", model.requests[0]["tools"][-1].parameters["properties"]["reply_form"]["enum"])
         self.assertEqual(combo_slot_status(stale), 'revision_changed')

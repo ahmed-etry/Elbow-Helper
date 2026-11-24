@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 from elbow_helper.features.cwl.results_summary import cwl_analysis
 from elbow_helper.agent.reads.war_tools import cwl_results
 from tests.agent.features.cwl.cwl_helpers import ResultQueries
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 def account(tag, *, clan='alpha', season='2025-04', profile='standard',

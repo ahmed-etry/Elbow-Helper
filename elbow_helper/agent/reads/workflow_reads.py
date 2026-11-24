@@ -38,7 +38,7 @@ async def complete_snapshot(context, reader, arguments, field, output_field=None
     report = context.state.reports.get(result.get('report_id'))
     rows = [asdict(row) for row in getattr(report.snapshot, field)] if report else result.get(output_field or field, [])
     if report is None and result.get('next_offset') is not None:
-        return {'error': 'The complete workflow snapshot could not be retained.', 'cause': 'capacity'}
+        return {'error': 'The complete workflow report could not be retained.', 'cause': 'capacity'}
     if report and report.report_id not in before:
         context.state.reports.pop(report.report_id)
         context.state.report_sources.pop(report.report_id, None)
@@ -369,9 +369,9 @@ async def hibernation(context, arguments):
                                  else 'latest_observed_cwl_war_end_at')
                     account[end_field] = (
                         datetime.fromtimestamp(latest, timezone.utc).isoformat() if latest is not None else None)
-            row.update(accounts=accounts, activity_coverage='Ranked activity uses stored battle logs; a gap in log reading or an absence does not establish inactivity. Each gap: read_ranked_activity with detail.',
-                       war_activity_coverage='Stored wars have no individual attack timestamps. Counts use wars whose battle day started at or after hibernation, or with no start time that ended over 48 hours after it; other overlapping wars retain unknown attack timing. Latest war-end dates are not attack dates.',
-                       ownership_basis='current bot links; historical ownership unknown')
+            row.update(accounts=accounts, activity_coverage='Ranked activity uses recorded battle logs; a gap in log reading or an absence does not establish inactivity. Each gap: read_ranked_activity with detail.',
+                       war_activity_coverage='Recorded wars have no individual attack timestamps. Counts use wars whose battle day started at or after hibernation, or with no start time that ended over 48 hours after it; other overlapping wars retain unknown attack timing. Latest war-end dates are not attack dates.',
+                       ownership_basis='current account links; earlier owners unknown')
     sort_field = 'started_at' if arguments.get('sort') == 'longest_hibernating' else 'joined_at'
     rows.sort(key=lambda row:(row.get(sort_field) is None,row.get(sort_field) or '',row['member_id']))
     return {**result,'rows':rows,'coverage_note':'Active workflow records, not role holders. Missing start times and activity remain unknown.'}

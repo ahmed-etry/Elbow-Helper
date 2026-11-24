@@ -68,7 +68,6 @@ class RecruitmentTrialReport:
                 self.snapshot.skipped_invalid_selected_count
             ),
             "timing_status_counts": dict(sorted(timing_counts.items())),
-            "complete_valid_accessible_status_snapshot": True,
             "message_history_read": False,
             "included_fields": [
                 "ticket channel ID",

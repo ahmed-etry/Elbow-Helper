@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.agent.discord_actions.gifs import find_gif
-from tests.agent.engine.test_agent_service import _context
+from tests.agent.request_fixtures import member_context as _context
 
 
 class GifTests(unittest.IsolatedAsyncioTestCase):

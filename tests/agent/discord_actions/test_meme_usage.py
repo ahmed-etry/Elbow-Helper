@@ -20,7 +20,7 @@ from elbow_helper.agent.conversation.state import Conversation, ConversationReco
 from elbow_helper.agent.engine.social_reply import social_plan
 from elbow_helper.agent.engine.models import AgentDelivery
 from tests.agent.discord_actions.test_gif_library import _choice
-from tests.agent.engine.test_agent_service import _context
+from tests.agent.request_fixtures import member_context as _context
 
 
 def usage(item_id, posted_at, channel_id=22):

@@ -3,21 +3,14 @@
 from __future__ import annotations
 
 import re
-import json
 from functools import wraps
 from collections.abc import Mapping
 from typing import Any
-from elbow_helper.agent.engine.prompts import PLAN_CORRECTION_INSTRUCTION
 
 
 LIMIT_FIELDS = frozenset({
     "limitations", "caveats", "warnings", "projection_note",
     "coverage_note", "interpretation_notes", "caveat",
-})
-
-
-PAGING_FIELDS = frozenset({
-    "report_id", "offset", "limit", "view", "cursor", "next_offset", "next_cursor", "flags",
 })
 
 
@@ -31,81 +24,6 @@ def is_record_table(value: Any) -> bool:
         and all(isinstance(item, Mapping) for item in value)
         and all(item.keys() == value[0].keys() for item in value)
     )
-
-
-def compact_result(value: Any) -> Any:
-    """Encode homogeneous records as a table only in the model's JSON view."""
-    if isinstance(value, Mapping):
-        return {key: compact_result(item) for key, item in value.items()}
-    if isinstance(value, list):
-        if is_record_table(value):
-            columns = list(value[0])
-            return {"columns": columns, "rows": [[item[column] for column in columns]
-                                                  for item in value]}
-        return [compact_result(item) for item in value]
-    return value
-
-
-def tabulate_messages(data: dict[str, Any]) -> dict[str, Any]:
-    """Message rows that differ only by a reply column share one column set, so a long page is a table.
-
-    A reply column is added only when some message in the page is a reply, as conversation reads already do.
-    """
-    from elbow_helper.agent.reads.evidence import message_columns
-    for field in ("messages", "matches"):
-        rows = data.get(field)
-        if isinstance(rows, list) and len(rows) >= TABLE_MINIMUM_ROWS and all(isinstance(row, Mapping) for row in rows):
-            data = {**data, field: message_columns(rows)}
-    return data
-
-
-def model_view(
-    payload: Mapping[str, Any], *, summaries: dict[str, set[str]] | None = None,
-    row_fields=(),
-) -> dict[str, Any]:
-    """Omit an unchanged retained page summary already included in this request."""
-    data = dict(payload)
-    if data.get('kind') == 'family':
-        from elbow_helper.agent.reads.evidence import family_model_view
-        data = family_model_view(data)
-    if data.get("kind") == "active_hibernation" and isinstance(data.get("records"), list):
-        # The ISO timestamp and status repeat started_ts (null means unavailable).
-        # Keep the retained report intact; only its model view needs compact rows.
-        data["records"] = [{key: row[key] for key in ("member_id", "started_ts")}
-                           for row in data["records"]]
-        data["included_fields"] = ["member_id", "started_ts"]
-    if "member_limits" in data and isinstance(data.get("accounts"), list):
-        data["accounts"] = [{key: value for key, value in row.items()
-                             if "poll" not in key} if isinstance(row, Mapping) else row
-                            for row in data["accounts"]]
-        if isinstance(data.get("history_coverage"), Mapping):
-            data["history_coverage"] = {key: value for key, value in data["history_coverage"].items()
-                                        if key != "reasons"}
-            data["history_coverage"]["message"] = data["member_limits"][0]
-        if isinstance(data.get("flags"), Mapping):
-            data["flags"] = dict(data["flags"])
-            data["flags"]["limits"] = [value for value in data["flags"].get("limits", ())
-                                       if "poll" not in value]
-    if data.get('kind') != 'family':
-        data = tabulate_messages(data)
-    report_id = data.get("report_id")
-    paging_fields = PAGING_FIELDS
-    if data.get('kind') == 'family':
-        from elbow_helper.agent.reads.evidence import PAGE_FIELDS
-        paging_fields = paging_fields | {'kind', 'family', 'requester_id', 'selection', 'returned_rows'}
-        row_fields = {*row_fields, *PAGE_FIELDS} if row_fields else row_fields
-    if (summaries is not None and isinstance(report_id, str) and row_fields
-            and ("next_offset" in data or "next_cursor" in data) and "error" not in data):
-        summary = {key: value for key, value in data.items()
-                   if key not in paging_fields and key not in row_fields}
-        signature = json.dumps(summary, ensure_ascii=False, sort_keys=True, default=str,
-                               separators=(",", ":"))
-        sent = summaries.setdefault(report_id, set())
-        if signature in sent:
-            data = {key: value for key, value in data.items()
-                    if key in paging_fields or key in row_fields}
-        sent.add(signature)
-    return compact_result(data)
 
 
 def _flag(value: Any) -> str:
@@ -167,7 +85,7 @@ def model_result(
     truncated = truncated or data.get("truncated") is True or existing.get("truncated") is True
     complete = not truncated and error is None and existing.get("status") not in ("failed", "partial", "refused") and all(
         data.get(field) is not False for field in (
-            "complete", "complete_snapshot", "count_complete", "selection_complete", "coverage_complete", "search_complete", "search_is_exhaustive",
+            "complete", "count_complete", "selection_complete", "coverage_complete", "search_complete", "search_is_exhaustive",
         )
     ) and data.get("status") != "partial" and all(
         data.get(field) is None for field in ("next_offset", "next_cursor")
@@ -222,10 +140,3 @@ def result_handler(handler):
     async def wrapped(context, arguments):
         return model_result(await handler(context, arguments))
     return wrapped
-
-
-def plan_feedback(error: str, *, step_id: str = "", offered=()) -> dict[str, Any]:
-    return {"flags": {"status": "refused",
-                      "rule": re.sub(r"[^a-z0-9]+", "_", error.casefold()).strip("_")},
-            "step_id": step_id, "error": error, "offered": list(offered),
-            "instruction": PLAN_CORRECTION_INSTRUCTION}

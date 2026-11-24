@@ -13,7 +13,7 @@ from elbow_helper.data.reads import CwlReads, WarReads
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.cwl.record import CwlHistory
 
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.agent.reads.test_family_wars import renamed
 from tests.agent.reads.test_record_wars import FAMILY, OCTOBER, later_war, ts
 from tests.data.test_wars import END, SECOND, WarFixture, group, war
@@ -24,8 +24,8 @@ JUNE_END = "20250610T180000.000Z"
 
 
 def entries(result):
-    if 'accounts' in result['record_span']:
-        return {(row['player_tag'], row['war_type']): row for row in result['record_span']['accounts']}
+    if 'record_span_accounts' in result:
+        return {(row['player_tag'], row['war_type']): row for row in result['record_span_accounts']}
     return {(entry['player_tag'], span['war_type']): {'player_tag': entry['player_tag'], **span}
             for row in result['rows'] for entry in row.get('family_wars', [])
             for span in entry.get('record_span', [])}
@@ -179,12 +179,14 @@ class RecordSpanTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(league["record_span"], {"status": "unavailable", "cause": "missing_setup"})
         self.assertEqual(len(league["rows"]), 1)
 
-    async def test_accounts_beyond_the_old_header_limit_stay_on_their_rows(self):
-        with patch.object(war_span, "MAX_ACCOUNTS", 1):
-            result = await self.participation(account_tags=["#P0", "#P2", "#Z0"], **OCTOBER)
+    async def test_every_selected_account_is_listed(self):
+        # War attacks once listed 50 accounts and only counted the rest.
         # A tag that is not a Clash tag has no wars to read.
-        self.assertEqual({tag for tag, _ in entries(result)}, {'#P0', '#P2'})
-        self.assertNotIn('accounts_not_listed', result['record_span'])
+        for result in (await self.participation(account_tags=["#P0", "#P2", "#Z0"], **OCTOBER),
+                       await war_attacks.war_attacks(self.context, {"war_type": "REG",
+                                                                    "account_tags": ["#P0", "#P2"], **OCTOBER})):
+            self.assertEqual({tag for tag, _ in entries(result)}, {'#P0', '#P2'})
+            self.assertNotIn('accounts_not_listed', result['record_span'])
 
     async def test_the_record_read_checks_its_bounds(self):
         reads = self.context.bot.war_reads

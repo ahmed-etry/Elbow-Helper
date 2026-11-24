@@ -20,6 +20,7 @@ from .private_view import PrivateResultView
 from elbow_helper.agent.conversation.text import chunk_response
 from elbow_helper.agent.conversation.wording import action_progress_status, ACTION_STOP_BUTTON, ACTION_STOP_OWNER, ACTION_POST_LABEL
 from .contracts import ActionClass, PreparedAction, check_bundle
+from .discord_failure import discord_failure
 from .store import AgentActionRepository
 from .report import format_run_report
 
@@ -94,6 +95,8 @@ class AgentActionRunner:
         self.guild_id = guild_id
         self.undo_handlers = dict(undo_handlers or {})
         self.on_finish = on_finish
+        # Called with a Confirm card and how it ended without running: "cancelled", "expired" or "unqueued".
+        self.on_unconfirmed: Callable[[Any, str], Awaitable[None]] | None = None
         self._tasks: set[asyncio.Task] = set()
         self._runs: dict[str, asyncio.Task] = {}
         self._ready = asyncio.Event()
@@ -496,8 +499,6 @@ class AgentActionRunner:
 
 
 def _uncertain(error: Exception) -> bool:
-    return isinstance(error, (OSError, TimeoutError)) or (
-        isinstance(error, discord.HTTPException)
-        and getattr(error, "status", None) is not None
-        and error.status >= 500
-    )
+    """The request may have reached Discord before it failed, so the change may have applied."""
+    failure = discord_failure(error)
+    return isinstance(error, (OSError, TimeoutError)) or failure is not None and failure.uncertain

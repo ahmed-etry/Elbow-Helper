@@ -62,7 +62,7 @@ def member_lifecycle_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "read_member_lifecycle_report",
-            "Read another filtered page from one retained member-lifecycle snapshot.",
+            "Read another filtered page from one saved member-lifecycle report.",
             {
                 "report_id": {"type": "string", "minLength": 1, "maxLength": 32},
                 "platform": {"type": "string", "minLength": 1, "maxLength": 100},
@@ -126,7 +126,7 @@ async def read_member_lifecycle(
     except ArtifactCapacityError:
         return {
             "error": (
-                "The complete member lifecycle snapshot is too large to retain "
+                "The complete member lifecycle report is too large to retain "
                 "in this conversation."
             ),
         }
@@ -148,7 +148,7 @@ async def read_member_lifecycle_report(
     ):
         return {
             "error": (
-                "That member lifecycle snapshot is not available in this "
+                "That member lifecycle report is not available in this "
                 "conversation."
             ),
         }

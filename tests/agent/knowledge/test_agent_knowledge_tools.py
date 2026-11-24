@@ -55,6 +55,18 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
                          & {row["section_id"] for row in second["sections"]})
         self.assertEqual(len(second["sections"]), 3)
 
+    async def test_searches_return_the_line_of_a_fact_under_an_unrelated_title(self):
+        self.write("war.md", "# CWL destinations\nSignup closes two days before the 1st so leadership can "
+                             "build the rosters and post them.\nCheck your destination in the roster channel.\n"
+                             "# CWL lineups\nLineups change every round.")
+        result = await search_approved_knowledge(
+            self.context, {"searches": ["when are rosters posted", "lineup announced"]})
+        self.assertEqual([(hit["line"], hit["title"], hit["file"]) for hit in result["hits"]],
+                         [("Signup closes two days before the 1st so leadership can build the rosters "
+                           "and post them.", "CWL destinations", "war.md")])
+        self.assertEqual(result["more_hits"], 0)
+        self.assertIn(result["hits"][0]["section_id"], self.context.state.knowledge_sources)
+
     async def test_full_length_section_id_from_an_earlier_reply_still_opens_its_section(self):
         self.write("topics.md", "# Alpha guide\nAlpha body\n# Beta guide\nBeta body")
         section = (await search_approved_knowledge(self.context, {"titles": ["Beta guide"]}))["sections"][0]

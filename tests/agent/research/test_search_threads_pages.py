@@ -1,19 +1,14 @@
 """Search parent scope, consecutive pages, and request budget regressions."""
 
-from dataclasses import replace
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 
-from elbow_helper.agent.engine.budgets import ContextBudget
-from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.engine.steps import PlanRunner
-from elbow_helper.agent.reads.reference import TOOLS, conversation_evidence
+from elbow_helper.agent.reads.reference import conversation_evidence
 from elbow_helper.agent.research.search import search_discord_messages
 from elbow_helper.infrastructure.discord.message_search import DiscordSearchMessage, DiscordSearchPage
-from tests.agent.engine.test_agent_plan_flow import _context as runner_context
 from tests.agent.research.test_agent_search import _context
 
 
@@ -196,42 +191,7 @@ class SearchPagingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.message_search.search_page.await_count, 2)
 
 
-    def runner(self):
-        context = runner_context()
-        context = replace(context, message_search=SimpleNamespace())
-        # These synthetic messages precede the frozen request boundary.
-        context.source_message.id = 1000
-        context.source_message.channel.id = 100
-        paged_search(context, content="x" * 600)
-        tool = next(tool for tool in TOOLS if tool.definition.name == "read_conversation_evidence")
-        return PlanRunner(service=AgentService(None), context=context,
-            registry={tool.definition.name: tool}, command_capabilities={},
-            budget=ContextBudget(None, 8192, 0), rounder=SimpleNamespace(social_route=False))
-
     async def run_search(self, runner, identifier="search"):
         step = {"id": identifier, "capability": "read_conversation_evidence",
                 "arguments": {"mode": "search", "channel_id": 100, "pages": 3}, "depends_on": []}
         return (await runner.run({"steps": [step]}))[identifier]
-
-    async def test_each_page_counts_toward_request_lookup_cap(self):
-        runner = self.runner()
-        with patch("elbow_helper.agent.engine.budgets.MAX_TOOL_CALLS", 2):
-            result = await self.run_search(runner)
-            self.assertEqual(result["coverage"]["pages_scanned"], 2)
-            self.assertEqual(result["coverage"]["next_offset"], 50)
-            self.assertTrue(result["coverage"]["stopped_at_request_budget"])
-            self.assertEqual(runner.tool_calls, 2)
-            self.assertEqual(runner.context.message_search.search_page.await_count, 2)
-            rejected = await self.run_search(runner, "over_cap")
-        self.assertEqual(rejected["error"], "The request reached its lookup limit.")
-
-    async def test_shared_evidence_budget_includes_prior_reads(self):
-        runner = self.runner()
-        runner.evidence_characters = 3000
-        with patch("elbow_helper.agent.engine.budgets.MAX_DISCUSSION_EVIDENCE_CHARACTERS", 5000):
-            result = await self.run_search(runner)
-        self.assertTrue(result["coverage"]["stopped_at_message_budget"])
-        self.assertEqual(result["coverage"]["next_offset"], 25)
-        self.assertEqual(len(result["rows"]), 2)
-        self.assertEqual(runner.tool_calls, 2)
-        self.assertLessEqual(runner.evidence_characters, 5000)

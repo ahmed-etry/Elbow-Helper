@@ -30,7 +30,7 @@ WINDOW_RULES = (
     {'aware': ['after', 'before'], 'error': 'Choose timezone-aware dates.'})
 WAR_SELECTORS = ['season', 'season_keys', 'war_ids', 'latest_completed', 'after']
 ONE_SELECTION = 'Choose one season selection, war selection or date window.'
-PARTICIPATION_PERIOD_NOTE = 'Without accounts, members or a cohort, give season, season_keys, latest_completed, after/before or war_ids; otherwise all their stored wars are read.'
+PARTICIPATION_PERIOD_NOTE = 'Without accounts, members or a cohort, give season, season_keys, latest_completed, after/before or war_ids; otherwise all their recorded wars are read.'
 SELECTION_RULES = (
     {'only_one': [key for key in WAR_SELECTORS if key != 'latest_completed'], 'error': ONE_SELECTION},
     {'only_one': [key for key in WAR_SELECTORS if key != 'season'], 'error': ONE_SELECTION})

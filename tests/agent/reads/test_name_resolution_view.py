@@ -1,13 +1,10 @@
 """Name selection headers leave room for the requested account facts."""
-from copy import deepcopy
 import json
 import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.agent.reads.snapshots import family_tool
-from elbow_helper.agent.reads.evidence import family_model_view
-from elbow_helper.agent.plan.results import model_result, model_view
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 def named_accounts(names=9):
@@ -40,35 +37,7 @@ def named_accounts(names=9):
             'name_resolutions': resolutions, 'selection_complete': True}
 
 
-def view_size(payload):
-    return len(json.dumps(model_view(model_result(payload)), ensure_ascii=False, separators=(',', ':')))
-
-
 class NameResolutionViewTests(unittest.IsolatedAsyncioTestCase):
-
-    def test_ambiguous_source_keeps_choices_and_linked_names(self):
-        for side in ('game', 'discord'):
-            payload = named_accounts(1)
-            payload['name_resolutions'][0].update(status='ambiguous', look_in=side, found_in=side,
-                                                  selected_accounts=[])
-            raw = deepcopy(payload)
-            view = family_model_view(payload)
-            resolution = view['name_resolutions'][0]
-            self.assertEqual(resolution['status'], 'ambiguous')
-            if side == 'game':
-                self.assertEqual(resolution['candidates'], [{key: a[key] for key in
-                    ('player_tag', 'player_name', 'member_id', 'member_name')}
-                    for a in raw['name_resolutions'][0]['candidates']])
-                self.assertNotIn('matching_members', resolution)
-            else:
-                self.assertEqual(resolution['matching_members'], [{
-                    'member_id': 100, 'member_name': 'Synthetic Navigator 0',
-                    'account_links_status': 'available', 'accounts': [
-                        {'player_tag': '#P00', 'player_name': 'Synthetic Navigator 0 account 0'},
-                        {'player_tag': '#P01', 'player_name': 'Synthetic Navigator 0 account 1'}]}])
-                self.assertNotIn('candidates', resolution)
-            self.assertEqual(family_model_view(view), view)
-            self.assertEqual(payload, raw)
 
 
     async def test_larger_selection_pages_rows_without_mutating_retained_names(self):
@@ -78,20 +47,19 @@ class NameResolutionViewTests(unittest.IsolatedAsyncioTestCase):
         page = await tool.handler(context, {'include_profile': True})
         self.assertNotIn('error', page)
         self.assertTrue(page['rows'])
-        self.assertIsNotNone(page['next_cursor'])
-        self.assertLessEqual(view_size(page), 16_000)
+        self.assertIsNone(page['next_cursor'])
+        self.assertEqual(page['rows'], payload['rows'])
         self.assertEqual(len(json.loads(context.state.reports[page['report_id']].payload)['rows']),
                          len(payload['rows']))
 
-    async def test_indivisible_large_header_keeps_a_successful_report_with_no_page_rows(self):
+    async def test_indivisible_large_header_keeps_a_complete_successful_report(self):
         payload = named_accounts(200)
         context = _context()
         tool = family_tool('read_member_accounts', 'Synthetic accounts.', {}, AsyncMock(return_value=payload))
         page = await tool.handler(context, {})
         self.assertNotIn('error', page)
         self.assertEqual((page['returned_rows'], page['total_rows'], page['next_offset']),
-                         (0, len(payload['rows']), 0))
-        self.assertLessEqual(view_size(page), 16_000)
+                         (len(payload['rows']), len(payload['rows']), None))
         retained = json.loads(context.state.reports[page['report_id']].payload)
         self.assertEqual(retained['summary']['name_resolutions'], payload['name_resolutions'])
         self.assertEqual(retained['rows'], payload['rows'])

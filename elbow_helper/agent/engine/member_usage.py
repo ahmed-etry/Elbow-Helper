@@ -77,6 +77,31 @@ class MemberUsageLimiter:
             reply = wording.format(n=max(1, math.ceil((expiry - now) / divisor)))
         raise MemberUsageLimit(reply)
 
+    def admit(self, guild_id, member_id):
+        """Hold a place in both allowances until the reply shows which one the request used."""
+        banter = self.acquire(guild_id, member_id, question=False)
+        try:
+            return banter, self.acquire(guild_id, member_id, question=True)
+        except MemberUsageLimit:
+            self._release(guild_id, member_id, banter, question=False)
+            raise
+
+    def settle(self, guild_id, member_id, entries, *, banter):
+        """Keep the place the request used and give back the other."""
+        banter_entry, question_entry = entries
+        if banter:
+            self._release(guild_id, member_id, question_entry, question=True)
+        else:
+            self._release(guild_id, member_id, banter_entry, question=False)
+
+    def _release(self, guild_id, member_id, entry, *, question):
+        usage = self._members.get((guild_id, member_id))
+        if usage is None:
+            return
+        entries = usage.questions if question else usage.banter
+        if entry in entries:
+            entries.remove(entry)
+
     def promote(self, guild_id, member_id, banter_entry):
         """Reclassify admitted banter only when research can proceed."""
         try:

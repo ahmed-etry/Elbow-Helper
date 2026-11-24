@@ -6,27 +6,30 @@ import logging
 
 import asyncio
 from dataclasses import fields, replace
-from datetime import datetime, timezone
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping
 import json
-import re
 import time
 from typing import Any
-from elbow_helper.infrastructure.ai import AgentToolResult
 from elbow_helper.agent.engine.models import AgentRequestContext
 from ..actions.contracts import ActionClass, ActionRefused, PreparedAction
+from ..actions.discord_failure import DiscordFailure, discord_failure
 from elbow_helper.agent.conversation.wording import ACTION_UNAVAILABLE
 from elbow_helper.agent.safety.access import AgentAccessLost, LookupAccessDenied
 from elbow_helper.agent.safety.access import has_lookup_access
 from elbow_helper.agent.safety.access import require_evidence_access
 from .capability_contract import CapabilityBindError
 from .capability_contract import require_source_provenance
-from ..reports.base import ArtifactCapacityError, retain_reports
 from ..research.member_provenance import member_target_issue
 from . import budgets as limits
 from .lookup_health import lookup_problem
 
 LOGGER = logging.getLogger(__name__)
+# A lookup that raised or broke its own result contract: the cause is in the log, not the data.
+BOT_ERROR = "That lookup failed because of a bot error."
+
+
+class AgentUnavailableError(RuntimeError):
+    """Raised when an agent request cannot produce a final answer."""
 
 
 async def execute_tool(
@@ -44,6 +47,7 @@ async def execute_tool(
     outcome = "failed"
     result_characters = 0
     private_before = set(context.state.scope_audit.private_candidates)
+    failure_text = BOT_ERROR if action_class is ActionClass.READ else ACTION_UNAVAILABLE
     try:
         await require_evidence_access(context)
         if action_class is not ActionClass.READ and (
@@ -101,7 +105,7 @@ async def execute_tool(
         outcome = "unbound_source"
         restore_tool_state(context, snapshot)
         LOGGER.warning("Agent tool omitted source provenance: tool=%s", name)
-        return error_result("That lookup failed.")
+        return error_result(failure_text)
     except AgentAccessLost:
         outcome = "access_lost"
         restore_tool_state(context, snapshot)
@@ -110,25 +114,30 @@ async def execute_tool(
         outcome = "cancelled"
         restore_tool_state(context, snapshot)
         raise
-    except asyncio.TimeoutError:
-        outcome = "timed_out"
+    except asyncio.TimeoutError as error:
         restore_tool_state(context, snapshot)
+        if (failure := discord_failure(error)) is not None:
+            outcome = "discord_failed"
+            return discord_failed_result(name, context, failure)
+        outcome = "timed_out"
         LOGGER.warning(
             "Agent tool timed out: tool=%s invoker=%s",
             name,
             context.member.id,
         )
         return error_result("That lookup timed out.")
-    except Exception:
-        outcome = "failed"
+    except Exception as error:
         restore_tool_state(context, snapshot)
+        if (failure := discord_failure(error)) is not None:
+            outcome = "discord_failed"
+            return discord_failed_result(name, context, failure)
+        outcome = "failed"
         LOGGER.exception(
             "Agent tool failed: tool=%s invoker=%s",
             name,
             context.member.id,
         )
-        return error_result(ACTION_UNAVAILABLE if action_class is not ActionClass.READ
-                            else "That lookup failed.")
+        return error_result(failure_text)
     except BaseException:
         outcome = "failed"
         restore_tool_state(context, snapshot)
@@ -172,62 +181,6 @@ def capture_detail_provenance(context, snapshot, scope) -> None:
     context.state.required_access = set(snapshot["required_access"])
 
 
-def evidence_record(
-    *,
-    call_id: str,
-    tool: str,
-    arguments: Mapping[str, Any],
-    result: str,
-    raw_result_characters: int,
-    result_complete: bool,
-    model_result_content: str | None = None,
-    capability_scope: Mapping[str, Any] | None = None,
-    context: AgentRequestContext,
-    plan: Mapping[str, Any] | None = None,
-) -> str:
-    """Keep the model view's exact scope and access provenance for reuse."""
-    try:
-        payload = json.loads(result)
-    except ValueError:
-        payload = None
-    if isinstance(payload, dict) and (
-        "error" in payload or payload.get("flags", {}).get("status") == "failed"
-    ):
-        status = "error"
-    elif not result_complete or (
-        isinstance(payload, dict)
-        and (payload.get("truncated") or payload.get("flags", {}).get("status") == "partial")
-    ):
-        status = "partial"
-    else:
-        status = "complete"
-    return json.dumps(
-        {
-            "call_id": call_id,
-            **({'plan': plan} if plan is not None else {}),
-            "tool": tool,
-            "arguments": arguments,
-            "result": result,
-            **({"model_result": model_result_content} if model_result_content is not None else {}),
-            "result_status": status,
-            "raw_result_characters": raw_result_characters,
-            "result_complete": status == "complete",
-            "capability_scope": dict(
-                capability_scope
-                or {
-                    "precision": "schema_only",
-                    "capability": tool,
-                }
-            ),
-            "observed_at": datetime.now(timezone.utc).isoformat(),
-            "source_channels": sorted(context.state.source_channels),
-            "required_access": sorted(context.state.required_access | context.state.knowledge_title_access),
-            "knowledge_sources": sorted(context.state.knowledge_sources),
-        },
-        ensure_ascii=False,
-    )
-
-
 def record_report_provenance(
     context: AgentRequestContext,
     previous: Mapping[str, Any],
@@ -247,108 +200,6 @@ def record_report_provenance(
         for report_id in tuple(provenance):
             if report_id not in retained:
                 provenance.pop(report_id)
-
-
-def clone_tool_state(state):
-    return replace(
-        state,
-        **{
-            field.name: value.copy()
-            for field in fields(state)
-            if isinstance(value := getattr(state, field.name), (dict, list, set))
-        },
-    )
-
-
-def merge_tool_state(
-    target: AgentRequestContext, local: AgentRequestContext, previous: Mapping[str, Any],
-    protected: Collection[str] = (),
-) -> None:
-    """Merge a step's state; `protected` reports are still needed by unfinished steps."""
-    additions = tuple(
-        report
-        for key, report in local.state.reports.items()
-        if previous["reports"].get(key) is not report
-    )
-    protected = set(protected)
-    if additions:
-        kept = protected & (target.state.reports.keys() | {report.report_id for report in additions})
-        try:
-            retain_reports(target.state.reports, additions, protected_report_ids=kept)
-        except ArtifactCapacityError:
-            if not kept:
-                raise
-            # Keeping every needed report is impossible; evict oldest first and
-            # remember which needed ones were lost so dependents can say why.
-            held = set(target.state.reports)
-            retain_reports(target.state.reports, additions)
-            target.state.unkept_reports.update((held & kept) - target.state.reports.keys())
-    target.state.unkept_reports.update(local.state.unkept_reports)
-    target.state.feedback_lookup_problem |= local.state.feedback_lookup_problem
-    if local.state.catalogue != previous['catalogue']:
-        target.state.catalogue = replace(target.state.catalogue,
-            opened=target.state.catalogue.opened | local.state.catalogue.opened,
-            withheld={**target.state.catalogue.withheld, **local.state.catalogue.withheld},
-            data_guide=local.state.catalogue.data_guide or target.state.catalogue.data_guide)
-    target.state.source_channels.update(local.state.source_channels)
-    target.state.source_access.update(local.state.source_access)
-    target.state.required_access.update(local.state.required_access)
-    target.state.help_requester_access.update(local.state.help_requester_access)
-    target.state.knowledge_title_access.update(local.state.knowledge_title_access)
-    target.state.knowledge_sources.update(local.state.knowledge_sources)
-    target.state.history_cursors.update(local.state.history_cursors)
-    target.state.resolved_members.update(local.state.resolved_members)
-    target.state.candidate_member_ids.update(local.state.candidate_member_ids)
-    for name in ("reports", "report_sources", "report_access_requirements"):
-        destination = getattr(target.state, name)
-        selected = getattr(local.state, name)
-        for key in previous[name].keys() - selected.keys():
-            if key not in protected and destination.get(key) == previous[name][key]:
-                destination.pop(key, None)
-        for key, value in selected.items():
-            if previous[name].get(key) is not value and previous[name].get(key) != value:
-                destination[key] = value
-    retained = set(target.state.reports)
-    for provenance in (target.state.report_sources, target.state.report_access_requirements):
-        for key in tuple(provenance):
-            if key not in retained:
-                provenance.pop(key)
-    target.state.preserved_reports.update(local.state.preserved_reports)
-    target.state.preserved_report_sources.update(local.state.preserved_report_sources)
-    target.state.preserved_report_access_requirements.update(
-        local.state.preserved_report_access_requirements
-    )
-    for attachment in local.state.attachments:
-        if ((attachment.report_id or "").startswith("spreadsheet:")
-                and attachment in previous["attachments"]):
-            continue
-        if attachment not in target.state.attachments:
-            if (attachment.report_id or "").startswith("spreadsheet:"):
-                target.state.attachments[:] = [
-                    item for item in target.state.attachments
-                    if not (item.report_id or "").startswith("spreadsheet:")
-                ]
-            target.state.attachments.append(attachment)
-    target.state.history_status.update(local.state.history_status)
-    if local.state.gif_url != previous["gif_url"]:
-        target.state.gif_url = local.state.gif_url
-        target.state.gif_attachment = local.state.gif_attachment
-        target.state.gif_item_id = local.state.gif_item_id
-    for name in ("reply_to", "ping_author"):
-        if getattr(local.state, name) != previous[name]:
-            setattr(target.state, name, getattr(local.state, name))
-    if local.state.authorized_history is not None:
-        target.state.authorized_history = local.state.authorized_history
-    if local.state.authorized_checkpoint is not None:
-        target.state.authorized_checkpoint = local.state.authorized_checkpoint
-    target.state.working = local.state.working
-    target.state.authorized_instructions = local.state.authorized_instructions
-    target.state.outcomes.extend(
-        local.state.outcomes[len(previous["outcomes"]) :]
-    )
-    target.state.proposed_changes.extend(
-        local.state.proposed_changes[len(previous["proposed_changes"]) :]
-    )
 
 
 def tool_state_snapshot(context: AgentRequestContext) -> dict[str, Any]:
@@ -376,360 +227,14 @@ def restore_tool_state(
             setattr(context.state, name, saved)
 
 
-async def discard_unpublished_results(
-    context: AgentRequestContext,
-    snapshot: Mapping[str, Any],
-    results: Sequence[AgentToolResult],
-) -> list[AgentToolResult]:
-    """Discard unsent evidence; never continue with revoked model context."""
-    restore_tool_state(context, snapshot)
-    # This includes rollout eligibility, the request channel, earlier evidence and
-    # role requirements. Loss of anything already in the prompt still aborts.
-    await require_evidence_access(context)
-    LOGGER.warning(
-        "Agent unpublished evidence discarded: " "request=%s invoker=%s results=%s",
-        getattr(context.source_message, "id", None),
-        context.member.id,
-        len(results),
-    )
-    return [
-        AgentToolResult(result.call_id, error_result("That lookup failed.")) for result in results
-    ]
-
-
-def bound_tool_result(content: str, limit: int, *, arguments: Mapping[str, Any] | None = None) -> str:
-    if limit < 2:
-        return ""
-    if len(content) <= limit:
-        return content
-    try:
-        payload = json.loads(content)
-    except ValueError:
-        payload = None
-    if isinstance(payload, dict):
-        from elbow_helper.agent.reads.paging import bound_family_page
-        family = bound_family_page(payload, limit)
-        if family is not None:
-            return family
-    clash = _clash_size_limit(content, limit, arguments=arguments)
-    if clash is not None:
-        return clash
-    return _record_size_limit(content, limit)
-
-
-def _record_size_limit(content: str, limit: int) -> str:
-    """Keep complete records, including compact table rows, within the budget."""
-    try:
-        payload = json.loads(content)
-    except ValueError:
-        payload = None
-    if isinstance(payload, list):
-        payload = {"records": payload}
-    if not isinstance(payload, dict):
-        payload = {}
-    payload["truncated"] = True
-    flags = payload.get("flags")
-    if isinstance(flags, dict):
-        # The lookup's flags were set before this cut and would still say complete.
-        payload["flags"] = {**flags, "truncated": True,
-                            "status": "failed" if flags.get("status") == "failed" else "partial"}
-
-    # SQL's row count must describe the rows actually delivered, including
-    # compact tables nested in final-answer evidence and earlier SQL cuts.
-    query_tables = []
-
-    def find_query_tables(value):
-        if not isinstance(value, dict):
-            return
-        rows = value.get('rows')
-        if (value.get('source') == 'bot_data' and type(value.get('row_count')) is int
-                and isinstance(rows, (list, dict))):
-            query_tables.append((value, value.get('total_rows', value['row_count'])))
-        for child in value.values():
-            if isinstance(child, dict):
-                find_query_tables(child)
-
-    find_query_tables(payload)
-
-    def encode():
-        for table, total in query_tables:
-            rows = table['rows']
-            kept = len(rows.get('rows', ())) if isinstance(rows, dict) else len(rows)
-            if kept < total:
-                table.update(row_count=kept, total_rows=total, rows_cut=total - kept, truncated=True)
-                table['instruction'] = (
-                    f"The result is incomplete: {total - kept} rows were cut to fit this read. "
-                    "Select fewer columns, filter or group the query. "
-                    "Do not present these rows as the full answer."
-                )
-        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-
-    def collections(value, path=""):
-        if not isinstance(value, dict):
-            return
-        for key, child in value.items():
-            if key == "truncated_collections":
-                continue
-            child_path = f"{path}.{key}" if path else key
-            if isinstance(child, list) and key != "columns" and child:
-                yield value, key, child_path
-            elif isinstance(child, dict):
-                yield from collections(child, child_path)
-
-    def retain(rows, count, owner):
-        columns = owner.get('columns', ())
-        index = columns.index('message_id') if isinstance(columns, (list, tuple)) and 'message_id' in columns else None
-        def identity(row):
-            return (row.get('message_id') if isinstance(row, dict) else
-                    row[index] if index is not None and isinstance(row, (list, tuple)) and len(row) > index else None)
-        ids = [identity(row) for row in rows]
-        if ids and all(str(value).isdecimal() for value in ids):
-            # Keep later decisions in dated Discord evidence. Select by the
-            # immutable snowflake, then preserve the original display order.
-            selected = set(sorted(range(len(rows)), key=lambda i: int(ids[i]), reverse=True)[:count])
-            return [row for i, row in enumerate(rows) if i in selected]
-        return rows[:count]
-
-    while len(encode()) > limit:
-        candidates = list(collections(payload))
-        if not candidates:
-            # Even metadata or one scalar can exceed the entire allowance.
-            # Expose no partial record or raw JSON prefix as usable evidence.
-            empty = '{"truncated":true,"returned_records":0}'
-            return empty if len(empty) <= limit else "{}"
-        owner, key, path = max(candidates, key=lambda item: len(json.dumps(item[0][item[1]], ensure_ascii=False)))
-        rows = owner[key]
-        omitted = payload.setdefault("truncated_collections", {})
-        omitted.setdefault(path, {"total_records": len(rows)})
-        # Share pressure across large collections instead of emptying one
-        # discussion to make room for another equally large discussion.
-        kept = len(rows) // 2
-        owner[key] = retain(rows, kept, owner)
-        omitted[path]['returned_records'] = kept
-        if len(encode()) > limit:
-            continue
-        low, high = kept, len(rows) - 1
-        while low <= high:
-            midpoint = (low + high) // 2
-            owner[key] = retain(rows, midpoint, owner)
-            omitted[path]["returned_records"] = midpoint
-            if len(encode()) <= limit:
-                kept = midpoint
-                low = midpoint + 1
-            else:
-                high = midpoint - 1
-        owner[key] = retain(rows, kept, owner)
-        omitted[path]["returned_records"] = kept
-    return encode()
-
-
-def _clash_size_limit(content: str, limit: int, *, arguments: Mapping[str, Any] | None = None) -> str | None:
-    """Do not expose an arbitrary JSON excerpt as part of a Clash dataset."""
-    try:
-        payload = json.loads(content)
-    except ValueError:
-        return None
-    if not isinstance(payload, dict):
-        return None
-    if payload.get("source") != "clash_api":
-        return None
-    live = payload
-    from copy import deepcopy
-    from elbow_helper.agent.reads.clash import summary, collection_counts, omitted_fields, select_fields
-    from ..plan.results import compact_result
-
-    def records(value):
-        if isinstance(value, dict):
-            if set(value) == {"columns", "rows"}:
-                return [records(dict(zip(value["columns"], row))) for row in value["rows"]]
-            return {key: records(item) for key, item in value.items()}
-        return [records(item) for item in value] if isinstance(value, list) else value
-
-    def collapse(counts):
-        """One count per collection path: per-row notes must not use up the allowance."""
-        combined = {}
-        for path, count in counts.items():
-            key = re.sub(r"/\d+(?=/|$)", "/*", path)
-            total = combined.setdefault(key, {"returned_rows": 0, "total_rows": 0})
-            total["returned_rows"] += count.get("returned_rows", 0)
-            total["total_rows"] += count.get("total_rows", 0)
-        return combined
-
-    bounded = records(deepcopy(payload))
-    target = bounded
-    items = target.get("items", [])
-    for item in items:
-        if isinstance(item.get("row_counts"), dict):
-            item["row_counts"] = collapse(item["row_counts"])
-    totals = [{"tag": item["tag"], "status": item["status"], "collections": {
-        path: {"returned_rows": 0, "total_rows": count["total_rows"]}
-        for path, count in item.get("row_counts", {}).items()
-    }} for item in items]
-    target.update(truncated=True, flags={**target.get("flags", {}),
-                                         "status": "partial", "truncated": True})
-    # Fetch outcomes survive every projection/page. Missing evidence is not a
-    # failed API read, including for tags whose entire data is omitted below.
-    target["read_statuses"] = {item["tag"]: item["status"] for item in items}
-    target["flags"]["limits"] = sorted(set(target["flags"].get("limits", ())) | {"evidence_size_limit"})
-
-    def encode():
-        paths = sorted({'.'.join(part for part in path.split('/') if part and part != '*')
-                        for item in items for path in item.get('omitted_fields', ())})
-        if paths and arguments is not None:
-            target['omitted_field_reads'] = [
-                {'capability': 'read_clash', 'arguments': {**arguments, 'fields': paths[start:start + 40]}}
-                for start in range(0, len(paths), 40)
-            ]
-        return json.dumps(compact_result(bounded), ensure_ascii=False, separators=(",", ":"))
-
-    def project(item, projected, mode):
-        original = item["data"]
-        missing = omitted_fields(original, projected)
-        item.update(data=projected, projection=mode, truncated=True)
-        item["omitted_fields"] = sorted(set(item.get("omitted_fields", ())) | set(missing))
-        counts = collapse(collection_counts(projected, original))
-        item["row_counts"] = {path: {
-            "returned_rows": 1 if path == "/" else counts.get(path, {}).get("returned_rows", 0),
-            "total_rows": count["total_rows"],
-        } for path, count in item.get("row_counts", {}).items()}
-
-    def fit_rows(mode):
-        """Keep the same number of leading rows in every account's collections."""
-        kept = [(item, item["data"], dict(item.get("row_counts", {})), deepcopy(item.get("coverage")))
-                for item in items if item.get("status") == "ok" and isinstance(item.get("data"), dict)]
-
-        def cut(value, count):
-            if isinstance(value, list):
-                return [cut(row, count) for row in value[:count]]
-            if isinstance(value, dict):
-                return {key: cut(child, count) for key, child in value.items()}
-            return value
-
-        def longest(value):
-            if isinstance(value, list):
-                return max([len(value), *(longest(row) for row in value)])
-            if isinstance(value, dict):
-                return max([0, *(longest(child) for child in value.values())])
-            return 0
-
-        def apply(count):
-            for item, data, counts, coverage in kept:
-                item.update(data=data, row_counts=counts)
-                project(item, cut(data, count), mode)
-                if isinstance(coverage, dict) and type(coverage.get("returned_rows")) is int:
-                    # A selected battle page shows fewer rows; the rest stay readable by offset.
-                    shown = min(count, coverage["returned_rows"])
-                    item["coverage"] = {**{key: value for key, value in coverage.items()
-                                           if key != "returned_range" or shown == coverage["returned_rows"]},
-                                        "returned_rows": shown,
-                                        **({"selection_complete": False,
-                                            "next_offset": coverage.get("offset", 0) + shown}
-                                           if shown < coverage["returned_rows"] else {})}
-
-        low, high, best = 0, max([0, *(longest(data) for _, data, _, _ in kept)]), None
-        while low <= high:
-            middle = (low + high) // 2
-            apply(middle)
-            if len(encode()) <= limit:
-                best, low = middle, middle + 1
-            else:
-                high = middle - 1
-        if best is None:
-            apply(0)
-            return None
-        apply(best)
-        return encode()
-
-    # Fields the plan selected are the evidence it asked for: cut rows, never
-    # swap them for the general summary.
-    if live.get("projection") == "fields":
-        encoded = fit_rows("fields")
-        if encoded is not None and len(encoded) <= limit:
-            return encoded
-    else:
-        # Full profiles can be large. Keep every completed account's compact facts
-        # before considering a smaller page. Missing fields are explicit, never an
-        # arbitrary JSON excerpt passed off as a complete profile.
-        for item in items:
-            original = item.get("data")
-            if item.get("status") == "ok" and isinstance(original, dict):
-                projected = summary(live.get("kind"), original)
-                if projected != original:
-                    project(item, projected, "summary")
-        target["projection"] = "summary"
-        encoded = encode()
-        if len(encoded) <= limit:
-            return encoded
-
-    # Preserve the league/count facts of the entire cohort when even summaries
-    # are too large. Do not lose a zero-trophy account's ranked league.
-    if live.get("kind") in ("player", "clan") and live.get("projection") != "fields":
-        keys = ("tag", "name", "townHallLevel", "role", "leagueTier", "league", "trophies", "bestTrophies") \
-            if live["kind"] == "player" else (
-                "tag", "name", "members", "memberList.tag", "memberList.townHallLevel",
-            )
-        for item in items:
-            if isinstance(item.get("data"), dict):
-                project(item, select_fields(item["data"], keys), "facts")
-        target["projection"] = "facts"
-        encoded = encode()
-        if len(encoded) <= limit:
-            return encoded
-
-    # A bounded prefix is still useful. The remainder can be read using the
-    # normal tags argument and request cache, without repeating completed I/O.
-    target["items"] = []
-    target["total_accounts"] = len(items)
-    target["next_tags"] = [item["tag"] for item in items]
-    target["row_counts"] = totals
-    target["omitted_fields"] = ["/items/*/data"]
-    best = encode()
-    fitted = 0
-    for index, item in enumerate(items):
-        target["items"].append(item)
-        target["next_tags"] = [row["tag"] for row in items[index + 1:]]
-        target["row_counts"] = totals[index + 1:]
-        encoded = encode()
-        if len(encoded) > limit:
-            break
-        best, fitted = encoded, index + 1
-    if fitted == 0 and live.get("projection") != "fields":
-        # Not even one account fits whole: fewer rows from every account still
-        # answer more than an empty page.
-        for key in ("total_accounts", "next_tags", "row_counts", "omitted_fields"):
-            target.pop(key, None)
-        target["items"] = items
-        encoded = fit_rows(target.get("projection", "summary"))
-        if encoded is not None and len(encoded) <= limit:
-            return encoded
-        target.update(items=[], total_accounts=len(items), next_tags=[item["tag"] for item in items],
-                      row_counts=totals, omitted_fields=["/items/*/data"])
-    if len(best) <= limit:
-        return best
-    # Large batches can exhaust the allowance with per-account collection
-    # metadata alone. Still identify every read outcome and omitted tag.
-    combined_counts = {}
-    for item in totals:
-        for path, count in item["collections"].items():
-            combined = combined_counts.setdefault(path, {"returned_rows": 0, "total_rows": 0})
-            combined["total_rows"] += count["total_rows"]
-    total_rows = sum(count["total_rows"] for count in combined_counts.values())
-    minimal = {
-        "source": "clash_api", "kind": live.get("kind"), "truncated": True,
-        "flags": target["flags"], "read_statuses": target["read_statuses"],
-        "next_tags": [item["tag"] for item in items], "returned_rows": 0, "total_rows": total_rows,
-        "omitted_fields": ["/items/*/data"], "omitted_collection_counts": combined_counts,
-        **({'omitted_field_reads': target['omitted_field_reads']} if target.get('omitted_field_reads') else {}),
-    }
-    encoded = json.dumps(minimal, ensure_ascii=False, separators=(",", ":"))
-    if len(encoded) <= limit:
-        return encoded
-    encoded = json.dumps({"truncated": True, "returned_rows": 0,
-                          "total_rows": total_rows},
-                         separators=(",", ":"))
-    return encoded if len(encoded) <= limit else ""
-
-
-
 def error_result(message: str) -> str:
     return json.dumps({"error": message}, ensure_ascii=False)
+
+
+def discord_failed_result(name: str, context: AgentRequestContext, failure: DiscordFailure) -> str:
+    """Log the exception being handled, and say which kind of Discord failure it was."""
+    LOGGER.exception(
+        "Agent tool Discord failure: tool=%s invoker=%s kind=%s status=%s",
+        name, context.member.id, failure.kind, failure.status,
+    )
+    return json.dumps({"error": failure.text, "cause": "source_unavailable"})

@@ -14,8 +14,6 @@ from elbow_helper.agent.commands import CommandAdapter, build_command_capabiliti
 from elbow_helper.agent.commands.bridge import build_command_tools
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.agent.engine.adapters import enabled_adapters
-from elbow_helper.agent.plan.format import capability_list
-from elbow_helper.agent.engine.models import RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
 from elbow_helper.features.clan_health.commands.health import ClanHealthRootCommandMixin
 from elbow_helper.agent.engine.models import AgentTurnState
@@ -88,36 +86,6 @@ class CommandRegistryTests(unittest.TestCase):
             ["last_7d", "last_14d", "last_30d", "custom"],
         )
 
-    def test_registered_options_and_help_define_the_capability(self):
-        path = "/synthetic inspect"
-        command = DiscoveredCommand(path, "registered description", (
-            ParameterInfo("target", "Choose a target.", True, "string"),
-            ParameterInfo("mode", "Choose a mode.", False, "string",
-                          ("First", "Second"), False, ("first", "second")),
-        ))
-        help_entry = SimpleNamespace(path=path, summary="Inspect a target.",
-                                     details="Shows its current state.", visible_to=frozenset({42}))
-        adapter = CommandAdapter(path, "public", AsyncMock())
-        with (patch("elbow_helper.agent.commands.registry.discover_commands",
-                    return_value={path: command}),
-              patch("elbow_helper.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
-            capabilities = build_command_capabilities(object(), (adapter,))
-        capability = capabilities["synthetic_inspect"]
-        self.assertEqual(capability.required, ("target",))
-        self.assertEqual(capability.visible_to, frozenset({42}))
-        catalogue = capability_list({"synthetic_inspect": RegisteredAgentTool(
-            capability.definition, AsyncMock(), AgentCapabilityEffect.COMMAND,
-        )})
-        self.assertIn("target:str*", catalogue)
-        self.assertEqual(capability.definition.description,
-                         "Inspect a target.")
-        self.assertEqual(capability.definition.parameters["properties"]["mode"]["enum"],
-                         ["first", "second"])
-        self.assertNotIn("description",
-                         capability.definition.parameters["properties"]["mode"])
-        self.assertEqual(capability.option_info[1].choices, ("First", "Second"))
-        self.assertEqual(capability.option_info[1].description, "Choose a mode.")
-
     def test_unregistered_or_missing_help_commands_stay_hidden(self):
         adapter = CommandAdapter("/synthetic", "public", AsyncMock())
         command = DiscoveredCommand("/synthetic", "Registered.", ())
@@ -128,8 +96,6 @@ class CommandRegistryTests(unittest.TestCase):
                         return_value=commands),
                   patch("elbow_helper.agent.commands.registry.HELP_ENTRIES", entries)):
                 self.assertEqual(build_command_capabilities(object(), (adapter,)), {})
-
-
 
     def test_agent_option_can_use_a_resolved_numeric_key(self):
         path = "/synthetic inspect"

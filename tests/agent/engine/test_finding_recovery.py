@@ -5,26 +5,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from elbow_helper.agent.cog import AgentCog
 from elbow_helper.agent.actions.outcomes import ActionOutcome, command_reply
-from elbow_helper.agent.knowledge.answers import scoped_answer
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class FindingRecoveryTests(unittest.TestCase):
     def test_failed_command_does_not_append_a_failure_to_successful_reads(self):
         self.assertEqual(command_reply([ActionOutcome.unavailable()], has_findings=True), '')
         self.assertEqual(command_reply([], has_findings=True), '')
-
-
-    def test_invalid_envelope_never_dumps_observed_fields_or_hidden_details(self):
-        context = _context()
-        context.state.request_text = 'Compare these accounts'
-        context.state.scope_audit.excluded['unrelated'] = 'role_scope'
-        context.state.grounding_evidence = {'profiles': {'rows': [{'name': 'Synthetic', 'townHallLevel': 16}]}}
-        answer = scoped_answer(context, '{"answer":')
-        self.assertNotIn('Synthetic', answer)
-        self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
-        self.assertNotIn('visible to everyone', answer)
-        self.assertFalse(context.state.scope_audit.offered)
 
 
 class StoppedRequestTests(unittest.IsolatedAsyncioTestCase):

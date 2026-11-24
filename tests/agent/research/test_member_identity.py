@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import Mock
 
 from elbow_helper.agent.research.members import find_discord_members
-from tests.agent.engine.test_agent_service import _context
+from tests.agent.request_fixtures import member_context as _context
 
 
 def member(identifier, username, *, nickname=None, aliases=()):

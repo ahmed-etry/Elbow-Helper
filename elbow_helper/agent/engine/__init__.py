@@ -1,1 +1,1 @@
-"""Request orchestration and capability contracts."""
+"""Shared capability contracts and tool execution helpers."""

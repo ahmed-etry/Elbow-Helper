@@ -240,7 +240,7 @@ async def prepare_post(context: AgentRequestContext,
             and "@everyone" not in arguments["text"] and "@here" not in arguments["text"]
             and not re.search(r"<@&\d+>", arguments["text"])):
         async with context.state.reply_delivery.lock:
-            from ..engine.grounding import GroundingError, ground_answer, partial_answer
+            from .source_references import GroundingError, ground_answer, partial_answer
             try:
                 text = ground_answer(arguments["text"], context.state.grounding_evidence, context.guild.id)
             except GroundingError as error:

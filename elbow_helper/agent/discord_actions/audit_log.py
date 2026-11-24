@@ -7,8 +7,7 @@ from typing import Any
 import discord
 
 from elbow_helper.agent.safety.access import ACCESS_VIEW_AUDIT_LOG, require_evidence_access, require_lookup_access
-from .management import ID, guard, text, tool
-from .safety import DiscordActionRefused
+from .management import ID, guard, tool
 
 
 @dataclass(frozen=True)
@@ -37,14 +36,24 @@ class AuditSnapshot:
     entries: list[AuditEntry]
     examined_entries: int
     truncated: bool
+    # Older entries remain: pass this as before to read on from here.
+    next_before: int | None = None
+
+
+# Entries Discord returns per audit log read; matches are filtered from them.
+SCAN = 100
 
 
 def audit_tools():
     return (tool(
         "read_discord_audit_log",
         "Read recent audit entries privately, filtered by action or target.",
-        {"action_type": text(100), "member_id": ID, "target_id": ID,
-         "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, (), read_audit,
+        {"action_type": {"type": "string", "title": "audit actions",
+                         "enum": [action.name for action in discord.AuditLogAction]},
+         "member_id": ID, "target_id": ID,
+         "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+         "before": {**ID, "description": f"Read entries older than this entry ID. Each read checks {SCAN} "
+                                         "entries; pass next_before to check older ones."}}, (), read_audit,
         read=True, entities=(("member_id", "discord_member"), ("target_id", "discord_target")),
         required_access=frozenset({ACCESS_VIEW_AUDIT_LOG}),
     ),)
@@ -87,18 +96,18 @@ async def read_audit(context, arguments):
     await require_evidence_access(context)
     guard(context, "view_audit_log")
     require_lookup_access(context, {ACCESS_VIEW_AUDIT_LOG})
-    options = {"limit": 100}
+    options = {"limit": SCAN}
     if "member_id" in arguments:
         options["user"] = discord.Object(arguments["member_id"])
+    if "before" in arguments:
+        options["before"] = discord.Object(arguments["before"])
     if "action_type" in arguments:
-        try:
-            options["action"] = discord.AuditLogAction[arguments["action_type"]]
-        except KeyError as error:
-            raise DiscordActionRefused("The selected audit action is invalid.") from error
-    matches, scanned = [], 0
+        options["action"] = discord.AuditLogAction[arguments["action_type"]]
+    matches, scanned, last = [], 0, None
     limit = arguments.get("limit", 25)
     async for entry in context.guild.audit_logs(**options):
         scanned += 1
+        last = entry.id
         if ("target_id" not in arguments
                 or getattr(entry.target, "id", None) == arguments["target_id"]):
             matches.append(entry_row(entry))
@@ -106,4 +115,7 @@ async def read_audit(context, arguments):
     require_lookup_access(context, {ACCESS_VIEW_AUDIT_LOG})
     context.state.required_access.add(ACCESS_VIEW_AUDIT_LOG)
     await require_evidence_access(context)
-    return asdict(AuditSnapshot(matches[:limit], scanned, scanned == 100 or len(matches) > limit))
+    # Entries come newest first: continue after the last match shown, or else after the last entry checked.
+    next_before = (matches[limit - 1].entry_id if len(matches) > limit
+                   else last if scanned == SCAN else None)
+    return asdict(AuditSnapshot(matches[:limit], scanned, scanned == SCAN or len(matches) > limit, next_before))

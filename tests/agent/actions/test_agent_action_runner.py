@@ -110,7 +110,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_transport_failures_are_unconfirmed(self):
         for error in (TimeoutError("Synthetic"), discord.HTTPException(
             SimpleNamespace(status=503, reason="Unavailable"), "Synthetic",
-        )):
+        ), discord.ConnectionClosed(SimpleNamespace(close_code=1006), shard_id=None)):
             with self.subTest(error=type(error).__name__):
                 action, _, run = self.action("first")
                 run.side_effect = error
@@ -118,6 +118,15 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["steps"][0]["status"], "uncertain")
                 self.assertEqual(self.progress.edit.await_args.kwargs["content"],
                     "Couldn't confirm: first. Check before asking me to retry.")
+
+    async def test_refused_requests_are_not_unconfirmed(self):
+        for status in (404, 429):
+            with self.subTest(status=status):
+                action, _, run = self.action("first")
+                run.side_effect = discord.HTTPException(
+                    SimpleNamespace(status=status, reason="Synthetic"), "Synthetic")
+                result = await self.run_actions(action)
+                self.assertEqual(result["steps"][0]["status"], "failed")
 
     async def test_unrecorded_success_is_never_written_as_failed(self):
         action, _, run = self.action("first")

@@ -222,6 +222,9 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         league = war("warEnded", clans=("#PY", "#CU"), end=october)
         league.update(attacksPerMember=1, preparationStartTime="20261008T080000.000Z", startTime="20261009T080000.000Z")
         await self.record(league, kind="cwl_war", scope="#R0", at=NOVEMBER + HOUR)
+        week = [row for row in (await self.reads.log_entries("#PY"))["rows"] if row["kind"] == "league_week"]
+        self.assertEqual(len(week), 1)
+        self.assertNotIn("result", week[0])
         counted = await monthly_results(self.reads, "#PY", "2026-10", NOVEMBER + 2 * HOUR)
         self.assertEqual({key: counted[key] for key in ("status", "wins", "losses", "ties", "total", "unknown_result")},
                           {"status": "available", "wins": 1, "losses": 1, "ties": 1, "total": 3, "unknown_result": 0})

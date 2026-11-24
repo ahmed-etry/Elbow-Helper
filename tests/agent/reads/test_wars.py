@@ -7,7 +7,7 @@ from elbow_helper.domain.war_participation import aggregate_participation
 from elbow_helper.agent.reads import record_wars, war_tools as war_reads
 from elbow_helper.configuration.clans import CLANS
 from tests.agent.features.cwl.cwl_helpers import ResultQueries
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.agent.reads.record_stub import empty_reads
 
 

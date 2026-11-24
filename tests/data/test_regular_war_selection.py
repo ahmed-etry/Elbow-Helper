@@ -60,6 +60,15 @@ class RegularSelectionTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len({view['war_id'] for view in source['wars']}), 2)
         self.assertEqual(source['friendly_wars_not_counted'], 1)
 
+    async def test_latest_completed_skips_a_newer_war_never_seen_ending(self):
+        await self.record(war('warEnded'))
+        stale = war('inWar', clans=('#PY', '#CU'), end='20261030T180000.000Z')
+        stale.update(preparationStartTime='20261029T170000.000Z', startTime='20261029T180000.000Z')
+        await self.record(stale, at=END + 2 * DAY)
+        latest = await self.select(latest_completed=1)
+        self.assertEqual([view['state'] for view in latest['wars']], ['warEnded'])
+        self.assertEqual(latest['wars'][0]['end_at'], END)
+
     async def test_partial_and_stub_attacks_do_not_invent_final_misses_or_measurements(self):
         await self.record(war('warEnded'))
         await self.execute("UPDATE war_sides SET attacks=4 WHERE clan_tag='#PY'")

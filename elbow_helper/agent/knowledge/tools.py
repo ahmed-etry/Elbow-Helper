@@ -13,12 +13,19 @@ from elbow_helper.agent.engine.models import RegisteredAgentTool
 from .store import VISIBILITIES
 
 
+MAX_SEARCHES = 5
+HITS_PER_PAGE = 30
+
+
 def knowledge_tools():
     return (RegisteredAgentTool(AgentToolDefinition(
         "search_approved_knowledge",
-        "Open matching titles first; search sections within the active destination scope.",
+        "Searches note text with several wordings and returns matching lines with their section.",
         {"type":"object", "properties":{
             "query":{"type":"string", "minLength":0, "maxLength":200},
+            "searches":{"type":"array", "minItems":1, "maxItems":MAX_SEARCHES,
+                        "description":"Wordings to look for in note text. With titles, only those sections or files are searched.",
+                        "items":{"type":"string", "minLength":1, "maxLength":200}},
             "titles":{"type":"array", "minItems":1, "maxItems":5, "uniqueItems":True,
                       "description":"Exact indexed headings or filenames. Query searches within selected files.",
                       "items":{"type":"string"}},
@@ -27,7 +34,9 @@ def knowledge_tools():
             "limit":{"type":"integer", "minimum":1, "maximum":8},
             "section_offset":{"type":"integer", "minimum":0}},
          "required":[], "additionalProperties":False},
-        usage_note="Open indexed headings for community questions. Filenames restrict query; exact headings open fully. Page relevant sections before claiming knowledge is missing."), search_approved_knowledge,
+        usage_note=("Up to 5 searches; word forms match (post, posted). A hit is a line with its section title and "
+                    "file, most searched words first; offset pages on. titles open full sections; query ranks "
+                    "whole sections.")), search_approved_knowledge,
         contract=CapabilityContract(())),)
 
 
@@ -59,10 +68,19 @@ async def search_approved_knowledge(context, arguments):
     # returned to the model, retained as evidence, or paged in a shared answer.
     metadata = tuple(replace(section, body="") for section in excluded
                      if has_reader_access_requirements(context.guild, context.member.id, {section.visibility}))
-    if arguments.get("titles"):
-        relevant, _ = catalog.select(metadata, titles=arguments["titles"], query=arguments.get("query", ""))
+    searches = arguments.get("searches")
+    if searches is not None and not (isinstance(searches, list) and 1 <= len(searches) <= MAX_SEARCHES
+                                     and all(isinstance(search, str) for search in searches)):
+        return {"error": f"Use 1 to {MAX_SEARCHES} searches, each a string."}
+    if searches:
+        # A restricted section counts as relevant by its title only; its lines are never searched.
+        # titles narrow what is returned: the model cannot name a section it was never shown.
+        relevant = tuple(dict.fromkeys(section for search in searches
+                                       for section in catalog.search(metadata, query=search, limit=None)))
     elif arguments.get("query", "").strip():
         relevant = catalog.search(metadata, query=arguments["query"], limit=None)
+    elif arguments.get("titles"):
+        relevant, _ = catalog.select(metadata, titles=arguments["titles"])
     elif "section_id" in arguments:
         relevant = tuple(section for section in excluded if has_section_id(section, arguments["section_id"])
                          and has_reader_access_requirements(context.guild, context.member.id, {section.visibility}))
@@ -72,6 +90,30 @@ async def search_approved_knowledge(context, arguments):
     for section in excluded:
         exclude_source(context, "knowledge:" + _section_id(section), "role_scope",
                        relevant=(section.file_name, section.title) in relevant_titles)
+    if searches:
+        pool, _ = catalog.select(visible, titles=arguments.get("titles", ()))
+        hits = await asyncio.to_thread(catalog.matching_lines, pool, searches)
+        shown = hits[offset:offset + HITS_PER_PAGE]
+        levels = {section.visibility for section, _ in shown if section.visibility != "public"}
+        await require_evidence_access(context)
+        require_lookup_access(context, levels)
+        context.state.required_access.update(levels)
+        context.state.knowledge_sources.update(_section_id(section) for section, _ in shown)
+        more = len(hits) - offset - len(shown)
+        return {"hits": [{"line": line, "title": section.title, "file": section.file_name,
+                          "section_id": _section_id(section), "visibility": section.visibility}
+                         for section, line in shown],
+                "total_hits": len(hits), "more_hits": more, "next_offset": offset + len(shown) if more else None,
+                "store_status": catalog.store_status, "scope": "requester" if active_scope.requester else "channel",
+                "available_privately": bool(relevant),
+                "match_status": "matches" if hits else "no_visible_match",
+                "observed_at": catalog.observed_at, "offset": offset,
+                "search_is_exhaustive": False, "search_complete": False,
+                "coverage": {"scope": "visible_sections", "method": "matching_lines",
+                             "matching_lines": len(hits), "returned_lines": len(shown),
+                             "store_complete": catalog.store_status == "available"},
+                "limitations": {"lexical_search_only": True,
+                                "store_incomplete": catalog.store_status != "available"}}
     if "section_id" in arguments:
         sections = tuple(section for section in visible if has_section_id(section, arguments["section_id"]))
         method = "section_id"

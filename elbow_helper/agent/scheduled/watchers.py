@@ -12,8 +12,7 @@ from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import TextGenerationError
 
 from ..engine.capability_contract import compile_capability_call
-from ..engine.service import AgentService
-from ..engine.service import AgentUnavailableError
+from ..engine.tool_call import AgentUnavailableError, execute_tool
 from ..engine.registry import build_agent_tools
 from elbow_helper.agent.engine.prompts import WATCHER_SYSTEM_PROMPT
 from elbow_helper.agent.conversation.text import chunk_response
@@ -34,7 +33,7 @@ async def read_current(context, reads):
         arguments = read["arguments"]
         tool = registry[name]
         scope = compile_capability_call(tool, arguments, contract=tool.contract)
-        raw = await AgentService.execute_tool(
+        raw = await execute_tool(
             name=name,
             handler=tool.handler,
             arguments=arguments,

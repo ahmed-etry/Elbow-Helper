@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.roles import CORE, RECRUITERS
 from elbow_helper.agent.safety.access import ACCESS_ROLE_SETS, AgentAccessLost, has_access_requirements
-from elbow_helper.agent.engine.service import AgentService
+from elbow_helper.agent.engine.tool_call import execute_tool
 from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.conversation.wording import ACTION_UNAVAILABLE
 
@@ -34,12 +34,12 @@ class LookupAccessTests(unittest.IsolatedAsyncioTestCase):
                                   state=AgentTurnState(), source_message=SimpleNamespace(id=7))
         handler = AsyncMock(return_value={"value": 1})
         with patch("elbow_helper.agent.engine.tool_call.require_evidence_access", new=AsyncMock()):
-            result = await AgentService.execute_tool(name="synthetic", handler=handler, arguments={},
+            result = await execute_tool(name="synthetic", handler=handler, arguments={},
                 capability_scope={"required_access": ["core"]}, context=context)
         self.assertEqual(json.loads(result), {"error": ACTION_UNAVAILABLE, "required_access": ["core"], "cause": "access_denied"})
         handler.assert_not_awaited()
         with patch("elbow_helper.agent.engine.tool_call.require_evidence_access",
                    new=AsyncMock(side_effect=AgentAccessLost())):
             with self.assertRaises(AgentAccessLost):
-                await AgentService.execute_tool(name="synthetic", handler=handler, arguments={},
+                await execute_tool(name="synthetic", handler=handler, arguments={},
                     capability_scope={"required_access": ["core"]}, context=context)

@@ -14,10 +14,9 @@ import discord
 
 from elbow_helper.agent.safety.access import require_access, require_evidence_access, assert_answer_scope
 from elbow_helper.agent.safety.disclosure import log_scope
-from elbow_helper.agent.knowledge.answers import private_check_offered, scoped_answer, scope_reply_issue
+from elbow_helper.agent.knowledge.answers import private_check_offered
 from elbow_helper.agent.conversation.wording import AGENT_PRIVATE_OFFER, ACTION_PREVIEW_HEADER, FAILURE_MESSAGE, LONG_REPLY_FILENAME
 from elbow_helper.agent.conversation.wording import ACTION_NOT_PREPARED, ACTION_PRIVATE_ANSWER, ACTION_PRIVATE_NOTE, ACTION_UNAVAILABLE, AGENT_ANSWER_UNFINISHED, AGENT_PLAN_UNFINISHED, AGENT_RESEARCH_UNFINISHED, RESEARCH_FEEDBACK_HINT
-from elbow_helper.agent.engine.unfinished import unfinished_answer
 from elbow_helper.agent.conversation.state import Conversation
 from elbow_helper.agent.engine.models import AgentAttachment, AgentDelivery, AgentRequestContext
 
@@ -124,6 +123,12 @@ class AgentDeliveryMixin:
                     raise
                 context.state.gif_url = context.state.gif_attachment = None
                 response = context.state.gif_fallback_text
+            else:
+                if context.state.proposed_changes:
+                    active.complete = False
+                    await self._send_response(message, "", referenced, conversation=conversation,
+                                              delivery=active, context=context, **options)
+                return
         await self._send_response(message, response, referenced, attachments, conversation,
                                   delivery=active, context=context, **options)
 
@@ -159,9 +164,7 @@ class AgentDeliveryMixin:
         if conversation is not None:
             self._conversations.register_reply(conversation, sent.id)
         if getattr(message, "archive_reply", True):
-            await self._archive_reply(message.id, sent.id, url,
-                                      attachment_names=(media.filename,) if file else ())
-        delivery.complete = True
+            await self._archive_reply(message.id, sent.id, part, attachment_names=attachment_names)
 
     async def _send_response(
         self,
@@ -185,15 +188,6 @@ class AgentDeliveryMixin:
         response = discord_text(response)
         guild = getattr(context, "guild", None) or getattr(message, "guild", None)
         response = render_server_emojis(response, guild)
-        if not response.strip() and not attachments:
-            response = (preview_text(context.state.proposed_changes)
-                        if context is not None and context.state.proposed_changes
-                        else unfinished_answer(context.state.request_text, context.state.grounding_evidence)
-                          if context is not None else "What result do you need?")
-        if context is not None:
-            response = scoped_answer(context, response)
-            if scope_reply_issue(context, response):
-                response = unfinished_answer(context.state.request_text, context.state.grounding_evidence)
         if context is not None:
             await assert_answer_scope(context, response)
             log_scope(context)

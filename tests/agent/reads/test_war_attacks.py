@@ -4,7 +4,6 @@ Wars are written into a family record. No Discord, Clash or LLM call is made.
 """
 
 from dataclasses import replace
-import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -16,7 +15,7 @@ from elbow_helper.data.reads import CwlReads, WarReads
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.cwl.record import CwlHistory
 
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.agent.reads.test_family_wars import renamed
 from tests.agent.reads.test_record_wars import FAMILY, OCTOBER, later_war, old_id, ts
 from tests.data.test_wars import END, SECOND, WarFixture, group, war
@@ -167,22 +166,6 @@ class WarAttackTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted((row["clan_code"], row["player_tag"], row["opponent_tag"]) for row in result["rows"]),
                          [("BE4", "#Q0", "#PY"), ("BE4", "#Q2", "#PY"), ("BEH", "#P0", "#LQ"), ("BEH", "#P2", "#LQ")])
 
-    async def test_each_war_is_stated_once_per_page(self):
-        from elbow_helper.agent.plan.results import model_result, model_view
-        from elbow_helper.agent.reads.evidence import record_rows
-        # The season's wars, one of them between two family clans: both sides share its war_id.
-        inside = war("warEnded", clans=("#PY", "#LQ"), end="20261025T180000.000Z")
-        inside.update(preparationStartTime="20261023T180000.000Z", startTime="20261024T180000.000Z")
-        await self.record(inside, at=END + 4 * DAY)
-        page = await TOOLS["read_war_attacks"].handler(self.context, {"war_type": "REG", **OCTOBER})
-        # The step runner views the page, then views what it delivers again.
-        view = model_view(model_result(json.loads(json.dumps(model_view(model_result(page))))))
-        wars = {(item["war_id"], item["clan_code"]): item for item in record_rows(view["wars"])}
-        self.assertEqual(len(wars), len({(row["war_id"], row["clan_code"]) for row in page["rows"]}))
-        shown = record_rows(view["rows"])
-        self.assertTrue(all("opponent_name" not in row for row in shown))
-        self.assertEqual([{**row, **wars[(row["war_id"], row["clan_code"])]} for row in shown], page["rows"])
-
     async def test_members_and_accounts_without_attacks(self):
         result = await self.read(war_type="REG", member_ids=[41, 42])
         self.assertEqual({row["player_tag"] for row in result["rows"]}, {"#P0", "#P2"})
@@ -237,31 +220,10 @@ class WarAttackTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                     refused = await TOOLS[name].handler(other, {"report_id": first["report_id"]})
                 self.assertEqual(refused["cause"], "report_unavailable")
 
-    async def test_a_plan_that_finishes_after_reads_gives_the_answer_every_attack(self):
-        from elbow_helper.agent.engine.answer_inputs import answer_evidence
-        from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
-        from elbow_helper.agent.engine.flow import AnswerFlow
-        from elbow_helper.agent.plan.results import model_result
-        from elbow_helper.agent.reads.evidence import record_rows
-        # Live 15 Nov: one clan, both war types, this month; the page held 106 of 133 attacks.
-        arguments = {"clan_codes": ["BEH"], "war_type": "both", **OCTOBER}
-        with patch("elbow_helper.agent.engine.budgets.MAX_TOOL_RESULT_CHARACTERS", 4000):
-            page = await TOOLS["read_war_attacks"].handler(self.context, arguments)
-        self.assertEqual(page.get("total_rows"), 6, page)
-        self.assertLess(page["returned_rows"], 6)
-        self.assertIsNotNone(page["next_cursor"])
-        plan = {"finish_after_reads": True, "steps": [
-            {"id": "attacks", "capability": "read_war_attacks", "arguments": arguments, "depends_on": []}]}
-        self.assertTrue(AnswerFlow._planned_reads_complete(SimpleNamespace(plan=plan, result_views={}), {"attacks": page}))
-        written = await cohort_writer_evidence(self.context, {"attacks": model_result(page)})
-        facts = answer_evidence(written)["attacks"]
-        self.assertEqual(len(record_rows(facts["rows"])), 6)
-        self.assertNotIn("row_coverage", facts)
-
     async def test_the_tool_pages_and_exports_every_attack(self):
         tool = TOOLS["read_war_attacks"]
         first = await tool.handler(self.context, {"war_type": "both", **OCTOBER, "limit": 4})
-        self.assertEqual((first["total_rows"], first["returned_rows"], first["complete_snapshot"]), (8, 4, True))
+        self.assertEqual((first["total_rows"], first["returned_rows"]), (8, 4))
         self.assertEqual((first["selection"]["war_type"], first["provenance"]["required_access"]), ("both", []))
         rest = await tool.handler(self.context, {"report_id": first["report_id"], "cursor": first["next_cursor"],
                                                  "limit": 4})

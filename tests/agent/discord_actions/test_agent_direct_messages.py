@@ -36,7 +36,7 @@ class DirectMessageTests(unittest.IsolatedAsyncioTestCase):
             })
         preview = self.context.state.proposed_changes.pop().preview
         self.assertEqual(preview.lines, (
-            "DM Example (@synthetic.1):", "Pings: Example (@synthetic.2)",
+            "✉️ Send this DM to Example (@synthetic.1)", "Pings: Example (@synthetic.2)",
         ))
 
 
@@ -81,7 +81,7 @@ class DirectMessageTests(unittest.IsolatedAsyncioTestCase):
             )
             action = self.context.state.proposed_changes[0]
             self.assertEqual(action.preview.lines, (
-                "DM Synthetic 1, Synthetic 2:",
+                "✉️ Send this DM to Synthetic 1, Synthetic 2",
             ))
             self.assertEqual(action.preview.details, ("Synthetic message",))
             self.assertEqual(action.preview.count, 2)

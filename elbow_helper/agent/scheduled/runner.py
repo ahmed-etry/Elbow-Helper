@@ -11,7 +11,7 @@ from uuid import uuid4
 import discord
 
 from elbow_helper.agent.safety.access import AgentAccessLost, require_access, require_evidence_access
-from ..engine.service import AgentUnavailableError
+from ..engine.tool_call import AgentUnavailableError
 from ..engine.models import AgentDelivery
 from elbow_helper.core.logging import TransientExternalFailurePolicy
 from ..discord_actions.safety import check_post_access
@@ -30,7 +30,7 @@ from .requests import (
     run_saved_request,
     check_watcher, StandingDMUnavailable, ScheduledResult,
 )
-from ..engine.service import AgentService
+from ..loop import LoopService
 from ..actions.runner import AgentActionRunner
 from ..actions.store import AgentActionRepository
 from discord.ext import commands
@@ -48,7 +48,7 @@ class ScheduledRunner:
         bot: commands.Bot,
         repository: AgentActionRepository,
         guild_id: int,
-        service: AgentService,
+        service: LoopService,
         delivery: DeliveryFunction,
         action_runner: AgentActionRunner,
         context_factory: ContextFactory,

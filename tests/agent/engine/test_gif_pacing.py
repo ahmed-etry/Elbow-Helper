@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.gifs import channel_gif_history
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
-from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.models import AgentDelivery
 from tests.agent.engine.helpers import social_step
-from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
+from tests.agent.request_fixtures import member_context as _context
+from tests.agent.loop_stub import banter_answer
 
 
 class GifMatchTests(unittest.IsolatedAsyncioTestCase):
@@ -28,12 +28,11 @@ class GifMatchTests(unittest.IsolatedAsyncioTestCase):
                         message.reply = AsyncMock(return_value=SimpleNamespace(id=301))
                         message.channel.send = AsyncMock(return_value=SimpleNamespace(id=302))
                         message.add_reaction = AsyncMock()
-                        session = _AgentSession([social_step('Fallback line.', meme_id='synthetic', fit=fit,
-                            gif_requested=requested, form='text_reactions', reactions=['\U0001f44d'])])
                         with (patch.dict(ITEM_BY_ID, synthetic=item),
-                              self.assertLogs('elbow_helper.agent.engine.social_reply', level='INFO') as logs):
-                            answer = await AgentService(_AgentModel(session, route='social')).answer(
-                                question='Synthetic exchange', local_context='', context=context)
+                              self.assertLogs('elbow_helper.agent.loop.banter', level='INFO') as logs):
+                            answer, session, _ = await banter_answer(context, social_step(
+                                'Fallback line.', meme_id='synthetic', fit=fit, gif_requested=requested,
+                                form='text_reactions', reactions=['\U0001f44d']))
                         sent = requested or fit >= minimum_fit
                         self.assertEqual(answer, '' if sent else 'Fallback line.')
                         self.assertEqual(context.state.gif_url, url if sent else None)

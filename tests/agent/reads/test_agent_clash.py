@@ -1,7 +1,5 @@
 """Live Clash reads use a fake application client."""
 import asyncio
-from datetime import datetime, timezone
-import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -9,8 +7,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.reads.clash import ENDPOINTS, read_clash
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.player_tags import encode_clash_tag
-from elbow_helper.agent.engine.tool_call import bound_tool_result
-from elbow_helper.agent.plan.results import model_result, model_view
+from elbow_helper.agent.plan.results import model_result
 from elbow_helper.agent.reads.clash_cache import RequestClashReads
 
 
@@ -45,36 +42,6 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
         result = await read_clash(self.context, {"kind": "cwl_war", "tags": ["#0"]})
         self.assertEqual(result["items"][0]["status"], "not_found")
         self.client.get.assert_not_awaited()
-
-
-    async def test_player_clan_evidence_distinguishes_clanless_from_failed_reads(self):
-        clan = {"tag": "#Q0", "name": "Synthetic clan"}
-        for projection in ({}, {"detail": "full"}, {"fields": ["name", "clan"]},
-                           {"fields": ["clan.tag", "clan.name"]}):
-            for membership, expected_status in (({"clan": clan}, "in_clan"), ({}, "not_in_clan"),
-                                                ({"clan": None}, "not_in_clan")):
-                with self.subTest(projection=projection, membership=membership):
-                    payload = {"tag": "#P0", "name": "Synthetic", **membership}
-                    self.client.get.return_value = SimpleNamespace(ok=True, status=200, payload=payload)
-                    result = await read_clash(self.context, {"kind": "player", "tags": ["#P0"],
-                                                            **projection})
-                    item = model_view(model_result(result))["items"][0]
-                    self.assertEqual(item["status"], "ok")
-                    self.assertEqual(item["data"].get("clan"), membership.get("clan"))
-                    self.assertEqual(item["data"]["clan_status"], expected_status)
-                    if "clan" not in membership:
-                        self.assertNotIn("clan", item["data"])
-                    self.assertEqual(payload, {"tag": "#P0", "name": "Synthetic", **membership})
-            for status in (404, 503, 500):
-                with self.subTest(projection=projection, failed_status=status):
-                    self.client.get.return_value = SimpleNamespace(ok=False, status=status, payload=None)
-                    result = await read_clash(self.context, {"kind": "player", "tags": ["#P0"],
-                                                            **projection})
-                    item = model_view(model_result(result))["items"][0]
-                    self.assertNotEqual(item["status"], "ok")
-                    self.assertNotIn("data", item)
-                    self.assertNotIn("clan_status", item)
-
 
     async def test_clanless_evidence_survives_cache_reuse_without_mutating_raw_profiles(self):
         self.enable_cache()
@@ -215,61 +182,3 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
         self.context.clash_reads = RequestClashReads()
         self.context.guild = SimpleNamespace(id=1)
         self.context.member = SimpleNamespace(id=2)
-
-    @patch('elbow_helper.agent.reads.clash.datetime')
-    async def test_live_battle_log_batches_and_nested_ranked_reads_always_fetch(self, clock):
-        clock.now.side_effect = (datetime(2026, 10, 1, 0, 0, second, tzinfo=timezone.utc) for second in range(20))
-        self.enable_cache()
-        self.client.get.return_value.payload = {"items": [
-            {"battleTimestamp": f"202610{day:02d}T120000.000Z", "army": [day], "attack": True}
-            for day in range(1, 19)]}
-        result = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P0", "#P2"], "limit": 12})
-        bounded = bound_tool_result(json.dumps(result), 1000)
-        self.assertEqual(json.loads(bounded)["items"], [])
-        full = await read_clash(self.context, {"kind": "battle_log", "tags": ["p2"], "detail": "full", "limit": 2})
-        item = full["items"][0]
-        self.assertFalse(item["reused"])
-        self.assertEqual(item["data"]["items"][0]["army"], [18])
-        self.assertEqual(item["row_counts"]["/items"], {"returned_rows": 2, "total_rows": 18})
-        self.assertEqual(self.client.get.await_count, 3)
-        self.assertNotEqual(full["observed_at"], result["items"][1]["observed_at"])
-        item["data"]["items"][0]["army"].append("mutated")
-        repeated = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P2"], "detail": "full"})
-        self.assertEqual(repeated["items"][0]["data"]["items"][0]["army"], [18])
-
-
-    async def test_size_caps_return_no_excerpt_and_preserve_api_row_totals(self):
-        for kind in ENDPOINTS:
-            with self.subTest(kind=kind):
-                # Extra fields make every full dataset exceed the encoded size cap.
-                self.client.get.return_value.payload = {
-                    "items": [{"stars": 0, "details": '"\\\n' * 1000} for _ in range(12)],
-                }
-                result = await read_clash(self.context, {
-                    "kind": kind, "tags": ["#P0"], "detail": "full", "limit": 3,
-                })
-                content = json.dumps(model_view(model_result(result)), ensure_ascii=False)
-                bounded = bound_tool_result(content, 1000)
-                self.assertLessEqual(len(bounded), 1000)
-                view = json.loads(bounded)
-                self.assertTrue(view["truncated"])
-                self.assertNotIn("result_excerpt", view)
-                if "items" not in view:
-                    self.assertEqual(view["total_rows"], 12)
-                elif view["items"]:
-                    counts = view["items"][0]["row_counts"]["/items"]
-                    self.assertEqual(counts["total_rows"], 12)
-                    self.assertLessEqual(counts["returned_rows"], 3)
-                else:
-                    self.assertEqual(view["row_counts"][0]["collections"]["/items"], {
-                        "returned_rows": 0, "total_rows": 12,
-                    })
-
-
-    async def test_size_cap_counts_survive_compacted_account_table_and_tiny_budget(self):
-        self.client.get.return_value.payload = {"items": [{"stars": 0, "details": "x" * 2000}] * 12}
-        result = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P0"] * 10})
-        content = json.dumps(model_view(model_result(result)))
-        self.assertIn("columns", json.loads(content)["items"])
-        view = json.loads(bound_tool_result(content, 100))
-        self.assertEqual(view, {"truncated": True, "returned_rows": 0, "total_rows": 120})

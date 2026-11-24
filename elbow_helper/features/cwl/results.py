@@ -6,13 +6,28 @@ import re
 import sqlite3
 
 from elbow_helper.configuration.clans import CLANS, CLAN_ORDER
-from elbow_helper.domain.cwl import SEASON_KEY, CwlWarSelectionError
+from elbow_helper.domain.cwl import (
+    SEASON_KEY, CwlScoringIncomplete, CwlScoringSettingsMissing, CwlWarSelectionError,
+)
 from elbow_helper.domain.war_participation import aggregate_participation
 from .config import CWL_CLAN_CODES
 from .results_summary import cwl_analysis
 
 
 PERIOD_SETTINGS = ('season', 'season_keys', 'war_ids', 'latest_completed', 'history_limit', 'after', 'before')
+# What a scoring read can meet that is not a bug; anything else is raised and logged as one.
+SCORING_FAILURES = (CwlScoringSettingsMissing, CwlScoringIncomplete, OSError, sqlite3.Error)
+
+
+def scoring_failure(error):
+    """The result for one of SCORING_FAILURES, by where it started."""
+    if isinstance(error, CwlScoringSettingsMissing):
+        return {'error': str(error), 'cause': 'missing_setup',
+                **({'details': list(error.details)} if error.details else {})}
+    if isinstance(error, CwlScoringIncomplete):
+        return {'error': 'Stored lineups or attacks of these wars are incomplete, so they cannot be scored.',
+                'cause': 'incomplete_wars'}
+    return {'error': 'Stored CWL wars could not be read.', 'cause': 'source_unavailable'}
 
 
 def cwl_clan_error(codes):
@@ -212,8 +227,8 @@ class CwlResults:
                         if metric == 'performance' and war_ids:
                             try:
                                 scored = self.snapshot('ass', clan_code=code, war_ids=sorted(war_ids))
-                            except ValueError:
-                                # Missing attack details leave the running season unscored.
+                            except (CwlScoringIncomplete, CwlWarSelectionError):
+                                # Missing attack details or wars the scorer refuses leave the running season unscored.
                                 scored = None
                             if scored is not None:
                                 scores = {row.player_tag: row for row in scored.rows if row.attacks}
@@ -268,5 +283,5 @@ class CwlResults:
             # Too many wars or a war ID that cannot be scored: the selection is to change, the data is there.
             return {'error': str(error), 'cause': 'invalid_arguments',
                     'invalid_fields': [key for key in PERIOD_SETTINGS if arguments.get(key)] or ['war_ids']}
-        except (ValueError, RuntimeError, OSError, sqlite3.Error) as error:
-            return {'error': str(error), 'cause': 'source_unavailable'}
+        except SCORING_FAILURES as error:
+            return scoring_failure(error)

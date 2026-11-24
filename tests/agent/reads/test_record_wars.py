@@ -23,7 +23,7 @@ from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.cwl.record import CwlHistory
 from elbow_helper.infrastructure.persistence.revisions import release_sqlite_revision
 
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.data.test_wars import END, SECOND, WarFixture, group, war
 
 DAY = 86400 * SECOND
@@ -97,6 +97,8 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         return await war_reads.participation_totals(self.context, arguments)
 
     async def test_participation_counts_each_recorded_war_and_keeps_coverage(self):
+        await self.execute("INSERT INTO clans(tag,family_code,name,is_family,wiring_revision) "
+                           "VALUES ('#PY','BEH','Clan #PY',1,1)")
         await self.both_wars()
         arguments = {"war_type": "REG", "clan_codes": ["BEH"], "season": "2026-10"}
         new = await self.participation(arguments)
@@ -115,6 +117,14 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         # The tool itself returns the same rows.
         report = await TOOLS["read_war_participation"].handler(self.context, arguments)
         self.assertEqual(comparable(report), comparable(new))
+        # The query table and typed report keep the same dated account-war facts.
+        from elbow_helper.data.reads.war_facts import build_war_facts
+        facts = await self.reads._read(build_war_facts, self.now)
+        expected = {(row['war_id'], row['clan_tag'], row['player_tag']): row
+                    for row in facts['account_wars']}
+        observed = {(war['war_id'], war['clan_tag'], war['player_tag']): war
+                    for row in report['rows'] for war in row['account_wars']}
+        self.assertEqual(observed, expected)
 
 
     async def test_without_the_record_reads_regular_and_current_wars_are_missing_setup(self):

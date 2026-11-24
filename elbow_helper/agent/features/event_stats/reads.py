@@ -54,7 +54,7 @@ def event_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "read_event_schedule_report",
-            "Read another filtered page from one retained event-schedule snapshot.",
+            "Read another filtered page from one saved event-schedule report.",
             {
                 "report_id": {
                     "type": "string", "minLength": 1, "maxLength": 32,

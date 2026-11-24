@@ -8,7 +8,7 @@ import unittest
 from elbow_helper.configuration.channels import HIBERNATION_LOG
 from elbow_helper.agent.reads.workflow_reads import TOOLS
 from elbow_helper.features.hibernation.queries import HibernationQueries
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.agent.reads.record_stub import regular_war, regular_wars_from, with_record
 from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
 

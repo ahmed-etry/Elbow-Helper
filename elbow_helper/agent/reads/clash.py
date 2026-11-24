@@ -35,6 +35,10 @@ ENDPOINTS = {
     "player": "/players/{tag}",
     "battle_log": "/players/{tag}/battlelog",
 }
+PLAYER_TAG_CAP = 200
+OTHER_TAG_CAP = 20
+RAID_HISTORY_CAP = 10
+OTHER_HISTORY_CAP = 50
 PLAYER_FIELDS = (
     "tag name townHallLevel role trophies bestTrophies clan_status"
 ).split()
@@ -208,7 +212,7 @@ async def read_clash(context, arguments):
                for path in fields)
     ):
         return invalid_arguments("Select 1 to 40 dotted Clash field paths.", "fields")
-    cap = 200 if kind == "player" else 20
+    cap = PLAYER_TAG_CAP if kind == "player" else OTHER_TAG_CAP
     if kind not in ENDPOINTS:
         return invalid_arguments("Choose a supported Clash kind.", "kind")
     if not 1 <= len(tags) <= cap:
@@ -241,7 +245,7 @@ async def read_clash(context, arguments):
     if any(tag not in collected for tag in normalized) and (client is None or not client.configured):
         return {"error": "The Clash API is not set up."}
     limit = arguments.get("limit", 2 if kind == "capital_raids" else 10)
-    limit_cap = 10 if kind == "capital_raids" else 50
+    limit_cap = RAID_HISTORY_CAP if kind == "capital_raids" else OTHER_HISTORY_CAP
     if type(limit) is not int or not 1 <= limit <= limit_cap:
         return invalid_arguments(f"Use a Clash history limit from 1 to {limit_cap} for {kind}.", "limit")
     order, offset = arguments.get("order", "newest_first"), arguments.get("offset", 0)
@@ -250,8 +254,6 @@ async def read_clash(context, arguments):
         if (order not in ("newest_first", "oldest_first") or type(offset) is not int or offset < 0
                 or after is not None and before is not None and after >= before):
             raise ValueError("Invalid battle selection")
-        if kind != "battle_log" and any(key in arguments for key in ("order", "offset", "after", "before")):
-            raise ValueError("Battle selection applies only to battle logs")
     except (ValueError, TypeError, AttributeError):
         return invalid_arguments("Use valid ISO dates, chronological order and offset for battle logs only.",
                                  "after", "before", "order", "offset")
@@ -277,7 +279,7 @@ async def read_clash(context, arguments):
         async with semaphore:
             path = ENDPOINTS[kind].format(tag=encode_clash_tag(tag))
             if kind in ("war_log", "capital_raids"):
-                path += "?limit=" + ("10" if kind == "capital_raids" else "50")
+                path += "?limit=" + str(RAID_HISTORY_CAP if kind == "capital_raids" else OTHER_HISTORY_CAP)
             async def fetch():
                 return await client.get(
                     path, attempts=2,
@@ -417,10 +419,12 @@ def clash_tools():
                 "properties": {
                     "kind": {"type": "string", "enum": list(ENDPOINTS)},
                     "tags": {
-                        "type": "array", "minItems": 1, "maxItems": 200,
+                        "type": "array", "minItems": 1, "maxItems": PLAYER_TAG_CAP,
                         "items": {"type": "string"},
+                        "description": f"Select 1 to {PLAYER_TAG_CAP} tags for player; 1 to {OTHER_TAG_CAP} for other kinds.",
                     },
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": OTHER_HISTORY_CAP,
+                              "description": f"Use 1 to {RAID_HISTORY_CAP} for capital_raids; 1 to {OTHER_HISTORY_CAP} for other kinds."},
                     "detail": {"type": "string", "enum": ["summary", "full"], "default": "summary"},
                     "member_scope": {"type": "string", "enum": ["community", "current"],
                                      "default": "community",
@@ -432,15 +436,26 @@ def clash_tools():
                     "order": {"type": "string", "enum": ["newest_first", "oldest_first"],
                               "default": "newest_first"},
                     "offset": {"type": "integer", "minimum": 0, "default": 0},
-                    "after": {"type": "string", "maxLength": 40},
-                    "before": {"type": "string", "maxLength": 40},
+                    "after": {"type": "string", "maxLength": 40, "format": "date-time"},
+                    "before": {"type": "string", "maxLength": 40, "format": "date-time"},
                     "max_age_seconds": {"type": "integer", "minimum": 0, "maximum": LIVE_READ_SECONDS,
                                         "default": LIVE_READ_SECONDS},
                 },
                 "required": ["kind", "tags"], "additionalProperties": False,
-                RULES: [{"when": {"kind": [kind for kind in ENDPOINTS if kind != "battle_log"]},
-                         "forbids": ["order", "offset", "after", "before"],
-                         "error": "Use order, offset and dates for battle logs only."}],
+                RULES: [
+                    {"when": {"kind": [kind for kind in ENDPOINTS
+                                           if kind not in ("battle_log", "war_log", "capital_raids")]},
+                     "forbids": ["offset", "after", "before"],
+                     "error": "Use offset and dates for battle logs only."},
+                    {"when": {"kind": ["war_log", "capital_raids"]},
+                     "forbids_sent": ["offset", "after", "before"],
+                     "error": "Use offset and dates for battle logs only."},
+                    {"when": {"kind": ["war_log", "capital_raids"], "order": ["oldest_first"]},
+                     "forbids": ["order"], "error": "These logs return newest first."},
+                    {"when": {"kind": [kind for kind in ENDPOINTS
+                                           if kind not in ("battle_log", "war_log", "capital_raids")]},
+                     "forbids": ["order"], "error": "Use order for battle, war or capital raid logs only."},
+                ],
             },
             usage_note="Use resolved tags, never placeholder values; full may summarize to fit; fields selects paths over detail. Ranked history: read_ranked_activity. War/CWL: external clans only. CWL-only clans need a CWL cohort first.",
         ),

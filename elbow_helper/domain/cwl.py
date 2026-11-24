@@ -19,6 +19,18 @@ class CwlWarSelectionError(ValueError):
     """Wars chosen for scoring that the scorer refuses: a wrong argument, not missing data."""
 
 
+class CwlScoringSettingsMissing(ValueError):
+    """Scoring needs settings the clan has not been given: missing setup. The message says which."""
+
+    def __init__(self, message: str, details=()):
+        super().__init__(message)
+        self.details = tuple(details)
+
+
+class CwlScoringIncomplete(ValueError):
+    """The chosen wars' stored lineups or attacks are incomplete, so they cannot be scored."""
+
+
 def is_cwl_window(reference: datetime | None = None) -> bool:
     """Return whether the UTC date is inside the normal CWL window."""
     current = reference or datetime.now(timezone.utc)

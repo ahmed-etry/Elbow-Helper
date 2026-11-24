@@ -9,10 +9,10 @@ import threading
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from elbow_helper.agent.features.cwl.reads import read_cwl_performance, read_cwl_performance_report
 from elbow_helper.agent.reads.cwl import cwl_bonus_scores
-from elbow_helper.agent.reads.war_tools import TOOLS, cwl_results
+from elbow_helper.agent.reads.war_tools import cwl_results
 from elbow_helper.agent.reads.identity_reads import seasonal_tags
 from elbow_helper.agent.reads.clash import read_clash
 from elbow_helper.agent.reads.cache import ReadCache
@@ -160,21 +160,6 @@ class CollectedCwlContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['rows'], [{'clan_code': 'BEH', 'season': '2026-08',
                                           'league': 'Champion League II'}])
 
-    async def test_step_view_states_shared_season_league_and_profile_once_without_losing_rows(self):
-        from copy import deepcopy
-        from elbow_helper.agent.plan.results import model_view
-        from elbow_helper.agent.reads.evidence import record_rows
-        tool = next(tool for tool in TOOLS
-                    if tool.definition.name == 'read_cwl_results')
-        result = await tool.handler(self.context, {'clan_codes': ['BEH'], 'season': '2026-08'})
-        original = deepcopy(result['rows'])
-        view = model_view(result)
-        self.assertEqual(view['row_defaults'], {'season': '2026-08', 'clan_code': 'BEH',
-                                              'league': 'Champion League II', 'profile_key': original[0]['profile_key']})
-        restored = [{**view['row_defaults'], **row} for row in record_rows(view['rows'])]
-        self.assertEqual(restored, original)
-        self.assertEqual(result['rows'], original)
-
     async def test_each_score_surface_refuses_wrong_clan_unfinished_and_unknown_ids(self):
         for key, error in (('CWL:#CQ0', 'another clan'), ('CWL:#C8', 'Unfinished'), ('#UNKNOWN', 'Unknown')):
             for metric in ('ass', 'bonus'):
@@ -185,21 +170,6 @@ class CollectedCwlContracts(unittest.IsolatedAsyncioTestCase):
                     if metric == 'bonus':
                         old = await cwl_bonus_scores(self.context, {'clan_code': 'BEH', 'war_ids': [key]})
                         self.assertEqual(typed['error'], old['error'])
-
-    async def test_scoring_refusals_are_wrong_arguments_and_the_war_limit_is_stated(self):
-        # ASS over 57 wars and an unknown war ID both came back as a data outage.
-        from elbow_helper.agent.plan.checker import check_plan
-        from elbow_helper.agent.plan.format import capability_list
-        unknown = await cwl_results(self.context, {'metric': 'ass', 'clan_codes': ['BEH'],
-                                                   'war_ids': ['#UNKNOWN']})
-        self.assertEqual((unknown['cause'], unknown['invalid_fields']), ('invalid_arguments', ['war_ids']))
-        registry = {tool.definition.name: tool for tool in TOOLS}
-        plan = {'goal': 'Score wars', 'effort': 'low', 'output': 'text', 'steps': [{
-            'id': 'ass', 'capability': 'read_cwl_results', 'depends_on': [],
-            'arguments': {'metric': 'ass', 'clan_codes': ['BEH'], 'latest_completed': 57}}]}
-        self.assertEqual(check_plan(plan, registry).step_errors['ass'],
-                         'ASS and bonus score at most 56 wars at once; choose fewer.')
-        self.assertIn('latest_completed=57|58', capability_list(registry, include_returns=False))
 
     async def test_io_and_scorers_run_off_the_event_loop_and_failures_remain_explicit(self):
         main_thread = threading.get_ident()

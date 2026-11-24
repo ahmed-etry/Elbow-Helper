@@ -6,6 +6,7 @@ import sqlite3
 import unittest
 from unittest.mock import patch
 
+from elbow_helper.domain.cwl import CwlScoringIncomplete
 from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
 from tests.temp_directory import TemporaryDirectory
 
@@ -123,14 +124,17 @@ class CwlPartialResultsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_partial_scoring_failures_remain_explicit(self):
         await self.week()
-        for failure in (sqlite3.OperationalError('locked'), RuntimeError('Scoring unavailable')):
-            with self.subTest(failure=failure), patch.object(self.queries, 'ass_wars', side_effect=failure):
-                result = await self.read(season=SEASON)
-            self.assertEqual(result, {'error': str(failure), 'cause': 'source_unavailable'})
+        with patch.object(self.queries, 'ass_wars', side_effect=sqlite3.OperationalError('locked')):
+            result = await self.read(season=SEASON)
+        self.assertEqual(result, {'error': 'Stored CWL wars could not be read.', 'cause': 'source_unavailable'})
+        # Anything else is a bug: it is raised for the lookup to log, never shown as a source gap.
+        with patch.object(self.queries, 'ass_wars', side_effect=RuntimeError('Scoring unavailable')):
+            with self.assertRaises(RuntimeError):
+                await self.read(season=SEASON)
 
     async def test_missing_attack_details_leave_running_season_unscored(self):
         await self.week()
-        with patch.object(self.queries, 'ass_wars', side_effect=ValueError('Incomplete scoring evidence')):
+        with patch.object(self.queries, 'ass_wars', side_effect=CwlScoringIncomplete('Incomplete scoring evidence')):
             result = await self.read(season=SEASON)
         self.assertTrue(result['rows'])
         self.assertTrue(all(row['score'] is None and row['scoring_status'] == 'incomplete_season'

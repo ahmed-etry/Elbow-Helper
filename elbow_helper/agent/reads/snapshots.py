@@ -91,8 +91,7 @@ class FamilyReport:
                 'returned_rows': len(page) if view == 'rows' else 0,
                 'count': data['summary'].get('count', len(rows)), 'tags': tags if view == 'tags' else [],
                 'offset': offset, 'next_offset': next_offset,
-                'next_cursor': self.cursor(next_offset) if next_offset is not None else None,
-                'complete_snapshot': True}
+                'next_cursor': self.cursor(next_offset) if next_offset is not None else None}
 
     def requested_rows(self, result):
         """The rows [start, end) a step's page asked for: from its offset up to its own limit, else to
@@ -281,9 +280,11 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
 
     async def handle(context, arguments):
         await require_evidence_access(context)
-        offset, limit = arguments.get('offset', 0), arguments.get('limit', 500)
-        if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 500:
+        offset, limit = arguments.get('offset', 0), arguments.get('limit')
+        if (type(offset) is not int or offset < 0
+                or 'limit' in arguments and (type(limit) is not int or not 1 <= limit <= 500)):
             return {'error': 'Choose a valid report page.', 'cause': 'invalid_arguments'}
+        kept = True
         identifier = arguments.get('report_id')
         if identifier:
             report = context.state.reports.get(identifier)
@@ -298,26 +299,30 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
                 return {'error': 'That report is no longer available here.', 'cause': 'report_unavailable'}
             requested = {key: value for key, value in arguments.items() if key not in COMMON}
             if arguments.get('fresh'):
-                return {'error': 'Read a new snapshot to change its selection.', 'cause': 'invalid_arguments'}
-            saved = json.loads(report.payload)
+                return {'error': 'Read a new report to change its selection.', 'cause': 'invalid_arguments'}
+            saved =json.loads(report.payload)
             if saved['summary'].get('requester_id', context.member.id) != context.member.id:
-                return {'error': 'Read a new snapshot for this request.', 'cause': 'report_unavailable'}
+                return {'error': 'Read a new report for this request.', 'cause': 'report_unavailable'}
             if requested:
                 wanted = saved_slice(saved, requested)
                 if wanted != {} and (arguments.get('cursor') or offset):
-                    return {'error': 'Read a new snapshot to change its selection.', 'cause': 'invalid_arguments'}
+                    return {'error': 'Read a new report to change its selection.', 'cause': 'invalid_arguments'}
                 if wanted:
                     # The saved rows already hold this slice: keep it as its own report.
                     try:
                         report = FamilyReport(uuid4().hex, report.guild_id, name,
                                               sliced_payload(identifier, saved, wanted))
-                        retain_report(context.state.reports, report)
                     except ArtifactCapacityError:
                         return {'error': 'That complete report is too large. Choose a smaller period or cohort.',
                                 'cause': 'capacity'}
-                    context.state.report_sources[report.report_id] = context.state.report_sources[identifier]
-                    context.state.report_access_requirements[report.report_id] = (
-                        context.state.report_access_requirements[identifier])
+                    try:
+                        retain_report(context.state.reports, report)
+                    except ArtifactCapacityError:
+                        kept = False
+                    if kept:
+                        context.state.report_sources[report.report_id] = context.state.report_sources[identifier]
+                        context.state.report_access_requirements[report.report_id] = (
+                            context.state.report_access_requirements[identifier])
                 elif wanted is None:
                     # It needs data the saved rows lack: read again with the saved selection changed.
                     arguments = {**{key: value for key, value in arguments.items() if key != 'report_id'},
@@ -332,7 +337,7 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
                     return {'error': 'Use the cursor returned for this report.', 'cause': 'invalid_arguments'}
         if not identifier:
             if offset or arguments.get('cursor'):
-                return {'error': 'Continue with the report ID to keep the same snapshot.',
+                return {'error': 'Continue with the report ID to keep the same report.',
                         'cause': 'missing_report'}
             selected = {key: value for key, value in arguments.items() if key not in COMMON}
             fresh = context.fresh_reads or arguments.get('fresh', False)
@@ -372,20 +377,31 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
                             'required_access': sorted(context.state.required_access)})
             if context.read_dependencies is not None:
                 context.read_dependencies.inherit(versions)
+            if len(json.dumps(result['rows'], ensure_ascii=False, allow_nan=False).encode('utf-8')) > MAX_FAMILY_SNAPSHOT_BYTES:
+                return {'error': 'That complete report is too large. Choose a smaller period or cohort.',
+                        'cause': 'capacity'}
             try:
                 report = FamilyReport(uuid4().hex, context.guild.id, name, json.dumps(
                     {'rows': result['rows'], 'summary': summary}, ensure_ascii=False, allow_nan=False))
-                retain_report(context.state.reports, report)
             except ArtifactCapacityError:
                 return {'error': 'That complete report is too large. Choose a smaller period or cohort.',
                         'cause': 'capacity'}
+            try:
+                retain_report(context.state.reports, report)
+            except ArtifactCapacityError:
+                kept = False
             context.state.source_channels.add(context.source_message.channel.id)
             # Direct family calls have the same retained provenance as checked calls.
-            context.state.report_sources[report.report_id] = frozenset(context.state.source_channels)
-            context.state.report_access_requirements[report.report_id] = frozenset(context.state.required_access)
+            if kept:
+                context.state.report_sources[report.report_id] = frozenset(context.state.source_channels)
+                context.state.report_access_requirements[report.report_id] = frozenset(context.state.required_access)
         delivery = arguments.get('delivery', 'text')
-        model_page = report.page(offset, limit, arguments.get('view', 'rows'))
-        # What the step asked for, so the answer step reads that page and not the cut one below.
+        model_page = report.page(offset, limit or report.manifest()['total_rows'] or 1,
+                                 arguments.get('view', 'rows'))
+        if not kept:
+            model_page['kept'] = False
+            for key in ('report_id', 'next_offset', 'next_cursor'):
+                model_page.pop(key, None)
         if arguments.get('view', 'rows') != 'rows':
             model_page['view'] = arguments['view']
         if 'limit' in arguments:
@@ -422,7 +438,7 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
         await require_evidence_access(context)
         result = model_page
         if delivery != 'text':
-            result['artifact'] = ({'report_id': report.report_id, 'filename': artifact.filename,
+            result['artifact'] = ({**({'report_id': report.report_id} if kept else {}), 'filename': artifact.filename,
                                    'total_rows': report.manifest()['total_rows']} if artifact else None)
             result['artifact_status'] = 'complete' if artifact else 'unavailable'
             if artifact and arguments.get('view') == 'count':
@@ -431,42 +447,6 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
                 result['evidence_projection'] = 'complete_requested_file'
             if artifact and delivery == 'xlsx' and artifact.filename.endswith('.csv'):
                 result['artifact_note'] = 'XLSX cell limit exceeded; supplied the complete result as lossless CSV.'
-        # Page complete records before the generic transport size boundary.
-        # The retained report and cursor preserve every row, including when one
-        # rich family needs more than one model-sized page.
-        from elbow_helper.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
-        from elbow_helper.agent.plan.results import model_result, model_view
-        from elbow_helper.agent.research.history import discussion_result_characters
-        # A discussion chunk is read to the size it may carry, so a page cut
-        # here would leave its source cursor skipping the cut rows.
-        page_characters = (discussion_result_characters()
-                           if name == 'read_conversation_evidence' and result.get('mode') == 'channel_window'
-                           else MAX_TOOL_RESULT_CHARACTERS)
-        def model_size(value):
-            return len(json.dumps(model_view(model_result(value)), ensure_ascii=False,
-                                  separators=(',', ':')))
-        if result['rows'] and model_size(result) > page_characters:
-            low, high, kept = 1, len(result['rows']), 0
-            while low <= high:
-                middle = (low + high) // 2
-                page = report.page(offset, middle, arguments.get('view', 'rows'))
-                candidate = {**result, **page}
-                if model_size(candidate) <= page_characters:
-                    kept = middle
-                    low = middle + 1
-                else:
-                    high = middle - 1
-            if kept:
-                result.update(report.page(offset, kept, arguments.get('view', 'rows')))
-            elif artifact is not None:
-                # A requested export can carry an indivisible oversized record.
-                # The artifact contains its exact value; do not discard success
-                # because the same cell cannot also fit in model evidence.
-                result.update(rows=[], returned_rows=0, next_offset=None, next_cursor=None,
-                              evidence_projection='complete_requested_file')
-            else:
-                from .paging import bound_family_page
-                result = json.loads(bound_family_page(result, page_characters))
         return result
 
     contract = contract or CapabilityContract()
@@ -480,9 +460,6 @@ def family_tool(name, description, properties, reader, *, required=(), rules=(),
     return RegisteredAgentTool(AgentToolDefinition(name, description,
         {'type': 'object', 'properties': {**properties, **COMMON},
          'required': [], 'additionalProperties': False, **({RULES: checks} if checks else {})},
-        usage_note=usage_note or 'Fresh selection or report_id + cursor continuation. '
-            # A lookup delivered whole reaches the answer step complete: there is no cursor to follow.
-            + ('' if whole and WHOLE_FAMILIES[name].restore is True and WHOLE_FAMILIES[name].finishes is True
-               else 'Follow next_cursor to completion. ') + 'Exports use every retained row.'),
+        usage_note=usage_note or 'Exports use every row of the saved result.'),
         handle, contract=contract,
-        returns='report_id,rows:[{typed family fields}],total_rows,next_offset,complete_snapshot')
+        returns='report_id,rows:[{typed family fields}],total_rows,next_offset')

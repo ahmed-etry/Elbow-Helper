@@ -203,8 +203,15 @@ class DeepSeekTextClient:
         max_output_tokens: int | None = None,
         images: Sequence[AgentImage] = (),
         image_failure_fallback: bool = True,
+        prior_messages: Sequence[Mapping[str, Any]] = (),
+        sent_reasoning_effort: str | None = None,
+        prompt_cache_key: str | None = None,
     ) -> AgentSession | None:
-        """Create a tool-capable session without exposing provider messages."""
+        """Create a tool-capable session without exposing provider messages.
+
+        DeepSeek caches prompt prefixes by itself, so ``prompt_cache_key`` has
+        nowhere to go and is ignored.
+        """
 
         if self._client is None:
             return None
@@ -269,6 +276,8 @@ class _DeepSeekAgentSession:
     ):
         self._client = client
         self._system_prompt, self._prompt = system_prompt, prompt
+        self._prior_messages = tuple(prior_messages)
+        self._sent_reasoning_effort = sent_reasoning_effort
         self._replacement = None
         self._image_fallback_available = bool(images) and image_failure_fallback
         self._first_round = True
@@ -287,6 +296,7 @@ class _DeepSeekAgentSession:
             ])
         self._messages: list[Any] = [
             {"role": "system", "content": system_prompt},
+            *_chat_messages(self._prior_messages),
             {"role": "user", "content": content},
         ]
         self.replace_tools(tools)
@@ -341,11 +351,12 @@ class _DeepSeekAgentSession:
         if not allow_tools:
             self._messages.append({"role": "user", "content": _FINAL_ANSWER_INSTRUCTION})
         request_messages = list(self._messages)
+        effort = self._sent_reasoning_effort or reasoning_effort.value
         options: dict[str, Any] = {
             "model": DEEPSEEK_MODEL,
             "messages": request_messages,
-            "reasoning_effort": reasoning_effort.value,
-            "extra_body": {"thinking": {"type": "disabled" if reasoning_effort == AgentReasoningEffort.NONE else "enabled"}},
+            "reasoning_effort": effort,
+            "extra_body": {"thinking": {"type": "disabled" if effort == AgentReasoningEffort.NONE.value else "enabled"}},
         }
         # Keep the tools parameter so DeepSeek retains earlier reasoning in
         # context. Disable calls explicitly when the research phase has ended.
@@ -455,8 +466,11 @@ class _DeepSeekAgentSession:
         self._messages.append(message)
 
         cleaned = str(content or "").strip()
-        output_limit_reached = getattr(choice, "finish_reason", None) == "length"
-        if not cleaned and not tool_calls and not output_limit_reached:
+        finish_reason = getattr(choice, "finish_reason", None)
+        output_limit_reached = finish_reason == "length"
+        # After a tool round the caller may already have a card or other output to deliver.
+        can_end_without_text = finish_reason == "stop" and allow_tools and not first_round
+        if not cleaned and not tool_calls and not output_limit_reached and not can_end_without_text:
             raise TextGenerationError(
                 "DeepSeek returned no agent content or tool calls"
             )
@@ -488,6 +502,36 @@ class _DeepSeekAgentSession:
             ),
             output_limit_reached=output_limit_reached,
         )
+
+
+def _chat_messages(prior: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Turn earlier turns into chat-completions messages.
+
+    Prior items are ``{"role", "content"}`` messages, ``function_call`` items and
+    ``function_call_output`` items. Calls made together become one assistant
+    message with several tool calls, as the provider returned them.
+    """
+
+    messages: list[dict[str, Any]] = []
+    for item in prior:
+        kind = item.get("type")
+        if kind == "function_call":
+            call = {
+                "id": item["call_id"], "type": "function",
+                "function": {"name": item["name"], "arguments": item["arguments"]},
+            }
+            last = messages[-1] if messages else None
+            if last and last["role"] == "assistant" and last.get("tool_calls"):
+                last["tool_calls"].append(call)
+            else:
+                messages.append({"role": "assistant", "content": None, "tool_calls": [call]})
+        elif kind == "function_call_output":
+            messages.append(
+                {"role": "tool", "tool_call_id": item["call_id"], "content": item["output"]}
+            )
+        else:
+            messages.append({"role": item["role"], "content": item["content"]})
+    return messages
 
 
 def _message_value(message: object, key: str) -> Any:

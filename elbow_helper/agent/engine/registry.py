@@ -5,7 +5,6 @@ from dataclasses import replace
 
 from .adapters import FEATURES
 from ..reads.tools import TOOLS as FAMILY_TOOLS
-from .catalogue import group_for
 from ..discord_actions import UNDO_HANDLERS as DISCORD_UNDO_HANDLERS
 from ..actions.undo import merge_undo_handlers, UndoHandler
 
@@ -52,6 +51,29 @@ from ..plan.results import result_handler
 from .result_hints import capability_returns
 
 
+def _group_for(owner, tool):
+    name = tool.definition.name
+    if name == 'read_discord_role_change_preview':
+        return 'changes'
+    if owner == 'standing_rules':
+        return 'schedules'
+    if owner == 'files' or tool.effect is AgentCapabilityEffect.ARTIFACT:
+        return 'attachments'
+    if owner in ('events', 'achievements'):
+        return owner
+    if owner == 'clan_transfers':
+        return 'transfers'
+    if name in ('read_agent_action_log', 'undo_agent_action'):
+        return 'action_history'
+    if 'settings' in name or 'config' in name:
+        return 'settings'
+    if tool.action_class in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):
+        return 'changes'
+    if owner == 'discord_research':
+        return 'research_jobs'
+    return 'records'
+
+
 def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
     """Group the registered read capabilities."""
 
@@ -89,7 +111,7 @@ def build_agent_tools() -> dict[str, RegisteredAgentTool]:
     """Build the complete catalogue without exposing arbitrary capabilities."""
 
     originals = tuple(
-        replace(tool, specialist_group=group_for(owner, tool))
+        replace(tool, specialist_group=_group_for(owner, tool))
         for owner, group in build_agent_tool_groups().items()
         for tool in group
     )

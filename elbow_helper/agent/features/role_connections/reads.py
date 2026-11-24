@@ -107,7 +107,6 @@ async def read_role_connections(
             for rule in page
         ],
         "next_offset": offset + limit if offset + limit < len(snapshot.rules) else None,
-        "complete_valid_rule_snapshot": True,
         "all_entries_valid": not snapshot.malformed_indexes,
     }
 

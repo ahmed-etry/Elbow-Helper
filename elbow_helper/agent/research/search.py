@@ -11,7 +11,7 @@ import discord
 
 from elbow_helper.agent.safety.access import accessible_message_channel, message_channel_unavailable
 from elbow_helper.agent.engine.models import AgentRequestContext
-from elbow_helper.agent.engine.validation import bounded_int, bounded_text
+from elbow_helper.agent.engine.validation import bounded_int
 from .dates import search_date
 from .history import (
     SEARCH_RESULT_LIMIT,
@@ -23,6 +23,7 @@ from .history import (
     searchable_channel_ids,
     jump_url,
     search_message_text,
+    history_content,
     message_author_name,
 )
 
@@ -263,15 +264,21 @@ async def _search_matches(context, arguments, scope, raw_results, *, character_b
             "channel": getattr(channel, "name", str(result.channel_id)),
             "author_id": result.author_id, "author": message_author_name(result, context.guild),
             "timestamp": result.timestamp,
-            "content": result.content if complete_content else bounded_text(search_message_text(result, context.guild), 1_600),
+            "content": (history_content(result, context.guild, True) if complete_content
+                        else search_message_text(result, context.guild).strip()),
             "source": jump_url(context.guild.id, result.channel_id, result.message_id),
         }
         if complete_content:
             entry.update(embeds=list(result.embeds), attachment_names=list(result.attachment_names), content_complete=True)
+        else:
+            # The whole message text, as history reads give it.
+            entry["content_complete"] = True
         if result.reply_to_message_id is not None:
             entry["reply_to_message_id"] = result.reply_to_message_id
         size = len(json.dumps(entry, ensure_ascii=False, separators=(",", ":"))) + 1
-        if characters + size > character_budget:
+        # As in history reads: a whole page always takes its first message, even one larger than
+        # the page, so a long message is never cut and a page never comes back empty.
+        if characters + size > character_budget and (matches or character_budget < HISTORY_MESSAGE_CHARACTER_BUDGET):
             scanned = index
             stopped = True
             break

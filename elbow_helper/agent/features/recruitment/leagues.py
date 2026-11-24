@@ -82,7 +82,7 @@ async def read_cohort_leagues(context, arguments):
 
 def cohort_league_tools():
     return (RegisteredAgentTool(AgentToolDefinition(
-        "read_cohort_leagues", "Read ranked leagues for every linked account in a retained trial or join cohort.",
+        "read_cohort_leagues", "Read ranked leagues for every linked account in a saved trial or join result.",
         {"type": "object", "properties": {
             "cohort_report_id": {"type": "string", "minLength": 1, "maxLength": 32},
             "after": {"type": "string", "maxLength": 40}, "before": {"type": "string", "maxLength": 40},

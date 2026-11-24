@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.agent.reads.test_ranked import account, stored, BATTLE, AFTER, BEFORE, DAY_TWO
 from elbow_helper.agent.reads.ranked import read_ranked
 from elbow_helper.agent.reads.account_activity import account_activity

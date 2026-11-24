@@ -73,6 +73,14 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.deliver(), "Synthetic answer")
 
 
+    async def test_titles_do_not_hide_a_relevant_restricted_section_from_the_offer(self):
+        # The model can only name sections it was shown, never the held-back one.
+        result = await search_approved_knowledge(self.context, {
+            "searches": ["alliance policies"], "titles": ["Clan family lore"]})
+        self.assertTrue(result["available_privately"])
+        self.assertNotIn("Alliance policies", str(result["hits"]))
+        self.assertEqual(self.context.state.required_access, set())
+
     async def test_unauthorized_requester_gets_no_private_titles_or_hints(self):
         self.members[0] = Member(2, (Role(AGENT_TESTER_ROLE_ID),))
         for scope in ("channel", "requester"):

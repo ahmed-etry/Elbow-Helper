@@ -1,12 +1,7 @@
 """Formatting requests still use answer synthesis and preserve authored posts."""
 
-from copy import deepcopy
-from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
 
-from elbow_helper.agent.engine.flow import AnswerFlow
-from tests.agent.engine.test_agent_plan_flow import _context
 from tests.agent.discord_actions import test_current_channel_posts as posts
 from elbow_helper.agent.discord_actions.messages import prepare_post
 
@@ -16,25 +11,6 @@ def players():
         {"tag": "#P0", "status": "ok", "data": {"name": "North"}},
         {"tag": "#P2", "status": "ok", "data": {"name": "South"}},
     ]}
-
-
-def query(rows):
-    return {"rows": rows, "row_count": len(rows), "truncated": False, "flags": {"status": "complete"}}
-
-
-class StrictFlowTests(unittest.IsolatedAsyncioTestCase):
-
-    async def test_names_and_reasons_are_preserved_with_multiple_sources(self):
-        for evidence in ({"read": players(), "other": query([{"name": "North", "reason": "Away"}])}, {}):
-            context = _context()
-            context.state.request_text = "Just the names of people who missed attacks, and why"
-            context.state.grounding_evidence = deepcopy(evidence)
-            rounder = SimpleNamespace(advance=AsyncMock())
-            flow = AnswerFlow(context=context, session=None, registry={}, budget=None,
-                              rounder=rounder, runner=None, request_id=1)
-            draft = "North: away. South: no reason recorded."
-            self.assertEqual(await flow._grounded_reply(draft), draft)
-            rounder.advance.assert_not_awaited()
 
 
 class StrictPostTests(unittest.IsolatedAsyncioTestCase):

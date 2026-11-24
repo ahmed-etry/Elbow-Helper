@@ -1,10 +1,9 @@
 """Earlier result records become complete, typed workbook rows."""
 
 from io import BytesIO
-from dataclasses import replace
 from tests.temp_directory import TemporaryDirectory
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from openpyxl import load_workbook
 
@@ -13,10 +12,8 @@ from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.files.spreadsheet_tools import (
     prepare_spreadsheet, spreadsheet_tools,
 )
-from elbow_helper.agent.engine.models import RegisteredAgentTool
-from elbow_helper.infrastructure.ai import AgentToolDefinition
-from elbow_helper.agent.plan.checker import check_plan, valid_arguments
-from elbow_helper.agent.plan.executor import execute_plan, resolve_arguments
+from elbow_helper.agent.plan.checker import valid_arguments
+from elbow_helper.agent.plan.executor import resolve_arguments
 
 
 def _arguments(records):
@@ -30,43 +27,6 @@ def _arguments(records):
 
 
 class ResultSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
-
-    async def test_wrong_result_columns_are_refused_before_the_handler_runs(self):
-        read = AsyncMock(return_value={"items": [{"value": 7}]})
-        write = AsyncMock()
-        spreadsheet = spreadsheet_tools()[0]
-        registry = {
-            "read_items": RegisteredAgentTool(AgentToolDefinition(
-                "read_items", "Read synthetic items.",
-                {"type": "object", "properties": {}, "additionalProperties": False},
-            ), read),
-            "write_table": replace(spreadsheet, handler=write, definition=replace(
-                spreadsheet.definition, name="write_table",
-            )),
-        }
-        reference = {"step": "read", "path": ["items"]}
-        plan = {"goal": "Synthetic table", "effort": "low", "output": "write_table", "steps": [
-            {"id": "read", "capability": "read_items", "arguments": {}, "depends_on": []},
-            {"id": "write", "capability": "write_table", "depends_on": ["read"],
-             "arguments": {"title": "Synthetic", "sheets": [{
-                 "name": "Items", "rows_from": reference, "columns": ["Value"],
-             }]}},
-        ]}
-        check = check_plan(plan, registry)
-        self.assertTrue(check.ok)
-        self.assertEqual(set(check.step_errors), {"write"})
-        self.assertIn("Invalid arguments", check.step_errors["write"])
-        read.assert_not_called()
-        write.assert_not_called()
-
-        async def run(step, arguments, results):
-            return await registry[step["capability"]].handler(None, arguments)
-
-        results = await execute_plan(plan, run, step_errors=check.step_errors)
-        self.assertEqual(results["write"]["error"], check.step_errors["write"])
-        self.assertEqual(results["write"]["cause"], "invalid_arguments")
-        read.assert_awaited_once()
-        write.assert_not_called()
 
     def test_sheet_kinds_require_their_own_fields_and_column_shapes(self):
         schema = spreadsheet_tools()[0].definition.parameters

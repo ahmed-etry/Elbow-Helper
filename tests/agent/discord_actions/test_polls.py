@@ -33,7 +33,7 @@ class PollTests(unittest.IsolatedAsyncioTestCase):
         await prepare_poll(context, arguments)
         channel.send.assert_not_called()
         action = context.state.proposed_changes[0]
-        self.assertIn("Duration: 1 hour", action.preview.lines)
+        self.assertIn("for 1 hour", action.preview.lines[0])
         result = await action.run()
         poll = channel.send.await_args.kwargs["poll"]
         self.assertIsInstance(poll, discord.Poll)

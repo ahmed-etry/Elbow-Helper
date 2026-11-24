@@ -17,6 +17,16 @@ def league_month(cycle):
     return f'{year:04d}-{month:02d}'
 
 
+def cycle_dates(roster, cycle):
+    """The cycle's own key, open and close times, and whether it is the one taking signups now."""
+    def utc(ts):
+        return datetime.fromtimestamp(ts, timezone.utc).isoformat() if ts is not None else None
+    return {'cycle_key': cycle.cycle_key if cycle else None,
+            'opened_at': utc(cycle.opened_ts) if cycle else None,
+            'closed_at': utc(cycle.closed_ts) if cycle else None,
+            'taking_signups': bool(cycle and roster.status == 'open' and cycle.id == roster.active_cycle_id)}
+
+
 async def league_cycles(context, roster_id):
     """The newest cycle opened for each league month, over every kept cycle of the roster."""
     chosen, before = {}, None
@@ -74,10 +84,12 @@ async def cwl_rosters(context, arguments):
                     snapshots.append(await context.roster_queries.snapshot(
                         context.guild.id, roster.id, cycle_id=cycle.id))
         for snapshot in snapshots:
-            cycle_id = snapshot.cycle.id if snapshot.cycle else None
+            cycle = snapshot.cycle
+            cycle_id = cycle.id if cycle else None
             rosters.append({'roster_id': roster.id, 'name': roster.name, 'clan_code': roster.clan_code,
-                'cycle_id': cycle_id, 'season': league_month(snapshot.cycle) if snapshot.cycle else None,
-                'status': roster.status, 'accounts': len(snapshot.members), 'source_posts': posts})
+                'cycle_id': cycle_id, 'season': league_month(cycle) if cycle else None,
+                'status': roster.status, **cycle_dates(roster, cycle),
+                'accounts': len(snapshot.members), 'source_posts': posts})
             rows.extend({'roster_id': roster.id, 'cycle_id': cycle_id,
                 'member_id': member.discord_user_id,
                 'member_name': getattr(context.guild.get_member(member.discord_user_id), 'display_name', None),
@@ -100,4 +112,4 @@ async def cwl_rosters(context, arguments):
         'roster_population': population, 'selected_population': selected_count,
         'unobserved_accounts': unobserved,
         'missing_sources': missing, 'selection_complete': not missing,
-        'coverage': 'Roster cycles by league month (season) and their published source channels; signup is not final placement.'}
+        'coverage': 'Roster cycles by league month (season) and their published source channels; signing up is not a final clan placement.'}

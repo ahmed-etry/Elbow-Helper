@@ -13,7 +13,7 @@ from elbow_helper.agent.conversation.wording import ACTION_POST_HERE_BUTTON, ACT
 from ..files.delivery import attachment_files
 from ..discord_actions.message_parts import image_attachment
 from elbow_helper.agent.conversation.text import chunk_response
-from ..engine.service import AgentUnavailableError
+from ..engine.tool_call import AgentUnavailableError
 from .message_cleanup import log_cleanup_failure
 from .private_view import PRIVATE_RESULT_TIMEOUT, PrivateResultView
 

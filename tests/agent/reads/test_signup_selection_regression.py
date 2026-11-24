@@ -11,7 +11,7 @@ from elbow_helper.agent.reads.war_tools import TOOLS
 from elbow_helper.features.rosters.config import CWL_SIGNUP_ROSTER_ID
 from elbow_helper.features.rosters.repository import RosterRepository
 from elbow_helper.features.rosters.services.queries import RosterQueries
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 def _at(day):

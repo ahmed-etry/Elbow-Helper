@@ -5,9 +5,9 @@ from unittest.mock import patch
 
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.agent.discord_actions.gifs import find_gif
-from elbow_helper.agent.engine.service import AgentService
-from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
+from tests.agent.request_fixtures import member_context as _context
 from tests.agent.engine.helpers import social_step
+from tests.agent.loop_stub import banter_answer
 
 
 def gif_context(context=None, *, recent=()):
@@ -26,15 +26,14 @@ class BanterGifTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, {"url": url})
 
     async def test_unreadable_library_file_keeps_the_planned_fallback(self):
-        session = _AgentSession([social_step("Synthetic fallback.", meme_id="synthetic")])
         with (patch.dict(ITEM_BY_ID, synthetic={
             "id": "synthetic", "media": "missing.gif", "use": "Synthetic reaction",
             "shows": "Synthetic image", "group": "win",
         }), patch("elbow_helper.agent.discord_actions.gif_library._read_media", return_value=None)):
             context = gif_context()
-            answer = await AgentService(_AgentModel(session, route="social")).answer(
-                question="The imaginary tower fell over.", local_context="", context=context,
-            )
+            answer, session, _ = await banter_answer(
+                context, social_step("Synthetic fallback.", meme_id="synthetic"),
+                question="The imaginary tower fell over.")
         self.assertEqual(answer, "Synthetic fallback.")
         self.assertIsNone(context.state.gif_url)
         self.assertEqual(len(session.calls), 1)

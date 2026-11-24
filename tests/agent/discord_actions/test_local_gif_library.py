@@ -9,12 +9,8 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.core.paths import ApplicationPaths
-from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID, channel_gif_urls
 from elbow_helper.agent.discord_actions.gifs import channel_gif_history, find_gif, gif_tools
-from elbow_helper.agent.engine.service import AgentService
-from tests.agent.engine.helpers import social_step
-from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession
 from tests.agent.engine.test_banter_gifs import gif_context
 
 
@@ -61,23 +57,6 @@ class LocalGifLibraryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(self.context.state.gif_url)
             self.context.state.channel_gif_urls.clear()
 
-    async def test_missing_empty_oversized_and_unreadable_files_log_and_leave_text(self):
-        for name, data in (("missing.gif", None), ("empty.png", b""), ("huge.jpg", b"x" * 17)):
-            if data is not None:
-                (self.directory / name).write_bytes(data)
-            with self.library([name]), self.assertLogs(
-                "elbow_helper.agent.discord_actions.gif_library", level="WARNING",
-            ):
-                answer = await AgentService(_AgentModel(
-                    _AgentSession([social_step("Synthetic fallback.", meme_id="synthetic")]), route="social",
-                )).answer(question="Synthetic exchange", local_context="", context=self.context)
-            self.assertEqual(answer, "Synthetic fallback.")
-            self.assertIsNone(self.context.state.gif_url)
-        (self.directory / "denied.gif").write_bytes(b"synthetic")
-        with (self.library(["denied.gif"]), patch.object(Path, "open", side_effect=PermissionError("Synthetic denial")),
-              self.assertLogs("elbow_helper.agent.discord_actions.gif_library", level="WARNING")):
-            self.assertIn("error", await find_gif(self.context, {"query": "synthetic"}))
-
     async def test_missing_chosen_file_and_unsafe_paths_do_not_select_a_different_clip(self):
         (self.directory / "good.gif").write_bytes(b"synthetic")
         with self.library(["missing.gif", "good.gif"]), self.assertLogs(
@@ -99,19 +78,3 @@ class LocalGifLibraryTests(unittest.IsolatedAsyncioTestCase):
             with self.library([link]):
                 self.assertEqual(await find_gif(self.context, {"query": "synthetic"}), {"url": link})
             self.assertIsNone(self.context.state.gif_attachment)
-
-
-    async def test_changed_upload_limit_restores_fallback_text_before_delivery(self):
-        (self.directory / "synthetic.gif").write_bytes(b"synthetic media")
-        with self.library(["synthetic.gif"]):
-            answer = await AgentService(_AgentModel(
-                _AgentSession([social_step("Synthetic fallback.", meme_id="synthetic")]), route="social",
-            )).answer(question="Synthetic exchange", local_context="", context=self.context)
-        self.assertEqual(answer, "")
-        self.context.guild.filesize_limit = 1
-        surface = AgentDeliveryMixin()
-        surface._send_response = AsyncMock()
-        with self.assertLogs("elbow_helper.agent.conversation.delivery", level="WARNING"):
-            await surface.send_response(self.context.source_message, answer, None, context=self.context)
-        self.assertEqual(surface._send_response.await_args.args[1], "Synthetic fallback.")
-        self.context.source_message.reply.assert_not_awaited()

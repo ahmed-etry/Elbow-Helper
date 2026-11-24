@@ -1,24 +1,23 @@
 """Operator records keep synthetic request evidence away from agent datasets."""
 
 import asyncio
+from contextlib import ExitStack
 from dataclasses import replace
 import json
 from pathlib import Path
 from tests.temp_directory import TemporaryDirectory
 import threading
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from elbow_helper.agent.conversation.transcripts import TranscriptArchive
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
-from elbow_helper.agent.reads.sql.catalogue import SOURCES
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
-from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.engine.models import RegisteredAgentTool
-from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
-from tests.agent.engine.helpers import patch_engine
-from tests.agent.engine.test_agent_plan_flow import _context, _model_step, _plan, _step, _Session
-from tests.agent.engine.test_agent_service import _AgentModel
+from elbow_helper.agent.engine.models import AgentTurnState, RegisteredAgentTool
+from elbow_helper.agent.engine.tool_call import AgentUnavailableError
+from elbow_helper.infrastructure.ai import AgentToolDefinition, TextGenerationError
+from tests.agent.loop_stub import StubModel, StubSession, call, final, loop_service, without_server_notes
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
@@ -27,6 +26,7 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.directory.cleanup)
         self.path = Path(self.directory.name) / "transcripts.sqlite3"
         self.archive = TranscriptArchive(self.path)
+        self.addAsyncCleanup(self.archive.drain)
         self.context = replace(_context(), transcript_archive=self.archive)
 
     async def records(self):
@@ -35,66 +35,64 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
             return [json.loads(row[0]) for row in connection.execute(
                 "SELECT record_json FROM operator_debug_records ORDER BY record_id")]
 
-    async def test_plan_correction_results_private_answer_images_and_round_usage_survive(self):
-        invalid = _model_step({"invalid": True})
-        valid = _model_step(_plan([_step("lookup", {"value": 7})], effort="high"))
-        session = _Session([invalid, valid, AgentStep(
-            "Synthetic restricted answer", (), AgentUsage(100, 20, 30, 70))], [])
+    async def test_loop_round_usage_and_calls_reach_the_record(self):
         tool = RegisteredAgentTool(AgentToolDefinition("read_value", "Synthetic lookup", {
             "type": "object", "properties": {"value": {"type": "integer"}},
             "required": ["value"], "additionalProperties": False,
         }), AsyncMock(return_value={"value": 7, "evidence": "Synthetic restricted evidence"}),
             contract=CapabilityContract(source_scope="request_context"))
-        context = replace(self.context, attachment_sources=(self.context.source_message,))
-        with (
-            patch_engine("build_agent_tools", return_value={"read_value": tool}),
-            patch("elbow_helper.agent.files.images.request_images", new_callable=AsyncMock,
-                  return_value=[type("Image", (), {"label": "Synthetic image"})()]),
-        ):
-            answer = await AgentService(_AgentModel(session)).answer(
-                question="Synthetic question", local_context="", context=context)
-        self.assertEqual(answer, "Synthetic restricted answer")
+        session = StubSession(call("read_value", {"value": 7}), final("Synthetic answer"))
+        service = loop_service(StubModel(session))
+        service.registry = {"read_value": tool}
+        with ExitStack() as stack:
+            without_server_notes(stack)
+            answer = await service.answer(question="Synthetic question", context=self.context)
+        self.assertEqual(answer, "Synthetic answer")
         record, = await self.records()
-        self.assertEqual(record["question"], "Synthetic question")
-        self.assertEqual(record["image_labels"], ["Synthetic image"])
-        self.assertEqual(record["answer"], answer)
-        self.assertFalse(record["plans"][0]["check"]["ok"])
-        self.assertTrue(record["plans"][1]["check"]["ok"])
-        call, = record["tool_calls"]
-        self.assertEqual(call["arguments"], {"value": 7})
-        self.assertEqual(call["result"]["evidence"], "Synthetic restricted evidence")
-        self.assertEqual([round_["effort"] for round_ in record["rounds"]], ["low", "high", "high", "low"])
-        self.assertEqual(record["rounds"][0]["phase"], "routing")
-        self.assertEqual(record["rounds"][-1]["usage"], {
-            "prompt_tokens": 100, "completion_tokens": 20,
-            "prompt_cache_hit_tokens": 30, "prompt_cache_miss_tokens": 70})
-        self.assertTrue(all(round_["elapsed_ms"] >= 0 for round_ in record["rounds"]))
         self.assertEqual(record["status"], "completed")
-        self.assertEqual(record["route"], "research")
-        self.assertEqual(record["usage"]["rounds"], len(record["rounds"]))
-        self.assertGreaterEqual(record["usage"]["prompt_tokens"], 100)
-        self.assertIsNone(record["terminal_cause"])
-        self.assertEqual(self.archive.read_page(guild_id=3, channel_id=91, root_message_id=71), ())
-        self.assertTrue(all("transcripts" not in str(source.path) for source in SOURCES))
+        self.assertEqual([round_["usage"] for round_ in record["rounds"]], [
+            {"prompt_tokens": 10, "completion_tokens": 2, "prompt_cache_hit_tokens": 4, "prompt_cache_miss_tokens": 6},
+            {"prompt_tokens": 20, "completion_tokens": 5, "prompt_cache_hit_tokens": 8, "prompt_cache_miss_tokens": 12}])
+        self.assertEqual(record["usage"]["rounds"], 2)
+        self.assertEqual((record["usage"]["prompt_tokens"], record["usage"]["completion_tokens"]), (30, 7))
+        self.assertEqual(record["usage"]["unknown_token_rounds"], 0)
+        call_, = record["tool_calls"]
+        self.assertEqual((call_["capability"], call_["arguments"], call_["status"]), ("read_value", {"value": 7}, "completed"))
 
-    async def test_archive_failure_and_blocked_write_do_not_hold_answer(self):
-        started, release = threading.Event(), threading.Event()
-        def blocked_write(**values):
-            started.set()
-            release.wait(5)
-            raise OSError("Synthetic archive failure")
-        session = _Session([AgentStep("Synthetic answer", (), AgentUsage())], [])
-        with patch.object(self.archive, "record_debug", side_effect=blocked_write):
-            try:
-                answer = await asyncio.wait_for(AgentService(_AgentModel(session)).answer(
-                    question="Synthetic question", local_context="", context=self.context), 1)
-                self.assertEqual(answer, "Synthetic answer")
-                await asyncio.to_thread(started.wait, 1)
-                self.assertTrue(started.is_set())
-            finally:
-                release.set()
-            with self.assertLogs("elbow_helper.agent.conversation.transcripts", level="ERROR"):
-                await self.archive.drain()
+    async def test_loop_provider_error_and_empty_answer_are_an_unavailable_request(self):
+        for name, steps, status in (
+            ("provider error", (TextGenerationError("Synthetic provider failure"),), "provider_error"),
+            ("empty answer", (final("  "),), "failed"),
+        ):
+            with self.subTest(name), ExitStack() as stack:
+                without_server_notes(stack)
+                with self.assertRaises(AgentUnavailableError):
+                    await loop_service(StubModel(StubSession(*steps))).answer(
+                        question="Synthetic question", context=self.context)
+        records = await self.records()
+        self.assertEqual([record["status"] for record in records], ["provider_error", "failed"])
+        self.assertEqual(records[0]["error"], "Synthetic provider failure")
+        self.assertEqual(records[0]["rounds"][0]["outcome"], "failed")
+        self.assertEqual(records[0]["usage"]["unknown_token_rounds"], 1)
+
+    async def test_loop_empty_text_is_fine_when_a_gif_is_the_reply_but_not_for_a_reaction_alone(self):
+        with ExitStack() as stack:
+            without_server_notes(stack)
+            context = replace(self.context, state=AgentTurnState())
+            context.state.gif_url = "https://example.test/synthetic.gif"
+            self.assertEqual(await loop_service(StubModel(StubSession(final("")))).answer(
+                question="Synthetic question", context=context), "")
+            context = replace(self.context, state=AgentTurnState())
+            context.state.reactions.emojis.append("👍")
+            with self.assertRaises(AgentUnavailableError):
+                await loop_service(StubModel(StubSession(final("")))).answer(
+                    question="Synthetic question", context=context)
+
+    async def test_loop_without_a_configured_model_is_an_unavailable_request(self):
+        with ExitStack() as stack:
+            without_server_notes(stack)
+            with self.assertRaises(AgentUnavailableError):
+                await loop_service(StubModel()).answer(question="Synthetic question", context=self.context)
 
     async def test_visible_transcript_writes_keep_order_without_holding_delivery(self):
         started, release = threading.Event(), threading.Event()
@@ -118,15 +116,3 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
             await self.archive.drain()
         rows = self.archive.read_page(guild_id=3, channel_id=91, root_message_id=1)
         self.assertEqual(rows[0]["replies"][0]["content"], "Synthetic answer")
-
-
-    async def test_cancelled_round_is_archived_without_invented_token_usage(self):
-        session = _Session([], [])
-        session.advance = AsyncMock(side_effect=asyncio.CancelledError)
-        with self.assertRaises(asyncio.CancelledError):
-            await AgentService(_AgentModel(session)).answer(
-                question="Synthetic question", local_context="", context=self.context)
-        record, = await self.records()
-        self.assertEqual(record["status"], "cancelled")
-        self.assertGreaterEqual(record["usage"]["unknown_token_rounds"], 1)
-        self.assertIsNone(record["rounds"][-1]["usage"])

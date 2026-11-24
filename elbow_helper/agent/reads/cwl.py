@@ -4,8 +4,10 @@ from dataclasses import asdict
 from typing import Any, Mapping
 from uuid import uuid4
 
+from elbow_helper.domain.cwl import CwlWarSelectionError
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
+from elbow_helper.features.cwl.results import SCORING_FAILURES, scoring_failure
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
 from elbow_helper.agent.safety.access import require_evidence_access
@@ -69,8 +71,10 @@ async def cwl_bonus_scores(
         snapshot = await stored_read(context, context.cwl_queries, "result_snapshot", metric="bonus",
             clan_code=arguments["clan_code"], war_ids=arguments["war_ids"],
         )
-    except (RuntimeError, ValueError) as error:
-        return {"error": str(error)}
+    except CwlWarSelectionError as error:
+        return {"error": str(error), "cause": "invalid_arguments", "invalid_fields": ["war_ids"]}
+    except SCORING_FAILURES as error:
+        return scoring_failure(error)
     await require_evidence_access(context)
     result = asdict(snapshot)
     result = {"rows": list(result.pop("summaries")), **result}

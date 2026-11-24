@@ -43,7 +43,7 @@ class ChannelManagementTests(unittest.IsolatedAsyncioTestCase):
         await prepare_edit(context, {"channel_id": 200, "name": "renamed", "slowmode_seconds": 300})
         channel.edit.assert_not_called()
         action = context.state.proposed_changes[0]
-        self.assertIn("Slowmode: 0 seconds to 5 minutes", action.preview.lines)
+        self.assertIn("Slowmode goes from 0 seconds to 5 minutes.", action.preview.lines)
         result = await action.run()
         undo = await undo_edit(context, {
             "targets": action.values, "before": action.preview.before, "after": result.after,

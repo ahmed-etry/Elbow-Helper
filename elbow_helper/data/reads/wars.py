@@ -173,6 +173,11 @@ def final_participation(state, coverage, totals, extra):
     return state == "warEnded" and (coverage["own"]["attacks_complete"] or counted)
 
 
+def participation_lineup_known(own):
+    """Legacy participation can have a saved lineup without a known team size."""
+    return bool(own['members']) and (own['team_size'] is None or own['members'] >= own['team_size'])
+
+
 def first_gap(connection, war_id, attacks):
     """The first of Clash's attack orders that the record cannot place on a defender.
 
@@ -644,8 +649,12 @@ class WarReads(RecordReads):
             "SELECT w.id AS war_id,w.end_at,s.result,'war' AS kind FROM wars w JOIN war_sides s "
             "ON s.war_id=w.id AND s.clan_tag=? WHERE w.first_seen_at<=? AND w.end_at<=? "
             "AND EXISTS (SELECT 1 FROM war_source_keys k WHERE k.war_id=w.id AND k.source_kind='war_log') "
-            "UNION ALL SELECT NULL,end_at,result,'league_week' FROM cwl_log_summaries WHERE clan_tag=? AND end_at<=? "
+            "UNION ALL SELECT NULL,end_at,NULL,'league_week' FROM cwl_log_summaries WHERE clan_tag=? AND end_at<=? "
             "ORDER BY end_at DESC,war_id DESC LIMIT ? OFFSET ?", (clan, at, at, clan, at, limit + 1, offset))]
+        for row in rows:
+            # The result word Clash sends on a league week is not that week's outcome.
+            if row["kind"] == "league_week":
+                del row["result"]
         signal = war_signal(connection, "war_log", clan, at)
         status = ("private_log" if signal["status"] == "private" else
                   "unavailable" if signal["last_good_at"] is None else "available")

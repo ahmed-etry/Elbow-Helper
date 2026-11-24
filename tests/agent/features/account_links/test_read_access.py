@@ -13,7 +13,7 @@ from elbow_helper.agent.reads.people import read_people_links as read_linked_acc
 from elbow_helper.agent.reads.people_tools import account_read_tools
 from elbow_helper.agent.reads.sql.query import run_query
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class AccountLinkReadAccessTests(unittest.IsolatedAsyncioTestCase):

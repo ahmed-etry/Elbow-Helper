@@ -32,8 +32,10 @@ class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
         context = self.health_context(workflow)
         result = await run_health_player(context, {"account": "#P0"})
         self.assertEqual(result.status, "complete")
-        self.assertIn("https://example.test/sheet", result.text)
-        self.assertEqual(result.attachments, ())
+        self.assertEqual(result.text, "Synthetic report")
+        attachment, = result.attachments
+        self.assertEqual(attachment.filename, "synthetic.xlsx")
+        self.assertEqual(attachment.google_link, "https://example.test/sheet")
         workflow.run_player_health_export.assert_awaited_once_with(
             "#P0", mode="last_30d", date_from=None, date_to=None,
         )

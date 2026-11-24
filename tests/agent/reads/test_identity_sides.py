@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.reads import account_names, identity_reads
-from elbow_helper.agent.reads.evidence import family_model_view
+from elbow_helper.agent.loop.results import shape
 from elbow_helper.agent.engine.result_hints import RESULT_FIELDS
 from elbow_helper.configuration.clans import CLANS
 from tests.agent.reads.test_named_account_stats import lookup_context, named_member, rosters
@@ -38,8 +38,7 @@ class IdentitySideTests(unittest.IsolatedAsyncioTestCase):
                 selector: 'Birch' if selector == 'name' else ['Birch'], 'look_in': 'game'})
             self.assertEqual(result['status'], 'resolved')
             self.assertEqual([row['player_tag'] for row in result['rows']], ['#P0'])
-            view = family_model_view({**result, 'family': 'read_member_accounts'})
-            resolution = view['name_resolutions'][0]
+            resolution = result['name_resolutions'][0]
             self.assertEqual((resolution['look_in'], resolution['found_in']), ('game', 'discord'))
 
     async def test_discord_miss_falls_back_to_game_and_joins_owner(self):
@@ -60,7 +59,7 @@ class IdentitySideTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['status'], 'resolved')
         self.assertEqual([(row['member_id'], row['player_tag']) for row in result['rows']], [(42, None)])
         self.assertEqual(result['members'][0]['account_tags'], [])
-        resolution = family_model_view(result)['name_resolutions'][0]
+        resolution = result['name_resolutions'][0]
         self.assertEqual(resolution['matching_members'][0]['account_links_status'], 'no_linked_accounts')
         self.assertEqual(context.state.resolved_members, {42: 'Silver Kite'})
 
@@ -70,7 +69,7 @@ class IdentitySideTests(unittest.IsolatedAsyncioTestCase):
             result = await self.read_names(context, {'name': 'Silver Kite', 'look_in': 'discord'})
         game.assert_not_awaited()
         self.assertFalse(result['count_complete'])
-        resolution = family_model_view(result)['name_resolutions'][0]
+        resolution = result['name_resolutions'][0]
         self.assertEqual(resolution['matching_members'][0]['account_links_status'], 'links_unavailable')
 
     async def test_game_ambiguity_lists_owners_and_never_searches_discord(self):
@@ -83,7 +82,7 @@ class IdentitySideTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row['player_tag'] for row in result['rows']], ['#P0', '#Q0'])
         self.assertTrue(all(row['candidate_for'] == ['Silver Kite'] for row in result['rows']))
         self.assertEqual(result['resolved_member_ids'], [])
-        resolution = family_model_view(result)['name_resolutions'][0]
+        resolution = result['name_resolutions'][0]
         self.assertEqual([(row['player_tag'], row['member_id']) for row in resolution['candidates']],
                          [('#P0', 42), ('#Q0', 43)])
         self.assertEqual(context.state.resolved_members, {})
@@ -100,7 +99,7 @@ class IdentitySideTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row['member_id'] for row in result['members']], [42, 43, 44])
         self.assertTrue(all(row['candidate_for'] == ['Silver Kite'] for row in result['members']))
         self.assertEqual(result['resolved_member_ids'], [])
-        resolution = family_model_view(result)['name_resolutions'][0]
+        resolution = result['name_resolutions'][0]
         self.assertEqual([row['accounts'] for row in resolution['matching_members']], [
             [{'player_tag': '#P0', 'player_name': 'Amber Comet'}],
             [], [{'player_tag': '#Q0', 'player_name': 'Other Beacon'}]])
@@ -155,7 +154,7 @@ class IdentitySideTests(unittest.IsolatedAsyncioTestCase):
             result = await tool.handler(context, {'name': 'Silver Kite', 'look_in': 'discord',
                                                   'include_roles': True, 'include_profile': True})
         retained = await tool.handler(context, {'report_id': result['report_id']})
-        for data in (result, retained, family_model_view(retained)):
+        for data in (result, retained, shape(context, {}, retained)):
             self.assertEqual(len(data['members']), 1)
             profile = data['members'][0]
             self.assertEqual(profile['member_id'], 42)
@@ -170,7 +169,7 @@ class IdentitySideTests(unittest.IsolatedAsyncioTestCase):
                               'home_clan_basis', 'participation_clans', 'family_membership_roles'):
                     self.assertNotIn(field, account)
         self.assertTrue(all('selected_by' not in row for row in result['rows']))
-        page = family_model_view(await tool.handler(context, {'report_id': result['report_id'], 'limit': 1}))
+        page = shape(context, {}, await tool.handler(context, {'report_id': result['report_id'], 'limit': 1}))
         self.assertEqual(page['members'][0]['account_tags'], ['#P0', '#Q0'])
         self.assertIn('roles', RESULT_FIELDS['read_member_accounts']['members'][0])
         self.assertNotIn('roles', RESULT_FIELDS['read_member_accounts']['rows'][0])

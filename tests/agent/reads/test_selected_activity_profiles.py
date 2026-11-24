@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.agent.reads import identity_reads as reads
 from elbow_helper.agent.reads.snapshots import family_tool
-from elbow_helper.agent.engine.assessment import assessment_limits
 from tests.agent.reads.test_named_account_stats import lookup_context, named_member
 
 
@@ -45,11 +44,3 @@ class SelectedActivityProfileTests(unittest.IsolatedAsyncioTestCase):
             result = await reads.member_cohort(context, {'basis': 'selected', 'cohort_ref': accounts['report_id']})
         self.assertEqual(result['cause'], 'report_unavailable')
         activity.assert_not_called()
-
-
-    def test_absent_leadership_keeps_unknown_owner_filters_without_marking_present_members(self):
-        result = assessment_limits({'cohort': {'leadership_filter': {'unverified_accounts': 1},
-            'rows': [{'member_id': identifier, 'membership_status': status,
-                      'accounts': [{'player_tag': tag, 'player_name': 'Synthetic'}]}
-                     for identifier, status, tag in ((42, 'present', '#P0'), (404, 'not_in_guild', '#Q0'))]}})
-        self.assertEqual([r['player_tag'] for r in result['unverified_selection']], ['#Q0'])

@@ -35,6 +35,30 @@ def _words(text):
     return tuple(words)
 
 
+def _stem(word):
+    """Fold -ing, -ed and a final -e, so post, posts, posted and posting are one word."""
+    for suffix in ("ing", "ed"):
+        if len(word) > len(suffix) + 2 and word.endswith(suffix):
+            word = word[:-len(suffix)]
+            if len(word) > 3 and word[-1] == word[-2] and word[-1] not in "lsz":
+                word = word[:-1]
+            break
+    return word[:-1] if len(word) > 3 and word.endswith("e") else word
+
+
+_LONG_LINE = 240
+
+
+def _lines(body):
+    """Each non-empty line of a section; a long paragraph line is cut into sentences."""
+    for line in body.splitlines():
+        line = line.strip()
+        if len(line) > _LONG_LINE:
+            yield from (sentence for sentence in re.split(r"(?<=[.!?])\s+", line) if sentence)
+        elif line:
+            yield line
+
+
 _STOP_WORDS = frozenset(_words(
     "a about above after again against all am an and any are as at be because been before "
     "being below between both but by can could did do does doing down during each few for "
@@ -151,6 +175,38 @@ class KnowledgeCatalog:
             if exact or score:
                 ranked.append((-exact, -score, index, section))
         return tuple(item[-1] for item in sorted(ranked)[:limit])
+
+    def matching_lines(self, sections, searches):
+        """Every line holding words of any search, as (section, line), best first.
+
+        A line qualifies when it holds two of a search's words (its one word, for a
+        one-word search). More of a search's words come first, then more of all the
+        searched words, then the section's rank in the section search.
+        """
+        sections = tuple(sections)
+        queries = []
+        for search in dict.fromkeys(searches):
+            terms = frozenset(_stem(word) for word in _words(search) if word not in _STOP_WORDS)
+            if terms:
+                queries.append((search, terms))
+        if not queries:
+            return ()
+        searched = frozenset().union(*(terms for _, terms in queries))
+        rank = {}
+        for search, _ in queries:
+            for position, section in enumerate(self.search(sections, query=search, limit=None)):
+                rank[section] = min(rank.get(section, position), position)
+        found = []
+        for order, section in enumerate(sections):
+            for number, line in enumerate(_lines(section.body)):
+                present = frozenset(_stem(word) for word in _words(line))
+                counts = [(len(terms & present), min(2, len(terms))) for _, terms in queries]
+                best = max(count for count, _ in counts)
+                if any(count >= needed for count, needed in counts):
+                    found.append((-best, -len(searched & present), rank.get(section, len(sections)),
+                                  order, number, section, line))
+        found.sort(key=lambda item: item[:5])
+        return tuple(item[5:] for item in found)
 
     def visible_sections(self, levels=()):
         return tuple(section for section in self.active_sections

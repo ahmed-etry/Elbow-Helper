@@ -1,7 +1,6 @@
 """Synthetic media retains its sender, caption and reply recipient for vision."""
 
 import io
-from dataclasses import replace
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -9,13 +8,10 @@ from unittest.mock import AsyncMock
 import discord
 from PIL import Image
 
-from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.files.images import MAX_IMAGE_BYTES, request_images
 from elbow_helper.agent.conversation.text import message_text
-from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from tests.agent.discord_actions.management_helpers import fixture
 from tests.agent.files.image_helpers import png
-from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 from tests.agent.files.test_gif_images import animation
 
 
@@ -103,16 +99,3 @@ class StickerImageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await request_images(context), ())
         for item in source.stickers:
             item.read.assert_not_awaited()
-
-    async def test_normal_service_passes_sticker_bytes_and_labels_to_the_model(self):
-        context = _context()
-        source = context.source_message
-        source.id, source.content, source.author = 300, "", context.member
-        source.stickers = [sticker()]
-        context = replace(context, attachment_sources=(source,))
-        model = _AgentModel(_AgentSession([AgentStep("Synthetic reply", (), AgentUsage())]))
-        await AgentService(model).answer(question="Respond to this sticker", local_context="", context=context)
-        self.assertEqual(len(model.request["images"]), 1)
-        self.assertEqual(model.request["images"][0].data, png("red"))
-        self.assertIn('sticker "Synthetic salute"', model.request["prompt"])
-        self.assertIn('"sender"', model.request["prompt"])

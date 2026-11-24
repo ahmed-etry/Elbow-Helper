@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from elbow_helper.agent.reads import war_tools as war_reads
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
 from tests.agent.features.cwl.cwl_helpers import ResultQueries
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 CODE = CWL_CLAN_CODES[0]
 

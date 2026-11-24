@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, Mock, call, patch
 from elbow_helper.agent.reads import people as record_identity
 from elbow_helper.agent.reads import membership as history_tool
 from elbow_helper.agent.reads import identity_reads, account_names
-from elbow_helper.agent.reads import evidence as model_view
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.data.reads import PeopleReads, MembershipReads, StayReads
 from tests.data.store_fixtures import empty_store
@@ -20,7 +19,7 @@ from elbow_helper.data.store.clans import collect_clans
 from elbow_helper.data.store.people import mirror_links, observe_discord
 from elbow_helper.data.store.players import collect_player
 from elbow_helper.infrastructure.persistence.migrations import UnsupportedSQLiteVersionError
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.data.test_family_store import player, response
 from tests.data.test_players import profile
 
@@ -176,7 +175,7 @@ class RecordConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(original['last_observed_at'], self.initial_at)
         self.assertEqual(original['legacy_name'], 'Synthetic Main')
         account = next(a for r in cohort['rows'] for a in r['accounts'] if a['player_tag'] == '#P0')
-        self.assertEqual(model_view.account_view(account, nested=True)['record_history'], original)
+        self.assertEqual(account['record_history'], original)
 
 
     async def test_missing_or_unavailable_history_keeps_live_current_answer(self):

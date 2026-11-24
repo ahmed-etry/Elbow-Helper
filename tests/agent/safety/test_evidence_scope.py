@@ -2,11 +2,8 @@
 
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from tests.agent.engine.helpers import LegacyCatalogueMixin
-
 import json
 from types import SimpleNamespace
-from elbow_helper.agent.conversation.wording import AGENT_ANSWER_UNFINISHED
 import unittest
 from unittest.mock import AsyncMock
 
@@ -17,13 +14,12 @@ from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID, LEAD, RECRUIT
 from elbow_helper.agent.safety.access import AgentAccessLost, assert_answer_scope
 from elbow_helper.agent.actions.answer_view import PrivateAnswerView
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
-from elbow_helper.agent.safety.disclosure import request_scope, log_scope
-from elbow_helper.agent.knowledge.answers import scoped_answer, private_answer_pass
+from elbow_helper.agent.safety.disclosure import request_scope
+from elbow_helper.agent.knowledge.answers import private_answer_pass
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
 from elbow_helper.agent.knowledge.tools import search_approved_knowledge
 from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState, AgentDelivery
-from elbow_helper.agent.research.history import read_message_context, searchable_channel_ids
-from elbow_helper.agent.conversation.wording import AGENT_PRIVATE_OFFER, AGENT_PRIVATE_CHECK_BUTTON
+from elbow_helper.agent.research.history import read_message_context
 
 
 @dataclass(frozen=True)
@@ -56,7 +52,7 @@ class Channel:
                               created_at=datetime.now(timezone.utc))
 
 
-class ScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
+class ScopeTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.asker = SimpleNamespace(id=10, roles=[Role(AGENT_TESTER_ROLE_ID), Role(next(iter(RECRUITERS)))],
                                      bot=False, display_name="Asker")
@@ -93,28 +89,6 @@ class ScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         await self.delivery.send_response(self.message, "Recruitment result", None, context=self.context, delivery=active)
         self.assertEqual(active.text_parts, ["Recruitment result"])
         self.assertNotIn("view", self.message.reply.await_args.kwargs)
-
-    async def test_member_destination_never_reads_recruitment_and_offers_click_only_pass(self):
-        self.message.channel = self.member_chat
-        result = await read_message_context(self.context, {"channel_id": 200, "message_id": 123})
-        self.assertIn("error", result)
-        self.assertEqual(self.ticket.reads, 0)
-        self.assertNotIn(200, await searchable_channel_ids(self.context))
-        scoped = scoped_answer(self.context, json.dumps({"needs_private_evidence": True, "answer": "Public facts."}))
-        self.context.state.private_answer_run = AsyncMock(return_value=("Private facts.", (), replace(
-            self.context, state=AgentTurnState(), private_pass=True)))
-        await self.delivery.send_response(self.message, scoped, None, context=self.context)
-        self.assertEqual(self.message.reply.await_args.args[0], "Public facts.\n\n" + AGENT_PRIVATE_OFFER)
-        self.context.state.private_answer_run.assert_not_awaited()
-        view = self.message.reply.await_args.kwargs["view"]
-        self.assertIsInstance(view, PrivateAnswerView)
-        self.assertEqual([b.label for b in view.children], [AGENT_PRIVATE_CHECK_BUTTON])
-        interaction = SimpleNamespace(user=self.asker, response=SimpleNamespace(defer=AsyncMock()),
-                                      followup=SimpleNamespace(send=AsyncMock()))
-        await view.check_privately(interaction)
-        self.context.state.private_answer_run.assert_awaited_once()
-        self.assertTrue(interaction.followup.send.await_args.kwargs["ephemeral"])
-        self.assertEqual(self.message.reply.await_count, 1)
 
 
     async def test_personal_ticket_is_not_read_until_every_destination_reader_can_read_it(self):
@@ -160,41 +134,6 @@ class ScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.message.reply.await_args.args[0], "Available facts.")
         self.assertNotIn("view", self.message.reply.await_args.kwargs)
 
-    async def test_delivery_never_dumps_raw_findings_after_an_unsupported_private_claim(self):
-        self.context.state.grounding_evidence["members"] = {"members": [{
-            "display_name": "North", "joined_at": "2024-01-02T00:00:00+00:00"}]}
-        await self.delivery.send_response(
-            self.message, "The names and dates only open privately here.", None, context=self.context,
-        )
-        answer = self.message.reply.await_args.args[0]
-        self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
-        self.assertNotIn("2024-01-02", answer)
-        self.assertNotIn("privately", answer)
-        self.assertNotIn("view", self.message.reply.await_args.kwargs)
-
-
-    async def test_starved_scope_never_turns_bad_envelopes_or_empty_answers_into_retry_errors(self):
-        from elbow_helper.agent.conversation.wording import FAILURE_MESSAGE
-        self.context.state.scope_audit.excluded["201"] = "per_person"
-        for signal in (FAILURE_MESSAGE, "", '{"needs_private_evidence":',
-                       '{"needs_private_evidence":true,"reason":"internal marker"}',
-                       json.dumps({"needs_private_evidence": True, "answer": FAILURE_MESSAGE})):
-            with self.subTest(signal=signal):
-                self.assertEqual(scoped_answer(self.context, signal), AGENT_ANSWER_UNFINISHED)
-        self.assertFalse(self.context.state.scope_audit.offered)
-
-    async def test_service_and_delivery_keep_scope_empty_distinct_from_request_failure(self):
-        from unittest.mock import patch
-        from elbow_helper.agent.engine.service import AgentService
-        from elbow_helper.agent.conversation.wording import FAILURE_MESSAGE
-        self.context.state.scope_audit.excluded["201"] = "per_person"
-        service = AgentService(None)
-        with patch.object(service, "_answer", AsyncMock(return_value=FAILURE_MESSAGE)):
-            answer = await service.answer(question="Read the interview", local_context="", context=self.context)
-        self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
-        await self.delivery.send_response(self.message, FAILURE_MESSAGE, None, context=self.context)
-        self.assertEqual(self.message.reply.await_args.args[0], AGENT_ANSWER_UNFINISHED)
-
     async def test_private_pass_uses_fresh_state_and_current_clearance(self):
         self.message.channel = self.member_chat
         await request_scope(self.context)
@@ -222,16 +161,6 @@ class ScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         self.context.state.private_answer_run.assert_not_awaited()
         self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
 
-    async def test_audit_records_scope_exclusions_and_offer(self):
-        self.message.channel = self.member_chat
-        await read_message_context(self.context, {"channel_id": 200, "message_id": 123})
-        scoped_answer(self.context, '{"needs_private_evidence":true,"answer":"Public facts"}')
-        with self.assertLogs("elbow_helper.agent.safety.disclosure", level="INFO") as captured:
-            log_scope(self.context)
-        self.assertIn("clearance=[] scope=[]", captured.output[0])
-        self.assertIn("role_scope", captured.output[0])
-        self.assertIn("asker_only_offered=True", captured.output[0])
-
 
     async def test_guard_covers_alternate_discord_citation_hosts(self):
         for url in ("http://discordapp.com/channels/1/201/123",
@@ -241,23 +170,18 @@ class ScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
                 await assert_answer_scope(self.context, url)
 
     async def test_service_and_button_run_only_scoped_passes(self):
-        from unittest.mock import patch
-        from elbow_helper.agent.engine.service import AgentService
-        from elbow_helper.agent.engine.registry import build_agent_tools
-        from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-        from tests.agent.engine.test_agent_plan_flow import _Model, _Session, _model_step, _plan
+        from contextlib import ExitStack
+        from tests.agent.loop_stub import StubModel, StubSession, call, final, loop_service, without_server_notes
         self.message.channel = self.member_chat
         self.message.content = "Check the recruitment ticket"
-        step = {"id": "ticket", "capability": "read_message_context",
-                "arguments": {"channel_id": 200, "message_id": 123}, "depends_on": []}
-        public = _Session([_model_step(_plan([step])), AgentStep(
-            '{"needs_private_evidence":true,"answer":"Public facts"}', (), AgentUsage())], [])
-        private = _Session([_model_step(_plan([step])), AgentStep("Private facts", (), AgentUsage())], [])
-        model = _Model(public)
-        service = AgentService(model)
-        tool = replace(build_agent_tools()["read_message_context"], default_visible=True)
-        with patch("elbow_helper.agent.engine.service.build_agent_tools", return_value={"read_message_context": tool}):
-            answer = await service.answer(question="Check the recruitment ticket", local_context="", context=self.context)
+        read = ("read_message_context", {"channel_id": 200, "message_id": 123})
+        public = StubSession(call(*read), call("offer_full_answer", {}, "call-2"), final("Public facts"))
+        private = StubSession(call(*read), final("Private facts"))
+        model = StubModel(public)
+        with ExitStack() as stack:
+            without_server_notes(stack)
+            service = loop_service(model)
+            answer = await service.answer(question="Check the recruitment ticket", context=self.context)
             self.assertEqual(answer, "Public facts")
             self.assertEqual(self.ticket.reads, 0)
             self.assertTrue(self.context.state.scope_audit.offered)
@@ -266,7 +190,7 @@ class ScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
             await self.delivery.send_response(self.message, answer, None, context=self.context)
             view = self.message.reply.await_args.kwargs["view"]
             self.addCleanup(view.stop)
-            model.session = private
+            model.sessions.append(private)
             interaction = SimpleNamespace(user=self.asker, response=SimpleNamespace(defer=AsyncMock()),
                                           followup=SimpleNamespace(send=AsyncMock()))
             await view.check_privately(interaction)

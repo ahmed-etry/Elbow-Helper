@@ -250,11 +250,13 @@ def standing_rows(accounts, profiles, league):
         tier = tier if isinstance(tier, dict) else {}
         legacy = item.get("legacy_league") or {}
         name = tier.get("name")
+        legacy_name = legacy.get("name") if isinstance(legacy, dict) else None
         result.append({**account, "status": item.get("coverage", {}).get("status", "unavailable"),
                        "observed_at": observed(item.get("field_observed_at", {}).get("leagueTier")),
                        "ranked_league": name,
                        "leagueTier": {key: tier[key] for key in RANKED_LEAGUE_FIELDS if key in tier},
-                       "legacy_league": legacy.get("name") if isinstance(legacy, dict) else None,
+                       # The old league system does not apply to an account in a ranked league.
+                       **({"legacy_league": legacy_name} if legacy_name or not name else {}),
                        "trophies": fields.get("trophies"), "best_trophies": fields.get("bestTrophies"),
                        "matches": (league_key(name).startswith(league) if isinstance(name, str) else None)})
     return result
@@ -349,8 +351,8 @@ async def read_membership_history(context, arguments):
         return {"error": "Membership observations could not be read within their bounds.",
                 "cause": "source_unavailable"}
     if snapshot["truncated"]:
-        return {"error": "Membership observations exceed the row bound; narrow the window.",
-                "cause": "source_unavailable"}
+        return {"error": f"Over {STAY_LIMIT:,} recorded membership stays fall in this period; narrow the window.",
+                "cause": "too_many_rows"}
     for account in snapshot["rows"]:
         # Only what was seen inside the history bounds counts as an earlier observation.
         account["stays"] = [{**stay, "first_seen_at": max(stay["first_seen_at"], start)} for stay in account["stays"]]

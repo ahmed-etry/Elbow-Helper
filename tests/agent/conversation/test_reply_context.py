@@ -7,9 +7,8 @@ import json
 
 import discord
 
-from elbow_helper.agent.conversation.context import compile_context
 from elbow_helper.agent.conversation.reply_context import prepare_reply_context
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.agent.conversation.test_agent_context import _turn
 
 
@@ -95,13 +94,3 @@ class ReplyContextTests(unittest.IsolatedAsyncioTestCase):
         context.state.authorized_history = ()
         await prepare_reply_context(context)
         self.assertNotIn("conversation", context.state.reply_context)
-
-    async def test_old_reply_anchor_is_pinned_when_prefix_exceeds_soft_target(self):
-        context = self.context()
-        context.state.authorized_history = (_turn(1, channel=91), _turn(2, channel=91, payload_characters=50_000))
-        await prepare_reply_context(context)
-        compiled = compile_context(question="Can you give mine?", local_context="Unrelated GIF",
-                                   context=context, tools=(), system_prompt="x" * 200_000)
-        self.assertIn(1, compiled.selected_request_ids)
-        self.assertIn('"request": "Question 1"', compiled.prompt)
-        self.assertTrue(compiled.exceeds_target)

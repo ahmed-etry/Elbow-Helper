@@ -66,8 +66,9 @@ class ReminderTests(unittest.IsolatedAsyncioTestCase):
                 await prepare_save(context, values, registry_factory=lambda: {})
                 action = context.state.proposed_changes[-1]
                 self.assertEqual(action.preview.summary, "Set reminder")
-                self.assertIn("DM <@2>." if use_dm else "Post in <#3> and ping <@2>.",
-                              action.preview.lines)
+                prefix = ("⏰ Send a reminder to <@2> by DM at " if use_dm
+                          else "⏰ Remind <@2> in <#3> at ")
+                self.assertTrue(action.preview.details[0].startswith(prefix))
                 self.assertTrue(await action.preview.recheck())
                 await action.run()
             rows = self.repository.list_standing(requester_id=2, kind="reminder")

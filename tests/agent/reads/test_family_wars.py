@@ -16,7 +16,7 @@ from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.cwl.record import CwlHistory
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.agent.reads.test_record_wars import FAMILY, OCTOBER, later_war, ts
 from tests.data.test_wars import END, SECOND, WarFixture, group, war
 
@@ -207,6 +207,11 @@ class FamilyWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         report = await TOOLS["read_war_participation"].handler(self.context, {
             "war_type": "REG", "clan_codes": ["BEH"], "account_tags": ["#Y0"], **OCTOBER})
         self.assertEqual(report["family_wars_scope"]["status"], "read")
+
+    async def test_a_member_with_no_linked_account_is_reported(self):
+        result = await self.read(member_ids=[41, 77])
+        self.assertEqual(result["unlinked_member_ids"], [77])
+        self.assertNotIn("unlinked_member_ids", await self.read(member_ids=[41]))
 
     async def test_an_unavailable_source_keeps_the_clan_figures(self):
         # Without the league source, the family read fails but the clan's regular wars still come back.

@@ -67,5 +67,4 @@ class CwlPerformanceReport:
             "clan_seasons": [asdict(row) for row in summaries],
             "players": [asdict(row) for row in rows[offset:offset + limit]],
             "next_offset": offset + limit if offset + limit < len(rows) else None,
-            "complete_snapshot": True,
         }

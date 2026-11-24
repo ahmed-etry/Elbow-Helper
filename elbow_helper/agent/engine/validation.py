@@ -8,13 +8,6 @@ def invalid_arguments(message: str, *fields: str) -> dict:
     return {"error": message, "cause": "invalid_arguments", "invalid_fields": list(fields)}
 
 
-def bounded_text(value: object, limit: int) -> str:
-    text = str(value or "").strip()
-    if len(text) <= limit:
-        return text
-    return f"{text[: limit - 3]}..."
-
-
 def bounded_int(
     value: object,
     *,

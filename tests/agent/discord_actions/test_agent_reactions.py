@@ -7,7 +7,7 @@ import aiohttp
 
 from elbow_helper.agent.discord_actions.reactions import react_to_request
 from elbow_helper.agent.engine.models import AgentTurnState
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 def _server_emoji(name, identifier, *, usable=True, animated=False):

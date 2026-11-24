@@ -15,8 +15,34 @@ from ..actions.targets import target_links
 LOGGER = logging.getLogger(__name__)
 
 
+def _sent_file_lines(attachments):
+    """The files and spreadsheet links a reply carried, which its text does not mention."""
+    return [f"[Google Sheet you linked: {item.filename}]" if item.google_link
+            else f"[File you attached: {item.filename}]" for item in attachments]
+
+
 class AgentTurnMixin:
     async def _record_action_outcome(self, context, run, message) -> None:
+        await self._append_outcome_turn(context, ConversationTurn(
+            text=json.dumps({
+                "action_run_id": run["run_id"],
+                "status": run["status"],
+                "actions": [{
+                    "name": step["action_name"],
+                    "label": step["action_label"],
+                    "status": step["status"],
+                    "target_links": target_links(context.guild.id, json.loads(step["values_json"])),
+                } for step in run["steps"]],
+            }, ensure_ascii=False),
+            source_channels=frozenset(context.state.source_channels),
+            required_access=frozenset(context.state.required_access),
+        ), message)
+
+    async def _record_unconfirmed(self, view, how) -> None:
+        """A Confirm card that was cancelled or expired, so a later request can tell nothing ran."""
+        await self._append_outcome_turn(view.context, view.closed_turn(how), None)
+
+    async def _append_outcome_turn(self, context, turn, message) -> None:
         root_id = context.conversation_root_id
         if root_id is None:
             return
@@ -24,20 +50,7 @@ class AgentTurnMixin:
         if conversation is None:
             return
         async with conversation.lock:
-            conversation.append(ConversationTurn(
-                text=json.dumps({
-                    "action_run_id": run["run_id"],
-                    "status": run["status"],
-                    "actions": [{
-                        "name": step["action_name"],
-                        "label": step["action_label"],
-                        "status": step["status"],
-                        "target_links": target_links(context.guild.id, json.loads(step["values_json"])),
-                    } for step in run["steps"]],
-                }, ensure_ascii=False),
-                source_channels=frozenset(context.state.source_channels),
-                required_access=frozenset(context.state.required_access),
-            ))
+            conversation.append(turn)
             if message is not None:
                 self._conversations.register_reply(conversation, message.id)
             if self.persistence is not None:
@@ -96,10 +109,11 @@ class AgentTurnMixin:
             self._commit_reports(conversation, context.state)
             conversation.working = context.state.working
             reaction_reply = (
-                "Reactions: " + " ".join(context.state.reactions.emojis)
+                "[Reactions you added to the asker's message: " + " ".join(context.state.reactions.emojis) + "]"
                 if context.state.reactions.emojis else ""
             )
-            delivered_answer = "\n".join(filter(None, (*delivery.text_parts, reaction_reply)))
+            sent_files = _sent_file_lines(context.state.attachments) if delivery.complete else ()
+            delivered_answer = "\n".join(filter(None, (*delivery.text_parts, *sent_files, reaction_reply)))
             visible_previews = tuple(action.preview for action in context.state.proposed_changes
                                      if not action.details_hidden)
             entity_ids = set(context.state.resolved_members)
@@ -144,6 +158,7 @@ class AgentTurnMixin:
                     uncertain_nonce=delivery.uncertain_nonce,
                     generated_parts=tuple(delivery.generated_parts),
                     image_sources=tuple(context.state.image_sources),
+                    lookup_results=tuple(context.state.lookup_results),
                 ),
             ))
             self._refresh_history_checkpoint(

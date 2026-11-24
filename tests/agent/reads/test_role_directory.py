@@ -8,9 +8,7 @@ import discord
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.reads.identity_reads import member_cohort
 from elbow_helper.agent.research.members import find_discord_roles
-from elbow_helper.agent.plan.checker import check_plan
-from elbow_helper.agent.reads.evidence import family_model_view
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class RoleDirectoryTests(unittest.IsolatedAsyncioTestCase):
@@ -37,15 +35,4 @@ class RoleDirectoryTests(unittest.IsolatedAsyncioTestCase):
         absent = await find_discord_roles(context, {'query': 'Unknown role'})
         self.assertEqual(absent['matched_count'], 0)
         self.assertTrue(build_agent_tools()['find_discord_roles'].default_visible)
-        visible = family_model_view({**cohort, 'family': 'read_member_cohort'})
-        self.assertTrue(all([r['role_id'] for r in member['roles']] == [27] for member in visible['rows']))
-
-    def test_any_role_can_be_resolved_and_joined_in_one_visible_plan(self):
-        registry = {name: tool for name, tool in build_agent_tools().items() if tool.default_visible}
-        plan = {'goal': 'Read current guild assignments', 'effort': 'low', 'output': 'text', 'steps': [
-            {'id': 'roles', 'capability': 'find_discord_roles', 'arguments': {'query': 'Raid Organizers'}, 'depends_on': []},
-            {'id': 'holders', 'capability': 'read_member_cohort', 'arguments': {
-                'basis': 'role_holders', 'role_ids': {'step': 'roles', 'path': ['roles', '*', 'role_id']}},
-             'depends_on': ['roles']}]}
-        checked = check_plan(plan, registry)
-        self.assertTrue(checked.ok, checked.error)
+        self.assertTrue(all([r['role_id'] for r in member['roles']] == [27] for member in cohort['rows']))

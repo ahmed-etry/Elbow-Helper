@@ -46,7 +46,18 @@ def argument_errors(arguments, schema, dependencies, valid_value):
     for field, value in arguments.items():
         if field not in properties or valid_value(value, properties[field], dependencies):
             continue
+        if ("enum" in properties[field] and "title" in properties[field]
+                and value not in properties[field]["enum"]):
+            choices = properties[field]["title"]
+            issues.append(f"{field} isn't one of the {choices} in its description.")
+            continue
         expected = {key: item for key, item in properties[field].items()
                     if key not in {"description", "default"}}
         issues.append(field + " must match " + json.dumps(expected, separators=(",", ":")))
+    if not issues and schema.get('anyOf'):
+        base = {key: value for key, value in schema.items() if key != 'anyOf'}
+        variants = [schema_variant(base, choice) for choice in schema['anyOf']]
+        if not any(valid_value(arguments, variant, dependencies) for variant in variants):
+            choices = [argument_errors(arguments, variant, dependencies, valid_value) for variant in variants]
+            issues.append(' or '.join('; '.join(choice) for choice in choices))
     return issues

@@ -26,10 +26,11 @@ from .conversation.state import Conversation, ConversationStore
 from elbow_helper.agent.conversation.text import message_text
 from elbow_helper.agent.engine.models import AgentRequestContext, AgentIdentity, ChannelReactions
 from elbow_helper.agent.conversation.identity import agent_identity, member_identity
-from .engine.service import AgentUnavailableError
-from .engine.service import AgentService
+from .conversation.wording import FAILURE_MESSAGE
+from .engine.tool_call import AgentUnavailableError
+from .loop import LoopService
 from .discord_actions.gifs import GIF_CONTEXT_MESSAGES, channel_gif_history
-from .discord_actions.gif_library import channel_gif_urls
+from .discord_actions.gif_library import channel_gif_urls, own_message_text
 from .discord_actions.reactions import channel_reaction_history
 from .discord_actions.reaction_pacing import channel_combo_history
 from .conversation.transcripts import TranscriptArchive
@@ -71,7 +72,7 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
         clan_reporting_queries=None,
         role_connection_queries=None,
         knowledge_store=None,
-        data_guide=None,
+        stored_data,
         research_jobs=None,
         research_runner=None,
         action_runner=None,
@@ -104,18 +105,18 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
         self.scheduled_runner = None
         if self.action_runner is not None:
             self.action_runner.on_finish = self._record_action_outcome
+            self.action_runner.on_unconfirmed = self._record_unconfirmed
         self.action_repository = action_repository
         self.meme_usage_repository = meme_usage_repository
         self.transcript_archive = transcript_archive
         self.persistence = persistence
         self._cleanup_task: asyncio.Task | None = None
-        self.service = AgentService(bot.agent_model, data_guide=data_guide)
+        self.service = LoopService(bot.agent_model, stored_data)
         self._conversations = ConversationStore()
         self.read_cache = ReadCache()
         if self.research_runner is not None:
             self.research_runner.read_cache = self.read_cache
         self._member_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
-        self._previews: WeakValueDictionary[int, object] = WeakValueDictionary()
         self._tasks: set[asyncio.Task] = set()
         self._active_contexts: dict[int, AgentRequestContext] = {}
         self._request_finished: dict[int, asyncio.Event] = {}
@@ -246,10 +247,6 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
             return
         if not has_agent_entry_access(member):
             return
-        reference = getattr(message, "reference", None)
-        preview = self._previews.get(getattr(reference, "message_id", None))
-        if preview is not None and preview.owner_id == member.id:
-            await preview.invalidate()
         question = self._extract_question(message)
         if not question:
             return
@@ -322,7 +319,8 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
 
     async def _recover_stopped_request(self, message, reason):
         """Retain authorized findings without duplicating a started delivery."""
-        from .engine.unfinished import unfinished_answer
+        from .conversation.wording import AGENT_ANSWER_UNFINISHED
+
         context = self._active_contexts.get(message.id)
         if context is None or not context.state.grounding_evidence:
             await self._send_failure(message, reason)
@@ -332,8 +330,7 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
             return
         try:
             await self._check_sources(context)
-            response = unfinished_answer(context.state.request_text, context.state.grounding_evidence)
-            await self.send_response(message, response, None, attachments=context.state.attachments,
+            await self.send_response(message, AGENT_ANSWER_UNFINISHED, None, attachments=context.state.attachments,
                                      context=context, delivery=delivery)
         except AgentAccessLost:
             return
@@ -458,15 +455,10 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
                     )
                 except Exception:
                     LOGGER.exception("Agent transcript request enqueue failed: request=%s", message.id)
+            # Prepares channel pacing and local messages on the context; the loop reads no nearby chat text.
             local_context = await self._build_local_context(message, referenced, conversation, context=context)
-            history = await self._conversation_history(conversation, context)
 
-            response = await self.service.answer(
-                question=question,
-                local_context=local_context,
-                context=context,
-                conversation_history=history,
-            )
+            response = await self.service.answer(question=question, context=context)
             require_access(message.guild, member.id, message.channel)
             await self._check_sources(context)
             delivery = context.state.reply_delivery.delivery
@@ -646,7 +638,9 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
 def _local_message_record(
     message: discord.Message, *, identity: AgentIdentity | None = None,
 ) -> dict:
-    content = message_text(message, identity=identity)
+    own = identity is not None and message.author.id == identity.member_id
+    content = (own_message_text(message, identity=identity) if own
+               else message_text(message, identity=identity))
     if len(content) > LOCAL_MESSAGE_CHARACTER_LIMIT:
         content = f"{content[: LOCAL_MESSAGE_CHARACTER_LIMIT - 3]}..."
     return {"message_id": message.id, "author_id": message.author.id,

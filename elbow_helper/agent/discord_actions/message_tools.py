@@ -25,9 +25,7 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="post_discord_message",
-            description=(
-                "Prepare a Discord post for confirmation; answers here use normal reply delivery."
-            ),
+            description="Prepare a Discord post for confirmation; answers here use normal reply delivery.",
             parameters={"type": "object", "properties": {
                 "channel_id": {"type": "integer", "minimum": 1},
             **content_options(),
@@ -37,7 +35,8 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                 "ping_author": {"type": "boolean"},
             }, "required": ["channel_id", "text"], "additionalProperties": False},
             usage_note=(
-                "Use set_discord_reply_target for answers here; Confirm posts elsewhere."
+                "Use set_discord_reply_target for answers here; Confirm posts elsewhere. "
+                "The post appears as Elbow Helper's own message; the requester isn't shown."
             ),
         ), prepare_post, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(entity_fields=(

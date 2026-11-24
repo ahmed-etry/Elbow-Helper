@@ -9,6 +9,7 @@ from .history import read_discord_channel_history, find_discord_channels, read_m
 from .search import search_discord_messages
 from .history import (
     SEARCH_RESULT_LIMIT, INTERACTIVE_HISTORY_PAGE_LIMIT, HISTORY_PAGE_LIMIT, CONTEXT_MESSAGE_LIMIT,
+    CHANNEL_RESULT_LIMIT,
 )
 
 
@@ -19,7 +20,12 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                 name="find_discord_channels",
                 description="Find accessible Discord channels by name or ID.",
                 parameters={
-                    "type": "object", "properties": {"query": {"type": "string", "maxLength": 100}},
+                    "type": "object", "properties": {
+                        "query": {"type": "string", "maxLength": 100},
+                        "offset": {"type": "integer", "minimum": 0,
+                                   "description": f"Matches come {CHANNEL_RESULT_LIMIT} at a time; "
+                                                  "pass next_offset for the next ones."},
+                    },
                     "required": ["query"], "additionalProperties": False,
                 },
             ),
@@ -101,7 +107,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                 parameters={
                     "type": "object",
                     "properties": {
-                        "fresh": {"type": "boolean", "description": "Fetch this page again, bypassing retained pages."},
+                        "fresh": {"type": "boolean", "description": "Fetch this page again, bypassing saved pages."},
                         "channel_id": {"type": "integer", "minimum": 1},
                         "after": {
                             "type": "string", "maxLength": 40,

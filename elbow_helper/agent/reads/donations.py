@@ -9,7 +9,7 @@ from elbow_helper.agent.engine.validation import invalid_arguments
 from elbow_helper.agent.reads.snapshots import DATE, IDS, TAGS, family_tool
 from .people import PeopleAdapter, PeopleSelection, record
 from .projections import COHORT_REF
-from .war_tools import CLANS_INPUT, WINDOW_RULES
+from .war_tools import CLANS_INPUT
 
 SECOND = 1_000_000
 # Accounts per record read, as the record's reads accept them.
@@ -18,12 +18,14 @@ STAY_LIMIT = 100_000
 SELECTORS = ['clan_codes', 'member_ids', 'account_tags', 'cohort_ref']
 SELECTOR_ERROR = 'Choose clans, members, accounts or a cohort.'
 FIGURES = ('donations', 'donations_received')
-BASIS = ('Stored donation counter samples: each figure adds the rises between samples, and a fall '
-         '(season reset or clan move) counts the new value in full.')
+BASIS = ('Donations from the in-game season totals, checked over time: each figure adds the rises between checks, '
+         'and a fall (season reset or clan move) counts the new value in full.')
+LATEST_BASIS = 'In-game season donation totals as of each row\'s as_of date (UTC), which can be long before now; not a rise over a period.'
+LATEST_POPULATION = 'Accounts whose stay in the selected clans covers before; totals cover any clan.'
 COVERAGE = {
-    'C': 'Polled at both ends of the period and around every counter reset: complete; zero means none.',
-    'P': 'Polling missed the start, the end or a counter reset: a lower bound.',
-    'N': 'Not polled and no samples in the period: unknown, not zero.'}
+    'C': 'Checked at both ends of the period and around every season reset: complete; zero means none.',
+    'P': 'Checks missed the start, the end or a season reset: a lower bound.',
+    'N': 'Not checked in the period: unknown, not zero.'}
 CLAN_POPULATION = ('Accounts seen in the selected clans; donations and donations_received cover all clans, '
                    'while clan_donations and clan_donations_received cover only the selected clans.')
 POPULATION = 'The selected accounts; figures count donations in any clan.'
@@ -78,9 +80,19 @@ async def clan_accounts(context, codes, windows):
 async def selected_accounts(context, arguments, windows):
     """(account tags, per-window accounts or None, unlinked member IDs), or an error."""
     if arguments.get('clan_codes'):
+        if windows is None:
+            before = micros(datetime.fromisoformat(arguments['before']))
+            snapshot = await record(context, 'stay_reads', 'movements', after=before,
+                                    before=before + 1, limit=STAY_LIMIT)
+            if snapshot is None or snapshot['truncated']:
+                return {'error': 'Clan membership history could not be read.', 'cause': 'source_unavailable'}
+            tags = sorted({account['player_tag'] for account in snapshot['rows'] for stay in account['stays']
+                           if stay['clan_code'] in arguments['clan_codes'] and stay['first_seen_at'] <= before
+                           and (stay['to_at'] is None or before < stay['to_at'])})
+            return tags, None, []
         present = await clan_accounts(context, set(arguments['clan_codes']), windows)
         if present is None:
-            return {'error': 'Stored clan memberships could not be read.', 'cause': 'source_unavailable'}
+            return {'error': 'Clan membership history could not be read.', 'cause': 'source_unavailable'}
         return sorted(set().union(*present)), present, []
     if arguments.get('cohort_ref'):
         from .projections import cohort_selection
@@ -115,9 +127,52 @@ def averages(group, prefix=''):
             **{'average_' + name: totals[prefix + name] / known if known else None for name in FIGURES}}
 
 
+async def latest_samples(context, arguments):
+    before = (datetime.fromisoformat(arguments['before']) if arguments.get('before')
+              else context.source_message.created_at).astimezone(timezone.utc)
+    selection = await selected_accounts(context, {**arguments, 'before': before.isoformat()}, None)
+    if isinstance(selection, dict):
+        return selection
+    tags, _, unlinked = selection
+    rows = []
+    for start in range(0, len(tags), BATCH):
+        page = await record(context, 'activity_reads', 'latest_donation_samples',
+                            tags[start:start + BATCH], before=micros(before))
+        directory = await record(context, 'stay_reads', 'accounts', tags[start:start + BATCH])
+        if page is None or directory is None:
+            return {'error': 'Donations could not be read.', 'cause': 'source_unavailable'}
+        names = {row['player_tag']: row['player_name'] for row in directory['rows']}
+        rows.extend({**{key: value for key, value in row.items() if key != 'sampled_at'},
+                     'player_name': names.get(row['player_tag']),
+                     'as_of': datetime.fromtimestamp(row['sampled_at'] / SECOND, timezone.utc).date().isoformat()
+                     if row['sampled_at'] is not None else None} for row in page['rows'])
+    unit = arguments.get('unit', 'account')
+    if unit == 'member':
+        links = await PeopleAdapter(context).links(PeopleSelection('accounts', tuple(tags)))
+        if links.status == 'source_unavailable':
+            return {'error': 'Account links are not available.', 'cause': 'source_unavailable'}
+        groups = {}
+        for row in rows:
+            owner = (links.by_tag.get(row['player_tag']) or {}).get('discord_user_id')
+            key = ('member', owner) if owner else ('account', row['player_tag'])
+            if key not in groups:
+                member = context.guild.get_member(owner) if owner else None
+                groups[key] = {'member_id': owner, 'member_name': member.display_name if member else None,
+                               'accounts': []}
+            groups[key]['accounts'].append(row)
+        rows = list(groups.values())
+    return {'rows': rows, 'unit': unit, 'before': before.isoformat(), 'account_count': len(tags),
+            'basis': LATEST_BASIS,
+            **({'population': LATEST_POPULATION} if arguments.get('clan_codes') else {}),
+            **({'ownership_basis': 'current account links; earlier owners unknown'} if unit == 'member' else {}),
+            **({'unlinked_member_ids': unlinked} if unlinked else {})}
+
+
 async def donation_history(context, arguments):
     if getattr(getattr(context, 'bot', None), 'activity_reads', None) is None:
-        return {'error': 'Stored donations are not available.', 'cause': 'missing_setup'}
+        return {'error': 'Donations are not available.', 'cause': 'missing_setup'}
+    if not arguments.get('after'):
+        return await latest_samples(context, arguments)
     period = window(context, arguments)
     if period is None:
         return invalid_arguments('Choose a complete date window with its end after its start.', 'after', 'before')
@@ -137,7 +192,7 @@ async def donation_history(context, arguments):
                                if present is not None else {}))
         directory = await record(context, 'stay_reads', 'accounts', chunk)
         if page is None or directory is None:
-            return {'error': 'Stored donations could not be read.', 'cause': 'source_unavailable'}
+            return {'error': 'Donations could not be read.', 'cause': 'source_unavailable'}
         figures.extend(page['rows'])
         names.update((row['player_tag'], row['player_name']) for row in directory['rows'])
     links = await PeopleAdapter(context).links(PeopleSelection('accounts', tuple(tags)))
@@ -193,16 +248,20 @@ async def donation_history(context, arguments):
             **({'clan_totals': clan_totals, 'average_basis': AVERAGE_BASIS} if present is not None else {}),
             **({'clan_basis': 'Clan figures use only clan-roster samples and count the first value after a clan '
                 'change in full; clan_coverage describes polling in the selected clans.'} if present is not None else {}),
-            'ownership_basis': 'current bot links; historical ownership unknown',
+            'ownership_basis': 'current account links; earlier owners unknown',
             **({'unlinked_member_ids': unlinked} if unlinked else {})}
 
 
 TOOLS = (family_tool('read_donation_history',
-    'Read stored donations and received per account or member over a period or by month, with coverage.',
+    'Read donations as of the latest check, or rises over a period with how completely it was checked when after is given.',
     {'clan_codes': CLANS_INPUT, 'member_ids': IDS, 'account_tags': TAGS, 'cohort_ref': COHORT_REF,
-     'after': DATE, 'before': DATE, 'by_month': {'type': 'boolean'},
+     'after': {**DATE, 'description': "Omit to read each account's latest season donations."},
+     'before': {**DATE, 'description': 'Read up to this time; defaults to request time.'},
+     'by_month': {'type': 'boolean'},
      'unit': {'type': 'string', 'enum': ['account', 'member']}},
-    donation_history, required=('after',),
-    rules=(*WINDOW_RULES, {'needs': SELECTORS, 'error': SELECTOR_ERROR},
+    donation_history,
+    rules=({'aware': ['after', 'before'], 'error': 'Choose timezone-aware dates.'},
+           {'when': {'by_month': [True]}, 'needs_all': ['after'], 'error': 'by_month requires after.'},
+           {'needs': SELECTORS, 'error': SELECTOR_ERROR},
            {'only_one': SELECTORS, 'error': SELECTOR_ERROR}),
     whole=True),)

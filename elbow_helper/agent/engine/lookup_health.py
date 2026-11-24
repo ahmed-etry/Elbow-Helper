@@ -20,7 +20,7 @@ def lookup_problem(value):
                 ) for status in statuses)
                 or not paging and ("partial" in statuses or value.get("complete") is False)
                 or any(value.get(key) is False for key in (
-                    "complete_snapshot", "count_complete", "selection_complete",
+                    "count_complete", "selection_complete",
                     "coverage_complete", "season_complete", "totals_complete", "source_complete",
                 ))):
             return True

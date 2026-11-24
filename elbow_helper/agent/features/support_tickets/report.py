@@ -87,7 +87,6 @@ class SupportTicketReport:
                 min(known_activity, key=lambda row: row.last_activity_ts).last_activity_at
                 if known_activity else None
             ),
-            "complete_accessible_metadata_snapshot": True,
             "message_history_read": False,
             "included_fields": [
                 "channel identity", "topic-derived owner ID",

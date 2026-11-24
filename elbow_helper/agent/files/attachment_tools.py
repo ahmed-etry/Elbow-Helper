@@ -71,7 +71,7 @@ def attachment_tools() -> tuple[RegisteredAgentTool, ...]:
         ("list_supported_attachments",
          "List supported attachments on the request and replied-to message.",
          {}, (), list_supported_attachments),
-        ("import_csv_attachment", "Import a listed CSV attachment into a retained report.",
+        ("import_csv_attachment", "Import a listed CSV attachment into a saved result.",
          {"attachment_id": {"type": "integer", "minimum": 1},
           "delimiter": {"type": "string", "enum": ["comma", "semicolon", "tab"]}},
          ("attachment_id",), import_csv_attachment),
@@ -80,11 +80,11 @@ def attachment_tools() -> tuple[RegisteredAgentTool, ...]:
           "offset": {"type": "integer", "minimum": 0},
           "limit": {"type": "integer", "minimum": 1, "maximum": 25}},
          ("report_id",), read_csv_import),
-        ("import_xlsx_attachment", "Import a listed XLSX attachment into a retained report.",
+        ("import_xlsx_attachment", "Import a listed XLSX attachment into a saved result.",
          {"attachment_id": {"type": "integer", "minimum": 1}},
          ("attachment_id",), import_xlsx_attachment),
         ("read_xlsx_import", (
-            "Read a sheet page from a retained XLSX import without downloading or parsing the "
+            "Read a sheet page from a saved XLSX import without downloading or parsing the "
             "attachment again."
         ),
          {"report_id": {"type": "string", "maxLength": 32},

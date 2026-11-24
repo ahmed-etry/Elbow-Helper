@@ -6,11 +6,8 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
-from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.reads.snapshots import family_tool
 from elbow_helper.agent.engine.models import AgentDelivery
-from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-from tests.agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan
+from tests.agent.request_fixtures import flow_context as _context
 
 
 GIF = "https://tenor.com/view/synthetic-reaction-123"
@@ -35,40 +32,6 @@ class QuotedGifAnswerTests(unittest.IsolatedAsyncioTestCase):
         for name in ("require_evidence_access", "assert_answer_scope"):
             guards.enter_context(patch("elbow_helper.agent.conversation.delivery." + name, AsyncMock()))
         self.addCleanup(guards.close)
-
-    async def research_answer(self):
-        rows = [{"message_id": 9001 + index, "author": author, "content": content}
-                for index, (author, content) in enumerate((
-                    ("Synthetic lead A", "War lineup is posted."),
-                    ("Synthetic lead B", "I'll check the bases tonight."),
-                    ("Synthetic lead C", GIF)))]
-        source = AsyncMock(return_value={"rows": rows, "summary": {
-            "requester_id": self.context.member.id, "mode": "channel_window", "channel_id": 92}})
-        tool = family_tool("read_conversation_evidence", "Read discussion.", {}, source)
-        plan = {**_plan([{"id": "window", "capability": "read_conversation_evidence",
-                          "arguments": {}, "depends_on": []}]), "finish_after_reads": True}
-        session = _Session([_model_step(plan), AgentStep(ANSWER, (), AgentUsage(1000, 870))], [])
-        with patch("elbow_helper.agent.engine.service.build_agent_tools",
-                   return_value={"read_conversation_evidence": tool}):
-            answer = await AgentService(_Model(session)).answer(
-                question="Show the last three messages in #synthetic-leads",
-                local_context="", context=self.context)
-        source.assert_awaited_once()
-        return answer
-
-    async def test_research_answer_quoting_a_gif_link_sends_the_full_text_once(self):
-        answer = await self.research_answer()
-        self.assertIn(GIF, answer)
-        self.assertIsNone(self.context.state.gif_url)
-        delivery = AgentDelivery()
-        await self.surface.send_response(self.message, answer, None,
-                                         context=self.context, delivery=delivery)
-        self.message.reply.assert_awaited_once()
-        self.assertEqual(self.message.reply.await_args.args, (answer,))
-        self.message.channel.send.assert_not_awaited()
-        self.surface._send_gif.assert_not_awaited()
-        self.assertEqual(delivery.text_parts, [answer])
-        self.assertTrue(delivery.complete)
 
     async def test_research_reply_without_text_never_sends_a_lone_gif(self):
         delivery = AgentDelivery()

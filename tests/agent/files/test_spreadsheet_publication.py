@@ -13,11 +13,7 @@ from openpyxl import load_workbook
 
 from tests.agent.files.test_agent_spreadsheets import _context
 from elbow_helper.agent.safety.access import AgentAccessLost
-from elbow_helper.agent.engine.tool_call import (
-    clone_tool_state, merge_tool_state, tool_state_snapshot,
-)
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
-from elbow_helper.agent.files.delivery import delivery_manifest
 from elbow_helper.agent.files.spreadsheet_tools import prepare_spreadsheet
 
 
@@ -52,57 +48,6 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
         surface = AgentDeliveryMixin()
         surface.bot = context.bot
         return surface, message, sent, replace(context, source_message=message)
-
-
-    async def test_revisions_replace_workbooks_without_publishing_drafts(self):
-        with TemporaryDirectory() as directory:
-            context = _context(directory)
-            context.bot.google_publisher = SimpleNamespace(
-                upload_workbook=AsyncMock(return_value=(GOOGLE_LINK, None)),
-            )
-            from elbow_helper.agent.engine.models import AgentAttachment
-            feature_file = AgentAttachment("synthetic-feature.txt", b"Synthetic feature result")
-            context.state.attachments.append(feature_file)
-            for index in range(3):
-                arguments = {**_arguments(), "title": f"Synthetic revision {index}"}
-                previous = tool_state_snapshot(context)
-                stale_read = replace(context, state=clone_tool_state(context.state))
-                local = replace(context, state=clone_tool_state(context.state))
-                result = await prepare_spreadsheet(local, arguments)
-                merge_tool_state(context, local, previous)
-                merge_tool_state(context, stale_read, previous)
-                self.assertEqual(result["replaced_previous"], index > 0)
-                self.assertEqual(len(context.state.attachments), 2)
-                self.assertIs(context.state.attachments[0], feature_file)
-                context.bot.google_publisher.upload_workbook.assert_not_called()
-                manifest = delivery_manifest(context.state.attachments)['files']
-                self.assertEqual([item['filename'] for item in manifest],
-                                 [item.filename for item in context.state.attachments])
-                self.assertEqual(manifest[1]['delivery'], 'publish_or_attach')
-                self.assertEqual(manifest[1]['total_rows'], 2)
-                self.assertEqual(manifest[1]['sheets'], [{'name': 'Items', 'rows': 2}])
-            uploaded = []
-
-            async def upload(path, title):
-                uploaded.append((title, path.read_bytes()))
-                return GOOGLE_LINK, None
-
-            context.bot.google_publisher.upload_workbook.side_effect = upload
-            surface, message, _, context = self.surface(context)
-            with patch("elbow_helper.agent.conversation.delivery.assert_answer_scope",
-                       AsyncMock(return_value=True)):
-                await surface.send_response(message, "Synthetic export", None,
-                                            context.state.attachments, context=context)
-            self.assertEqual(
-                uploaded, [("Synthetic revision 2", context.state.attachments[1].data)],
-            )
-            self.assert_links(message.reply.await_args.kwargs["view"])
-            files = message.reply.await_args.kwargs["files"]
-            self.assertEqual([file.filename for file in files], [feature_file.filename])
-            manifest = delivery_manifest(context.state.attachments)['files']
-            self.assertEqual(manifest[1]['delivery'], 'link')
-            self.assertEqual(manifest[1]['url'], GOOGLE_LINK)
-
 
     async def test_publish_uploads_exact_bytes_once_and_delivers_only_link_buttons(self):
         with TemporaryDirectory() as directory:

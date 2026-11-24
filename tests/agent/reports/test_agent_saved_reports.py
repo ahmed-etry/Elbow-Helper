@@ -8,7 +8,7 @@ from elbow_helper.agent.reports import tools as saved_reports
 from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class SavedReportRoutingTests(unittest.IsolatedAsyncioTestCase):

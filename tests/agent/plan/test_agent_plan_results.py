@@ -3,7 +3,7 @@
 import unittest
 from dataclasses import asdict
 
-from elbow_helper.agent.plan.results import model_result, plan_feedback
+from elbow_helper.agent.plan.results import model_result
 from elbow_helper.features.cwl.queries import CwlPerformanceRow
 
 
@@ -19,8 +19,8 @@ class ModelResultTests(unittest.TestCase):
             ({'search_is_exhaustive': False}, 'partial'),
             ({'search_complete': False}, 'partial'),
             ({'coverage_complete': False}, 'partial'),
-            ({'complete_snapshot': True, 'next_offset': 7}, 'partial'),
-            ({'complete_snapshot': True, 'next_cursor': 'synthetic'}, 'partial'),
+            ({'next_offset': 7}, 'partial'),
+            ({'next_cursor': 'synthetic'}, 'partial'),
             ({'flags': {'status': 'partial', 'truncated': True,
                         'limits': ['synthetic_limit'],
                         'coverage_dates': {'after': '2026-01-01'}}}, 'partial'),
@@ -34,14 +34,6 @@ class ModelResultTests(unittest.TestCase):
                 for key, value in fields.items():
                     self.assertEqual(result[key], value)
                 self.assertEqual(model_result(result), result)
-
-
-    def test_plan_feedback_preserves_rule_and_offered_values_as_data(self):
-        result = plan_feedback("Use the registered value.", step_id="second", offered=["202"])
-        self.assertEqual(result["flags"], {"status": "refused", "rule": "use_the_registered_value"})
-        self.assertEqual(result["step_id"], "second")
-        self.assertEqual(result["offered"], ["202"])
-        self.assertEqual(result["error"], "Use the registered value.")
 
 
 def synthetic_cwl_payload():

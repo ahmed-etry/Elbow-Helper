@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -230,22 +229,15 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_long_history_pages_keep_every_matching_message_and_continuation(self):
-        from elbow_helper.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
-        from elbow_helper.agent.engine.tool_call import bound_tool_result as _bound_tool_result
-
         for author_id in (None, 1):
             with self.subTest(author_id=author_id):
-                results, rows = await self._history_review(['"\\\n' * 500 for _ in range(80)], author_id=author_id, limit=100)
+                results, rows = await self._history_review(['"\\\n' * 500 for _ in range(80)], author_id=author_id, limit=30)
                 self.assertGreater(len(results), 1)
                 actual = [item["message_id"] for result in results for item in result["messages"]]
                 expected = [row.message_id for row in rows if author_id is None or row.author_id == author_id]
                 self.assertEqual(actual, expected)
                 self.assertEqual(len(set(actual)), len(actual))
                 self.assertEqual(sum(result["coverage"]["scanned_messages_in_window"] for result in results), len(rows))
-                for result in results:
-                    encoded = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
-                    self.assertLess(len(encoded), MAX_TOOL_RESULT_CHARACTERS)
-                    self.assertEqual(_bound_tool_result(encoded, MAX_TOOL_RESULT_CHARACTERS), encoded)
 
 
     async def test_requested_channel_author_and_period_exclude_unrelated_matches(self):

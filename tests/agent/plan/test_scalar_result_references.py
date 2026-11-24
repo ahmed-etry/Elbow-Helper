@@ -1,14 +1,9 @@
 """Synthetic collection references respect the consuming argument's cardinality."""
 
 import unittest
-from unittest.mock import AsyncMock
 
-from elbow_helper.agent.engine.models import RegisteredAgentTool
-from elbow_helper.agent.plan.checker import check_plan, valid_arguments
-from elbow_helper.agent.plan.executor import (
-    SingleValueReferenceError, execute_plan, resolve_arguments,
-)
-from elbow_helper.infrastructure.ai import AgentToolDefinition
+from elbow_helper.agent.plan.checker import valid_arguments
+from elbow_helper.agent.plan.executor import SingleValueReferenceError, resolve_arguments
 
 
 REFERENCE = {"step": "resolve", "path": ["rows", "*", "member_id"]}
@@ -24,17 +19,6 @@ def _source(values):
 def _step(arguments):
     return {"id": "msgs", "capability": "read_messages", "arguments": arguments,
             "depends_on": []}
-
-
-def _checked_plan(steps, schema=SCHEMA):
-    registry = {"read_messages": RegisteredAgentTool(
-        AgentToolDefinition("read_messages", "Synthetic messages.", schema), AsyncMock(),
-    )}
-    plan = {"goal": "Synthetic messages", "effort": "low", "output": "text", "steps": steps}
-    checked = check_plan(plan, registry, completed_steps={
-        "resolve": _step({"author_id": 7}),
-    })
-    return plan, checked
 
 
 class ScalarResultReferenceTests(unittest.IsolatedAsyncioTestCase):
@@ -117,29 +101,3 @@ class ScalarResultReferenceTests(unittest.IsolatedAsyncioTestCase):
             arguments = resolve_arguments({"author_id": value}, {"resolve": {"values": [7, 7]}}, schema=SCHEMA)
             self.assertEqual(arguments, {"author_id": [7, 7]})
             self.assertFalse(valid_arguments(arguments, SCHEMA))
-
-
-    async def test_runtime_guard_refuses_ambiguous_or_empty_step_and_blocks_only_its_dependents(self):
-        plan, checked = _checked_plan([
-            _step({"author_id": REFERENCE}),
-            {"id": "later", "capability": "read_messages", "arguments": {"author_id": 9}, "depends_on": ["msgs"]},
-            {"id": "other", "capability": "read_messages", "arguments": {"author_id": 9}, "depends_on": []},
-        ])
-        self.assertTrue(checked.ok, checked.error)
-        self.assertEqual(checked.step_errors, {})
-        for values in ([7, 8], []):
-            with self.subTest(values=values):
-                run = AsyncMock(return_value={"messages": []})
-                results = await execute_plan(
-                    plan, run, earlier_results=_source(values), step_errors=checked.step_errors,
-                    argument_schema=lambda step: SCHEMA,
-                )
-                self.assertIn("author_id takes one value", results["msgs"]["error"])
-                self.assertIn("several distinct values" if values else "no values", results["msgs"]["error"])
-                self.assertEqual(results["msgs"]["cause"], "invalid_arguments")
-                self.assertEqual(results["msgs"]["capability"], "read_messages")
-                self.assertEqual(results["msgs"]["argument_schema"], SCHEMA)
-                self.assertIn("Step msgs failed", results["later"]["error"])
-                self.assertEqual(results["other"], {"messages": []})
-                run.assert_awaited_once()
-                self.assertEqual(run.await_args.args[0]["id"], "other")

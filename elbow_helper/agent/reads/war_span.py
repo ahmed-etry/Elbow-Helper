@@ -9,14 +9,12 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from . import record_wars
 from .cache import source_revision
 
-# The most accounts listed; the rest are counted.
-MAX_ACCOUNTS = 50
 TYPES = {'REG': ('REG',), 'CWL': ('CWL',), 'both': ('REG', 'CWL')}
 MEANINGS = {
     'record_span': 'UTC war end dates from the family record.',
     'checked': 'First and last war end of the wars this read selected, and how many.',
-    'recorded': 'First and last war end of every stored war of this type in the selected clans, and how many.',
-    'accounts': "The account's stored wars of this type in any family clan, and how many ended outside the "
+    'recorded': 'First and last war end of every recorded war of this type in the selected clans, and how many.',
+    'accounts': "The account's recorded wars of this type in any family clan, and how many ended outside the "
                 'checked period: the chosen dates or season (period chosen_dates), '
                 'or else the first to last checked war end (period checked_wars).'}
 
@@ -73,8 +71,7 @@ async def record_span(context, arguments, source, tags=None, *, account_entries=
         windows = [(min(ends), max(ends) + 1)] if ends else []
     named = {normalize_player_tag(tag): tag for tag in tags or ()}
     named.pop(None, None)
-    selected = sorted(named)
-    listed = selected if account_entries is not None else selected[:MAX_ACCOUNTS]
+    listed = sorted(named)
     dependencies = getattr(context, 'read_dependencies', None)
     if dependencies is not None:
         # Taken before the read, as the other war reads do.
@@ -82,7 +79,7 @@ async def record_span(context, arguments, source, tags=None, *, account_entries=
                     if getattr(context, 'read_cache', None) is not None else None)
         dependencies.observe(context, reads, revision)
     try:
-        # The record accepts 200 account tags per read; paged account entries have no header cap.
+        # The record accepts 200 account tags per read.
         found = {'recorded': [], 'accounts': []}
         as_of = read_core.now_us()
         for start in range(0, max(1, len(listed)), 200):
@@ -106,8 +103,6 @@ async def record_span(context, arguments, source, tags=None, *, account_entries=
         result['accounts'] = [{'player_tag': named[tag], 'war_type': kind, **span(accounts.get((tag, kind))),
                                'wars_outside_checked': (accounts.get((tag, kind)) or {}).get('outside', 0)}
                               for tag in listed for kind in kinds]
-        if len(selected) > len(listed):
-            result['accounts_not_listed'] = len(selected) - len(listed)
     result['meanings'] = MEANINGS
     if account_entries is not None:
         for entry in result.pop('accounts', []):
@@ -118,5 +113,5 @@ async def record_span(context, arguments, source, tags=None, *, account_entries=
         result['meanings'] = {('rows.family_wars.record_span' if key == 'accounts' else key): value
                               for key, value in MEANINGS.items()}
         result['meanings']['rows.family_wars.record_span'] += (
-            ' Within a checked account\'s record_span list, omitted types have no stored wars.')
+            ' Within a checked account\'s record_span list, omitted types have no recorded wars.')
     return result

@@ -1,11 +1,7 @@
 from datetime import datetime, timezone
-from tests.agent.engine.helpers import LegacyCatalogueMixin
-
 import json
-from tests.features.agent_plan_helpers import plan_call
 from types import SimpleNamespace
 import unittest
-from tests.agent.engine.test_agent_service import _AgentModel
 import discord
 from unittest.mock import AsyncMock
 
@@ -13,11 +9,9 @@ from elbow_helper.configuration.roles import CORE
 from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.conversation.state import ConversationRecord, ConversationTurn
 from elbow_helper.agent.engine.models import AgentRequestContext
-from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.plan.checker import valid_arguments
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.conversation.history_tool import _document, read_conversation_history
-from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
 
 
 def _turn(message_id, question="original restriction", *, source=100, answer="delivered", generated=None):
@@ -55,7 +49,7 @@ def _context(*turns):
     return context, allowed
 
 
-class AgentHistoryTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
+class AgentHistoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_permissions_filter_results_and_counts_and_are_checked_on_every_call(self):
         context, allowed = _context(_turn(1, source=200), _turn(2))
@@ -117,18 +111,3 @@ class AgentHistoryTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         schema = build_agent_tools()["read_conversation_history"].definition.parameters
         for arguments in ({"conversation_id": 2}, {"limit": 6}, {"offset": -1}, {"content_offset": -1}, {"query": "topic"}):
             self.assertFalse(valid_arguments(arguments, schema))
-
-
-    async def test_actual_service_can_retrieve_history_and_continue_answer(self):
-        context, _ = _context(_turn(1, "Keep these two accounts together", source=200))
-        lookup = AgentToolCall("lookup", "read_conversation_history", '{}')
-        session = SimpleNamespace(advance=AsyncMock(side_effect=[
-            AgentStep("", (plan_call(lookup),), AgentUsage()),
-            AgentStep("I will keep those accounts together.", (), AgentUsage()),
-        ]))
-        model = _AgentModel(session)
-        answer = await AgentService(model).answer(question="Use the earlier restriction", local_context="", context=context)
-        self.assertIn("together", answer)
-        self.assertIn("Keep these two accounts together", session.advance.await_args_list[1].args[0][-1].content)
-        self.assertEqual(context.state.source_channels, {200})
-        self.assertEqual(len(context.state.evidence), 1)

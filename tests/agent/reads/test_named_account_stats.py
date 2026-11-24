@@ -2,7 +2,6 @@
 
 import asyncio
 from dataclasses import replace
-from datetime import datetime, timezone
 import json
 from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
@@ -11,18 +10,12 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.safety.access import AgentAccessLost
-from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
-from elbow_helper.agent.engine.flow import AnswerFlow
 from elbow_helper.agent.engine.tool_call import execute_tool
 from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.reads import account_names, identity_reads
 from elbow_helper.agent.reads import account_activity
-from elbow_helper.agent.reads.projections import cohort_selection
-from elbow_helper.agent.plan.checker import check_plan
-from elbow_helper.agent.plan.format import capability_list
 from elbow_helper.features.cwl.queries import CwlQueries
-from tests.agent.engine.test_agent_plan_flow import _context
-from tests.agent.reads.record_stub import regular_id, regular_war, regular_wars_from, with_record
+from tests.agent.request_fixtures import flow_context as _context
 from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
 
 
@@ -288,65 +281,6 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['selection_complete'])
         self.assertEqual(len(result['missing_sources']), len(CLANS))
 
-
-    async def test_dated_account_read_uses_real_stored_reg_and_cwl_records_and_ranked_query(self):
-        with TemporaryDirectory() as directory:
-            def day(text):
-                return int(datetime.fromisoformat(text).replace(tzinfo=timezone.utc).timestamp())
-
-            selected, earlier = (regular_war('BEH', day(end), {'#P0': (used, []), '#Q0': (used, [])},
-                                             start_ts=day(end) - 50)
-                                 for end, used in (('2025-12-01', 1), ('2025-10-01', 0)))
-            record = await LeagueRecord(directory).initialize()
-            timestamp = day('2025-12-02')
-            await record.week('BEH', '2025-12', [league_war(
-                '#P8', 1, timestamp, [member(tag, name=name) for tag, name in
-                                      (('#P0', 'Amber Comet'), ('#Q0', 'Other Beacon'))],
-                start=timestamp - 50, team_size=2)])
-            cwl = record.queries()
-            self.assertEqual({row['player_tag'] for row in await asyncio.to_thread(cwl.account_names)},
-                             {'#P0', '#Q0'})
-            cwl.participation = Mock(wraps=cwl.participation)
-            ranked = AsyncMock(return_value={'accounts': [], 'total_accounts': 0, 'offset': 0,
-                'next_offset': None, 'coverage_complete': False, 'unobserved_selections': ['#P0'], 'bases': {}})
-            context = with_record(replace(context_with_names(linked=[('#P0', 'Amber Comet'), ('#Q0', 'Other Beacon')]),
-                cwl_queries=cwl))
-            context.bot.ranked_reads = SimpleNamespace(window=ranked)
-            regular = self.enterContext(regular_wars_from(selected, earlier))
-            tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
-            arguments = {'look_in': 'game', 'account_names': ['ambercomet'], 'after': '2025-11-02T00:00:00+00:00',
-                         'before': '2026-01-01T00:00:00+00:00'}
-            registry = {tool.definition.name: tool}
-            plan = {'goal': 'Read selected account activity', 'effort': 'high', 'output': 'text',
-                'finish_after_reads': True, 'steps': [{'id': 'stats', 'capability': tool.definition.name,
-                'arguments': arguments, 'depends_on': []}]}
-            self.assertTrue(check_plan(plan, registry).ok)
-            self.assertIn('account_names', capability_list(registry))
-            with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())), \
-                 patch.object(identity_reads, 'profiles', AsyncMock(return_value={
-                     '#P0': {'status': 'ok', 'data': {'name': 'Amber Comet', 'warStars': 9876}}})):
-                result = await tool.handler(context, arguments)
-                projected = await cohort_writer_evidence(context, {'stats': result})
-            self.assertEqual([row['player_tag'] for row in result['rows']], ['#P0'])
-            activity = result['rows'][0]['activity']
-            self.assertEqual(activity['regular_war']['war_ids'], [regular_id(selected)])
-            self.assertEqual((activity['regular_war']['attacks_used'], activity['regular_war']['missed']), (1, 1))
-            self.assertEqual(activity['cwl']['war_ids'], ['CWL:#P8'])
-            self.assertEqual(activity['cwl']['attacks_used'], 1)
-            # League wars through the CWL queries, regular wars through the record's war reads.
-            self.assertEqual({call.kwargs['war_type'] for call in cwl.participation.call_args_list}, {'CWL'})
-            for call in [*cwl.participation.call_args_list, *regular.await_args_list]:
-                self.assertEqual(set(call.kwargs['clan_codes']), set(CLANS))
-                self.assertEqual(call.kwargs['after_ts'], int(datetime(2025, 11, 2, tzinfo=timezone.utc).timestamp()))
-            regular.assert_awaited_once()
-            self.assertEqual(ranked.call_args.args, ('account_tags', ['#P0']))
-            self.assertEqual(set(result['history_reads']), set(account_activity.HISTORY_KINDS))
-            self.assertEqual(projected['stats']['rows'][0]['activity'], activity)
-            self.assertEqual(await cohort_selection(context, result['report_id'], 'account_tags'),
-                             {'account_tags': ['#P0']})
-            self.assertTrue(AnswerFlow._planned_reads_complete(SimpleNamespace(plan=plan, result_views={}), {'stats': result}))
-            profile_only = {key: value for key, value in result.items() if key != 'history_reads'}
-            self.assertFalse(AnswerFlow._planned_reads_complete(SimpleNamespace(plan=plan, result_views={}), {'stats': profile_only}))
 
     async def test_failed_history_keeps_other_observations_and_empty_is_not_zero(self):
         from elbow_helper.agent.reads import ranked as ranked_reads

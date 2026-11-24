@@ -4,8 +4,6 @@ from dataclasses import asdict, dataclass, field
 import json
 from typing import Any
 
-from ..plan.format import PLAN_TOOL_NAME
-
 
 @dataclass(slots=True)
 class OperatorDebugRecord:
@@ -23,7 +21,7 @@ class OperatorDebugRecord:
 
     def submitted(self, calls):
         for call in calls:
-            if call.name not in (PLAN_TOOL_NAME, "submit_social_reply"):
+            if call.name != "submit_social_reply":
                 continue
             try:
                 plan = json.loads(call.arguments)

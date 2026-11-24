@@ -1,6 +1,8 @@
 """Synthetic reply reports; no live Discord, member data, or model requests."""
 
 import asyncio
+from contextlib import ExitStack
+from dataclasses import replace
 from datetime import datetime
 import json
 from pathlib import Path
@@ -17,6 +19,9 @@ from elbow_helper.agent.cog import AgentCog
 from elbow_helper.agent.conversation.debug import OperatorDebugRecord
 from elbow_helper.agent.conversation.transcripts import TranscriptArchive
 from elbow_helper.agent.engine.models import AgentAttachment, AgentDelivery, AgentTurnState
+from elbow_helper.agent.reports.feedback import report_card
+from tests.agent.request_fixtures import flow_context as _context
+from tests.agent.loop_stub import StubModel, StubSession, call, final, loop_service, stub_stored_data, without_server_notes
 
 
 def diagnostics():
@@ -119,6 +124,26 @@ class ReplyReportStorageTests(unittest.TestCase):
         self.assertEqual(report["answer_attachment_names"], ["full-answer.txt"])
 
 
+class ReplyReportLoopCardTests(unittest.IsolatedAsyncioTestCase):
+    async def test_card_shows_rounds_tokens_and_tools_of_a_loop_request(self):
+        with TemporaryDirectory() as directory:
+            archive = TranscriptArchive(Path(directory) / "transcripts.sqlite3")
+            context = replace(_context(), transcript_archive=archive)
+            session = StubSession(call("synthetic_lookup", {"member_id": 42}), final("Synthetic answer"))
+            with ExitStack() as stack:
+                without_server_notes(stack)
+                await loop_service(StubModel(session)).answer(question="Synthetic question", context=context)
+            await archive.drain()
+            archive.record_request(message_id=71, guild_id=3, channel_id=91, root_message_id=71, member_id=41,
+                                   created_at="2026-10-27T10:00:00+00:00", content="Synthetic question",
+                                   replied_to_message_id=None)
+            archive.record_reply(message_id=72, request_message_id=71, content="Synthetic answer")
+            report = archive.record_reply_report(guild_id=3, channel_id=91, reply_id=72, reporter_id=42)
+        fields = {field.name: field.value for field in report_card(report).fields}
+        self.assertEqual(fields["Rounds / tokens"], "2 / 30 + 7")
+        self.assertEqual(fields["Tools"], "synthetic_lookup")
+
+
 class _Channel:
     type = discord.ChannelType.text
     category_id = None
@@ -156,7 +181,8 @@ class ReplyReportReactionTests(unittest.IsolatedAsyncioTestCase):
             get_guild=lambda identifier: self.guild if identifier == GUILD_ID else None,
             fetch_channel=AsyncMock(return_value=None))
         self.cog = AgentCog(self.bot, account_links=None, message_search=None,
-                            roster_queries=None, transcript_archive=self.archive)
+                            roster_queries=None, transcript_archive=self.archive,
+                            stored_data=stub_stored_data())
         self.payload = SimpleNamespace(guild_id=GUILD_ID, channel_id=100, message_id=10,
             user_id=42, member=self.member, emoji=SimpleNamespace(id=None, name="👎"))
 
@@ -194,7 +220,7 @@ class ReplyReportReactionTests(unittest.IsolatedAsyncioTestCase):
         fields = {field.name: field.value for field in self.owner.send.await_args.kwargs['embed'].fields}
         self.assertEqual(fields['Question'], 'Synthetic question')
         self.assertEqual(fields['Answer'], 'Synthetic delivered answer')
-        self.cog.service._model.create_agent_session.assert_not_called()
+        self.cog.service.model.create_agent_session.assert_not_called()
 
     async def test_fetch_failure_logs_and_preserves_saved_report(self):
         self.bot.get_user.return_value = None
@@ -274,6 +300,9 @@ class ReplyReportReactionTests(unittest.IsolatedAsyncioTestCase):
         self.owner.send.assert_awaited_once()
 
     async def test_real_delivery_archives_answer_and_file_names_but_excludes_pure_preview(self):
+        from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
+        from elbow_helper.agent.actions.preview import preview_text
+
         message = SimpleNamespace(id=1, guild=self.guild, channel=self.source, mentions=[],
             author=self.member, reply=AsyncMock(return_value=SimpleNamespace(id=20)))
         self.cog.action_runner = None
@@ -284,11 +313,12 @@ class ReplyReportReactionTests(unittest.IsolatedAsyncioTestCase):
         report = self.archive.record_reply_report(guild_id=GUILD_ID, channel_id=100,
                                                   reply_id=20, reporter_id=42)
         self.assertEqual(report["answer_attachment_names"], ["answer.csv", "synthetic.csv"])
-        context = SimpleNamespace(state=AgentTurnState(proposed_changes=[object()]))
-        # Exercise the same archive eligibility flag without generating a real preview.
+        action = PreparedAction("synthetic", {}, ChangePreview(("Change target",), AsyncMock()), AsyncMock())
+        context = SimpleNamespace(state=AgentTurnState(proposed_changes=[action]), member=self.member)
         message.reply.return_value.id = 21
-        with patch("elbow_helper.agent.conversation.delivery.build_reply_views", return_value=(None, None)):
-            await self.cog._send_response_parts(message, "Synthetic preview", ["Synthetic preview"], {},
-                None, None, discord.AllowedMentions.none(), AgentDelivery(), None, context, None)
+        with (patch("elbow_helper.agent.conversation.delivery.assert_answer_scope", AsyncMock()),
+              patch("elbow_helper.agent.conversation.delivery.require_evidence_access", AsyncMock())):
+            await self.cog.send_response(message, preview_text([action]), None, context=context)
+        self.addCleanup(message.reply.await_args.kwargs["view"].stop)
         await self.archive.drain()
         self.assertIsNone(self.archive.reply_request_id(guild_id=GUILD_ID, channel_id=100, reply_id=21))

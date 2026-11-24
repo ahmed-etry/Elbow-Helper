@@ -8,6 +8,9 @@ from elbow_helper.configuration.files import FAMILY_DATABASE
 from elbow_helper.data.reads.core import ReadSnapshot, timestamp
 from elbow_helper.data.reads.coverage import signal
 from elbow_helper.data.reads.profiles import roster_fields
+from elbow_helper.data.reads.war_facts import (
+    ACCOUNT_MONTH_COLUMNS, ACCOUNT_WAR_COLUMNS, WAR_COLUMNS, build_war_facts,
+)
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
 from elbow_helper.agent.reads.sql.sources import DataSource
@@ -43,6 +46,20 @@ def town_hall_snapshot(paths, database_path, readable):
                         value = member['townHallLevel']
                 rows.append((account['id'], value))
     return {'town_halls': ([('account_id', 'INTEGER PRIMARY KEY'), ('townhall', 'INTEGER')], rows)}
+
+
+def war_snapshot(paths, database_path, readable):
+    if not readable or not database_path.is_file():
+        return {}
+    with closing(sqlite3.connect(database_path.resolve().as_uri() + '?mode=ro', uri=True)) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute('PRAGMA query_only=ON')
+        with sqlite_transaction(connection):
+            facts = build_war_facts(ReadSnapshot(connection))
+    definitions = {'wars': WAR_COLUMNS, 'account_wars': ACCOUNT_WAR_COLUMNS,
+                   'account_months': ACCOUNT_MONTH_COLUMNS}
+    return {name: (columns, [tuple(row[column] for column, _ in columns) for row in facts[name]])
+            for name, columns in definitions.items() if name in readable}
 
 
 SOURCES = (
@@ -119,6 +136,7 @@ SOURCES = (
              "This view reads cwl_rounds, wars and war_attacks; do not join rounds again and multiply rows."),
         ),
         config_constant="elbow_helper.configuration.files.FAMILY_DATABASE",
+        hidden_columns=(("cwl_log_summaries", "result"),),
     ),
     DataSource(
         "profiles", FAMILY_DATABASE,
@@ -127,5 +145,40 @@ SOURCES = (
                  "NULL if unknown. Join account_id=family.accounts.id."),),
         config_constant="elbow_helper.configuration.files.FAMILY_DATABASE",
         snapshot=town_hall_snapshot,
+    ),
+    DataSource(
+        'participation', FAMILY_DATABASE,
+        tables=(
+            ('wars', 'none',
+             'One family clan per war; join family.wars.id=war_id and account_wars on war_id AND clan_tag. '
+             'clan_tag/code/name and opponent_tag/name identify both clans; type is REG/CWL/FRIENDLY; '
+             'state is preparation/inWar/warEnded. start_at/end_at are UTC microseconds; date/month '
+             'are the UTC war-end day/month (YYYY-MM-DD/YYYY-MM). team_size is expected lineup size; '
+             'members_saved and attacks_saved count saved members and saved attacks (placeholder rows excluded); attacks_reported '
+             'is the saved clan total, which may be derived. lineup_complete/attacks_complete describe '
+             'saved evidence; counts_final uses existing final-count rules, including independent side totals. '
+             'participation_lineup_known means participation can check absence, including old lineups '
+             'without a team size. Flags are 0/1; missing values are NULL. History may omit wars.'),
+            ('account_wars', 'none',
+             'One account per family clan per war, including accounts that made no attacks. '
+             'war_id/clan_tag and clan_code/name, opponent_tag/name, type/state, start_at/end_at, '
+             'date/month have the same meaning as participation.wars. player_tag joins family.accounts; '
+             'player_name, townhall and map_position are from this war. attacks_expected/used are '
+             'saved counts; missed is a proven final count or NULL with missed_reason. stars and '
+             'attacks_measured describe saved attacks (placeholder rows excluded), not proof that all attacks were saved. '
+             'owner_then_id/owner_now_id are Discord member IDs at war end and at this read; NULL if '
+             'no ownership interval covers that time. owner_then_reason explains missing past ownership. '
+             'owner_from_at/to_at (UTC microseconds, NULL end means open) and owner_basis describe '
+             'the observed ownership interval at war end, not an exact real-world change time.'),
+            ('account_months', 'none',
+             'One ever-linked account per UTC calendar month from the first saved war month through '
+             'this read. player_tag joins family.accounts; owner_now_id is its Discord owner at this '
+             'read or NULL. month is YYYY-MM by war end. wars counts distinct joined family wars of '
+             'all types; wars_checked counts family clan sides; wars_with_missing_lineups counts sides '
+             'whose lineup cannot check absence. status is in wars, none found, or unknown; reason '
+             'explains it. none found means absent from checked lineups, not proof that every war was saved.'),
+        ),
+        config_constant='elbow_helper.configuration.files.FAMILY_DATABASE',
+        snapshot=war_snapshot,
     ),
 )

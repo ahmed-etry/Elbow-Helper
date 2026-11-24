@@ -1,30 +1,19 @@
-"""Validate plan shape, schemas, dependencies and confirmation boundaries."""
+"""Check tool argument schemas, input rules and action references."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Mapping
 from typing import Any
-import logging
 import re
 import math
-import json
 
-from ..engine.capability_contract import (
-    CapabilityContract,
-    CapabilityBindError,
-    compile_capability_call,
-)
-from elbow_helper.agent.engine.models import RegisteredAgentTool
-from ..actions.contracts import ActionClass
+from ..engine.models import RegisteredAgentTool
 from ..reports.tools import (READ_NAME, original_arguments, original_tool,
                             unsupported_fields, unsupported_field_error)
-from .format import REPLY_CAPABILITIES, output_forms
 from .arguments import argument_errors, schema_variant
 from .input_rules import input_rule_issue
-from .reference_paths import PATH_CONTRACT, valid_path
-
-LOGGER = logging.getLogger(__name__)
+from .reference_paths import valid_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,303 +103,37 @@ def valid_arguments(
     )
 
 
-def has_reference(value: Any) -> bool:
-    if isinstance(value, dict):
-        return set(value) == {"step", "path"} or any(has_reference(item) for item in value.values())
-    return isinstance(value, list) and any(has_reference(item) for item in value)
-
-
-def result_references(value: Any):
-    if isinstance(value, dict):
-        if set(value) == {"step", "path"}:
-            yield value
-        else:
-            for item in value.values():
-                yield from result_references(item)
-    elif isinstance(value, list):
-        for item in value:
-            yield from result_references(item)
-
-
-def step_dependencies(step: Mapping[str, Any]) -> tuple[str, ...]:
-    """Keep explicit ordering and derive every result reference's dependency."""
-    referenced = (reference["step"] for reference in result_references(step["arguments"])
-                  if isinstance(reference["step"], str))
-    return tuple(dict.fromkeys([*step["depends_on"], *referenced]))
-
-
 def _reference(value: Any, earlier: set[str]) -> bool:
     return (isinstance(value, dict) and set(value) == {"step", "path"}
             and isinstance(value["step"], str) and value["step"] in earlier
             and valid_path(value["path"]))
 
 
-def _reference_issue(arguments, earlier, step_id):
-    if not isinstance(arguments, dict):
-        return None
-    fields = {"arguments": arguments} if set(arguments) == {"step", "path"} else arguments
-    for argument, value in fields.items():
-        for reference in result_references(value):
-            if not valid_path(reference["path"]):
-                return _error("Invalid result path: " + json.dumps({
-                    "step_id": step_id, "argument": argument, "path": reference["path"],
-                    "expected": PATH_CONTRACT,
-                }, ensure_ascii=False), step_id, fields=(argument,))
-            if not _reference(reference, earlier):
-                return _error("Use a valid result reference to an earlier or completed step.", step_id)
-    return None
-
-
-def bind_report_references(
-    step: Mapping[str, Any], registry: Mapping[str, RegisteredAgentTool],
-    step_ids: set[str], report_ids: Collection[str] | None,
-) -> str:
-    """Point a bare step ID in a report field at that step's report; return any error.
-
-    Rewrites the step's arguments in place so the checker, the executor and the
-    report retention all see the same reference. `report_ids` are the reports
-    this request holds; None skips the check of other strings.
-    """
-    arguments = step["arguments"]
-    contract = registry[step["capability"]].contract
-    if not isinstance(arguments, dict) or contract is None:
-        return ""
-    for name, kind in contract.entity_fields:
-        value = arguments.get(name)
-        if kind != "family_report" or not isinstance(value, str):
-            continue
-        if value in step_ids:
-            arguments[name] = {"step": value, "path": ["report_id"]}
-        elif report_ids is not None and value not in report_ids:
-            return (f"{name} must be a report ID held in this request or a result reference. "
-                    'To use an earlier step\'s report, pass {"step": "<id>", "path": ["report_id"]}.')
-    return ""
-
-
-@dataclass(frozen=True, slots=True)
-class StepCheck(PlanCheck):
-    tool: RegisteredAgentTool | None = None
-    contract: CapabilityContract | None = None
-    scope: Mapping[str, Any] | None = None
-
-
-def check_step(
-    step: Mapping[str, Any], registry: Mapping[str, RegisteredAgentTool],
-    *, resolved: bool = False,
-    validate_scope: Callable[[RegisteredAgentTool], str] | None = None,
-) -> PlanCheck:
-    """Check step arguments and evidence scope before binding a capability call."""
-    capability = step["capability"]
-    step_id = step["id"]
-    dependencies = step_dependencies(step)
-    scope = None
-    tool = registry[capability]
-    arguments = step["arguments"]
+def argument_issue(
+    registry: Mapping[str, RegisteredAgentTool], name: str, arguments: Any,
+    dependencies: set[str] | None = None, *, step_id: str = "",
+) -> PlanCheck | None:
+    """Check a lookup's schema and rules, including a saved report's own kind."""
+    tool = registry[name]
     if not isinstance(arguments, dict):
         return _error("Use an argument object.", step_id)
-    references = {field: value for field, value in arguments.items()
-                  if has_reference(value)}
-    schema = tool.definition.parameters
-    from .executor import reference_shape_issue
-    if issue := reference_shape_issue(arguments, schema):
-        return _error(issue[1], step_id, fields=(issue[0].split("[", 1)[0],))
-    selected = (
-        original_tool(registry, capability, arguments)
-        if capability == READ_NAME else None
-    )
+    selected = original_tool(registry, name, arguments) if name == READ_NAME else None
     if selected is not None and unsupported_fields(selected, arguments):
         return _error(unsupported_field_error(selected, arguments), step_id)
-    if issue := _reference_issue(arguments, set(dependencies), step_id):
-        return issue
-    if not valid_arguments(arguments, schema, set(dependencies)):
-        issues = argument_errors(arguments, schema, set(dependencies), _valid_value)
+    if not valid_arguments(arguments, tool.definition.parameters, dependencies):
+        issues = argument_errors(arguments, tool.definition.parameters, dependencies, _valid_value)
         return _error("Invalid arguments: " + "; ".join(issues), step_id)
-    if capability == READ_NAME:
-        if selected is None or not valid_arguments(
-            original_arguments(arguments), selected.definition.parameters,
-            set(dependencies),
-        ):
+    if name == READ_NAME:
+        if selected is None:
             return _error("Use the fields supported by this report kind.", step_id)
+        inner = original_arguments(arguments)
+        if not valid_arguments(inner, selected.definition.parameters, dependencies):
+            issues = argument_errors(inner, selected.definition.parameters, dependencies, _valid_value)
+            return _error("Invalid arguments: " + "; ".join(issues), step_id)
     issue, fields, missing_fields = input_rule_issue(
         original_arguments(arguments) if selected else arguments,
         (selected or tool).definition.parameters,
     )
     if issue:
         return _error(issue, step_id, fields=fields, missing_fields=missing_fields)
-    if validate_scope is not None:
-        issue = validate_scope(selected or tool)
-        if issue:
-            return _error(issue, step_id)
-    contract = (selected or tool).contract
-    if resolved or (not references and contract is not None):
-        try:
-            scope = compile_capability_call(
-                selected or tool,
-                original_arguments(arguments) if selected else arguments,
-                contract=contract,
-            )
-        except CapabilityBindError as error:
-            return _error(str(error), step_id)
-    return StepCheck(True, tool=tool, contract=contract, scope=scope)
-
-
-def _mixes_irreversible_changes(steps, registry) -> bool:
-    changes = [step for step in steps if registry[step["capability"]].action_class in (
-        ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
-    )]
-    return len(changes) > 1 and any(
-        registry[step["capability"]].action_class is ActionClass.IRREVERSIBLE for step in changes
-    ) and not all(
-        registry[step["capability"]].action_class is ActionClass.IRREVERSIBLE
-        and step["capability"] == changes[0]["capability"] for step in changes
-    )
-
-
-def _rename_reused_steps(steps, completed, registry):
-    """Give a different operation its own identity before any references are bound."""
-    if not all(isinstance(step, dict) and isinstance(step.get('id'), str) for step in steps):
-        return
-    identities = [step['id'] for step in steps]
-    if len(set(identities)) != len(identities):
-        return  # Duplicate names inside one plan remain a structural error.
-    reserved = set(completed) | set(identities)
-    renamed = {}
-    for step in steps:
-        identity = step['id']
-        previous = completed.get(identity)
-        if (previous is None or not 1 <= len(identity) <= 40
-                or all(step.get(key) == previous.get(key) for key in ('capability', 'arguments'))):
-            continue
-        number = 2
-        while True:
-            suffix = '_' + str(number)
-            candidate = identity[:40 - len(suffix)] + suffix
-            if candidate not in reserved:
-                break
-            number += 1
-        renamed[identity] = candidate
-        reserved.add(candidate)
-    for step in steps:
-        step['id'] = renamed.get(step['id'], step['id'])
-        if isinstance(step.get('depends_on'), list):
-            step['depends_on'] = [renamed.get(dep, dep) if isinstance(dep, str) else dep
-                                  for dep in step['depends_on']]
-        for reference in result_references(step.get('arguments')):
-            if isinstance(reference['step'], str):
-                reference['step'] = renamed.get(reference['step'], reference['step'])
-        tool = registry.get(step.get('capability')) if isinstance(step.get('capability'), str) else None
-        if tool and tool.contract and isinstance(step.get('arguments'), dict):
-            for field_name, kind in tool.contract.entity_fields:
-                value = step['arguments'].get(field_name)
-                if kind == 'family_report' and isinstance(value, str) and value in renamed:
-                    step['arguments'][field_name] = renamed[value]
-
-
-def check_plan(raw, registry, *, completed_steps=None, report_ids=None):
-    """Return a correctable structural error; data errors belong to execution."""
-    try:
-        required = {"goal", "effort", "output", "steps"}
-        if not isinstance(raw, dict) or not required <= set(raw) or set(raw) - required - {"reply", "self_target", "finish_after_reads", "assessment", "advice", "discussion_channels"}:
-            return _error("Supply goal, effort, output and steps.")
-        if not isinstance(raw["goal"], str) or not 1 <= len(raw["goal"].strip()) <= 240:
-            return _error("Write a short goal.")
-        if "self_target" in raw and type(raw["self_target"]) is not bool:
-            return _error("Use a boolean self_target flag for a reference to the asker.")
-        if 'finish_after_reads' in raw and type(raw['finish_after_reads']) is not bool:
-            return _error('Use a boolean finish_after_reads flag.')
-        if 'assessment' in raw and type(raw['assessment']) is not bool:
-            return _error('Use a boolean assessment flag.')
-        if 'advice' in raw and type(raw['advice']) is not bool:
-            return _error('Use a boolean advice flag.')
-        if raw["effort"] not in ("low", "high", "max"):
-            return _error("Choose low, high or max effort.")
-        if raw["output"] not in output_forms(registry):
-            return _error("Choose an available output form.")
-        if not isinstance(raw["steps"], list) or not 0 <= len(raw["steps"]) <= 48:
-            return _error("List up to 48 steps.")
-        channels = raw.get('discussion_channels', [])
-        if (not isinstance(channels, list) or len(channels) > 4
-                or any(type(channel) is not int or channel <= 0 for channel in channels)
-                or len(set(channels)) != len(channels)):
-            return _error('Choose up to four distinct discussion channel IDs.')
-        if raw.get('assessment') and 'read_conversation_evidence' in registry and not channels:
-            return _error('Choose discussion_channels for the relevant discussion.')
-        if "reply" in raw and (
-            not isinstance(raw["reply"], str) or not 1 <= len(raw["reply"].strip()) <= 1800
-            or raw["output"] != "text"
-            or any(step.get("capability") not in REPLY_CAPABILITIES
-                   for step in raw["steps"] if isinstance(step, dict))
-        ):
-            return _error("Use reply with only a reply target, reactions or a GIF; complete reads and changes first.")
-        if not raw["steps"] and not raw.get("reply"):
-            return _error("Supply reply text or capability steps.")
-        completed = completed_steps or {}
-        _rename_reused_steps(raw['steps'], completed, registry)
-        earlier = set(completed)
-        step_ids = earlier | {step["id"] for step in raw["steps"]
-                              if isinstance(step, dict) and isinstance(step.get("id"), str)}
-        step_errors, step_fields, step_missing_fields = {}, {}, {}
-        after_change = set()
-        for key, step in completed.items():
-            if registry[step["capability"]].action_class in (
-                ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
-            ) or after_change.intersection(step_dependencies(step)):
-                after_change.add(key)
-        for position, step in enumerate(raw["steps"], 1):
-            if not isinstance(step, dict):
-                return _error("Each step needs id, capability, arguments and depends_on.")
-            missing = tuple(key for key in ("id", "capability", "arguments", "depends_on")
-                            if key not in step)
-            if missing:
-                return _error("Each step needs id, capability, arguments and depends_on. "
-                              + json.dumps({"missing_fields": missing}),
-                              step.get("id", str(position)), missing_fields=missing)
-            identity = step["id"]
-            if isinstance(identity, str) and identity in completed:
-                return _error("Use a new step ID.", identity)
-            if not isinstance(identity, str) or not 1 <= len(identity) <= 40 or identity in earlier:
-                return _error("Give each step a unique short ID.")
-            name = step["capability"]
-            if not isinstance(name, str) or name not in registry:
-                return _error("Choose a registered capability.", identity)
-            dependencies = step["depends_on"]
-            if not isinstance(dependencies, list) or any(
-                not isinstance(dep, str) or dep not in earlier for dep in dependencies
-            ):
-                return _error("Depend only on earlier or completed steps.", identity)
-            if issue := bind_report_references(step, registry, step_ids, report_ids):
-                return _error(issue, identity)
-            if issue := _reference_issue(step["arguments"], earlier, identity):
-                return issue
-            dependencies = step_dependencies(step)
-            classification = registry[name].action_class
-            depends_on_change = bool(after_change.intersection(dependencies))
-            if classification is ActionClass.READ and depends_on_change:
-                return _error(
-                    "Plan reads before changes; a read can't use a change's result.", identity,
-                )
-            if depends_on_change or classification in (
-                ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
-            ):
-                after_change.add(identity)
-            checked = check_step(step, registry)
-            if not checked.ok:
-                step_errors[identity] = checked.error
-                if checked.fields:
-                    step_fields[identity] = checked.fields
-                if checked.missing_fields:
-                    step_missing_fields[identity] = checked.missing_fields
-            earlier.add(identity)
-        if _mixes_irreversible_changes(raw["steps"], registry):
-            return _error("Only irreversible changes of the same kind may share a preview.")
-        if raw["output"] != "text" and not any(
-            step["capability"] == raw["output"] for step in raw["steps"]
-        ):
-            return _error("Include the selected output capability in the steps.")
-        if sum(step["capability"] == "prepare_spreadsheet" for step in raw["steps"]) > 1:
-            return _error("Put every table in one spreadsheet as separate sheets.")
-        return PlanCheck(True, step_errors=step_errors, step_fields=step_fields,
-                         step_missing_fields=step_missing_fields)
-    except Exception:
-        LOGGER.exception("Agent plan check failed unexpectedly")
-        return _error("Correct the plan fields and values.")
+    return None

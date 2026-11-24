@@ -87,6 +87,7 @@ async def prepare_reply_context(context):
                        if item.id == message_id), None)
     if referenced is not None:
         author = referenced.author
+        own = author.id == getattr(getattr(context.guild, "me", None), "id", None)
         result.update(status="resolved", channel_id=channel_id,
                       author={"member_id": author.id, "display_name": author.display_name},
                       content=_reply_text(referenced),
@@ -167,7 +168,7 @@ def causal_visible_history(context):
             # Legacy records cannot reliably separate visible text from saved evidence.
             continue
         record = replace(turn.record,generated_answer=turn.record.delivered_answer,
-            generated_parts=(),local_context='',evidence=(),report_ids=(),image_sources=())
+            generated_parts=(),local_context='',evidence=(),report_ids=(),image_sources=(),lookup_results=())
         text = json.dumps({'question':record.question,'answer':record.delivered_answer},ensure_ascii=False)
         turns.append(replace(turn,text=text,record=record))
     return tuple(turns)

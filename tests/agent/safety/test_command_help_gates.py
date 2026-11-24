@@ -15,25 +15,6 @@ from tests.agent.safety import test_evidence_scope as fixtures
 
 class CommandHelpGateTests(unittest.IsolatedAsyncioTestCase):
 
-    async def test_requester_overview_matches_help_roles_and_reaches_both_contexts(self):
-        import json
-        from elbow_helper.agent.conversation.context import compile_context, requester_command_overview
-        self.context.member.roles = [fixtures.Role(roles.AGENT_TESTER_ROLE_ID),
-                                     fixtures.Role(roles.CO_LEADER_ROLE_ID)]
-        overview = requester_command_overview(self.context)
-        expected = {entry.path for entry in HELP_ENTRIES if entry.visible_to is None
-                    or roles.CO_LEADER_ROLE_ID in entry.visible_to}
-        self.assertEqual({r['path'] for r in overview['commands']}, expected)
-        compiled = compile_context(question='Discuss a command feature', local_context='',
-            context=self.context, tools=(), conversation_history='')
-        self.assertIn('requester_command_overview', compiled.prompt)
-        context = json.loads(compiled.answer_context)
-        self.assertEqual({r['path'] for r in context['requester_command_overview']['commands']}, expected)
-        self.assertNotIn('/health clan', {r['path'] for r in context['bot_command_overview']['commands']})
-        self.context.member.roles = [fixtures.Role(roles.AGENT_TESTER_ROLE_ID)]
-        with self.assertRaises(AgentAccessLost):
-            await require_evidence_access(self.context)
-
     async def test_exact_subcommand_returns_options_and_shared_scope_reports_its_gap(self):
         self.context.member.roles = [fixtures.Role(roles.AGENT_TESTER_ROLE_ID),
                                      fixtures.Role(roles.CO_LEADER_ROLE_ID)]

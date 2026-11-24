@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 
 from elbow_helper.infrastructure.discord.message_search import DiscordSearchMessage, DiscordSearchPage
 from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.plan import check_plan
 from elbow_helper.agent.engine.models import AgentTurnState
 
 
@@ -27,20 +26,6 @@ class _Channel:
 
 
 class AgentToolTests(unittest.IsolatedAsyncioTestCase):
-
-
-    def test_oversized_plan_is_rejected_before_any_capability_runs(self):
-        registry = build_agent_tools()
-        plan = {
-            "goal": "Read selected values", "effort": "low", "output": "text",
-              "steps": [
-                {"id": f"step-{index}", "capability": next(iter(registry)),
-                 "arguments": {}, "reason": "Read", "depends_on": []}
-                for index in range(49)
-            ],
-        }
-        self.assertFalse(check_plan(plan, registry).ok)
-
 
     async def test_message_search_is_limited_to_asker_access(self) -> None:
         asker = SimpleNamespace(id=10)

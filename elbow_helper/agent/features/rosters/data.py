@@ -25,8 +25,9 @@ SOURCES = (
             (
                 "roster_members",
                 "none",
-                "One account signup per roster_id and cycle_id; discord_user_id owns "
-                "the signup; signed_up_ts is UTC Unix seconds.",
+                "One account signup per roster_id and cycle_id; the active cycle is the list "
+                "the signup panel shows; discord_user_id owns the signup; signed_up_ts is "
+                "UTC Unix seconds.",
             ),
         ),
         config_constant="elbow_helper.features.rosters.config.DB_PATH",

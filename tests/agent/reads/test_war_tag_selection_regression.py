@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.reads.war_tools import TOOLS
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.agent.reads.record_stub import empty_reads
 from tests.features.cwl_record_stub import LeagueRecord, league_war, member
 

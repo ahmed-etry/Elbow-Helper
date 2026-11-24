@@ -226,6 +226,21 @@ def donations(connection, selected, after, before):
     return {"after": after, "before": before, "rows": result}
 
 
+def latest_donation_samples(connection, selected, before):
+    """The last roster sample at or before a moment; keep accounts without samples."""
+    rows = []
+    for tag in selected:
+        sample = connection.execute(
+            'SELECT d.donations,d.received,d.sampled_at,c.family_code FROM donation_snapshots d '
+            'JOIN accounts a ON a.id=d.account_id LEFT JOIN clans c ON c.id=d.clan_id '
+            'WHERE a.player_tag=? AND d.sampled_at<=? ORDER BY d.sampled_at DESC LIMIT 1',
+            (tag, before)).fetchone()
+        rows.append({'player_tag': tag, **dict(zip(
+            ('donations', 'donations_received', 'sampled_at', 'clan_code'),
+            sample if sample is not None else (None,) * 4))})
+    return {'before': before, 'rows': rows}
+
+
 # A stretch is polled on schedule while polls are at most two cadences apart, as source coverage counts
 # a missed observation; the hourly profile cadence is the coarsest of the collectors read here.
 PROFILE_GAP = 2 * CADENCES["player_profile"]
@@ -394,6 +409,9 @@ class ActivityReads(RecordReads):
         if before <= after:
             raise ValueError("Expected a window that ends after it starts")
         return await self._read(donations, checked_tags(player_tags), after, before)
+
+    async def latest_donation_samples(self, player_tags, *, before):
+        return await self._read(latest_donation_samples, checked_tags(player_tags), timestamp(before))
 
     async def donation_windows(self, player_tags, *, windows, clan_codes=None):
         """Donations and received per account and window, with how far the collectors polled it."""

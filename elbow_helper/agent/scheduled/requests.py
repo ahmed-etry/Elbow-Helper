@@ -17,7 +17,7 @@ from elbow_helper.agent.safety.disclosure import can_show_in_dm
 from elbow_helper.agent.safety.access import AgentAccessLost
 
 from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState, AgentIdentity
-from ..engine.service import AgentService
+from ..loop import LoopService
 from ..actions.runner import AgentActionRunner
 from ..actions.outcomes import command_reply
 from .scope import within_scope
@@ -108,7 +108,7 @@ async def run_saved_request(
     context: AgentRequestContext,
     rule: Mapping[str, Any],
     *,
-    service: AgentService,
+    service: LoopService,
     action_runner: AgentActionRunner,
     delivery: DeliveryFunction,
 ) -> ScheduledResult:
@@ -125,15 +125,15 @@ async def run_saved_request(
             except discord.HTTPException as error:
                 raise StandingDMUnavailable() from error
     allowed = rule.get("allowed_actions", [])
-    local_context = "Confirmed standing scope: " + json.dumps(
+    standing_scope = "Confirmed standing scope: " + json.dumps(
         allowed,
         ensure_ascii=False,
         default=str,
     )
     response = await service.answer(
         question=rule["request"],
-        local_context=local_context,
         context=context,
+        standing_scope=standing_scope,
     )
     if rule.get("deliver_to") == "dm":
         destination = await dm_message(context, message)

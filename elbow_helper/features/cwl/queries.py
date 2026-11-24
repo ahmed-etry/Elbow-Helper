@@ -9,9 +9,12 @@ from datetime import datetime, timezone
 import re
 from typing import Any, Protocol
 
-from elbow_helper.domain.cwl import SCORED_WARS_LIMIT, SEASON_KEY, CwlWarSelectionError
+from elbow_helper.domain.cwl import (
+    SCORED_WARS_LIMIT, SEASON_KEY, CwlScoringSettingsMissing, CwlWarSelectionError,
+)
 
 from .config import CLAN_NAME_TO_CODE, CWL_CLAN_NAMES, CWL_CLAN_TAGS
+from .evidence import require_scoring_evidence
 from .roster.analysis import (
     build_ass_season_metrics,
     build_mega_ass_metrics,
@@ -394,14 +397,12 @@ class CwlQueries:
 
     def bonus_wars(self, *, clan_code: str, war_ids: list[str]) -> CwlBonusWarsSnapshot:
         if self._bonus_analysis is None or self._bonus_config is None:
-            raise RuntimeError("CWL bonus scoring is unavailable")
+            raise CwlScoringSettingsMissing("CWL bonus scoring is not set up.")
         selected = self._chosen_wars(clan_code, war_ids)
         config, config_errors = self._bonus_config.load()
         if config is None:
-            raise ValueError(
-                "CWL bonus scoring settings are unavailable: "
-                + " | ".join(config_errors[:4])
-            )
+            raise CwlScoringSettingsMissing(
+                "CWL bonus settings are not set up or could not be used.", config_errors[:4])
         return score_bonus_wars(clan_code, selected, config, self._bonus_analysis, self._clock())
 
     def registered_threads(self) -> tuple[CwlThreadRegistration, ...]:
@@ -517,12 +518,17 @@ def score_bonus_wars(
     resolved_war_tags = tuple(key.removeprefix("CWL:") for key in resolved_war_ids)
     clan_settings = (config.get("clans") or {}).get(clan_code)
     if not isinstance(clan_settings, dict):
-        raise ValueError("CWL bonus scoring settings are unavailable")
+        raise CwlScoringSettingsMissing(f"CWL bonus settings are not set up for {clan_code}.")
+    # Incomplete stored wars are told apart here; the analysis reports them only as text.
+    for war in selected:
+        require_scoring_evidence([war], war.get("roster", []), war.get("attacks", []))
     summary, ineligible, raw, warnings, errors = analysis.analyze_wars(
         clan_code, selected, config,
     )
     if errors:
-        raise ValueError("CWL bonus scoring is incomplete: " + " | ".join(errors[:4]))
+        # With the wars complete, what is left is settings the clan lacks, such as Expected Scores.
+        raise CwlScoringSettingsMissing(
+            f"CWL bonus settings for {clan_code} lack what these wars need.", errors[:4])
     settings = CwlBonusSettings(
         revision=int(config.get("revision") or 0),
         updated_at=str(

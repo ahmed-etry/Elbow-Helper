@@ -113,7 +113,6 @@ class TransferQueueReport:
                 queue.expired_stored_count for queue in self.queues
             ),
             "queue_summaries": summaries,
-            "complete_accessible_queue_snapshot": True,
             "interpretation": (
                 ['pending_unexpired_requests', 'destination_claim', 'approval_unverified', 'completion_unverified', 'expired_rows_omitted', 'cleared_history_unavailable']
             ),

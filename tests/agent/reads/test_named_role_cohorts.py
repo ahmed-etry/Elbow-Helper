@@ -9,7 +9,7 @@ from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.plan.input_rules import input_rule_issue
 from elbow_helper.agent.reads import identity_reads
 from elbow_helper.agent.reads.identity_reads import member_cohort
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 TOOL = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_cohort')
 OCTOBER = '2026-10-01T00:00:00+00:00'

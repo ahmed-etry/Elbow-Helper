@@ -192,7 +192,6 @@ class DiscordResearchReport:
             "next_offset": (
                 offset + limit if offset + limit < len(self.messages) else None
             ),
-            "complete_retained_snapshot": True,
             "interpretation": (
                 ['exact_retained_messages', 'query_coverage', 'absence_unproven']
             ),

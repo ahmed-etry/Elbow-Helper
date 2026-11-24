@@ -1,5 +1,6 @@
 """Destination-only conversation refusals keep the existing private read path."""
 
+from contextlib import ExitStack
 from dataclasses import replace
 import json
 from types import SimpleNamespace
@@ -8,72 +9,80 @@ from unittest.mock import AsyncMock
 
 import discord
 
-from elbow_helper.agent.actions.answer_view import PrivateAnswerView, PostAnswerView
-from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.engine.steps import disclosure_issue
-from elbow_helper.agent.engine.answer_inputs import answer_evidence
-from elbow_helper.agent.engine.evidence_delta import access_refused
+from elbow_helper.agent.actions.answer_view import PostAnswerView
 from elbow_helper.agent.engine.models import AgentTurnState
 from elbow_helper.agent.research.history import read_discord_channel_history, read_message_context
 from elbow_helper.agent.research.search import search_discord_messages
 from elbow_helper.agent.conversation.wording import AGENT_PRIVATE_OFFER, AGENT_PRIVATE_CHECK_BUTTON, RESEARCH_FEEDBACK_HINT
-from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from elbow_helper.infrastructure.discord.message_search import DiscordHistoryPage, DiscordSearchMessage, DiscordSearchPage
 from tests.agent.safety import test_evidence_scope as fixtures
-from tests.agent.engine.test_agent_plan_flow import _Model, _Session, _model_step, _plan
+from tests.agent.loop_stub import StubModel, StubSession, call, final, loop_service, without_server_notes
 
 
 class PrivateSourceTests(unittest.IsolatedAsyncioTestCase):
     setUp = fixtures.ScopeTests.setUp
 
-    def session(self, answer):
-        step = {"id": "conversation", "capability": "read_conversation_evidence",
-                "arguments": {"mode": "message_window", "channel_id": 201, "message_id": 123},
-                "depends_on": []}
-        return _Session([_model_step(_plan([step])), AgentStep(answer, (), AgentUsage())], [])
-
-    async def answer(self, service):
-        return await service.answer(question="What did the applicant ask in that conversation?",
-                                    local_context="", context=self.context)
-
-    async def test_destination_only_refusal_offers_content_through_existing_private_pass(self):
+    async def test_loop_offers_the_full_answer_only_when_the_model_calls_the_offer(self):
+        read = ("read_conversation_evidence", {"mode": "message_window", "channel_id": 201, "message_id": 123})
         public_text = "That conversation is not available here."
-        public = self.session(json.dumps({"needs_private_evidence": True, "answer": public_text}))
-        model = _Model(public)
-        service = AgentService(model)
-        answer = await self.answer(service)
-        self.assertEqual(answer, public_text)
-        result = json.loads(public.calls[1][0][0].content)["results"]["conversation"]
-        result.pop("flags", None)
-        self.assertEqual(result, {"error": public_text, "cause": "access_denied", "available_privately": True})
-        self.assertEqual(self.context.state.scope_audit.excluded, {"201": "per_person"})
-        self.assertEqual(self.context.state.scope_audit.private_candidates, {"201"})
-        self.assertTrue(self.context.state.scope_audit.offered)
-        self.assertEqual(self.personal.reads, 0)
-        self.assertNotIn("Synthetic recruitment evidence", str(public.calls))
+        for offers in (True, False):
+            with self.subTest(offers=offers), ExitStack() as stack:
+                without_server_notes(stack)
+                self.context = replace(self.context, state=AgentTurnState())
+                self.message.reply.reset_mock()
+                self.personal.reads = 0
+                public = StubSession(call(*read), *((call("offer_full_answer", {}, "call-2"),) if offers else ()),
+                                     final(public_text))
+                model = StubModel(public)
+                service = loop_service(model)
+                answer = await service.answer(question="What did the applicant ask in that conversation?",
+                                              context=self.context)
+                self.assertEqual(answer, public_text)
+                audit = self.context.state.scope_audit
+                self.assertEqual(audit.private_candidates, {"201"})
+                self.assertEqual(audit.offered, offers)
+                # The offer is listed from the start, so the tool list never changes mid-request.
+                self.assertEqual(public.tool_names, [])
+                self.assertIn("offer_full_answer", [tool.name for tool in model.requests[0]["tools"]])
+                self.assertEqual(self.personal.reads, 0)
+                self.assertNotIn("Synthetic recruitment evidence", str(public.calls))
+                await self.delivery.send_response(self.message, answer, None, context=self.context)
+                if not offers:
+                    self.assertEqual(self.message.reply.await_args.args[0], public_text + "\n" + RESEARCH_FEEDBACK_HINT)
+                    self.assertNotIn("view", self.message.reply.await_args.kwargs)
+                    continue
+                self.assertEqual(self.message.reply.await_args.args[0], public_text + "\n\n" + AGENT_PRIVATE_OFFER)
+                view = self.message.reply.await_args.kwargs["view"]
+                self.addCleanup(view.stop)
+                self.assertEqual([button.label for button in view.children], [AGENT_PRIVATE_CHECK_BUTTON])
+                private = StubSession(call(*read), final("Synthetic recruitment evidence"))
+                model.sessions.append(private)
+                interaction = SimpleNamespace(user=self.asker, response=SimpleNamespace(defer=AsyncMock()),
+                                              followup=SimpleNamespace(send=AsyncMock()))
+                await view.check_privately(interaction)
+                # Pressing the button re-ran the question at the asker's access, with no offer to make.
+                self.assertEqual(self.personal.reads, 1)
+                self.assertEqual(interaction.followup.send.await_args.args[0], "Synthetic recruitment evidence")
+                self.assertTrue(interaction.followup.send.await_args.kwargs["ephemeral"])
+                post_view = interaction.followup.send.await_args.kwargs["view"]
+                self.addCleanup(post_view.stop)
+                self.assertIsInstance(post_view, PostAnswerView)
+                # A private pass can never offer, so it isn't listed there.
+                self.assertNotIn("offer_full_answer", [tool.name for tool in model.requests[1]["tools"]])
+                self.assertEqual(private.tool_names, [])
+                self.assertNotIn(201, self.context.state.source_channels)
+                self.assertIn(201, view.result[2].state.source_channels)
 
-        await self.delivery.send_response(self.message, answer, None, context=self.context)
-        self.assertEqual(self.message.reply.await_args.args[0], public_text + "\n\n" + AGENT_PRIVATE_OFFER)
-        view = self.message.reply.await_args.kwargs["view"]
-        self.addCleanup(view.stop)
-        self.assertIsInstance(view, PrivateAnswerView)
-        self.assertEqual([button.label for button in view.children], [AGENT_PRIVATE_CHECK_BUTTON])
-        private = self.session("Synthetic recruitment evidence")
-        model.session = private
-        interaction = SimpleNamespace(user=self.asker, response=SimpleNamespace(defer=AsyncMock()),
-                                      followup=SimpleNamespace(send=AsyncMock()))
-        await view.check_privately(interaction)
-        self.assertEqual(self.personal.reads, 1)
-        self.assertIn("Synthetic recruitment evidence", str(private.calls))
-        self.assertEqual(interaction.followup.send.await_args.args[0], "Synthetic recruitment evidence")
-        self.assertTrue(interaction.followup.send.await_args.kwargs["ephemeral"])
-        post_view = interaction.followup.send.await_args.kwargs["view"]
-        self.addCleanup(post_view.stop)
-        self.assertIsInstance(post_view, PostAnswerView)
-        self.assertNotIn(201, self.context.state.source_channels)
-        self.assertIn(201, view.result[2].state.source_channels)
-        self.assertEqual(self.message.reply.await_count, 1)
+    async def test_loop_offer_is_refused_without_a_held_back_source_or_in_a_private_pass(self):
+        with ExitStack() as stack:
+            without_server_notes(stack)
+            for private_pass in (False, True):
+                with self.subTest(private_pass=private_pass):
+                    context = replace(self.context, state=AgentTurnState(), private_pass=private_pass)
+                    session = StubSession(call("offer_full_answer", {}), final("Synthetic answer"))
+                    await loop_service(StubModel(session)).answer(question="Synthetic question", context=context)
+                    self.assertEqual(json.loads(session.calls[1][0].content), {"error": "unavailable_lookup"})
+                    self.assertFalse(context.state.scope_audit.offered)
 
     async def test_real_permission_failures_keep_refusal_without_a_private_offer(self):
         for actor, denied_permission in ((self.bot_member, "read_message_history"),
@@ -94,10 +103,14 @@ class PrivateSourceTests(unittest.IsolatedAsyncioTestCase):
                 self.personal.permissions_for = permissions
                 try:
                     refusal = "That conversation is not available here."
-                    session = self.session(json.dumps({"needs_private_evidence": True, "answer": refusal}))
-                    answer = await self.answer(AgentService(_Model(session)))
+                    session = StubSession(call("read_conversation_evidence", {
+                        "mode": "message_window", "channel_id": 201, "message_id": 123}), final(refusal))
+                    with ExitStack() as stack:
+                        without_server_notes(stack)
+                        answer = await loop_service(StubModel(session)).answer(
+                            question="What did the applicant ask in that conversation?", context=self.context)
                     self.assertEqual(answer, refusal)
-                    result = json.loads(session.calls[1][0][0].content)["results"]["conversation"]
+                    result = json.loads(session.calls[1][0].content)
                     result.pop("flags", None)
                     self.assertEqual(result, {"error": refusal})
                     self.assertFalse(self.context.state.scope_audit.private_candidates)
@@ -112,38 +125,6 @@ class PrivateSourceTests(unittest.IsolatedAsyncioTestCase):
                 finally:
                     self.personal.permissions_for = original
 
-
-    async def test_message_history_and_search_reads_signal_only_the_refused_source(self):
-        readers = ((read_message_context, {"channel_id": 201, "message_id": 123}),
-                   (read_discord_channel_history, {"channel_id": 201}),
-                   (search_discord_messages, {"channel_id": 201}))
-        for reader, arguments in readers:
-            with self.subTest(reader=reader.__name__):
-                result = await reader(self.context, arguments)
-                self.assertEqual(result["cause"], "access_denied")
-                self.assertTrue(result["available_privately"])
-                self.assertTrue(access_refused(result))
-                self.assertEqual(answer_evidence({"conversation": result})["conversation"],
-                                 {"status": "denied", "available_privately": True})
-                # A refusal reason may identify a source. It must not enter
-                # writer evidence through the failed-read diagnostic path.
-                sensitive = {**result, 'error': 'Synthetic restricted source: private-room-marker'}
-                projected = answer_evidence({'conversation': sensitive})['conversation']
-                self.assertEqual(projected, {'status': 'denied', 'available_privately': True})
-                self.assertNotIn('private-room-marker', json.dumps(projected))
-                self.assertNotIn("Synthetic recruitment evidence", json.dumps(result))
-                self.assertEqual(self.personal.reads, 0)
-        self.ticket.viewers.remove(self.bot_member.id)
-        registry = build_agent_tools()
-        # Legacy channel-bound reads have a preflight; family reads check inside.
-        denied = await disclosure_issue(self.context, registry, {
-            "capability": "read_message_context", "arguments": {"channel_id": 200, "message_id": 123}})
-        self.assertFalse(denied["available_privately"])
-        self.assertEqual(denied["cause"], "unavailable")
-        allowed_privately = await disclosure_issue(self.context, registry, {
-            "capability": "read_message_context", "arguments": {"channel_id": 201, "message_id": 123}})
-        self.assertTrue(allowed_privately["available_privately"])
-        self.assertEqual(allowed_privately["cause"], "access_denied")
 
     async def test_access_changes_during_reads_discard_content_and_report_the_current_reason(self):
         original_history = self.personal.history

@@ -13,7 +13,7 @@ import unittest
 
 from elbow_helper.agent.reads.donations import TOOLS
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.data.test_health_reads import BITS, CLAN, HOUR, OTHER, RecordFixture
 
 US = 1_000_000
@@ -24,6 +24,49 @@ def at(month, day, hour=0):
 
 
 class DonationHistoryTests(RecordFixture):
+    async def test_latest_counters_keep_sample_times_missing_accounts_and_member_accounts(self):
+        await self.sql("UPDATE clans SET family_code='BEH' WHERE tag=?", (CLAN,))
+        tags = ['#Y289UJ0V', '#GCPR8QUYQ', '#PP2L']
+        accounts = [await self.account(tag) for tag in tags]
+        before = datetime(2026, 11, 19, 22, 5, 54, tzinfo=timezone.utc)
+        moments = [int(before.timestamp()) * US, at(11, 19, 18) + 35 * 60 * US + 20 * US]
+        for account, moment, given, received in zip(accounts, moments, (1736, 0), (155, 55)):
+            await self.sql('INSERT INTO donation_snapshots(account_id,sampled_at,clan_id,donations,received,'
+                "field_presence_json,source_item_id) VALUES (?,?,?,?,?,'3',?)",
+                (account, moment, self.clans[CLAN], given, received, self.item))
+        # A later sample must not replace the one at the requested instant.
+        await self.sql('INSERT INTO donation_snapshots(account_id,sampled_at,clan_id,donations,received,'
+            "field_presence_json,source_item_id) VALUES (?,?,?,?,?,'3',?)",
+            (accounts[0], moments[0] + US, self.clans[CLAN], 1800, 200, self.item))
+        for account in accounts:
+            await self.stay(account, CLAN, at(11, 1), last=at(11, 20))
+        links = SimpleNamespace(get_links_by_tags=lambda requested: {
+            tag: {'discord_user_id': 41} for tag in requested})
+        context = replace(_context(), account_links=links,
+                          bot=SimpleNamespace(activity_reads=self.activity, stay_reads=self.stays))
+        arguments = {'account_tags': tags, 'before': before.isoformat()}
+        result = await TOOLS[0].handler(context, arguments)
+        by_tag = {row['player_tag']: row for row in result['rows']}
+        directory = await self.stays.accounts(tags)
+        self.assertEqual({tag: row['player_name'] for tag, row in by_tag.items()},
+                         {row['player_tag']: row['player_name'] for row in directory['rows']})
+        self.assertEqual((by_tag[tags[0]]['donations'], by_tag[tags[0]]['donations_received']), (1736, 155))
+        self.assertEqual(by_tag[tags[0]]['as_of'], '2026-11-19')
+        self.assertEqual((by_tag[tags[1]]['donations'], by_tag[tags[1]]['donations_received']), (0, 55))
+        self.assertIsNone(by_tag[tags[2]]['donations'])
+        self.assertIsNone(by_tag[tags[2]]['as_of'])
+        self.assertNotIn('coverage', result)
+        self.assertNotIn('clan_totals', result)
+        grouped = await TOOLS[0].handler(context, {**arguments, 'unit': 'member'})
+        member, = grouped['rows']
+        self.assertEqual(member['member_id'], 41)
+        self.assertCountEqual(member['accounts'], result['rows'])
+        self.assertNotIn('donations', member)
+        # The clan selects by membership at before, rather than by the sample's clan.
+        await self.sql('UPDATE clan_membership SET to_at=? WHERE account_id=?', (moments[0], accounts[1]))
+        clan = await TOOLS[0].handler(context, {'clan_codes': ['BEH'], 'before': before.isoformat()})
+        self.assertCountEqual([row['player_tag'] for row in clan['rows']], [tags[0], tags[2]])
+
     async def test_clan_average_uses_all_accounts_before_paging_or_member_grouping(self):
         from elbow_helper.agent.engine.result_hints import RESULT_FIELDS, RETURN_HINTS
         from elbow_helper.agent.reads.snapshots import FamilyReport

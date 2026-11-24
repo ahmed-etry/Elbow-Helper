@@ -195,7 +195,10 @@ class CwlReads(RecordReads):
         return await self._read(self._selected_participation_rows, wars, selected)
 
     @staticmethod
-    def _selected_participation_rows(connection, wars, selected):
+    def _selected_participation_rows(connection, wars, selected, at=None):
+        from .war_facts import account_war_fact
+
+        at = timestamp(at)
         keys = json.dumps([[war["id"], war["clan_tag"]] for war in wars])
         facing = ("WITH facing AS (SELECT s.* FROM war_sides s JOIN json_each(?) k "
                   "ON s.war_id=json_extract(k.value,'$[0]') AND s.clan_tag=json_extract(k.value,'$[1]')) ")
@@ -231,6 +234,7 @@ class CwlReads(RecordReads):
                 {**war, "type": "CWL"},
                 key[1], war["coverage"], lineup, total["extra_json"], total)
             for row, member in zip(rows, lineup):
+                row['account_war'] = account_war_fact(connection, key[0], key[1], row, at)
                 row["performance"] = {"attacks": member["measured"], "stars": member["stars"],
                     "stars_measured": member["stars_measured"], "triples": member["triples"],
                     "destruction_total": member["destruction"], "destruction_measured": member["destruction_measured"]}

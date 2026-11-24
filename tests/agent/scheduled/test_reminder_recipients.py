@@ -71,8 +71,8 @@ class ReminderRecipientTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_channel_reminder_previews_saves_and_pings_all_members_after_restart(self):
         identity = await self.save_due()
-        self.assertIn("Post in <#3> and ping <@4>, <@5>.",
-                      self.context.state.proposed_changes[-1].preview.lines)
+        line = self.context.state.proposed_changes[-1].preview.details[0]
+        self.assertTrue(line.startswith("⏰ Remind <@4>, <@5> in <#3> at "))
         self.runner.repository = AgentActionRepository(self.repository.path)
         listed = (await list_standing(self.context, {"kind": "reminder"}))["rules"][0]
         self.assertEqual(listed["member_ids"], [4, 5])
@@ -96,7 +96,8 @@ class ReminderRecipientTests(unittest.IsolatedAsyncioTestCase):
                 "seconds": 900, "runs": 2,
             })
             action = self.context.state.proposed_changes[-1]
-            self.assertIn("DM <@4>, <@5>.", action.preview.lines)
+            self.assertTrue(action.preview.details[0].startswith(
+                "⏰ Send a reminder to <@4>, <@5> by DM at "))
             self.assertEqual(action.values["dm_member_ids"], [4, 5])
             self.assertNotIn("member_ids", action.values)
             await self._tick()
@@ -173,7 +174,8 @@ class ReminderRecipientTests(unittest.IsolatedAsyncioTestCase):
         values = {"kind": "reminder", "text": "War starts soon",
                   "schedule": {"kind": "once", "at_utc": "2099-01-01T00:00:00Z"}}
         await prepare_save(self.context, values, registry_factory=lambda: {})
-        self.assertIn("Post in <#3>.", self.context.state.proposed_changes[-1].preview.lines)
+        line = self.context.state.proposed_changes[-1].preview.details[0]
+        self.assertTrue(line.startswith("⏰ Post a reminder in <#3> at "))
 
     async def test_different_dm_and_channel_recipient_lists_are_refused(self):
         for delivery in ("channel", "dm"):

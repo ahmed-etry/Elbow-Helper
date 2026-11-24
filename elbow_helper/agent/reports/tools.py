@@ -158,7 +158,7 @@ def _tool(name: str, specs: Mapping[str, RegisteredAgentTool]) -> RegisteredAgen
         **{field: {"type": "string", "minLength": 1, "maxLength": 32} for field in ids},
         **_properties(specs),
     }
-    description = "Read a retained report using its kind's filters and page fields."
+    description = "Read a saved result using its kind's filters and page fields."
     return RegisteredAgentTool(
         AgentToolDefinition(
             name=name, description=description,

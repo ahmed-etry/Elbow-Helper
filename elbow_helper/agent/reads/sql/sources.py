@@ -23,6 +23,7 @@ class DataSource:
     evidence_channels: Callable[[object], set[int]] | None = None
     excluded_keys: tuple[str, ...] = ()
     snapshot: Callable | None = None
+    hidden_columns: tuple[tuple[str, str], ...] = ()
 
     def resolve(self, paths):
         if isinstance(self.path, Document):

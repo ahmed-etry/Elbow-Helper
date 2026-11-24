@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from calendar import day_name
 from collections.abc import Callable, Mapping
 from functools import partial
 from datetime import datetime, timezone
@@ -25,7 +26,7 @@ from ..discord_actions.messages import content_options, post_mentions
 from ..discord_actions.direct_messages import dm_recipients
 from ..engine.adapters import enabled_adapters
 from ..commands.bridge import build_command_tools
-from ..plan.checker import valid_arguments
+from ..plan.checker import argument_issue
 
 from .scope import has_raw_id, validate_scope
 from .time_rules import schedule_preview, remaining_runs, timezone_name
@@ -135,7 +136,7 @@ def watcher_reads(reads: Any, registry: Mapping[str, RegisteredAgentTool]) -> No
                 or tool.effect is not AgentCapabilityEffect.READ
                 or not isinstance(arguments, Mapping)):
             raise ActionRefused("Watchers use read lookups only.")
-        if not valid_arguments(arguments, tool.definition.parameters):
+        if argument_issue(registry, name, arguments) is not None:
             raise ActionRefused("Choose valid values for each watcher lookup.")
         contract = tool.contract
         if contract is None:
@@ -434,7 +435,18 @@ async def prepare_save(
             )
         if zone:
             repository.set_member_timezone(context.member.id, zone)
-        return ActionOutcome("complete")
+        if kind == "request":
+            text = f"Scheduled “{request}”. Next run {discord.utils.format_dt(times[0])}."
+        elif kind == "watcher":
+            text = f"Watcher set for {values['condition']}."
+        else:
+            formatted = ", ".join(discord.utils.format_dt(time, "f") for time in times)
+            if values.get("dm_member_ids"):
+                members = ", ".join(f"<@{member_id}>" for member_id in values["dm_member_ids"])
+                text = f"DM reminder set for {members} at {formatted}."
+            else:
+                text = f"Reminder set for {formatted} in {channel.mention}."
+        return ActionOutcome("complete", text=text)
 
     context.state.proposed_changes.append(PreparedAction(
         "save_standing_rule", rule,
@@ -507,7 +519,8 @@ async def prepare_manage(context: AgentRequestContext,
         if not repository.set_standing_status(kind=kind, identifier=identifier,
                                               requester_id=context.member.id, status=target):
             raise ActionRefused("That saved rule changed.")
-        return ActionOutcome("complete")
+        verb = {"pause": "Paused", "resume": "Resumed", "cancel": "Cancelled"}[operation]
+        return ActionOutcome("complete", text=f"{verb}{description}.")
 
     context.state.proposed_changes.append(PreparedAction(
         "manage_standing_rule", dict(values),

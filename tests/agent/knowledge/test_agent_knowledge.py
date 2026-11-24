@@ -1,20 +1,16 @@
 """Markdown knowledge defaults, access, ranking and prompt bounds."""
 from pathlib import Path
-from datetime import datetime, timezone
 from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.knowledge.store import (
     KnowledgeCatalog, KnowledgeSection, KnowledgeStore, TOPIC_INDEX_TOKEN_LIMIT,
 )
 from elbow_helper.agent.knowledge import store as knowledge_store
-from elbow_helper.agent.knowledge.tools import channel_knowledge_access, search_approved_knowledge
-from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState, EvidenceScope
+from elbow_helper.agent.knowledge.tools import search_approved_knowledge
+from elbow_helper.agent.engine.models import AgentTurnState, EvidenceScope
 from elbow_helper.agent.conversation.context import estimate_tokens
-from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.safety.access import AgentAccessLost, require_evidence_access
-from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID, LEAD
 from elbow_helper.agent.plan.results import model_result
 
 
@@ -174,69 +170,6 @@ Hidden""")
             self.assertEqual([s.file_name for s in catalog.search(catalog.active_sections, query=query)],
                              ["a.md", "b.md"])
         self.assertEqual(catalog.search(catalog.active_sections, query=""), catalog.active_sections)
-
-
-    async def test_service_loads_visible_index_and_rechecks_retained_access(self):
-        self.write("core.md", '+++\nalways_loaded=true\nvisibility="lead"\n+++\n# Restricted topic\nRestricted body')
-        self.write("public.md", "# Search topic\nSearch-only body")
-        member = SimpleNamespace(id=1, display_name="Synthetic member", roles=[
-            SimpleNamespace(id=AGENT_TESTER_ROLE_ID), SimpleNamespace(id=next(iter(LEAD)))])
-        channel = SimpleNamespace(id=2, permissions_for=lambda _: SimpleNamespace(
-            view_channel=True, read_message_history=True))
-        guild = SimpleNamespace(id=3, name="Synthetic guild", me=SimpleNamespace(id=99, bot=True), get_member=lambda _: member,
-                                chunked=True, members=[member])
-        channel.guild = guild
-        source = SimpleNamespace(channel=channel, created_at=datetime.now(timezone.utc))
-        requests = []
-
-        def session(**kwargs):
-            requests.append(kwargs)
-            return SimpleNamespace()
-
-        service = AgentService(SimpleNamespace(create_agent_session=session))
-        for allowed in (True, False):
-            context = AgentRequestContext(bot=SimpleNamespace(), guild=guild, member=member,
-                source_message=source, account_links=None, message_search=None, knowledge_store=self.store)
-            context.state.knowledge_channel_access = await channel_knowledge_access(context)
-            service._start_flow(question="Analyze the synthetic question", local_context="", context=context,
-                                conversation_history="")
-            self.assertEqual("Restricted topic" in requests[-1]["prompt"], allowed)
-            self.assertNotIn("Restricted body", requests[-1]["system_prompt"])
-            self.assertNotIn("Search-only body", requests[-1]["system_prompt"])
-            self.assertIn("public.md:\n- Search topic", requests[-1]["prompt"])
-            self.assertFalse(context.state.knowledge_core_available)
-            self.assertEqual(context.state.required_access, {"lead"} if allowed else set())
-            if allowed:
-                member.roles.pop()
-                with self.assertRaises(AgentAccessLost):
-                    await require_evidence_access(context)
-
-    async def test_unused_restricted_titles_do_not_restrict_a_public_answer(self):
-        self.write("private.md", '+++\nvisibility="lead"\n+++\n# Restricted topic\nRestricted body')
-        self.write("public.md", "# Public topic\nPublic body")
-        member = SimpleNamespace(id=1, display_name="Synthetic member", roles=[
-            SimpleNamespace(id=AGENT_TESTER_ROLE_ID), SimpleNamespace(id=next(iter(LEAD)))])
-        channel = SimpleNamespace(id=2, permissions_for=lambda _: SimpleNamespace(
-            view_channel=True, read_message_history=True))
-        guild = SimpleNamespace(id=3, name="Synthetic guild", me=member, get_member=lambda _: member)
-        model = SimpleNamespace(create_agent_session=Mock(return_value=SimpleNamespace()))
-        context = AgentRequestContext(bot=SimpleNamespace(), guild=guild, member=member,
-            source_message=SimpleNamespace(channel=channel, created_at=datetime.now(timezone.utc)),
-            account_links=None, message_search=None, knowledge_store=self.store)
-        AgentService(model)._start_flow(question="Analyze the public question", local_context="",
-                                        context=context, conversation_history="")
-        self.assertEqual(context.state.required_access, set())
-        prompt = model.create_agent_session.call_args.kwargs["prompt"]
-        self.assertIn("Public topic", prompt)
-        self.assertNotIn("Restricted topic", prompt)
-        self.assertNotIn("Restricted body", prompt)
-        self.assertNotIn("private.md", prompt)
-        # Authorized searches flag matching excluded metadata without exposing it.
-        result = await search_approved_knowledge(context, {"query": "Restricted topic", "scope": "requester"})
-        self.assertNotIn("Restricted body", str(result))
-        self.assertTrue(result["available_privately"])
-        self.assertEqual(context.state.required_access, set())
-        self.assertFalse(context.state.knowledge_title_access)
 
 
 class KnowledgeCoverageTests(unittest.IsolatedAsyncioTestCase):

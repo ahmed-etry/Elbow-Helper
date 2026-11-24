@@ -1,18 +1,7 @@
-from datetime import datetime, timezone
-from tests.agent.engine.helpers import LegacyCatalogueMixin
-
-import json
-from types import SimpleNamespace
 import unittest
-from tests.agent.engine.test_agent_service import _AgentModel
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
-from elbow_helper.configuration.roles import CORE
-from elbow_helper.agent.engine.models import AgentRequestContext
-from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.conversation.instructions import WorkingState
-from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
-from tests.features.agent_plan_helpers import plan_call
 
 
 def _remember(state, quote="Keep these accounts together", **changes):
@@ -64,31 +53,3 @@ class WorkingStateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 _remember(state, "New constraint", replaces_id=first.instruction_id)
         self.assertEqual(state.instructions, (first,))
-
-
-class WorkingInstructionIntegrationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
-    def context(self):
-        member = SimpleNamespace(id=42, display_name="Tester", roles=[SimpleNamespace(id=next(iter(CORE)))])
-        guild = SimpleNamespace(id=1, name="Brown Elbow", me=member, get_member=lambda _: member)
-        channel = SimpleNamespace(id=100, guild=guild, permissions_for=lambda _: SimpleNamespace(view_channel=True, read_message_history=True))
-        guild.get_channel_or_thread = lambda _: channel
-        return AgentRequestContext(
-            bot=None, guild=guild, member=member,
-            source_message=SimpleNamespace(id=1, channel=channel, created_at=datetime.now(timezone.utc)),
-            account_links=None, message_search=None,
-        )
-
-    async def test_model_loop_remembers_exact_instruction_without_authorizing_actions(self):
-        context = self.context()
-        lookup = AgentToolCall("record", "remember_task_instruction", '{"label":"Group","quote":"Keep these accounts together"}')
-        session = SimpleNamespace(
-            replace_tools=MagicMock(),
-            advance=AsyncMock(side_effect=[
-            AgentStep("", (plan_call(lookup),), AgentUsage()),
-            AgentStep("I will keep those accounts together in this draft.", (), AgentUsage()),
-        ]))
-        model = _AgentModel(session)
-        await AgentService(model).answer(question="Keep these accounts together", local_context="", context=context)
-        self.assertEqual(context.state.working.instructions[0].quote, "Keep these accounts together")
-        result = json.loads(session.advance.await_args_list[1].args[0][-1].content)
-        self.assertIs(result["results"]["record"]["action_authorized"], False)

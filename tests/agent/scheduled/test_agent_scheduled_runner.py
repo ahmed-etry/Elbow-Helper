@@ -14,7 +14,7 @@ from elbow_helper.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState
 from elbow_helper.agent.scheduled.runner import ScheduledRunner
-from elbow_helper.agent.engine.service import AgentUnavailableError
+from elbow_helper.agent.engine.tool_call import AgentUnavailableError
 from elbow_helper.agent.scheduled.requests import ScheduledResult, check_watcher, run_saved_request
 from elbow_helper.agent.scheduled.watchers import evaluate
 from elbow_helper.infrastructure.ai.agent import AgentStep, AgentUsage

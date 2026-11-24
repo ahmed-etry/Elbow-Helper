@@ -208,6 +208,12 @@ class ConversationCodecTests(unittest.TestCase):
 
     def test_roundtrip_preserves_records_reports_working_state_without_extending_expiry(self):
         original = self.conversation()
+        lookup = json.dumps({'capability': 'query_bot_data',
+                             'arguments': {'sql': "SELECT count(*) FROM family.wars WHERE type='REG'"},
+                             'output': '{"rows":[{"count":42}]}',
+                             'source_channels': [100], 'required_access': []})
+        original.turns[0] = replace(original.turns[0], record=replace(
+            original.turns[0].record, lookup_results=(lookup,)))
         snapshot = encode_conversation(
             original, root_message_id=1, revision=0, wall_time=1000, monotonic_time=60,
         )

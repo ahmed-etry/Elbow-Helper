@@ -11,7 +11,8 @@ from elbow_helper.agent.research.members import find_discord_roles
 
 
 def _context(count=12):
-    role = SimpleNamespace(id=CLANS["BEC"].member_role_id, name="BEC member", position=3, managed=False, permissions=[])
+    role = SimpleNamespace(id=CLANS["BEC"].member_role_id, name="BEC member", position=3, managed=False,
+                           mentionable=True, permissions=[])
     members = [SimpleNamespace(id=value, display_name=f"Member {value:02}", roles=[role]) for value in range(1, count + 1)]
     core_role = SimpleNamespace(id=next(iter(CORE)))
     requester = SimpleNamespace(id=999, display_name="Requester", roles=[core_role])
@@ -44,4 +45,5 @@ class AgentReportTests(unittest.IsolatedAsyncioTestCase):
         role.name = "Brown Elbow Cat"
         result = await find_discord_roles(context, {"query": "BEC"})
         self.assertEqual(result["roles"][0]["member_count"], 12)
+        self.assertTrue(result["roles"][0]["asker_can_ping_here"])
         self.assertIn({"clan_code": "BEC", "purpose": "member"}, result["roles"][0]["clan_purposes"])

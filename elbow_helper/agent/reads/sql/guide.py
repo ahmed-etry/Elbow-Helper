@@ -25,6 +25,19 @@ Keep the full record identity when joining related rows; matching one part of a 
 key is insufficient. Aggregate each one-to-many input before joining totals. Return one short \
 row per account or member and set max_rows to 1000 for per-account results; a result that was \
 cut says how many rows were left out and is not the full answer."""
+RECRUITMENT = (
+    "Recruitment: read_recruitment_pipeline returns active trials, trial-end "
+    "follow-ups and applicant reply reminders by ticket channel ID. "
+    "These are current workflow records, not application/conversion totals. "
+    f"Trial-list is channel {TRIAL_LIST}; saved ticket transcripts are in {TICKETS_LOG}. "
+    "Combine these records with trial-list posts, ticket acceptance messages and "
+    "transcripts by ticket/member ID before claiming placement or acceptance is missing. "
+    "Recruitment Support concerns advertisements, not application ticket state. "
+    "/accept admits the applicant and starts the trial. Trial-end follow-up asks "
+    "whether the member will stay and requests feedback; wait for their reply, "
+    "then /finalize and close with a transcript. It is not a new accept/decline stage. "
+    "No active trial or missing reminder does not prove a trial never happened."
+)
 
 
 class DataGuide:
@@ -56,7 +69,8 @@ class DataGuide:
                             self.entries.append((
                                 level,
                                 f"{source.alias}.{table} [{level}]: {note}\n"
-                                + ",".join(_column(row, source.alias == "family") for row in columns),
+                                + ",".join(_column(row, source.alias == "family") for row in columns
+                                           if (table, row[1]) not in source.hidden_columns),
                             ))
             except sqlite3.Error:
                 continue
@@ -104,19 +118,7 @@ class DataGuide:
                 "For every member question about these clans, select seasonal CWL players. "
                 "read_clash clan excludes their parked membership by default; member_scope=current "
                 "is only for explicitly requested current in-game membership.",
-                *([
-                    "Recruitment: read_recruitment_pipeline returns active trials, trial-end "
-                    "follow-ups and applicant reply reminders by ticket channel ID. "
-                    "These are current workflow records, not application/conversion totals. "
-                    f"Trial-list is channel {TRIAL_LIST}; saved ticket transcripts are in {TICKETS_LOG}. "
-                    "Combine these records with trial-list posts, ticket acceptance messages and "
-                    "transcripts by ticket/member ID before claiming placement or acceptance is missing. "
-                    "Recruitment Support concerns advertisements, not application ticket state. "
-                    "/accept admits the applicant and starts the trial. Trial-end follow-up asks "
-                    "whether the member will stay and requests feedback; wait for their reply, "
-                    "then /finalize and close with a transcript. It is not a new accept/decline stage. "
-                    "No active trial or missing reminder does not prove a trial never happened."
-                ] if "recruitment" in key else []),
+                *([RECRUITMENT] if "recruitment" in key else []),
                 "Family clans:", self.clans, *entries,
                 *([
                     "Not available to this asker: " + ", ".join(unavailable) + "."

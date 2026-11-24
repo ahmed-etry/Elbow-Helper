@@ -7,12 +7,8 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.agent.reads.clash import read_clash, select_fields, clash_tools
-from elbow_helper.agent.engine import budgets
-from elbow_helper.agent.engine.steps import PlanRunner
-from elbow_helper.agent.engine.tool_call import bound_tool_result, execute_tool
+from elbow_helper.agent.reads.clash import read_clash, select_fields
 from elbow_helper.agent.engine.models import AgentRequestContext
-from elbow_helper.agent.plan.results import model_result, model_view
 
 
 def encoded(value):
@@ -127,23 +123,6 @@ def read_context(payloads):
                                account_links=None, message_search=None)
 
 
-async def measure_evidence():
-    clans = [synthetic_clan(index) for index in range(9)]
-    context = read_context({clan["tag"]: clan for clan in clans})
-    with patch("elbow_helper.agent.reads.clash.require_evidence_access", AsyncMock()):
-        full = await read_clash(context, {"kind": "clan", "tags": [clans[0]["tag"]], "detail": "full"})
-        compact = [await read_clash(context, {"kind": "clan", "tags": [clan["tag"]]}) for clan in clans]
-        selected = await read_clash(context, {"kind": "clan", "tags": [clan["tag"] for clan in clans],
-                                             "fields": ["tag", "name", "memberList.tag", "memberList.townHallLevel"]})
-    return {
-        "raw_clan": len(encoded(clans[0])),
-        "full_evidence_per_clan": len(encoded(model_view(model_result(full)))),
-        "compact_evidence_per_clan": len(encoded(model_view(model_result(compact[0])))),
-        "nine_separate_compact_reads": sum(len(encoded(model_view(model_result(result)))) for result in compact),
-        "nine_clan_th_fields_one_result": len(encoded(model_view(model_result(selected)))),
-    }
-
-
 class CompactClashTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.access = patch("elbow_helper.agent.reads.clash.require_evidence_access", AsyncMock())
@@ -203,110 +182,6 @@ class CompactClashTests(unittest.IsolatedAsyncioTestCase):
         war = synthetic_war()
         self.assertEqual(select_fields(war, ["clan.members.attacks.stars"])["clan"]["members"][0],
                          {"attacks": [{"stars": 3}, {"stars": 3}]})
-
-
-    async def test_nine_clan_count_survives_actual_one_round_evidence_path(self):
-        clans = [synthetic_clan(index) for index in range(9)]
-        context = read_context({clan["tag"]: clan for clan in clans})
-        registry = {tool.definition.name: tool for tool in clash_tools()}
-        for selected in (False, True):
-            with self.subTest(selected=selected):
-                steps = [{"id": f"clan-{index}", "capability": "read_clash", "depends_on": [],
-                          "arguments": {"kind": "clan", "tags": [clan["tag"]]}}
-                         for index, clan in enumerate(clans)]
-                if selected:
-                    steps = [{"id": "family", "capability": "read_clash", "depends_on": [],
-                              "arguments": {"kind": "clan", "tags": [clan["tag"] for clan in clans],
-                                            "fields": ["tag", "name", "memberList.tag", "memberList.townHallLevel"]}}]
-                runner = PlanRunner(service=SimpleNamespace(execute_tool=execute_tool), context=context,
-                                    registry=registry, command_capabilities={}, rounder=SimpleNamespace(social_route=False),
-                                    budget=budgets.ContextBudget(128000, 8000, 2000))
-                results = await runner.run({"goal": "Count family TH18 accounts", "effort": "high",
-                                            "output": "text", "steps": steps})
-                items = []
-                for view in runner.model_results_for(results).values():
-                    self.assertLess(len(encoded(view)), budgets.MAX_TOOL_RESULT_CHARACTERS)
-                    view = records(view)
-                    self.assertFalse(view["flags"]["truncated"])
-                    self.assertEqual(view["flags"]["status"], "complete")
-                    items.extend(view["items"])
-                self.assertEqual(len(items), 9)
-                members = [member for item in items for member in item["data"]["memberList"]]
-                self.assertEqual(len(members), 450)
-                self.assertEqual(sum(member["townHallLevel"] == 18 for member in members), 9 * 17)
-                self.assertLess(runner.evidence_characters, budgets.MAX_EVIDENCE_CHARACTERS * 0.75)
-
-    async def test_size_fallback_keeps_nine_rosters_and_names_exact_omitted_fields(self):
-        clans = [synthetic_clan(index) for index in range(9)]
-        context = read_context({clan["tag"]: clan for clan in clans})
-        result = await read_clash(context, {"kind": "clan", "tags": [clan["tag"] for clan in clans]})
-        content = bound_tool_result(encoded(model_view(model_result(result))), budgets.MAX_TOOL_RESULT_CHARACTERS)
-        view = records(json.loads(content))
-        self.assertLessEqual(len(content), budgets.MAX_TOOL_RESULT_CHARACTERS)
-        self.assertTrue(view["flags"]["truncated"])
-        self.assertEqual(view["read_statuses"], {clan["tag"]: "ok" for clan in clans})
-        self.assertEqual(len(view["items"]), 9)
-        for item in view["items"]:
-            self.assertEqual(item["status"], "ok")
-            self.assertEqual(len(item["data"]["memberList"]), 50)
-            self.assertIn("/memberList/*/name", item["omitted_fields"])
-            self.assertEqual(item["row_counts"]["/memberList"], {"returned_rows": 50, "total_rows": 50})
-
-    async def test_small_page_distinguishes_omitted_successes_from_failed_reads(self):
-        players = [synthetic_player(index) for index in range(12)]
-        context = read_context({player["tag"]: player for player in players})
-        result = await read_clash(context, {"kind": "player", "tags": [player["tag"] for player in players]})
-        result["items"][-1] = {"tag": players[-1]["tag"], "status": "not_found", "http_status": 404}
-        content = bound_tool_result(encoded(model_view(model_result(result))), 4000)
-        view = records(json.loads(content))
-        self.assertLessEqual(len(content), 4000)
-        self.assertEqual(view["read_statuses"][players[-1]["tag"]], "not_found")
-        self.assertTrue(view["next_tags"])
-        for omitted in view["row_counts"]:
-            self.assertEqual(omitted["status"], view["read_statuses"][omitted["tag"]])
-            self.assertTrue(all(count["returned_rows"] == 0 for count in omitted["collections"].values()))
-        self.assertIn("/items/*/data", view["omitted_fields"])
-
-    async def test_full_projection_size_cut_reports_fields_and_collection_totals(self):
-        player = synthetic_player()
-        context = read_context({player["tag"]: player})
-        result = await read_clash(context, {"kind": "player", "tags": [player["tag"]], "detail": "full"})
-        content = bound_tool_result(encoded(model_view(model_result(result))), 4000)
-        view = records(json.loads(content))
-        item = view["items"][0]
-        self.assertEqual(item["status"], "ok")
-        self.assertEqual(view["read_statuses"], {player["tag"]: "ok"})
-        for path, count in (("/heroes", 7), ("/troops", 100), ("/achievements", 50)):
-            self.assertIn(path, item["omitted_fields"])
-            self.assertEqual(item["row_counts"][path], {"returned_rows": 0, "total_rows": count})
-
-    async def test_player_clan_status_survives_size_limit_summary_projection(self):
-        for in_clan in (False, True):
-            with self.subTest(in_clan=in_clan):
-                player = synthetic_player()
-                if not in_clan:
-                    player.pop("clan")
-                context = read_context({player["tag"]: player})
-                result = await read_clash(context, {"kind": "player", "tags": [player["tag"]], "detail": "full"})
-                content = bound_tool_result(encoded(model_view(model_result(result))), 4000)
-                item = records(json.loads(content))["items"][0]
-                self.assertEqual(item["projection"], "summary")
-                self.assertEqual(item["data"]["clan_status"], "in_clan" if in_clan else "not_in_clan")
-                if in_clan:
-                    self.assertEqual(item["data"]["clan"]["tag"], player["clan"]["tag"])
-                else:
-                    self.assertNotIn("clan", item["data"])
-
-    async def test_maximum_player_batch_retains_statuses_even_when_metadata_needs_compacting(self):
-        players = [synthetic_player(index) for index in range(200)]
-        context = read_context({player["tag"]: player for player in players})
-        result = await read_clash(context, {"kind": "player", "tags": [player["tag"] for player in players]})
-        content = bound_tool_result(encoded(model_view(model_result(result))), budgets.MAX_TOOL_RESULT_CHARACTERS)
-        view = records(json.loads(content))
-        self.assertLessEqual(len(content), budgets.MAX_TOOL_RESULT_CHARACTERS)
-        self.assertEqual(view["read_statuses"], {player["tag"]: "ok" for player in players})
-        self.assertEqual(set(view["next_tags"]), {player["tag"] for player in players})
-        self.assertEqual(view["omitted_collection_counts"]["/"], {"returned_rows": 0, "total_rows": 200})
 
 
 if __name__ == "__main__":

@@ -7,10 +7,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.reads import identity_reads as reads
 from elbow_helper.agent.reads import account_names
-from elbow_helper.agent.reads import reference as reference_reads
-from elbow_helper.agent.reads.evidence import family_model_view
-from elbow_helper.agent.engine.answer_inputs import answer_evidence
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 def member(identifier, joined=None):
@@ -70,36 +67,6 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result['member_count'], 1)
                 self.assertIn(42, context.state.resolved_members)
 
-
-    async def test_bew_self_role_remains_extra_participation_after_projection_and_rename(self):
-        context = _context()
-        role = SimpleNamespace(id=CLANS['BEW'].member_role_id, name='War Specialist', is_default=lambda: False)
-        for access_role in context.member.roles:
-            access_role.name = 'Access role'
-            access_role.is_default = lambda: False
-        context.member.roles = [*context.member.roles, role]
-        context.guild.roles = [role]
-        for name in ('War Specialist', 'Renamed extra wars role'):
-            with self.subTest(name=name):
-                role.name = name
-                result = await reads.member_accounts(context, {'member_ids': [context.member.id]})
-                projected = answer_evidence({'accounts': family_model_view({
-                    **result, 'family': 'read_member_accounts',
-                    'selection': {'include_profile': True}})}, guild=context.guild)
-                row = projected['accounts']['members'][0]
-                self.assertEqual(row['home_clans'], [])
-                self.assertEqual(row['home_clan_status'], 'no_home_role')
-                participation = row['participation_clans'][0]
-                self.assertEqual((participation['clan_code'], participation['role_id'], participation['role_name']),
-                                 ('BEW', role.id, name))
-                reference = await reference_reads.community_reference(context,
-                    {'reference_kind': 'clans', 'clan_codes': ['BEW']})
-                self.assertEqual(reference['rows'][0]['roles'][0],
-                    {'role_id': role.id, 'name': name, 'purpose': 'member', 'status': 'resolved'})
-                self.assertFalse(reference['rows'][0]['home_placement_eligible'])
-                war_role = next(row for row in reference['rows'][0]['roles'] if row['purpose'] == 'war')
-                self.assertIsNone(war_role['name'])
-                self.assertEqual(war_role['status'], 'unavailable')
 
     async def test_acceptance_window_does_not_use_discord_join_dates(self):
         context = _context()

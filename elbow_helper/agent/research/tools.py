@@ -115,7 +115,7 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "continue_discord_research_job",
-            "Read the next authorized page of a retained Discord research job.",
+            "Read the next authorized page of a saved Discord research job.",
             {
                 "job_id": {"type": "string", "maxLength": 32},
                 "expected_version": {"type": "integer", "minimum": 0},
@@ -125,7 +125,7 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "read_discord_research_job",
-            "Read a research job status or retained evidence page.",
+            "Read a research job status or saved evidence page.",
             {
                 "job_id": {"type": "string", "maxLength": 32},
                 "offset": {"type": "integer", "minimum": 0},

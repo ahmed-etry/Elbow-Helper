@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 from openai import OpenAIError
 
+from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import (
     AgentToolDefinition, AgentToolResult, DeepSeekTextClient, TextGenerationError,
 )
@@ -51,6 +52,51 @@ class ProviderPrefixTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([tool['function']['name'] for tool in requests[0]['tools']], ['alpha', 'zulu'])
         self.assertEqual(requests[-1]['tool_choice'], 'none')
         self.assertEqual(requests[-1]['messages'][2]['reasoning_content'], 'Synthetic reasoning')
+
+    async def test_three_turn_thread_with_lookups_becomes_chat_messages_ahead_of_the_prompt(self):
+        requests = []
+
+        async def provider(**options):
+            requests.append(deepcopy(options))
+            return response()
+
+        prior = [
+            {'role': 'user', 'content': 'Who donated most?'},
+            {'type': 'function_call', 'call_id': 'c1', 'name': 'donations', 'arguments': '{"n":1}'},
+            {'type': 'function_call_output', 'call_id': 'c1', 'output': '[{"r":1}]'},
+            {'role': 'assistant', 'content': 'Alpha did.'},
+            {'role': 'user', 'content': 'And wars?'},
+            {'type': 'function_call', 'call_id': 'c2', 'name': 'wars', 'arguments': '{}'},
+            {'type': 'function_call', 'call_id': 'c3', 'name': 'cwl', 'arguments': '{}'},
+            {'type': 'function_call_output', 'call_id': 'c2', 'output': 'w'},
+            {'type': 'function_call_output', 'call_id': 'c3', 'output': 'c'},
+            {'role': 'assistant', 'content': 'Two wars.'},
+        ]
+        model = self.model(provider)
+        session = model.create_agent_session(
+            system_prompt='Fixed rules', prompt='Third question', tools=(),
+            prior_messages=prior, sent_reasoning_effort='max', prompt_cache_key='key',
+        )
+        await session.advance(reasoning_effort=AgentReasoningEffort.NONE)
+        call = lambda call_id, name, arguments: {
+            'id': call_id, 'type': 'function', 'function': {'name': name, 'arguments': arguments}}
+        self.assertEqual(requests[0]['messages'], [
+            {'role': 'system', 'content': 'Fixed rules'},
+            {'role': 'user', 'content': 'Who donated most?'},
+            {'role': 'assistant', 'content': None, 'tool_calls': [call('c1', 'donations', '{"n":1}')]},
+            {'role': 'tool', 'tool_call_id': 'c1', 'content': '[{"r":1}]'},
+            {'role': 'assistant', 'content': 'Alpha did.'},
+            {'role': 'user', 'content': 'And wars?'},
+            {'role': 'assistant', 'content': None,
+             'tool_calls': [call('c2', 'wars', '{}'), call('c3', 'cwl', '{}')]},
+            {'role': 'tool', 'tool_call_id': 'c2', 'content': 'w'},
+            {'role': 'tool', 'tool_call_id': 'c3', 'content': 'c'},
+            {'role': 'assistant', 'content': 'Two wars.'},
+            {'role': 'user', 'content': 'Third question'},
+        ])
+        self.assertEqual(requests[0]['reasoning_effort'], 'max')
+        self.assertNotIn('prompt_cache_key', requests[0])
+        self.assertEqual(len(prior), 10)
 
     async def test_replacing_tools_is_independent_of_registration_order_and_accepts_empty_tools(self):
         requests = []

@@ -1,27 +1,18 @@
 """Role-owned workflows with Discord's real overwrite resolution."""
 
-from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from tests.agent.engine.helpers import LegacyCatalogueMixin
-
 import unittest
-from unittest.mock import patch
 
 import discord
 
 from elbow_helper.configuration import channels, roles
-from elbow_helper.agent.safety.access import accessible_message_channel, assert_answer_scope
+from elbow_helper.agent.safety.access import accessible_message_channel
 from elbow_helper.agent.safety.disclosure import destination_clearance, source_access_levels
-from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState
-from elbow_helper.agent.research.history import searchable_channel_ids
-from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-from tests.agent.engine.test_agent_plan_flow import _Model, _Session, _model_step, _plan
+from elbow_helper.agent.engine.models import AgentRequestContext
 
 
-class RoleCategoryScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
+class RoleCategoryScopeTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.client = discord.Client(intents=discord.Intents.all())
         self.client._connection.user = SimpleNamespace(id=99)
@@ -112,36 +103,3 @@ class RoleCategoryScopeTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestC
         for identifier in (502, channels.HIBERNATION_LOG):
             restricted = self.channel(identifier, 900, grants=[self.recruiter], deny=11)
             self.assertIsNone(source_access_levels(restricted, self.guild))
-
-    async def test_recruitment_and_promotion_tickets_reach_the_model_and_public_answer(self):
-        for room, ticket, note in ((self.room, self.ticket, "Recruiter ticket discussion."),
-                                   (self.exam_room, self.promo, "Examiner promotion notes.")):
-            with self.subTest(room=room.id):
-                self.context = replace(self.context, state=AgentTurnState())
-                self.context.source_message.channel = room
-                self.assertIn(ticket.id, await searchable_channel_ids(self.context))
-                step = {"id": "ticket", "capability": "read_message_context",
-                        "arguments": {"channel_id": ticket.id, "message_id": 123}, "depends_on": []}
-                session = _Session([_model_step(_plan([step])), AgentStep(note, (), AgentUsage())], [])
-                tool = build_agent_tools()["read_message_context"]
-
-                async def history(channel, **kwargs):
-                    self.assertEqual(channel.id, ticket.id)
-                    yield SimpleNamespace(id=123, channel=channel, guild=self.guild,
-                                          author=self.guild.get_member(10), content=note, embeds=[],
-                                          attachments=[], reference=None, created_at=datetime.now(timezone.utc))
-
-                with patch.object(discord.TextChannel, "history", history), patch(
-                    "elbow_helper.agent.engine.service.build_agent_tools",
-                    return_value={"read_message_context": tool},
-                ):
-                    answer = await AgentService(_Model(session)).answer(
-                        question="What did the reviewers say in this ticket?",
-                        local_context="", context=self.context,
-                    )
-                self.assertEqual(answer, note)
-                self.assertIn(note, str(session.calls))
-                self.assertIn(ticket.id, self.context.state.source_channels)
-                self.assertFalse(self.context.state.scope_audit.excluded)
-                self.assertFalse(self.context.state.scope_audit.offered)
-                await assert_answer_scope(self.context, answer)

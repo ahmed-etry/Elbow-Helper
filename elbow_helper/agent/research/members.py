@@ -12,6 +12,7 @@ from elbow_helper.configuration.clans import CLANS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
+from ..discord_actions.safety import can_ping_role
 from elbow_helper.agent.safety.access import accessible_message_channel, require_evidence_access
 from elbow_helper.agent.engine.models import AgentRequestContext, RegisteredAgentTool
 from elbow_helper.agent.conversation.member_names import duplicate_names, identity_fields
@@ -36,6 +37,9 @@ async def find_discord_members(
     duplicates = duplicate_names(getattr(context.guild, "members", members))
     if len(members) == 1 and (state := getattr(context, "state", None)) is not None:
         state.resolved_members[members[0].id] = query
+    offset = arguments.get("offset", 0)
+    page = members[offset:offset + MEMBER_RESULT_LIMIT]
+    end = offset + len(page)
     return {
         "query": query,
         "matched_count": len(members),
@@ -49,8 +53,9 @@ async def find_discord_members(
                 "mention": member.mention,
                 "roles": [role.name for role in member.roles if not role.is_default()],
             }
-            for member in members[:MEMBER_RESULT_LIMIT]
+            for member in page
         ],
+        "next_offset": end if end < len(members) else None,
     }
 
 
@@ -199,7 +204,10 @@ def member_tools():
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 100,
-                        }
+                        },
+                        "offset": {"type": "integer", "minimum": 0,
+                                   "description": f"Matches come {MEMBER_RESULT_LIMIT} at a time; "
+                                                  "pass next_offset for the next ones."},
                     },
                     "required": ["query"],
                     "additionalProperties": False,
@@ -216,7 +224,7 @@ def member_tools():
             AgentToolDefinition(
                 name="read_discord_members",
                 description=(
-                    "Read server display names and join dates, including retained hibernation cohorts."
+                    "Read server display names and join dates, including saved hibernation results."
                 ),
                 parameters={
                     "type": "object", "properties": {
@@ -232,7 +240,7 @@ def member_tools():
                                        "maxItems": MEMBER_ID_LIMIT, "uniqueItems": True,
                                        "items": {"type": "integer", "minimum": 1}},
                         "hibernation_report_id": {"type": "string", "minLength": 1, "maxLength": 32,
-                                                  "description": "Use the entire retained active hibernation cohort; excludes member_ids/role_ids."},
+                                                  "description": "Use the entire saved active hibernation result; excludes member_ids/role_ids."},
                         "sort": {"type": "string", "enum": ["oldest_first", "newest_first"]},
                         "offset": {"type": "integer", "minimum": 0},
                         "limit": {"type": "integer", "minimum": 1, "maximum": MEMBER_DETAILS_LIMIT},

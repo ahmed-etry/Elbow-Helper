@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from datetime import datetime, timezone
-from contextlib import nullcontext
+from contextlib import ExitStack, nullcontext
 import asyncio
 import json
 from pathlib import Path
@@ -18,23 +18,21 @@ from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import CORE, LEAD_PLUS
 from elbow_helper.agent.safety.access import ACCESS_LEAD_PLUS, AgentAccessLost
 from elbow_helper.agent.cog import AgentCog
+from elbow_helper.agent.engine.tool_call import AgentUnavailableError
 from elbow_helper.agent.conversation.delivery import _delivery_nonce, _needs_file
 from elbow_helper.agent.conversation.state import ConversationTurn
 from elbow_helper.agent.engine.models import AgentDelivery, AgentTurnState
-from elbow_helper.agent.conversation.context import compile_context
 from elbow_helper.agent.conversation.instructions import WorkingState
 from elbow_helper.agent.conversation.transcripts import TranscriptArchive
 from elbow_helper.agent.conversation.repository import ConversationRepository
 from elbow_helper.agent.conversation.codec import decode_conversation
 from elbow_helper.agent.conversation.persistence import ConversationPersistence
 from elbow_helper.agent.conversation.context import build_history_checkpoint
-from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.infrastructure.ai.client import DeepSeekTextClient
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
 
-from tests.agent.engine.helpers import patch_contracts
+from tests.agent.loop_stub import StubModel, StubSession, call, final, loop_service, stub_stored_data, without_server_notes
 
 
 class _Member:
@@ -178,11 +176,10 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(conversation.turns[-1].record.delivery_complete)
 
 
-    async def test_mixed_answer_and_preview_share_delivery_and_records(self):
+    async def test_mixed_answer_and_preview_have_independent_messages_and_shared_records(self):
         from elbow_helper.agent.actions.contracts import PreparedAction, ChangePreview
         from elbow_helper.agent.actions.preview import ConfirmationView, preview_text
         from elbow_helper.agent.actions.private_view import PrivateResultView
-        from elbow_helper.agent.actions.combined_reply import CombinedReplyView
         from elbow_helper.agent.actions.outcomes import ActionOutcome
 
         for allowed in (True,):
@@ -199,6 +196,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 answer_message = SimpleNamespace(id=1501, edit=AsyncMock())
                 answer_message.edit.return_value = answer_message
                 message.reply.return_value = answer_message
+                card_message = SimpleNamespace(id=1502, edit=AsyncMock())
+                message.channel.send = AsyncMock(return_value=card_message)
                 self.cog.action_runner = SimpleNamespace(submit=AsyncMock(return_value="synthetic-run"))
                 self.cog._archive_reply = AsyncMock()
 
@@ -216,31 +215,31 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 with (patch("elbow_helper.agent.cog.discord.Member", _Member),
                       patch("elbow_helper.agent.conversation.delivery.assert_answer_scope", AsyncMock(return_value=allowed))):
                     await self.cog.on_message(message)
-                calls = message.reply.await_args_list
-                self.assertEqual(len(calls), 1)
-                combined = calls[0].kwargs["view"]
-                self.addCleanup(combined.stop)
-                self.assertIsInstance(combined, CombinedReplyView)
-                answer_part = "Synthetic lookup answer"
-                self.assertEqual(calls[0].args[0], f"1. {preview}\n\n2. {answer_part}")
-                answer_view = combined.views["answer"]
+                message.reply.assert_awaited_once()
+                message.channel.send.assert_awaited_once()
+                answer_call, card_call = message.reply.await_args, message.channel.send.await_args
+                self.assertEqual(answer_call.args[0], "Synthetic lookup answer")
+                self.assertIsNone(card_call.args[0])
+                self.assertEqual(card_call.kwargs["embed"].title, "Confirm 1 change")
+                answer_view = answer_call.kwargs["view"]
+                self.addCleanup(answer_view.stop)
                 self.assertIsInstance(answer_view, PrivateResultView)
                 self.assertIn("Synthetic command result", answer_view.parts)
                 confirm = combined.views["preview"]
                 self.assertIsInstance(confirm, ConfirmationView)
                 self.assertIsNone(confirm.private_result)
-                self.cog._archive_reply.assert_any_await(message.id, answer_message.id, combined.render(), attachment_names=())
+                self.cog._archive_reply.assert_any_await(
+                    message.id, answer_message.id, "Synthetic lookup answer", attachment_names=(), is_answer=True,
+                )
                 conversation = self.cog._conversations.find(GUILD_ID, 100, answer_message.id)
                 record = conversation.turns[0].record
-                self.assertEqual(record.reply_ids, (1501,))
+                self.assertEqual(record.reply_ids, (1501, 1502))
                 self.assertIn(preview, record.delivered_answer)
-                self.assertIn(calls[0].args[0], record.delivered_answer)
+                self.assertIn(answer_call.args[0], record.delivered_answer)
                 interaction = SimpleNamespace(user=member, response=SimpleNamespace(defer=AsyncMock()))
                 await confirm.confirm(interaction)
                 self.cog.action_runner.submit.assert_awaited_once()
-                progress = self.cog.action_runner.submit.await_args.kwargs["progress_message"]
-                self.assertTrue(progress.preserves_other_text)
-                self.assertEqual(progress.id, 1501)
+                self.assertIs(self.cog.action_runner.submit.await_args.kwargs["progress_message"], card_message)
                 answer_message.edit.assert_not_awaited()
 
 
@@ -279,106 +278,57 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 message.reply.assert_awaited_once()
                 self.assertTrue(any("request=1 channel=100" in line for line in logs.output))
 
-    async def test_checked_source_reads_reach_discord_through_real_orchestration(self):
-        for extra_final_call in (False, True):
-            with self.subTest(extra_final_call=extra_final_call):
-                self.setUp()
-                member = _Member(42, (next(iter(CORE)),))
-                make_message = self._real_handler_scenario(member)
-                message = make_message(member, 1000, "<@999> read #source-one and #source-two")
-                channels = {100: message.channel}
-                for channel_id, name in ((200, "source-one"), (300, "source-two")):
-                    channels[channel_id] = SimpleNamespace(
-                        id=channel_id, name=name, guild=message.guild,
-                        type=discord.ChannelType.text, overwrites={},
-                        permissions_for=message.channel.permissions_for,
-                    )
-                message.channel.name = "request-room"
-                message.guild.channels = list(channels.values())
-                message.guild.threads = []
-                message.guild.get_channel_or_thread = channels.get
-                calls = []
+    async def test_checked_source_reads_reach_discord_through_the_loop(self):
+        member = _Member(42, (next(iter(CORE)),))
+        make_message = self._real_handler_scenario(member)
+        message = make_message(member, 1000, "<@999> read #source-one and #source-two")
+        channels = {100: message.channel}
+        for channel_id, name in ((200, "source-one"), (300, "source-two")):
+            channels[channel_id] = SimpleNamespace(
+                id=channel_id, name=name, guild=message.guild,
+                type=discord.ChannelType.text, overwrites={},
+                permissions_for=message.channel.permissions_for,
+            )
+        message.channel.name = "request-room"
+        message.guild.channels = list(channels.values())
+        message.guild.threads = []
+        message.guild.get_channel_or_thread = channels.get
+        calls = []
 
-                async def read_value(context, arguments):
-                    source_id = arguments["channel_id"]
-                    calls.append(source_id)
-                    context.state.source_channels.add(source_id)
-                    return {"channel_id": source_id, "value": source_id}
-                registry = {"read_value": RegisteredAgentTool(
-                    AgentToolDefinition("read_value", "Read a selected value.", {
-                        "type": "object", "properties": {
-                            "channel_id": {"type": "integer", "minimum": 1},
-                        }, "required": ["channel_id"],
-                    }), read_value,
-                )}
-                contract = CapabilityContract(
-                    (("channel_id", "discord_channel"),), source_scope="channel_messages",
-                    channel_fields=("channel_id",), result_channel_fields=("channel_id",),
-                )
-                plan = {
-                    "goal": "Read selected values", "effort": "low", "output": "text",
-                    "steps": [{
-                        "id": str(channel_id), "capability": "read_value",
-                        "arguments": {"channel_id": channel_id},
-                        "reason": "Read selected source", "depends_on": [],
-                    } for channel_id in (200, 300)],
-                }
-
-                def response(*, content=None, tool_calls=None):
-                    return SimpleNamespace(
-                        choices=[SimpleNamespace(message={
-                            "role": "assistant", "content": content,
-                            "tool_calls": tool_calls, "reasoning_content": "retained reasoning",
-                        })],
-                        usage=SimpleNamespace(prompt_tokens=1000, completion_tokens=100),
-                    )
-                planned = response(tool_calls=[{
-                    "id": "plan", "function": {
-                        "name": "submit_request_plan", "arguments": json.dumps(plan),
-                    },
-                }])
-                answer = "Both selected values are ready."
-                responses = [response(content="research"), planned]
-                if extra_final_call:
-                    responses.append(response(tool_calls=[{
-                        "id": "extra", "function": {
-                            "name": "submit_request_plan", "arguments": json.dumps(plan),
-                        },
-                    }]))
-                responses.append(response(content=answer))
-                create = AsyncMock(side_effect=responses)
-                transport = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
-                transport.with_options = lambda **kwargs: transport
-                with (
-                    patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI", return_value=transport),
-                    patch("elbow_helper.agent.cog.discord.Member", _Member),
-                    patch("elbow_helper.agent.engine.service.build_agent_tools", return_value=registry),
-                    patch_contracts(registry, {"read_value": contract}),
-                    patch("elbow_helper.agent.engine.budgets.MAX_MODEL_ROUNDS", 2),
-                ):
-                    self.cog.service = AgentService(DeepSeekTextClient("test-key"))
-                    await self.cog.on_message(message)
-                message.reply.assert_awaited_once()
-                self.assertEqual(message.reply.await_args.args, (answer,))
-                self.assertEqual(sorted(calls), [200, 300])
-                self.assertEqual(create.await_count, 4 if extra_final_call else 3)
-                self.assertEqual(create.await_args_list[0].kwargs["reasoning_effort"], "low")
-                self.assertEqual(create.await_args_list[1].kwargs["reasoning_effort"], "high")
-                self.assertEqual([
-                    item["function"]["name"]
-                    for item in create.await_args_list[1].kwargs["tools"]
-                ], ["submit_request_plan"])
-                answer_request = create.await_args_list[2].kwargs
-                self.assertEqual(answer_request["tool_choice"], "none")
-                self.assertNotIn("tools", answer_request)
-                result = answer_request["messages"][1]["content"]
-                self.assertIn("Available evidence:", result)
-                self.assertIn('"200"', result)
-                self.assertIn('"300"', result)
-                conversation = self.cog._conversations.find(GUILD_ID, 100, 2000)
-                self.assertTrue(conversation.turns[0].record.delivery_complete)
-                self.assertEqual(conversation.turns[0].source_channels,
-                                 frozenset({100, 200, 300}))
+        async def read_value(context, arguments):
+            source_id = arguments["channel_id"]
+            calls.append(source_id)
+            context.state.source_channels.add(source_id)
+            return {"channel_id": source_id, "value": source_id}
+        read_tool = RegisteredAgentTool(
+            AgentToolDefinition("read_value", "Read a selected value.", {
+                "type": "object", "properties": {
+                    "channel_id": {"type": "integer", "minimum": 1},
+                }, "required": ["channel_id"],
+            }), read_value,
+            contract=CapabilityContract(
+                (("channel_id", "discord_channel"),), source_scope="channel_messages",
+                channel_fields=("channel_id",), result_channel_fields=("channel_id",),
+            ),
+        )
+        answer = "Both selected values are ready."
+        session = StubSession(call("read_value", {"channel_id": 200}, "read-1"),
+                              call("read_value", {"channel_id": 300}, "read-2"), final(answer))
+        model = StubModel(session)
+        with ExitStack() as stack:
+            without_server_notes(stack)
+            stack.enter_context(patch("elbow_helper.agent.cog.discord.Member", _Member))
+            self.cog.service = loop_service(model)
+            self.cog.service.registry["read_value"] = read_tool
+            await self.cog.on_message(message)
+        message.reply.assert_awaited_once()
+        self.assertEqual(message.reply.await_args.args, (answer,))
+        self.assertEqual(calls, [200, 300])
+        self.assertIn("read_value", [tool.name for tool in model.requests[0]["tools"]])
+        self.assertEqual(len(session.calls), 3)
+        conversation = self.cog._conversations.find(GUILD_ID, 100, 2000)
+        self.assertTrue(conversation.turns[0].record.delivery_complete)
+        self.assertEqual(conversation.turns[0].source_channels, frozenset({100, 200, 300}))
 
 
     async def test_restart_continues_from_saved_reply_and_expiry_keeps_transcript(self):
@@ -391,7 +341,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             self.cog.persistence = ConversationPersistence(repository)
             with patch("elbow_helper.agent.cog.discord.Member", _Member):
                 await self.cog.on_message(make_message(member, 1, "<@999> first request"))
-            self.cog = AgentCog(self.bot, account_links=object(),
+            self.cog = AgentCog(self.bot, account_links=object(), stored_data=stub_stored_data(),
                                  message_search=object(), roster_queries=object(), transcript_archive=archive,
                                  persistence=ConversationPersistence(ConversationRepository(repository.path)))
             make_message = self._real_handler_scenario(member)
@@ -400,7 +350,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 with patch("elbow_helper.agent.cog.discord.Member", _Member):
                     await self.cog.on_message(make_message(member, 2, "continue", reply_to=1001))
                 request = self.cog.service.answer.await_args.kwargs
-                self.assertIn("first request", request["conversation_history"])
+                self.assertIn("first request", request["context"].history[0].record.question)
                 self.assertEqual(request["context"].history[0].record.request_message_id, 1)
                 await archive.drain()
                 rows = archive.read_page(guild_id=GUILD_ID, channel_id=100, root_message_id=1)
@@ -436,7 +386,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                     )
 
             request = self.cog.service.answer.await_args.kwargs
-            self.assertIn("first request", request["conversation_history"])
+            self.assertIn("first request", request["context"].history[0].record.question)
             snapshot = repository.find_reply(
                 GUILD_ID, 100, 1002, now=time.time(),
             )
@@ -511,7 +461,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(request["context"].cwl_queries, self.cog.cwl_queries)
         self.assertIs(request["context"].war_queries, self.cog.war_queries)
         self.assertEqual(request["context"].attachment_sources, (second,))
-        self.assertIn("review BEC", request["conversation_history"])
+        self.assertIn("review BEC", request["context"].history[0].record.question)
         self.assertEqual(len(request["context"].history), 1)
         self.assertEqual(request["context"].history[0].record.request_message_id, 1)
         conversation = self.cog._conversations.find(GUILD_ID, 100, 1002)
@@ -634,9 +584,9 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(self.cog._conversations.find(GUILD_ID, 100, 9000), conversation)
         self.assertEqual(len(message.reply.await_args.args[0]), 2000)
         self.assertEqual(len(message.channel.send.await_args.args[0]), 100)
-        for call in (message.reply.await_args, message.channel.send.await_args):
-            self.assertFalse(call.kwargs["allowed_mentions"].everyone)
-            self.assertFalse(call.kwargs["allowed_mentions"].roles)
+        for sent in (message.reply.await_args, message.channel.send.await_args):
+            self.assertFalse(sent.kwargs["allowed_mentions"].everyone)
+            self.assertFalse(sent.kwargs["allowed_mentions"].roles)
 
     async def test_partial_delivery_retains_confirmed_text_and_complete_record(self):
         member = _Member(42, (next(iter(CORE)),))
@@ -859,10 +809,11 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             await self.cog.on_message(first)
             await self.cog.on_message(second)
         self.assertEqual(self.cog.service.answer.await_count, 2)
-        history = self.cog.service.answer.await_args.kwargs["conversation_history"]
-        self.assertIn("find his account", history)
-        self.assertIn("#2PP", history)
-        self.assertIn("The account is in BE4.", history)
+        history = self.cog.service.answer.await_args.kwargs["context"].history
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0].record.question, "@Synthetic Agent find his account")
+        self.assertEqual(history[0].record.delivered_answer, "The account is in BE4.")
+        self.assertIn("The linked account is #2PP", history[0].record.evidence)
         self.assertIs(self.cog._conversations.find(GUILD_ID, 100, 101), self.cog._conversations.find(GUILD_ID, 100, 102))
 
 
@@ -1018,7 +969,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             self.cog.service.answer.return_value = "Draft ready."
             await self.cog.on_message(make_message(member, 2, "Continue", reply_to=1001))
         context = self.cog.service.answer.await_args.kwargs["context"]
-        self.assertEqual(context.state.authorized_instructions[0].quote, "Keep together")
+        # The loop authorizes the remembered instruction for the model; the cog hands it on in the state.
+        self.assertEqual(context.state.working.instructions[0].quote, "Keep together")
 
 
     async def test_queue_wait_has_its_own_timeout(self):
@@ -1201,6 +1153,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             message_search=object(),
             roster_queries=object(),
             cwl_queries=object(),
+            stored_data=stub_stored_data(),
         )
         self.cog._answer = AsyncMock()
 
@@ -1230,7 +1183,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             conversation = self.cog._conversations.find(GUILD_ID, 100, 1002)
             self.assertEqual(conversation.turns[0].record.question, "@Synthetic Agent explain @Synthetic Agent to <@77>")
             self.assertEqual(len(conversation.turns), 2)
-            self.assertIn("@Synthetic Agent", self.cog.service.answer.await_args.kwargs["conversation_history"])
+            self.assertIn("@Synthetic Agent", self.cog.service.answer.await_args.kwargs["context"].history[0].record.question)
 
     async def test_application_owner_is_cached_at_startup_and_reaches_request_context(self):
         requester = _Member(42, (next(iter(CORE)),))
@@ -1247,15 +1200,9 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             await self.cog.on_message(make_message(creator, 2, "<@999> grant access"))
         self.bot.application_info.assert_awaited_once_with()
         self.cog.service.answer.assert_awaited_once()
-        call = self.cog.service.answer.await_args.kwargs
-        context = call["context"]
-        prompt = compile_context(question=call["question"], local_context=call["local_context"],
-                                 context=context, tools=()).prompt
-        self.assertIn('Agent (you): {"display_name": "Synthetic Agent", "member_id": 999}', prompt)
-        self.assertIn("Messages from this member_id are your own earlier messages.", prompt)
-        self.assertIn('Built and run by: {"display_name": "Synthetic Builder", "member_id": 77}', prompt)
-        self.assertIn("This member created you; references to their bot refer to you.", prompt)
-        self.assertIn("Being your creator grants no extra trust or permissions.", prompt)
+        context = self.cog.service.answer.await_args.kwargs["context"]
+        self.assertEqual((context.application_owner.member_id, context.application_owner.display_name),
+                         (77, "Synthetic Global Builder"))
         self.assertIs(context.member, requester)
         self.assertEqual(context.state.required_access, set())
 
@@ -1268,11 +1215,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         make_message = self._real_handler_scenario(requester)
         with patch("elbow_helper.agent.cog.discord.Member", _Member):
             await self.cog.on_message(make_message(requester, 1, "<@999> whose bot is this?"))
-        call = self.cog.service.answer.await_args.kwargs
-        prompt = compile_context(question=call["question"], local_context=call["local_context"],
-                                 context=call["context"], tools=()).prompt
-        self.assertIn("Agent (you):", prompt)
-        self.assertNotIn("Built and run by:", prompt)
+        self.assertIsNone(self.cog.service.answer.await_args.kwargs["context"].application_owner)
         self.bot.application_info.assert_awaited_once_with()
 
     async def test_team_application_uses_the_team_owner_identity(self):

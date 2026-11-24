@@ -375,7 +375,7 @@ class CwlHistory:
                     "war_type": "CWL", "season": war["cwl_season"], "start_ts": war["start_ts"],
                     "end_ts": war["end_ts"], "player_tag": tag, "player_name": member["player_name"] or tag,
                     "attacks_expected": expected if complete else None, "attacks_used": used,
-                    "missed": member["missed"], "final_capture": complete,
+                    "missed": member["missed"], "final_capture": complete, "account_war": member["account_war"],
                     "uncertainty_reasons": [] if complete else causes,
                     "observed_attack_performance": member["performance"]})
         return {"rows": rows, "war_ids": sorted({war["war_id"] for war in selected}),

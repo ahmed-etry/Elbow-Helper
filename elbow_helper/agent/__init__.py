@@ -92,8 +92,8 @@ async def setup(bot) -> None:
         bot=bot, repository=action_repository, guild_id=GUILD_ID,
         undo_handlers=build_undo_handlers(),
     )
-    from elbow_helper.agent.reads.sql.guide import DataGuide
-    data_guide = await asyncio.to_thread(DataGuide, bot.paths)
+    from elbow_helper.agent.loop import StoredData
+    stored_data = await asyncio.to_thread(StoredData, bot.paths)
     knowledge_store = KnowledgeStore(bot.paths.data_root / "agent" / "knowledge")
     await asyncio.to_thread(knowledge_store.load)
     collaborators = {
@@ -119,7 +119,7 @@ async def setup(bot) -> None:
         "action_repository": action_repository,
     }
     cog = AgentCog(
-        bot, **collaborators, research_runner=research_runner, data_guide=data_guide,
+        bot, **collaborators, research_runner=research_runner, stored_data=stored_data,
         transcript_archive=archive, persistence=ConversationPersistence(repository),
     )
     cog.scheduled_runner = ScheduledRunner(

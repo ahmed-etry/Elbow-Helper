@@ -2,21 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import json
 from types import SimpleNamespace
 import unittest
-from tests.agent.engine.test_agent_service import _AgentModel
-from unittest.mock import AsyncMock, patch
 
 import discord
 
 from elbow_helper.configuration.roles import CORE, LEAD, AGENT_TESTER_ROLE_ID, SLEEPING_CO_ROLE_ID, SLEEPING_CROSS_ROLE_ID
 from elbow_helper.agent.safety.access import ACCESS_LEAD, has_access_requirements, lookup_level
 from elbow_helper.agent.safety.disclosure import can_disclose_provenance
-from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState, RegisteredAgentTool
-from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDefinition, AgentUsage
-from tests.features.agent_plan_helpers import plan_call
+from elbow_helper.agent.engine.models import AgentRequestContext, AgentTurnState
 
 
 @dataclass(frozen=True)
@@ -102,32 +96,6 @@ class AgentDisclosureTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(await can_disclose_provenance(self.context, {100}, {'lead', 'lead_plus'}))
                     self.assertFalse(has_access_requirements(self.guild, reader.id, {'lead'}))
                     self.assertFalse(has_access_requirements(self.guild, reader.id, {'lead_plus'}))
-
-    async def test_agent_delivers_lead_finding_in_a_room_sleeping_co_can_view(self):
-        sleeping = _Role(SLEEPING_CO_ROLE_ID)
-        self.guild.roles.append(sleeping)
-        destination = self.channel(100, allow={self.lead.id, sleeping.id}, overwrites={
-            role: SimpleNamespace(view_channel=True, read_message_history=True)
-            for role in (self.lead, sleeping)})
-        context = AgentRequestContext(bot=SimpleNamespace(), guild=self.guild, member=self.member,
-            source_message=SimpleNamespace(id=1000, channel=destination,
-                created_at=datetime(2026, 9, 24, tzinfo=timezone.utc)),
-            account_links=None, message_search=None)
-
-        @lookup_level(ACCESS_LEAD)
-        async def lookup(context, arguments):
-            context.state.source_channels.add(destination.id)
-            return {'finding': 'Seven confirmed participants.'}
-
-        tool = RegisteredAgentTool(AgentToolDefinition('lookup', 'Read a finding.', {'properties': {}}), lookup)
-        session = SimpleNamespace(advance=AsyncMock(side_effect=[
-            AgentStep('', (plan_call(AgentToolCall('lookup', 'lookup', '{}')),), AgentUsage()),
-            AgentStep('Seven confirmed participants.', (), AgentUsage())]))
-        with patch('elbow_helper.agent.engine.service.build_agent_tools', return_value={'lookup': tool}):
-            answer = await AgentService(_AgentModel(session)).answer(
-                question='How many participants are confirmed?', local_context='', context=context)
-        self.assertEqual(answer, 'Seven confirmed participants.')
-        self.assertEqual(context.state.required_access, {ACCESS_LEAD})
 
     async def test_sleeping_leader_can_read_without_receiving_action_permissions(self):
         sleeping, tester = _Role(SLEEPING_CO_ROLE_ID), _Role(AGENT_TESTER_ROLE_ID)
@@ -233,42 +201,3 @@ class AgentDisclosureTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await can_disclose_provenance(self.context, {100}, {ACCESS_LEAD}))
         self.guild.owner_id = 42
         self.assertTrue(await can_disclose_provenance(self.context, {100}, {ACCESS_LEAD}))
-
-    async def test_requester_can_read_evidence_for_a_private_answer(self):
-        destination = self.channel(100, public=True)
-        self.channel(200, allow={self.lead.id}, overwrites={
-            self.lead: SimpleNamespace(view_channel=True, read_message_history=True),
-        })
-        context = AgentRequestContext(private_pass=True,
-            bot=SimpleNamespace(), guild=self.guild, member=self.member,
-            source_message=SimpleNamespace(
-                id=1000, channel=destination,
-                created_at=datetime(2026, 9, 24, tzinfo=timezone.utc),
-            ),
-            account_links=None, message_search=None,
-        )
-        context.state.source_channels.add(100)
-
-        async def lookup(context, arguments):
-            context.state.source_channels.add(200)
-            return {"secret": "restricted detail"}
-
-        tool = RegisteredAgentTool(
-            AgentToolDefinition("lookup", "test", {"properties": {}}), lookup,
-        )
-        session = SimpleNamespace(advance=AsyncMock(side_effect=[
-            AgentStep("", (plan_call(AgentToolCall("lookup", "lookup", "{}")),), AgentUsage()),
-            AgentStep("The source cannot be used here.", (), AgentUsage()),
-        ]))
-        model = _AgentModel(session)
-        with patch("elbow_helper.agent.engine.service.build_agent_tools", return_value={"lookup": tool}):
-            answer = await AgentService(model).answer(
-                question="Check the record", local_context="", context=context,
-            )
-
-        self.assertEqual(answer, "The source cannot be used here.")
-        result = json.loads(session.advance.await_args_list[1].args[0][0].content)
-        self.assertEqual(result["results"]["lookup"]["flags"]["status"], "complete")
-        self.assertIn("restricted detail", str(session.advance.await_args_list))
-        self.assertEqual(context.state.source_channels, {100, 200})
-        self.assertTrue(any("restricted detail" in item for item in context.state.evidence))

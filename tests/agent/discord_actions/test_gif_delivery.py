@@ -1,6 +1,5 @@
 """Synthetic GIF replies retain one link and use separate tracked Discord messages."""
 
-from dataclasses import replace
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -8,12 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.gifs import find_gif
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
-from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.models import AgentDelivery
-from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
-from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
-from tests.features.agent_plan_helpers import plan_call
-from tests.agent.engine.test_banter_gifs import gif_context
+from tests.agent.request_fixtures import member_context as _context
 
 
 class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
@@ -99,21 +94,6 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(delivery.text_parts[-1], context.state.gif_url)
             self.assertTrue(delivery.complete)
             surface._conversations.register_reply.assert_called_once_with(conversation, 800)
-
-
-    async def test_research_plan_cannot_search_for_a_reply_gif(self):
-        context = _context()
-
-        context = replace(gif_context(context), bot=SimpleNamespace())
-        session = _AgentSession([
-            AgentStep("", (plan_call(AgentToolCall("gif", "find_gif", '{"query":"synthetic"}')),), AgentUsage()),
-            AgentStep("Synthetic answer", (), AgentUsage()),
-        ])
-        answer = await AgentService(_AgentModel(session)).answer(question="Synthetic request",
-                                                               local_context="", context=context)
-        self.assertEqual(answer, "Synthetic answer")
-        self.assertIsNone(context.state.gif_url)
-
 
     async def test_access_loss_before_media_sends_no_text_and_keeps_delivery_incomplete(self):
         from elbow_helper.agent.safety.access import AgentAccessLost

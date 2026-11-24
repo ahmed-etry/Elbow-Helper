@@ -245,6 +245,8 @@ def decode_conversation(
                 record["generated_parts"] = tuple(record["generated_parts"])
             if "image_sources" in record:
                 record["image_sources"] = tuple(tuple(source) for source in record["image_sources"])
+            if "lookup_results" in record:
+                record["lookup_results"] = tuple(record["lookup_results"])
             for value in (record["request_message_id"], record["member_id"], *record["reply_ids"]):
                 _integer(value)
             if (

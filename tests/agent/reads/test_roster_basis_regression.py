@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.reads.identity_reads import TOOLS
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class RosterBasisTests(unittest.IsolatedAsyncioTestCase):

@@ -47,7 +47,7 @@ class CleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(channel.delete_messages.await_args.args[0], [messages[1], messages[2]])
         messages[3].delete.assert_awaited_once()
         self.assertEqual(result.result["deleted_ids"], [1, 2, 3])
-        self.assertEqual(result.text, "")
+        self.assertEqual(result.text, "Deleted 3 messages from #synthetic.")
         self.assertEqual(channel.history.call_count, 2)
         channel.fetch_message.assert_not_awaited()
         self.assertTrue(action.preview.details[0].startswith(
@@ -72,7 +72,7 @@ class CleanupTests(unittest.IsolatedAsyncioTestCase):
         )
         await prepare_cleanup(context, {"channel_id": 200, "message_ids": [1, 3]})
         result = await context.state.proposed_changes[0].run()
-        self.assertEqual("Not deleted: " + messages[3].jump_url, result.text)
+        self.assertEqual("Deleted 1 message from #synthetic.\nNot deleted: " + messages[3].jump_url, result.text)
         messages[3].delete.assert_awaited_once()
 
     async def test_changed_message_blocks_deletion_after_preview_recheck(self):

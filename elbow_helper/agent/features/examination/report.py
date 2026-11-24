@@ -76,7 +76,6 @@ class ExaminationCaseReport:
             "case_type_counts": dict(sorted(type_counts.items())),
             "workflow_status_counts": dict(sorted(workflow_counts.items())),
             "response_status_counts": dict(sorted(response_counts.items())),
-            "complete_valid_accessible_status_snapshot": True,
             "message_history_read": False,
             "included_fields": [
                 "ticket channel ID",

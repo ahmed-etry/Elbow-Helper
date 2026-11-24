@@ -10,7 +10,7 @@ from elbow_helper.agent.reads.reference import TOOLS
 from elbow_helper.features.rosters.cog import Rosters
 from elbow_helper.features.rosters.ui.views import RosterSettingsView
 from tests.agent.commands.command_registry_fixture import CommandRegistryBot
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class SignupRemovalReferenceTests(unittest.IsolatedAsyncioTestCase):

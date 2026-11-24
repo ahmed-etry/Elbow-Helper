@@ -126,7 +126,6 @@ class MissingElderReport:
             "matching_rows": len(rows),
             "accounts": [asdict(row) for row in rows[offset:offset + limit]],
             "next_offset": offset + limit if offset + limit < len(rows) else None,
-            "complete_snapshot": True,
         }
 
 

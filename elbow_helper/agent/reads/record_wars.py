@@ -11,13 +11,14 @@ import sqlite3
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.data.reads import core as read_core
 from elbow_helper.data.reads.war_selection import regular_id as war_id
+from elbow_helper.data.reads.wars import participation_lineup_known
 from elbow_helper.domain.war_views import war_entry
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationError
 
 SECOND = 1_000_000
 CODES = {clan.tag: code for code, clan in CLANS.items()}
 FAILURES = (OSError, sqlite3.Error, TimeoutError, SQLiteMigrationError)
-UNAVAILABLE = {'error': 'Stored war evidence is unavailable.', 'cause': 'source_unavailable'}
+UNAVAILABLE = {'error': 'War record is unavailable.', 'cause': 'source_unavailable'}
 BASIS = ('family record regular wars ended in the selection; each war keeps its old IDs as aliases. '
          'Friendly wars are counted apart, never mixed in.')
 __all__ = ['war_id', 'war_reads', 'regular_wars', 'snapshot', 'combine', 'FAILURES', 'UNAVAILABLE']
@@ -57,7 +58,7 @@ def snapshot(source):
         own = view['coverage']['own']
         named = war_entry(entry['war_id'], view['clan']['name'], view['opponent']['name'], seconds(view['end_at']))
         # Early wars copied from old participation rows have no team size; their final list is the lineup.
-        if not own['members'] or own['team_size'] is not None and own['members'] < own['team_size']:
+        if not participation_lineup_known(own):
             empty.append(named)
         if entry['key'][0] in conflicted:
             conflicts.append({**named, 'reasons': ['shared_clan_pair_and_end']})

@@ -4,7 +4,6 @@ import asyncio
 from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-import json
 from pathlib import Path
 import sqlite3
 from threading import Event
@@ -14,18 +13,11 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.infrastructure.discord.message_search import DiscordHistoryPage, DiscordSearchMessage
-from elbow_helper.agent.conversation.findings import retained_finding
 from elbow_helper.agent.conversation.findings import report_is_current
 from elbow_helper.agent.cog import AgentCog
-from elbow_helper.agent.conversation.preparation import ConversationContextMixin, prepare_history
-from elbow_helper.agent.conversation.state import Conversation, ConversationRecord, ConversationTurn
 from elbow_helper.agent.reads.clash import read_clash
-from elbow_helper.agent.engine.tool_call import evidence_record
 from elbow_helper.agent.reads.snapshots import family_tool
 from elbow_helper.agent.reads.war_tools import selected_wars
-from elbow_helper.agent.reads.identity_reads import clan_rosters
-from elbow_helper.agent.reads.cohort_activity import roster_cohort
-from elbow_helper.agent.reads.evidence import family_model_view
 from elbow_helper.agent.reads.cache import ReadCache, stored_read
 from elbow_helper.agent.research.history import read_discord_channel_history
 from elbow_helper.agent.research.history_cache import history_page
@@ -41,10 +33,9 @@ from elbow_helper.data.store import FamilyStore
 from elbow_helper.infrastructure.persistence.revisions import release_sqlite_revision, sqlite_revision
 from tests.features.cwl_record_stub import LeagueRecord, league_war, member
 from elbow_helper.agent.reads import record_wars
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.agent.reads.record_stub import with_record
-from tests.agent.reads.test_compact_clash import read_context, synthetic_player, synthetic_clan
-from elbow_helper.configuration.clans import CLANS
+from tests.agent.reads.test_compact_clash import read_context, synthetic_player
 
 # The record's regular wars when none are selected.
 EMPTY_REGULAR = {'rows': [], 'war_ids': [], 'war_aliases': [], 'wars_without_rosters': [], 'identity_conflicts': [],
@@ -145,25 +136,6 @@ class ReadCacheTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn('shared', cache.entries)
                 self.assertNotIn('shared', cache.versions)
                 self.assertFalse(cache.active)
-
-    async def test_real_roster_and_nested_cohort_keep_the_original_cached_observation_time(self):
-        clan = synthetic_clan()
-        clan['tag'] = CLANS['BEH'].tag
-        local = replace(read_context({clan['tag']: clan}), read_cache=ReadCache())
-        observed = datetime(2026, 10, 27, 11, 50, tzinfo=timezone.utc)
-        args = {'clan_codes': ['BEH'], 'basis': 'current_in_game'}
-        with patch('elbow_helper.agent.reads.clash.require_evidence_access', AsyncMock()), \
-             patch('elbow_helper.agent.reads.cache.datetime') as clock:
-            clock.now.return_value = observed
-            first = await clan_rosters(local, args)
-            clock.now.return_value = observed + timedelta(minutes=10)
-            reused = await clan_rosters(local, args)
-            cohort = await roster_cohort(local, {**args, 'basis': 'clan_rosters', 'roster_basis': 'current_in_game'})
-        local.bot.clash_client.get.assert_awaited_once()
-        self.assertEqual(reused['clans'][0]['observed_at'], observed.isoformat())
-        self.assertEqual(reused['rows'][0]['observed_at'], first['rows'][0]['observed_at'])
-        writer = family_model_view({'family': 'read_member_cohort', **cohort})
-        self.assertEqual(writer['rows'][0]['accounts'][0]['observed_at'], observed.isoformat())
 
 
     async def test_wars_are_never_cached_and_forced_fresh_reads_reach_nested_sources(self):
@@ -483,56 +455,3 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rosters.await_count, 2)
         self.assertTrue(rosters.call_args.args[0].fresh_reads)
         self.assertEqual(local.state.reports[first['report_id']].payload, retained)
-
-    async def make_finding(self, family='read_clan_rosters', source=None):
-        local = context()
-        if source is not None:
-            local = replace(local, cwl_queries=source)
-        observed = local.source_message.created_at - timedelta(minutes=10)
-        reader = AsyncMock(return_value={'rows': [
-            {'player_tag': '#P0', 'clan_code': 'BEH', 'observed_at': observed.isoformat(),
-             'source_detail': 'synthetic unique retained detail ' + str(index) + 'x' * 300}
-            for index in range(450)]})
-        tool = family_tool(family, 'Synthetic roster', {}, reader)
-        with patch('elbow_helper.agent.reads.snapshots.require_evidence_access', AsyncMock()):
-            result = await tool.handler(local, {'view': 'count'})
-        full = local.state.reports[result['report_id']].page(limit=450)
-        plan = {'goal': 'Assess synthetic roster', 'effort': 'high', 'output': 'text',
-                'steps': [{'id': 'roster', 'capability': family, 'arguments': {}, 'depends_on': []}]}
-        encoded = evidence_record(call_id='roster', tool=family, arguments={}, result=json.dumps(full),
-            result_complete=True, raw_result_characters=len(json.dumps(full)), context=local, plan=plan)
-        record = ConversationRecord(request_message_id=3, member_id=local.member.id,
-            created_at=local.source_message.created_at.isoformat(), question='Assess this roster',
-            generated_answer='Synthetic finding: 450 accounts.', delivered_answer='Synthetic finding: 450 accounts.',
-            local_context='', evidence=(encoded,), report_ids=(result['report_id'],), reply_ids=(5,),
-            delivery_complete=True)
-        turn = ConversationTurn('{}', frozenset({4}), record=record)
-        return local, tool, reader, encoded, turn, observed
-
-
-    async def test_superseded_storage_and_cross_asker_reports_have_no_reusable_handle(self):
-        revision = ['one']
-        source = SimpleNamespace(cache_revision=lambda: revision[0])
-        local, _, _, encoded, _, _ = await self.make_finding('read_war_participation', source)
-        self.assertIn('report_id', json.loads(json.loads(retained_finding(local, encoded))['result']))
-        revision[0] = 'two'
-        for changed in (local, replace(local, member=SimpleNamespace(id=999))):
-            finding = json.loads(json.loads(retained_finding(changed, encoded))['result'])
-            self.assertNotIn('report_id', finding)
-            self.assertEqual(finding['status'], 'superseded_or_unavailable')
-
-    async def test_history_and_report_permissions_are_rechecked_before_followup_reuse(self):
-        local, _, _, _, turn, _ = await self.make_finding()
-        conversation = Conversation(local.guild.id, 4)
-        conversation.reports.update(local.state.reports)
-        conversation.report_sources.update(local.state.report_sources)
-        conversation.report_access_requirements.update(local.state.report_access_requirements)
-        local = replace(local, state=type(local.state)())
-        with patch('elbow_helper.agent.conversation.preparation.request_scope', AsyncMock()), \
-             patch('elbow_helper.agent.conversation.preparation.accessible_message_channel',
-                   AsyncMock(return_value=None)):
-            await prepare_history(local, (turn,))
-            await ConversationContextMixin()._load_authorized_reports(conversation, local)
-        self.assertEqual(local.state.authorized_history, ())
-        self.assertFalse(local.state.reports)
-        self.assertTrue(local.state.preserved_reports)

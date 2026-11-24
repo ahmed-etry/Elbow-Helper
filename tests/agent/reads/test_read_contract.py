@@ -8,24 +8,32 @@
 """
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
 import json
 import logging
 import os
 import unittest
+from unittest.mock import AsyncMock
+import discord
 
 from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.tool_call import execute_tool
-from elbow_helper.agent.plan.checker import check_step
-from elbow_helper.agent.plan.input_rules import RULES
+from elbow_helper.agent.plan.checker import PlanCheck, argument_issue
+from elbow_helper.agent.plan.input_rules import RULES, input_rule_issue
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.temp_directory import TemporaryDirectory
+from tests.agent.research.test_directory_permissions import SyntheticGuild
+from elbow_helper.core.paths import ApplicationPaths
+from elbow_helper.infrastructure.discord.message_search import DiscordSearchPage, DiscordHistoryPage
 
 PLANNER_CAUSES = {'invalid_arguments', 'needs_input'}
 COVERAGE_KEYS = {'coverage', 'coverage_note', 'history_coverage', 'missing_sources', 'missing',
-                 'selection_complete', 'count_complete', 'search_complete', 'history_may_be_incomplete'}
+                 'selection_complete', 'count_complete', 'search_complete', 'history_may_be_incomplete', 'row_count'}
 START, END = '2026-09-01T00:00:00+00:00', '2026-10-01T00:00:00+00:00'
 NAIVE = '2026-09-01T00:00:00'
 NON_CWL = next(code for code in CLANS if code not in CWL_CLAN_CODES)
@@ -40,8 +48,10 @@ COMPLETE = {
     'read_ranked_activity': {'after': START, 'member_ids': [41]},
     'read_donation_history': {'after': START, 'before': END, 'clan_codes': ['BEH']},
     'read_member_accounts': {'member_ids': [41]},
+    'query_bot_data': {'sql': 'SELECT 1 AS value'},
     'read_discord_access': {'member_ids': [41]},
     'read_discord_members': {'member_ids': [41]},
+    'read_discord_role_change_preview': {'role_name': 'Elder', 'member_ids': [41], 'operation': 'add'},
     'search_discord_messages': {'query': 'synthetic'},
     'read_membership_history': {'after': RECENT},
     'read_clash': {'kind': 'clan', 'tags': ['BEH']},
@@ -112,8 +122,11 @@ MISTAKES = {
                              {'after': START, 'member_ids': [41], 'season': '2026-09'},
                              {'after': START, 'member_ids': [41], 'membership_basis': 'current_in_game'}],
     'read_donation_history': [{'after': START}, {'after': START, 'clan_codes': ['BEH'], 'member_ids': [41]},
-                              {'after': NAIVE, 'clan_codes': ['BEH']}],
-    'read_clash': [{'kind': 'clan', 'tags': ['BEH'], 'offset': 2}],
+                              {'after': NAIVE, 'clan_codes': ['BEH']},
+                              {'account_tags': ['#P0'], 'by_month': True}],
+    'read_clash': [{'kind': 'clan', 'tags': ['BEH'], 'offset': 2},
+                   {'kind': 'war_log', 'tags': ['BEH'], 'order': 'oldest_first'},
+                   {'kind': 'war_log', 'tags': ['BEH'], 'offset': 5}],
     'start_discord_research_job': [{'channel_id': 91}],
     'start_discord_research_batch': [
         {'channel_ids': [91, 92], 'kind': 'search'}, {'channel_ids': [91, 92], 'kind': 'history'},
@@ -128,7 +141,8 @@ RUNTIME_MISTAKES = {
 }
 
 # Results that hold no period because they are configuration, not observations.
-NO_PERIOD = {'read_clan_health_settings'}
+NO_PERIOD = {'read_clan_health_settings', 'read_bot_command_help', 'find_discord_channels', 'find_discord_roles',
+             'read_discord_role_change_preview'}
 
 
 def _sample(detail):
@@ -166,10 +180,6 @@ def generic_mistakes(tool):
             yield {**base, field: END, field[:-5] + 'before': START}
 
 
-def step(name, arguments):
-    return {'id': 'contract', 'capability': name, 'arguments': deepcopy(arguments), 'depends_on': []}
-
-
 class ReadContractTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
@@ -189,21 +199,36 @@ class ReadContractTests(unittest.IsolatedAsyncioTestCase):
 
     async def run_read(self, name, arguments):
         """The production path: the plan check, then the tool runner around the handler."""
-        checked = check_step(step(name, arguments), self.registry)
-        if not checked.ok:
-            return 'plan_check', {'error': checked.error, 'cause': 'invalid_arguments'}
+        checked = argument_issue(self.registry, name, arguments)
+        if checked is not None:
+            return 'argument_check', {'error': checked.error, 'cause': 'invalid_arguments'}
+        server = SyntheticGuild(members=2)
+        server.add_member(41, [])
+        server.guild._member_count = len(server.guild.members)
+        server.guild.get_role(5).name = 'Elder'
+        context = _context()
+        bot = SimpleNamespace(paths=ApplicationPaths.from_project_root(Path.cwd()),
+            tree=SimpleNamespace(get_commands=lambda **kwargs: []), get_cog=lambda name: None,
+            fetch_channel=AsyncMock(side_effect=discord.NotFound(
+                SimpleNamespace(status=404, reason='Not Found'), 'Unknown channel')))
+        search = SimpleNamespace(
+            search_page=AsyncMock(return_value=DiscordSearchPage((), 0, 25, 0, None, False, False)),
+            history_page=AsyncMock(return_value=DiscordHistoryPage((), 71, 0, 50, None, True)))
+        context = replace(context, bot=bot, guild=server.guild, member=server.guild.get_member(10),
+            source_message=SimpleNamespace(id=71, channel=server.destination,
+                                           created_at=context.source_message.created_at), message_search=search)
         raw = await execute_tool(name=name, handler=self.registry[name].handler,
-                                 arguments=deepcopy(arguments), context=_context(), timeout_seconds=10)
+                                 arguments=deepcopy(arguments), context=context, timeout_seconds=10)
         return 'run', json.loads(raw)
 
 
-    def test_planner_mistakes_are_refused_at_plan_check(self):
+    def test_argument_mistakes_are_refused_before_the_read(self):
         checked = 0
         for name, tool in self.reads.items():
             for arguments in [*generic_mistakes(tool), *MISTAKES.get(name, ())]:
                 with self.subTest(read=name, arguments=arguments):
-                    result = check_step(step(name, arguments), self.registry)
-                    self.assertFalse(result.ok)
+                    result = argument_issue(self.registry, name, arguments)
+                    self.assertIsNotNone(result)
                     self.assertTrue(result.error)
                     checked += 1
         self.assertGreater(checked, 100)
@@ -224,12 +249,20 @@ class ReadContractTests(unittest.IsolatedAsyncioTestCase):
                 continue
             arguments = complete_request(tool)
             with self.subTest(read=name, arguments=arguments):
+                self.assertIsNone(argument_issue(self.registry, name, arguments))
                 stage, result = await self.run_read(name, arguments)
                 self.assertEqual(stage, 'run', result)
                 # Rule 4: anything the read refuses for missing input must be a plan check.
                 self.assertNotIn(result.get('cause'), PLANNER_CAUSES, result)
+                self.assertFalse(result.get('invalid_fields'), result)
+                self.assertFalse(result.get('missing_fields'), result)
                 if 'error' in result:
                     self.assertTrue(result['error'])
+                    self.assertNotIn(result['error'], {
+                        'invalid_arguments', 'That lookup failed.', 'That lookup timed out.',
+                        'That lookup failed because of a bot error.', "I couldn't run that command.",
+                    }, result)
+                    self.assertFalse(result['error'].startswith('Invalid arguments:'), result)
                     self.assertFalse(result.get('rows'), result)
                 elif name not in NO_PERIOD:
                     self.assertTrue(COVERAGE_KEYS & set(result) or any(key.startswith('missing_')
@@ -241,7 +274,24 @@ class InputRuleTests(unittest.TestCase):
         self.registry = build_agent_tools()
 
     def check(self, name, arguments):
-        return check_step(step(name, arguments), self.registry)
+        return argument_issue(self.registry, name, arguments) or PlanCheck(True)
+
+    def test_forbids_ignores_empty_values_without_weakening_log_rules(self):
+        schema = {RULES: [{'forbids': ['field'], 'error': 'Not allowed.'}]}
+        for value in (False, 0, '', None, []):
+            with self.subTest(value=value):
+                self.assertEqual(input_rule_issue({'field': value}, schema), ('', (), ()))
+        self.assertTrue(self.check('read_member_cohort', {
+            'basis': 'joined_discord', 'exclude_leadership': False}).ok)
+        self.assertTrue(self.check('read_clash', {'kind': 'clan', 'tags': ['BEH'], 'offset': 0}).ok)
+        for kind in ('war_log', 'capital_raids'):
+            args = {'kind': kind, 'tags': ['BEH']}
+            self.assertTrue(self.check('read_clash', {**args, 'order': 'newest_first', 'offset': 0}).ok)
+            for field, value in (('offset', 5), ('order', 'oldest_first'), ('after', START), ('before', END)):
+                with self.subTest(kind=kind, field=field):
+                    result = self.check('read_clash', {**args, field: value})
+                    self.assertFalse(result.ok)
+                    self.assertEqual(result.fields, (field,))
 
     def test_cwl_history_counts_are_only_refused_for_ass_and_bonus(self):
         for metric in ('ass', 'bonus'):
@@ -272,14 +322,27 @@ class InputRuleTests(unittest.TestCase):
         self.assertTrue(self.check('read_war_participation', {'report_id': 'synthetic'}).ok)
         self.assertTrue(self.check('read_member_cohort', {'report_id': 'synthetic', 'cursor': 'next'}).ok)
 
-    def test_a_result_reference_counts_as_given_and_its_value_waits_for_the_run(self):
-        reference = {'step': 'earlier', 'path': ['report_id']}
-        planned = step('read_war_participation', {'war_type': 'REG', 'latest_completed': 1, 'cohort_ref': reference})
-        planned['depends_on'] = ['earlier']
-        self.assertTrue(check_step(planned, self.registry).ok)
-        planned = step('read_cwl_results', {'metric': 'ass', 'clan_codes': [reference]})
-        planned['depends_on'] = ['earlier']
-        self.assertTrue(check_step(planned, self.registry).ok)
+    def test_explicit_log_order_and_meaningful_cohort_default(self):
+        for kind in ('war_log', 'capital_raids'):
+            arguments = {'kind': kind, 'tags': ['BEH'], 'order': 'newest_first'}
+            self.assertIsNone(argument_issue(self.registry, 'read_clash', arguments))
+            issue = argument_issue(self.registry, 'read_clash', {**arguments, 'order': 'oldest_first'})
+            self.assertEqual(issue.fields, ('order',))
+        issue = argument_issue(self.registry, 'read_member_cohort', {
+            'basis': 'selected', 'member_ids': [41], 'clan_role': 'leadership'})
+        self.assertEqual(issue.fields, ('clan_role',))
+        issue = argument_issue(self.registry, 'read_member_cohort', {
+            'basis': 'role_holders', 'role_ids': [1], 'clan_role': 'leadership'})
+        self.assertEqual(issue.missing_fields, ('clan_codes',))
+
+    def test_saved_report_checks_its_kind_fields_and_bounds(self):
+        base = {'report_kind': 'cwl_performance', 'report_id': 'synthetic'}
+        for extra, field in (({'season': '2026-09', 'history_limit': 2}, 'season'),
+                             ({'clan_code': 'invalid'}, 'clan_code'),
+                             ({'limit': 101}, 'limit')):
+            issue = argument_issue(self.registry, 'read_saved_report', {**base, **extra})
+            self.assertIsNotNone(issue)
+            self.assertTrue(field in issue.fields or field in issue.error, issue)
 
 
 if __name__ == '__main__':

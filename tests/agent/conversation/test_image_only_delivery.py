@@ -8,7 +8,7 @@ import discord
 
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin, AgentDeliveryUnknown
 from elbow_helper.agent.engine.models import AgentAttachment, AgentDelivery
-from tests.agent.engine.test_agent_service import _context
+from tests.agent.request_fixtures import member_context as _context
 
 
 class ImageOnlyDeliveryTests(unittest.IsolatedAsyncioTestCase):

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from elbow_helper.agent.reads.people import read_people_links as read_linked_accounts
 from elbow_helper.agent.reads.people import stored_profiles, standing_rows
 from elbow_helper.agent.reads import identity_reads, account_names
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class PeopleContracts(unittest.IsolatedAsyncioTestCase):

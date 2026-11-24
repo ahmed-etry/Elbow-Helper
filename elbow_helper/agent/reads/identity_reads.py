@@ -193,7 +193,9 @@ async def member_accounts(context, arguments):
         result.append({'member_id': identifier, 'member_name': member.display_name if member else None,
             'player_tag': tag, 'player_name': data.get('name') or roster_names.get(tag),
             'townHallLevel': data.get('townHallLevel'),
-            'role': data.get('role'), 'ranked_league': data.get('leagueTier'), 'legacy_league': data.get('league'),
+            'role': data.get('role'), 'ranked_league': data.get('leagueTier'),
+            # The old league system does not apply to an account in a ranked league.
+            **({'legacy_league': data.get('league')} if data.get('league') or not data.get('leagueTier') else {}),
             'clan': data.get('clan'), 'trophies': data.get('trophies'),
             **({'clan_status': data['clan_status']} if 'clan_status' in data else {}),
             'donations': data.get('donations'),
@@ -256,7 +258,7 @@ async def member_accounts(context, arguments):
                          if name_selection else
                          'selected game accounts only; owners do not expand the account selection'
                          if arguments.get('account_tags') else
-                         'all bot-linked accounts for selected members; missing profiles remain unknown')}
+                         'all linked accounts for selected members; missing profiles remain unknown')}
 
 
 async def account_members(context, identifiers, *, links=None, include_roles=False, people=None):
@@ -465,7 +467,7 @@ async def member_cohort(context, arguments):
         ids = sorted({row['applicant_member_id'] for row in trials})
         coverage = 'active accepted trials only; historical acceptance needs ticket evidence'
     else:
-        ids, coverage = None, 'complete current Discord membership snapshot; a join is not recruitment acceptance'
+        ids, coverage = None, 'complete current Discord membership; a join is not recruitment acceptance'
     members = await _complete_members(context.guild)
     if basis == 'accepted_recruitment' and any(key in arguments for key in ('joined_after', 'joined_before')):
         return {'error': 'Choose acceptance dates separately from Discord join dates.', 'cause': 'invalid_arguments'}
@@ -682,8 +684,8 @@ TOOLS = (
       'exclude_leadership': EXCLUDE_LEADERSHIP,
       'include_activity': {'type': 'boolean', 'description':
           'Selected-account current season donations; war activity within after/before; Discord last_active_day (UTC), '
-          'active_streak_days and lifetime_messages from all-channel achievements records, independent of that period. '
-          'Without after, returns stored Discord activity and marks game war activity not checked.'}, 'after': DATE, 'before': DATE,
+          'active_streak_days and lifetime_messages from all-channel posting records, independent of that period. '
+          'Without after, returns Discord activity and marks game war activity not checked.'}, 'after': DATE, 'before': DATE,
       'member_ids': IDS, 'cohort_ref': {**COHORT_REF, 'description':
           'With basis=selected, a read_member_accounts report: activity covers exactly its selected accounts and their owners.'},
       'include_roles': {'type': 'boolean', 'description': "For questions about this member's roles; configured roles only."},
@@ -703,7 +705,7 @@ TOOLS = (
       'sort': {'type': 'string', 'enum': ['oldest_first', 'newest_first']}}, member_cohort, required=('basis',),
      rules=COHORT_RULES,
      contract=CapabilityContract(retained_fields=('cohort_ref',)),
-     usage_note='selected: member_ids or read_member_accounts cohort_ref. include_activity reads stored Discord counters; after adds selected-account war activity.',
+     usage_note='selected: member_ids or read_member_accounts cohort_ref. include_activity reads Discord posting totals; after adds selected-account war activity.',
      whole=Whole(restore=lambda result: result.get('basis') in ('clan_rosters', 'role_holders', 'joined_discord', 'selected'),
                  finishes=lambda result: result.get('basis') in ('clan_rosters', 'role_holders', 'joined_discord'))),
 )

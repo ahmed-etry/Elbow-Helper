@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.agent.reads import test_record_wars as fixtures
 from elbow_helper.agent.reads.clash import read_clash
 from elbow_helper.agent.reads import cohort_activity
@@ -108,31 +108,6 @@ class WarContracts(WarFixture, unittest.IsolatedAsyncioTestCase):
 
 
 class ExternalWarContracts(unittest.IsolatedAsyncioTestCase):
-    async def test_family_clans_have_no_raw_war_fact_path_even_without_a_client(self):
-        from elbow_helper.agent.reads.clash import CLANS, clash_tools
-        client = SimpleNamespace(configured=True, get=AsyncMock(side_effect=AssertionError('No live family war read')))
-        context = SimpleNamespace(bot=SimpleNamespace(clash_client=client), deadline_monotonic=None)
-        code = next(iter(CLANS))
-        with patch('elbow_helper.agent.reads.clash.require_evidence_access', AsyncMock()):
-            for kind in ('current_war', 'war_log'):
-                for selection in ({}, {'detail': 'full'}, {'fields': ['clan.members.attacks']}):
-                    result = await read_clash(context, {'kind': kind, 'tags': [code], **selection})
-                    item, = result['items']
-                    self.assertEqual(item['status'], 'record_required')
-                    self.assertNotIn('data', item)
-                result = await read_clash(context, {'kind': kind, 'tags': [code, '#P0']})
-                self.assertEqual([item['status'] for item in result['items']], ['record_required', 'unavailable'])
-                client.get.reset_mock()
-                context.bot.clash_client = None
-                result = await read_clash(context, {'kind': kind, 'tags': [CLANS[code].tag]})
-                self.assertEqual(result['items'][0]['status'], 'record_required')
-                context.bot.clash_client = client
-                client.get.assert_not_awaited()
-        note = clash_tools()[0].definition.usage_note
-        self.assertIn('War/CWL: external clans only', note)
-        from elbow_helper.agent.plan.format import USAGE_NOTE_LIMIT
-        self.assertLessEqual(len(note), USAGE_NOTE_LIMIT)
-
     async def test_raw_current_war_and_log_keep_external_payloads_and_failures(self):
         client = SimpleNamespace(configured=True, get=AsyncMock())
         context = SimpleNamespace(bot=SimpleNamespace(clash_client=client), deadline_monotonic=None)

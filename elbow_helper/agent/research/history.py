@@ -6,6 +6,7 @@ from typing import Any
 from typing import Mapping
 from datetime import datetime, timezone
 import json
+import math
 from types import SimpleNamespace
 from dataclasses import replace
 
@@ -24,6 +25,7 @@ from .dates import search_date, message_time
 
 
 SEARCH_RESULT_LIMIT = 25
+CHANNEL_RESULT_LIMIT = 20
 CONTEXT_MESSAGE_LIMIT = 50
 HISTORY_PAGE_LIMIT = 25
 INTERACTIVE_HISTORY_PAGE_LIMIT = 100
@@ -43,12 +45,24 @@ def discussion_result_characters() -> int:
 
 
 def search_message_text(message, guild) -> str:
-    return message_text(SimpleNamespace(
+    own = message.author_id == guild.me.id
+    names = list(message.attachment_names)
+    if own:
+        names = [name for name in names if not sent_gif_name_lines([name])]
+    text = message_text(SimpleNamespace(
         content=message.content,
         embeds=[discord.Embed.from_dict(item) for item in message.embeds],
-        attachments=[SimpleNamespace(filename=name) for name in message.attachment_names],
+        attachments=[SimpleNamespace(filename=name) for name in names],
         guild=guild,
     ))
+    return with_sent_gifs(text, message.attachment_names) if own else text
+
+
+def history_content(message, guild, complete_content: bool) -> str:
+    content = message.content if complete_content else search_message_text(message, guild)
+    if complete_content and message.author_id == guild.me.id:
+        return with_sent_gifs(content, message.attachment_names)
+    return content
 
 
 def message_author_name(message, guild) -> str:
@@ -85,7 +99,9 @@ async def read_discord_channel_history(
     if whole_period and (arguments.get("after") is not None or arguments.get("before") is not None):
         pages = 8
     result = None
-    remaining = COMPLETE_HISTORY_CHARACTER_BUDGET if complete_content else HISTORY_MESSAGE_CHARACTER_BUDGET
+    # A plain read returns the whole window; the result pager splits it. Only
+    # conversation chunks (complete_content) are sized here.
+    remaining = COMPLETE_HISTORY_CHARACTER_BUDGET if complete_content else math.inf
     used = 0
     page_arguments = dict(arguments)
     for _ in range(pages):
@@ -249,7 +265,7 @@ async def _read_history_page(context, arguments, *, character_budget, complete_c
         if author_id is not None and message.author_id != author_id:
             scanned_messages += 1
             continue
-        content = message.content if complete_content else search_message_text(message, context.guild)
+        content = history_content(message, context.guild, complete_content)
         if complete_content:
             # The channel and content status hold for the whole chunk.
             entry = {
@@ -437,18 +453,23 @@ async def find_discord_channels(context: AgentRequestContext, arguments: Mapping
     if numeric.isdecimal():
         channel = await accessible_message_channel(context, int(numeric))
         if channel is None:
-            return {"channels": [], "matched_count": 0, "truncated": False}
+            return {"channels": [], "matched_count": 0, "next_offset": None}
         context.state.source_channels.add(channel.id)
-        return {"channels": [{"channel_id": channel.id, "name": channel.name}], "matched_count": 1, "truncated": False}
+        return {"channels": [_channel_entry(context, channel.id, channel.name, channel)], "matched_count": 1,
+                "next_offset": None}
     channels = []
     for channel in (*context.guild.channels, *context.guild.threads):
         name = str(getattr(channel, "name", ""))
         if query.lstrip("#") in name.casefold() and await can_access_message_channel(
             context, channel, relevant=bool(query),
         ):
-            channels.append({"channel_id": channel.id, "name": name})
-    context.state.source_channels.update(item["channel_id"] for item in channels[:20])
-    return {"channels": channels[:20], "matched_count": len(channels), "truncated": len(channels) > 20}
+            channels.append(_channel_entry(context, channel.id, name, channel))
+    offset = arguments.get("offset", 0)
+    page = channels[offset:offset + CHANNEL_RESULT_LIMIT]
+    context.state.source_channels.update(item["channel_id"] for item in page)
+    end = offset + len(page)
+    return {"channels": page, "matched_count": len(channels),
+            "next_offset": end if end < len(channels) else None}
 
 
 async def read_message_context(
@@ -471,18 +492,24 @@ async def read_message_context(
         minimum=3,
         maximum=CONTEXT_MESSAGE_LIMIT,
     )
-    try:
-        after = search_date(arguments.get("after"))
-        before = search_date(arguments.get("before"))
-    except ValueError:
-        return {"error": "invalid_period"}
+    dates = {}
+    for key in ("after", "before"):
+        try:
+            dates[key] = search_date(arguments.get(key))
+        except ValueError:
+            return invalid_arguments(f"Use an ISO 8601 date or timestamp for {key}.", key)
+    after, before = dates["after"], dates["before"]
     if after is not None or before is not None:
-        if after is None or before is None or after >= before:
-            return {"error": "invalid_period"}
+        if after is None or before is None:
+            missing = "after" if after is None else "before"
+            return {"error": f"Give after and before together; {missing} is missing.",
+                    "cause": "invalid_arguments", "missing_fields": [missing]}
+        if after >= before:
+            return invalid_arguments("after must be earlier than before.", "after", "before")
         lower = discord.utils.time_snowflake(after) - 1
         upper = discord.utils.time_snowflake(before)
         if not lower < message_id < upper:
-            return {"error": "message_out_of_period"}
+            return invalid_arguments("That message is outside the after-before period.", "after", "before")
         preceding = [message async for message in history(
             limit=limit // 2 + 1, after=discord.Object(id=lower),
             before=discord.Object(id=message_id + 1), oldest_first=False,
@@ -555,6 +582,11 @@ async def searchable_channel_ids(context: AgentRequestContext, *, limit: int | N
 
 def discord_message_evidence(guild_id: int, message: discord.Message, *, complete_content=False) -> dict[str, Any]:
     content = getattr(message, "content", "") if complete_content else message_text(message)
+    if message.author.id == getattr(getattr(getattr(message, "guild", None), "me", None), "id", None):
+        if not complete_content:
+            content = own_message_text(message)
+        else:
+            content = with_sent_gifs(content, (item.filename for item in getattr(message, "attachments", ())))
     entry = {
         "message_id": message.id,
         "author_id": message.author.id,

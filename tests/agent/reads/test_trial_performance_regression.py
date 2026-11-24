@@ -1,4 +1,4 @@
-"""Complete recruitment cohorts keep their joined attack evidence at model delivery."""
+"""Complete recruitment cohorts retain both accounts in their attack evidence."""
 
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -9,9 +9,8 @@ import unittest
 from elbow_helper.agent.reads import workflow_reads
 from elbow_helper.agent.reads import war_tools as war_reads
 from elbow_helper.features.recruitment.queries import RecruitmentQueries
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.agent.reads.record_stub import regular_id, regular_war, regular_wars_from, with_record
-from tests.agent.reads.test_compact_family_regressions import delivered, unpack
 from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
 
 
@@ -34,14 +33,14 @@ class TrialPerformanceRegressionTests(unittest.IsolatedAsyncioTestCase):
             tool = next(tool for tool in workflow_reads.TOOLS if tool.definition.name == 'read_recruitment_pipeline')
             report = await tool.handler(context, {'stage': 'active_trials',
                 'performance': {'war_type': 'both', 'latest_completed': 2}})
-            candidate = unpack(delivered(report)['rows'])[0]
+            candidate = report['rows'][0]
             self.assertEqual(report['rows'][0]['war_participation']['war_ids'], ['CWL:#C0', regular_id(regular)])
             self.assertEqual(candidate['war_participation']['attacks_expected'], 6)
             for kind in ('REG', 'CWL'):
                 metrics = candidate['attack_performance'][kind]
                 self.assertEqual((metrics['wars'], metrics['account_war_opportunities']), (1, 2))
-                self.assertEqual(metrics['average_stars'], {'numerator': 4, 'denominator': 2})
-                self.assertEqual(metrics['triple_rate_percent'], {'numerator': 100, 'denominator': 2})
+                self.assertEqual((metrics['average_stars']['numerator'], metrics['average_stars']['denominator']), (4, 2))
+                self.assertEqual((metrics['triple_rate_percent']['numerator'], metrics['triple_rate_percent']['denominator']), (100, 2))
             participation_tool = next(tool for tool in war_reads.TOOLS if tool.definition.name == 'read_war_participation')
             selection = {'war_type': 'both', 'latest_completed': 2, 'account_tags': ['#P0', '#Q0']}
             members = await participation_tool.handler(context, {**selection, 'unit': 'member'})

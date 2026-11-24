@@ -105,7 +105,7 @@ class MembershipReadTests(unittest.IsolatedAsyncioTestCase):
         self.reads.movements = AsyncMock(side_effect=OSError("synthetic outage"))
         self.assertEqual((await read_membership_history(self.context, self.arguments))["cause"], "source_unavailable")
         self.reads.movements = AsyncMock(return_value={"rows": [], "truncated": True})
-        self.assertEqual((await read_membership_history(self.context, self.arguments))["cause"], "source_unavailable")
+        self.assertEqual((await read_membership_history(self.context, self.arguments))["cause"], "too_many_rows")
         no_record = SimpleNamespace(bot=SimpleNamespace(), state=AgentTurnState())
         self.assertEqual((await read_membership_history(no_record, self.arguments))["cause"], "source_unavailable")
 

@@ -30,7 +30,7 @@ def hibernation_tools() -> tuple[RegisteredAgentTool, ...]:
          "Read active hibernation member IDs and start times.",
          {"limit": {"type": "integer", "minimum": 1, "maximum": 500}}, (), read_active_hibernation),
         ("read_active_hibernation_report",
-         "Read a page of the retained active hibernation report.",
+         "Read a page of the saved active hibernation result.",
          {"report_id": {"type": "string", "maxLength": 32},
           "offset": {"type": "integer", "minimum": 0},
           "limit": {"type": "integer", "minimum": 1, "maximum": 500},
@@ -41,7 +41,7 @@ def hibernation_tools() -> tuple[RegisteredAgentTool, ...]:
         name=name, description=description,
         parameters={"type": "object", "properties": properties,
                     "required": list(required), "additionalProperties": False},
-        usage_note="Workflow cohort, not role holders. Pass report_id as read_discord_members.hibernation_report_id to sort all retained members by server join date.",
+        usage_note="Workflow cohort, not role holders. Pass report_id as read_discord_members.hibernation_report_id to sort all saved members by server join date.",
     ), handler,
         contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)

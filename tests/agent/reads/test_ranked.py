@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.reads import ranked as reads
 from elbow_helper.configuration.clans import CLANS
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 AFTER, BEFORE = '2026-10-01T00:00:00Z', '2026-10-03T00:00:00Z'

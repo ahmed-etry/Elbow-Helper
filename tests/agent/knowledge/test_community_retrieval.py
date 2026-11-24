@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
 from elbow_helper.agent.knowledge.tools import search_approved_knowledge
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class CommunityRetrievalTests(unittest.IsolatedAsyncioTestCase):

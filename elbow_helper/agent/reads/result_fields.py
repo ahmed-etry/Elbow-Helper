@@ -1,7 +1,8 @@
 """Typed identity and measure columns for checked family result references."""
 from elbow_helper.agent.engine.result_fields import names
+from elbow_helper.data.reads.war_facts import ACCOUNT_WAR_COLUMNS
 
-COMMON = {**names('schema_version,report_id,total_rows,returned_rows,next_offset,next_cursor,complete_snapshot,count,coverage,missing_sources,resolved_inputs,artifact_status'),
+COMMON = {**names('schema_version,report_id,total_rows,returned_rows,next_offset,next_cursor,count,coverage,missing_sources,resolved_inputs,artifact_status'),
           'artifact': names('report_id,filename,total_rows')}
 RESULT_FIELDS = {
     'read_ranked_activity': {**COMMON, 'rows': [names('player_tag,member_id,member_name,player_name,status,selection_rank,ranked_league,attacks_used,attacks_available,watch_status,watched_from,counts_complete')]},
@@ -34,13 +35,13 @@ _RANKED_ACCOUNT.update({
     **names('battle_at,clan_basis,old_store'),
     'payload': names('battleTimestamp,battleType,attack,opponentPlayerTag,opponentName,stars,destructionPercentage,opponentTownHallLevel')})
 RESULT_FIELDS.update({
-    'read_member_accounts': {**COMMON, 'rows': [{**names('member_id,member_name,joined_at,player_tag,player_name,townHallLevel,role,ranked_league,legacy_league,clan,clan_status,trophies,profile_status'), 'roles': [names('role_id,name')]}], **names('member_count,account_count,status')},
+    'read_member_accounts': {**COMMON, 'rows': [{**names('member_id,member_name,joined_at,player_tag,player_name,townHallLevel,role,ranked_league,legacy_league?,clan,clan_status,trophies,profile_status'), 'roles': [names('role_id,name')]}], **names('member_count,account_count,status')},
     'read_clan_rosters': {**COMMON, 'rows': [names('clan_code,basis,season,player_tag,player_name,townHallLevel,role,donations,profile_status')]},
     'read_member_cohort': {**COMMON, 'rows': [{**names('member_id,member_name,joined_at'), 'accounts':[names('player_tag,player_name,townHallLevel,ranked_league,profile_status')], 'roles': [names('role_id,name')]}]},
 })
 
 # Keep composition paths aligned with the complete retained family contracts.
-RESULT_FIELDS['read_war_participation'].update(names('war_ids,ranked_population,opportunity_unit'))
+RESULT_FIELDS['read_war_participation'].update(names('war_ids,ranked_population,opportunity_unit,unlinked_member_ids'))
 RESULT_FIELDS['read_war_participation']['rows'][0].update(names('totals_complete'))
 RESULT_FIELDS['read_war_participation']['rows'][0].update(names('participation_status'))
 RESULT_FIELDS['read_war_participation']['clan_participation'] = [{
@@ -123,9 +124,11 @@ RESULT_FIELDS['read_member_cohort']['activity_coverage'] = {
     'discord_activity_coverage': names('members_checked,members_not_checked,source_reads_complete,basis')}
 RESULT_FIELDS['read_member_cohort']['clans'] = [names(
     'clan_code,name,tag,basis,status,cohort_accounts,included_accounts,excluded_accounts,unknown_filter_accounts,in_game_members,in_game_capacity,open_in_game_slots')]
-RESULT_FIELDS['read_donation_history'] = {**COMMON, 'rows': [names(
+LATEST_DONATION_FIELDS = names('player_tag,donations,donations_received,as_of,clan_code')
+RESULT_FIELDS['read_donation_history'] = {**COMMON, 'rows': [{**names(
     'month,player_tag,player_name,member_id,member_name,account_tags,donations,donations_received,coverage,'
-    'clan_donations,clan_donations_received,clan_coverage')],
+    'clan_donations,clan_donations_received,clan_coverage,as_of,clan_code'),
+    'accounts': [LATEST_DONATION_FIELDS]}],
     'months': [names('month,after,before')],
     'clan_totals': [{**names('month,after,before,account_count'),
         **{basis: names('donations,donations_received,average_donations,average_donations_received,'
@@ -161,7 +164,7 @@ RESULT_FIELDS['read_member_accounts']['rows'][0]['activity'] = {
     for kind, family in (('regular_war', 'read_war_participation'), ('cwl', 'read_war_participation'),
                          ('ranked', 'read_ranked_activity'))}
 RESULT_FIELDS['read_cwl_results']['rows'][0].update(names('member_id,member_name,roster_id,cycle_id,townHallLevel,signed_up_ts'))
-RESULT_FIELDS['read_cwl_results']['rosters'] = [{**names('roster_id,name,clan_code,cycle_id,season,status,accounts'),
+RESULT_FIELDS['read_cwl_results']['rosters'] = [{**names('roster_id,name,clan_code,cycle_id,season,status,cycle_key,opened_at,closed_at,taking_signups,accounts'),
     'source_posts': [names('channel_id,message_id')]}]
 RESULT_FIELDS['read_recruitment_pipeline']['rows'][0].update(
     war_participation=RESULT_FIELDS['read_war_participation']['rows'][0],
@@ -212,16 +215,17 @@ RESULT_FIELDS['read_war_attacks'] = {**COMMON, 'rows': [names(
 _SPAN = names('first_war_end,last_war_end,wars')
 for _family in ('read_war_participation', 'read_war_attacks'):
     RESULT_FIELDS[_family]['record_span'] = {
-        **names('status,cause,accounts_not_listed,meanings'), 'checked': {**_SPAN, **names('period')},
-        'recorded': [{**names('war_type'), **_SPAN}],
-        'accounts': [{**names('player_tag,war_type,wars_outside_checked'), **_SPAN}]}
+        **names('status,cause,meanings'), 'checked': {**_SPAN, **names('period')},
+        'recorded': [{**names('war_type'), **_SPAN}]}
+RESULT_FIELDS['read_war_attacks']['record_span_accounts'] = [
+    {**names('player_tag,war_type,wars_outside_checked'), **_SPAN}]
 RESULT_FIELDS['read_war_participation']['rows'][0]['family_wars'][0]['record_span'] = [
     {**names('war_type,wars_outside_checked'), **_SPAN}]
-RESULT_FIELDS['read_war_participation']['record_span'].pop('accounts')
-RESULT_FIELDS['read_war_participation']['record_span'].pop('accounts_not_listed')
 RESULT_FIELDS['read_war_participation']['rows'][0]['clan_participation'] = [
     {**names('clan_code,status'), 'account_tags': ['']}]
 RESULT_FIELDS['read_war_participation'].pop('members')
 for _group in RESULT_FIELDS['read_war_participation']['clan_participation'][0].values():
     if isinstance(_group, dict):
         _group.pop('identities', None)
+RESULT_FIELDS['read_war_participation']['rows'][0]['account_wars'] = [
+    names(','.join(column for column, _ in ACCOUNT_WAR_COLUMNS))]

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from functools import partial
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from openai import OpenAIError
 from openai import AsyncOpenAI
@@ -57,6 +58,24 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(session._client.timeout, 300.0)
         self.assertEqual(timeouts, [dict.fromkeys(("connect", "read", "write", "pool"), seconds)
                                     for seconds in (400.0, 75.0, 300.0)])
+
+    async def test_sent_effort_replaces_round_effort_and_none_turns_thinking_off(self):
+        create = AsyncMock(return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message={'role': 'assistant', 'content': 'Hi'},
+                                     finish_reason='stop')], usage=None))
+        for sent, thinking in (('max', 'enabled'), ('none', 'disabled'), (None, 'enabled')):
+            with self.subTest(sent=sent):
+                create.reset_mock()
+                client = DeepSeekTextClient(None)
+                client._client = SimpleNamespace(
+                    with_options=lambda **_: SimpleNamespace(chat=SimpleNamespace(
+                        completions=SimpleNamespace(create=create))))
+                session = client.create_agent_session(
+                    system_prompt='S', prompt='P', tools=(), sent_reasoning_effort=sent)
+                await session.advance(reasoning_effort=AgentReasoningEffort.LOW)
+                options = create.call_args.kwargs
+                self.assertEqual(options['reasoning_effort'], sent or 'low')
+                self.assertEqual(options['extra_body'], {'thinking': {'type': thinking}})
 
     @staticmethod
     def _response(

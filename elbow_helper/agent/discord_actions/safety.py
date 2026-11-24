@@ -18,6 +18,7 @@ from elbow_helper.features.hibernation.config import (
 from elbow_helper.features.recruitment.config import managed_role_ids as recruitment_roles
 from elbow_helper.features.wars.roles import managed_role_ids as war_roles
 from ..actions.contracts import ActionRefused
+from .permission_checks import missing_permissions
 
 
 POWERFUL_PERMISSIONS = (
@@ -188,3 +189,7 @@ def check_raw_nickname(member: Any, bot_member: Any, *, guild: Any, requester: A
             and (member.id == getattr(guild, "owner_id", None)
                  or not _below_requester(member.top_role.position, guild, requester))):
         raise DiscordActionRefused("That member ranks at or above you.")
+
+
+def can_ping_role(channel: Any, member: Any, role: Any) -> bool:
+    return role.mentionable or not missing_permissions(member, ("mention_everyone",), channel=channel)

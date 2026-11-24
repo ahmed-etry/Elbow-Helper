@@ -3,12 +3,12 @@
 import asyncio
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from elbow_helper.agent.discord_actions.reactions import channel_reaction_history, react_to_request
 from elbow_helper.agent.engine.models import ChannelReactions
 from tests.agent.discord_actions.test_agent_reactions import _server_emoji
-from tests.agent.engine.test_agent_service import _context
+from tests.agent.request_fixtures import member_context as _context
 
 
 class ChannelReactionTests(unittest.IsolatedAsyncioTestCase):
@@ -70,20 +70,6 @@ class ChannelReactionTests(unittest.IsolatedAsyncioTestCase):
         results = await asyncio.gather(*(react_to_request(context, {"emoji": "\U0001f680"}) for context in contexts))
         self.assertEqual(sum(result["reacted"] for result in results), 1)
         self.assertEqual(sum(context.source_message.add_reaction.await_count for context in contexts), 1)
-
-    async def test_unknown_history_skips_reactions_and_keeps_the_line(self):
-        from elbow_helper.agent.engine.service import AgentService
-        from tests.agent.engine.helpers import social_step
-        from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession
-
-        context = self.context(ChannelReactions(emojis=None))
-        session = _AgentSession([social_step("Synthetic line.", form="text_reactions", reactions=["\U0001f914"])])
-        with patch("elbow_helper.agent.discord_actions.reactions.require_evidence_access", AsyncMock()):
-            answer = await AgentService(_AgentModel(session, route="social")).answer(
-                question="Synthetic exchange", local_context="", context=context,
-            )
-        self.assertEqual(answer, "Synthetic line.")
-        context.source_message.add_reaction.assert_not_awaited()
 
     async def test_cancelled_combo_remembers_reactions_already_sent(self):
         context = self.context()

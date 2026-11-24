@@ -12,7 +12,7 @@ from elbow_helper.agent.reads import war_tools as war_reads
 from elbow_helper.agent.reads.war_tools import TOOLS
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
 from tests.agent.features.cwl.cwl_helpers import ResultQueries
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 from tests.agent.reads.test_named_account_stats import lookup_context, named_member
 from tests.features.cwl_record_stub import LeagueRecord, league_war, member
 

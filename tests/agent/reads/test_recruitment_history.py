@@ -15,7 +15,7 @@ from elbow_helper.agent.reads import reference as reference_reads
 from elbow_helper.agent.engine.models import EvidenceScope
 from elbow_helper.features.recruitment.helpers import HelperMixin
 from elbow_helper.features.recruitment.trials import TrialMixin
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 def role(code):

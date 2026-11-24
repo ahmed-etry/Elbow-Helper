@@ -52,7 +52,7 @@ class HistoryChunkTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["coverage"]["reached_requested_start"])
         self.assertEqual(context.message_search.history_page.await_count, 3)
 
-    async def test_batched_budget_continuation_keeps_every_message_exactly_once(self):
+    async def test_batched_page_continuation_keeps_every_message_exactly_once(self):
         context = _context()
         rows = history(context, [(1, "target " + '"\\' * 500, (), ()) for _ in range(40)])
         arguments = {"channel_id": 100, "after": "2026-09-01", "limit": 4, "pages": 8}

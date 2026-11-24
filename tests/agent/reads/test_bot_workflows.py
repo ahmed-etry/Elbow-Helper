@@ -15,7 +15,7 @@ from elbow_helper.agent.knowledge.store import KnowledgeSection
 from elbow_helper.agent.engine.models import EvidenceScope
 from elbow_helper.agent.reads.workflow_reads import requester_tickets
 from elbow_helper.features.cwl.roster.models import ASS_PROFILE_HIGH, ASS_PROFILE_LOWER
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class BotWorkflowTests(unittest.IsolatedAsyncioTestCase):

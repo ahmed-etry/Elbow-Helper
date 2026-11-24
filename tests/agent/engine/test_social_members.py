@@ -6,13 +6,12 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.research.member_identity import clarification
 from elbow_helper.agent.research.members import find_discord_members
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from tests.agent.engine.helpers import social_step
-from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession
 from tests.agent.engine.test_banter_gifs import gif_context
+from tests.agent.loop_stub import banter_answer
 from tests.agent.research.test_member_identity import context, member
 
 
@@ -26,22 +25,18 @@ class SocialMemberTests(unittest.IsolatedAsyncioTestCase):
         target.source_message.add_reaction = AsyncMock()
 
         target = replace(gif_context(target), bot=SimpleNamespace())
-        session = _AgentSession([
-            social_step("You built me.", member_query="ahmad amaj", form="text_reactions",
-                        reactions=["\U0001f44d"]),
-            social_step("Ahmad amaj wears the imaginary paper crown.", member_query="ahmad amaj",
-                        meme_id="synthetic reaction"),
-            AgentStep("Ahmad amaj wears the imaginary paper crown.", (), AgentUsage()),
-        ])
         with patch(LOOKUP, AsyncMock(wraps=find_discord_members)) as lookup:
-            answer = await AgentService(_AgentModel(session, route="social")).answer(
-                question="Roast ahmad amaj too", local_context="Synthetic owner is a different Ahmad.",
-                context=target,
-            )
+            answer, session, _ = await banter_answer(
+                target,
+                social_step("You built me.", member_query="ahmad amaj", form="text_reactions",
+                            reactions=["\U0001f44d"]),
+                social_step("Ahmad amaj wears the imaginary paper crown.", member_query="ahmad amaj",
+                            meme_id="synthetic reaction"),
+                question="Roast ahmad amaj too")
         self.assertEqual(answer, "Ahmad amaj wears the imaginary paper crown.")
         lookup.assert_awaited_once()
         self.assertEqual(target.state.resolved_members, {101: "ahmad amaj"})
-        result = json.loads(session.calls[1][0][0].content)
+        result = json.loads(session.calls[1][0].content)
         self.assertEqual(result["member"]["member_id"], 101)
         self.assertEqual(result["member"]["username"], "amaj")
         self.assertIn("not facts about this one", result["instruction"])
@@ -58,11 +53,10 @@ class SocialMemberTests(unittest.IsolatedAsyncioTestCase):
         target.source_message.add_reaction = AsyncMock()
 
         target = replace(gif_context(target), bot=SimpleNamespace())
-        session = _AgentSession([social_step("Synthetic roast.", member_query="Alex",
-            form="text_reactions", reactions=["\U0001f44d"])])
-        answer = await AgentService(_AgentModel(session, route="social")).answer(
-            question="Roast Alex", local_context="", context=target,
-        )
+        answer, session, _ = await banter_answer(
+            target, social_step("Synthetic roast.", member_query="Alex",
+                                form="text_reactions", reactions=["\U0001f44d"]),
+            question="Roast Alex")
         self.assertIn("Alex (@alex.one)", answer)
         self.assertIn("Alex (@alex.two)", answer)
         self.assertIn("Alex Third", answer)
@@ -75,18 +69,15 @@ class SocialMemberTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_identity_rewrite_cannot_switch_to_another_member(self):
         target = context()
-        session = _AgentSession([
-            social_step("Synthetic initial line.", member_query="ahmad amaj"),
-            social_step("Synthetic changed target.", member_query="owner"),
-            AgentStep("Which member did you mean?", (), AgentUsage()),
-        ])
         with patch(LOOKUP, AsyncMock(wraps=find_discord_members)) as lookup:
-            answer = await AgentService(_AgentModel(session, route="social")).answer(
-                question="Roast ahmad amaj, not owner", local_context="", context=target,
-            )
+            answer, session, _ = await banter_answer(
+                target,
+                social_step("Synthetic initial line.", member_query="ahmad amaj"),
+                social_step("Synthetic changed target.", member_query="owner"),
+                AgentStep("Which member did you mean?", (), AgentUsage()),
+                question="Roast ahmad amaj, not owner")
         self.assertEqual(answer, "Which member did you mean?")
-        self.assertFalse(session.calls[-1][1])
-        self.assertIn("Keep the resolved member target", session.instructions[-1])
+        self.assertIn("Keep the resolved member target", session.calls[-1][0].content)
         lookup.assert_awaited_once()
         self.assertEqual(target.state.resolved_members, {101: "ahmad amaj"})
 

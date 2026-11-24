@@ -43,6 +43,7 @@ class ConversationRecord:
     uncertain_nonce: int | None = None
     generated_parts: tuple[str, ...] = ()
     image_sources: tuple[tuple[int, int], ...] = ()
+    lookup_results: tuple[str, ...] = ()
     retained_bytes: int = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -53,6 +54,8 @@ class ConversationRecord:
             or type(self.delivery_complete) is not bool
             or type(self.delivery_unknown) is not bool
             or not isinstance(self.generated_parts, tuple)
+            or not isinstance(self.lookup_results, tuple)
+            or any(not isinstance(value, str) for value in self.lookup_results)
             or any(not isinstance(value, str) for value in self.generated_parts)
             or not isinstance(self.image_sources, tuple)
             or any(not isinstance(source, tuple) or len(source) != 2
@@ -78,7 +81,7 @@ class ConversationRecord:
             raise ValueError("Invalid conversation delivery record")
         values = (
             self.created_at, self.question, self.generated_answer, self.delivered_answer,
-            self.local_context, *self.evidence, *self.report_ids, *self.generated_parts,
+            self.local_context, *self.evidence, *self.report_ids, *self.generated_parts, *self.lookup_results,
         )
         size = sum(len(value.encode("utf-8")) for value in values) + 8 * (
             2 + len(self.reply_ids) + len(self.attempted_nonces) + 2 * len(self.image_sources)

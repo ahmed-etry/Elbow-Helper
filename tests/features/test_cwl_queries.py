@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import unittest
 
+from elbow_helper.domain.cwl import CwlScoringSettingsMissing, CwlWarSelectionError
 from elbow_helper.features.cwl.bonus.analysis import BonusAnalysisService
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.infrastructure.clash import ClashClient
@@ -33,7 +34,8 @@ class _History:
                     if war["war_id"].removeprefix("CWL:") in war_ids]
         missing = set(war_ids) - {war["war_id"].removeprefix("CWL:") for war in selected}
         if missing:
-            raise ValueError("Unknown CWL war IDs: " + ", ".join(sorted(missing)))
+            # As the stored record refuses them.
+            raise CwlWarSelectionError("Unknown CWL war IDs: " + ", ".join(sorted(missing)))
         return selected
 
     def bonus_wars(self, clan_code, season):
@@ -206,5 +208,5 @@ class CwlQueriesTests(unittest.TestCase):
     def test_bonus_chosen_wars_report_configuration_failures(self):
         queries = self.bonus_queries()
         queries._bonus_config.config = None
-        with self.assertRaisesRegex(ValueError, "settings are unavailable"):
+        with self.assertRaises(CwlScoringSettingsMissing):
             queries.bonus_wars(clan_code="BEH", war_ids=["war-1"])

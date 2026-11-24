@@ -10,7 +10,7 @@ import zlib
 from elbow_helper.agent.reads.snapshots import FamilyReport, decode_family, family_tool
 from elbow_helper.agent.conversation.codec import encode_conversation, decode_conversation
 from elbow_helper.agent.conversation.state import Conversation
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class OversizedPageTests(unittest.IsolatedAsyncioTestCase):
@@ -27,7 +27,6 @@ class OversizedPageTests(unittest.IsolatedAsyncioTestCase):
         observed = []
         while True:
             observed.extend(page['rows'])
-            self.assertTrue(page['complete_snapshot'])
             if not page['next_cursor']:
                 break
             page = await tool.handler(context, {'report_id': first['report_id'], 'cursor': page['next_cursor']})
@@ -63,7 +62,12 @@ class OversizedPageTests(unittest.IsolatedAsyncioTestCase):
                        'elbow_helper.agent.reads.snapshots.MAX_FAMILY_SNAPSHOT_BYTES'):
             with self.subTest(target=target), patch(target, 1):
                 result = await tool.handler(context, {})
-                self.assertEqual(result['cause'], 'capacity')
+                if target.endswith('MAX_REPORT_PAYLOAD_BYTES'):
+                    self.assertFalse(result['kept'])
+                    self.assertNotIn('report_id', result)
+                    self.assertEqual(result['rows'], [{'value': 1}])
+                else:
+                    self.assertEqual(result['cause'], 'capacity')
                 self.assertEqual(context.state.reports, retained)
         page = await tool.handler(context, {'report_id': first['report_id']})
         self.assertEqual(page['rows'], [{'value': 1}])

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 from elbow_helper.features.achievements.queries import AchievementQueries
 from elbow_helper.agent.reads.cohort_activity import discord_activity_projection
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class StoredDiscordActivityTests(unittest.IsolatedAsyncioTestCase):

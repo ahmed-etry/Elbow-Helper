@@ -5,7 +5,7 @@ import json
 import unittest
 from unittest.mock import AsyncMock, patch
 from elbow_helper.agent.reads.snapshots import family_tool, FamilyReport, decode_family, saved_slice
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class FamilyReportTests(unittest.IsolatedAsyncioTestCase):
@@ -17,7 +17,7 @@ class FamilyReportTests(unittest.IsolatedAsyncioTestCase):
             context = _context()
             result = await tool.handler(context, {})
             self.assertEqual(result['total_rows'], size)
-            self.assertEqual(len(result['rows']), min(size, 500))
+            self.assertEqual(len(result['rows']), size)
             self.assertEqual(result['resolved_inputs'], {})
             if size > 500:
                 self.assertFalse(context.state.attachments)
@@ -25,8 +25,9 @@ class FamilyReportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result['artifact']['total_rows'], size)
                 exported = list(csv.reader(StringIO(context.state.attachments[0].data.decode('utf-8-sig'))))
                 self.assertEqual(len(exported), size + 1)
+                window = await tool.handler(context, {'report_id': result['report_id'], 'limit': 500})
                 continuation = await tool.handler(context, {'report_id': result['report_id'],
-                    'cursor': result['next_cursor']})
+                    'cursor': window['next_cursor']})
                 self.assertEqual(continuation['rows'][0]['count'], 500)
                 self.assertIsNone(continuation['next_cursor'])
 
@@ -175,18 +176,6 @@ class FamilyReportTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(saved_slice(saved, {'account_tags': ['not a tag']}))
         saved['rows'][0].pop('player_tag')
         self.assertIsNone(saved_slice(saved, {'account_tags': ['#P0']}))
-
-    def test_cursor_sentence_only_where_the_lookup_is_not_delivered_whole(self):
-        from elbow_helper.agent.engine.registry import build_agent_tools
-        tools = build_agent_tools()
-        sentence = 'Follow next_cursor to completion.'
-        for name in ('read_current_war', 'read_donation_history', 'read_hibernation', 'read_promotion_cases'):
-            self.assertNotIn(sentence, tools[name].definition.usage_note)
-        # Whole only for some results: other results still page.
-        self.assertIn(sentence, tools['read_community_reference'].definition.usage_note)
-        async def read(context, arguments):
-            return {'rows': []}
-        self.assertIn(sentence, family_tool('read_synthetic', 'Read.', {}, read).definition.usage_note)
 
     async def test_report_requires_provenance_and_matching_family(self):
         async def read(context, arguments):

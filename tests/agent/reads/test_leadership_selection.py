@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.roles import CORE, LEAD, CO_APPLICANT_ROLE_ID, SLEEPING_CO_ROLE_ID
 from elbow_helper.agent.reads import identity_reads as reads
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class LeadershipSelectionTests(unittest.IsolatedAsyncioTestCase):

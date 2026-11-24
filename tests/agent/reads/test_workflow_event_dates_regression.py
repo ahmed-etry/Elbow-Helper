@@ -5,7 +5,7 @@ import unittest
 
 from elbow_helper.agent.reads.workflow_reads import TOOLS
 from elbow_helper.features.recruitment.queries import RecruitmentQueries
-from tests.agent.engine.test_agent_plan_flow import _context
+from tests.agent.request_fixtures import flow_context as _context
 
 
 class WorkflowEventDateTests(unittest.IsolatedAsyncioTestCase):

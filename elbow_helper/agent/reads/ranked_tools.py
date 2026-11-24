@@ -6,7 +6,8 @@ from .ranked_measures import METRICS, MODES
 
 TOOLS = (family_tool('read_ranked_activity','Read collected ranked activity, complete account cohorts and collection gaps.',
     {'member_ids':IDS,'account_tags':TAGS,'clan_tags':TAGS,'after':DATE,'before':DATE,
-     'membership_basis': {'type': 'string', 'enum': ['community', 'current_in_game']},
+     'membership_basis': {'type': 'string', 'enum': ['community', 'current_in_game'],
+                          'description': SEASON_ERROR},
      'season': {'type': 'string', 'maxLength': 20},
      'include_battles':{'type':'boolean'}, 'detail': {'type': 'string', 'enum': ['summary', 'detail']},
      'metric': {'type': 'string', 'enum': list(METRICS)},

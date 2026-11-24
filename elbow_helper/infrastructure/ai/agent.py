@@ -114,4 +114,7 @@ class AgentModel(Protocol):
         max_output_tokens: int | None = None,
         images: Sequence[AgentImage] = (),
         image_failure_fallback: bool = True,
+        prior_messages: Sequence[Mapping[str, Any]] = (),
+        sent_reasoning_effort: str | None = None,
+        prompt_cache_key: str | None = None,
     ) -> AgentSession | None: ...

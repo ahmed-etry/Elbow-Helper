@@ -1,11 +1,4 @@
 from datetime import datetime, timezone
-from dataclasses import replace
-from io import BytesIO
-from pathlib import Path
-from tests.temp_directory import TemporaryDirectory
-from tests.agent.engine.helpers import LegacyCatalogueMixin
-
-import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -16,19 +9,10 @@ from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.engine.models import AgentRequestContext
 from elbow_helper.agent.features.cwl.reads import read_cwl_threads
 from elbow_helper.agent.reads.cwl import cwl_bonus_scores
-from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.engine.service import AgentService
-from elbow_helper.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
-from elbow_helper.agent.engine.tool_call import bound_tool_result
-from elbow_helper.agent.plan.results import model_view
 from elbow_helper.features.cwl.bonus.analysis import BonusAnalysisService
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.infrastructure.clash import ClashClient
 from tests.features.test_cwl_queries import _History, _BonusConfig, _dataset
-from elbow_helper.infrastructure.exports import LocalExportStore, WorkbookWriter
-from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
-from openpyxl import load_workbook
-from tests.agent.engine.test_agent_plan_flow import _Session, _Model, _model_step
 
 from elbow_helper.features.cwl.queries import CwlAssScopeRow, CwlAssWarsSnapshot, CwlBonusAttackScore, CwlBonusWarsSnapshot, CwlBonusSettings, CwlClanSeasonSummary, CwlPerformanceRow, CwlPerformanceSnapshot, CwlThreadRegistration
 
@@ -130,60 +114,8 @@ def _large_selection_queries():
     return queries, [war["war_id"] for war in dataset["wars"]]
 
 
-class AgentCwlTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
+class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
 
-    async def test_ass_read_and_result_sheet_build_workbook_in_one_round(self):
-        await self._ass_result_sheet_builds_workbook(wrapped=False)
-
-
-    async def _ass_result_sheet_builds_workbook(self, *, wrapped):
-        registry = build_agent_tools()
-        registry = {name: registry[name] for name in ("read_cwl_results", "prepare_spreadsheet")}
-        plan = {
-            "goal": "Synthetic season scores", "effort": "low", "output": "prepare_spreadsheet",
-            "steps": [
-                {"id": "scores", "capability": "read_cwl_results", "depends_on": [],
-                 "arguments": {"metric": "ass", "clan_codes": ["BE1"], "war_ids": ["CWL:#WAR"]}},
-                {"id": "workbook", "capability": "prepare_spreadsheet", "depends_on": ["scores"],
-                 "arguments": {"title": "Synthetic season", "sheets": [{
-                     "name": "Scores", "rows_from": {"step": "scores", "path": ["rows"]},
-                     "columns": [{"field": "player_name", "heading": "Account"},
-                                 {"field": "ass_score", "heading": "ASS"}],
-                 }]}},
-            ],
-        }
-        if wrapped:
-            sheet = plan["steps"][1]["arguments"]["sheets"][0]
-            sheet["rows_from"] = [sheet["rows_from"]]
-        session = _Session([
-            _model_step(plan), AgentStep("Synthetic workbook ready", (), AgentUsage()),
-        ], [])
-        with TemporaryDirectory() as directory:
-            self.context.bot.local_exports = LocalExportStore(Path(directory))
-            self.context.bot.workbook_writer = WorkbookWriter()
-            self.context.guild.filesize_limit = 8 * 1024 * 1024
-            with patch(
-                "elbow_helper.agent.engine.service.build_agent_tools",
-                return_value=registry,
-            ):
-                answer = await AgentService(_Model(session)).answer(
-                    question="Synthetic scores as a spreadsheet", local_context="",
-                    context=self.context,
-                )
-            self.assertEqual(answer, "Synthetic workbook ready")
-            self.assertEqual(len(session.calls), 2)
-            results = json.loads(session.calls[1][0][0].content)["results"]
-            player = results["scores"]["rows"][0]
-            self.assertTrue(results["workbook"]["attachment_prepared"])
-            workbook = load_workbook(BytesIO(self.context.state.attachments[0].data))
-            try:
-                self.assertEqual(workbook["Scores"]["A2"].value, player["player_name"])
-                self.assertEqual(workbook["Scores"]["B2"].value, player["ass_score"])
-                self.assertEqual(workbook["Scores"]["B2"].data_type, "n")
-            finally:
-                workbook.close()
-            self.assertIn(("ass_wars", "BE1", ["CWL:#WAR"]),
-                          self.queries.calls)
 
     def setUp(self):
         member = SimpleNamespace(id=42, display_name="Tester", roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)])
@@ -201,62 +133,6 @@ class AgentCwlTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
             account_links=None, message_search=None,
             cwl_queries=self.queries,
         )
-
-    async def _assert_large_selection_keeps_scores(self, capability, row_field):
-        queries, war_ids = _large_selection_queries()
-        self.context = replace(self.context, cwl_queries=queries)
-        plan = {"goal": "Synthetic scores", "effort": "low", "output": "text", "steps": [{
-            "id": "scores", "capability": capability, "depends_on": [],
-            "arguments": ({"metric": "ass", "clan_codes": ["BEH"], "war_ids": war_ids}
-                          if capability == "read_cwl_results" else {"clan_code": "BEH", "war_ids": war_ids}),
-        }]}
-        session = _Session([
-            _model_step(plan), AgentStep("Synthetic scores ready", (), AgentUsage()),
-        ], [])
-        registry = build_agent_tools()
-        with patch("elbow_helper.agent.engine.service.build_agent_tools",
-                   return_value={capability: registry[capability]}):
-            answer = await AgentService(_Model(session)).answer(
-                question="Synthetic chosen war scores", local_context="", context=self.context,
-            )
-        self.assertEqual(answer, "Synthetic scores ready")
-        record = json.loads(self.context.state.evidence[0])
-        payload = json.loads(record["result"])
-        if capability != "read_cwl_results":
-            self.assertEqual(next(iter(payload)), row_field)
-        self.assertEqual(payload["completed_wars"], 56)
-        self.assertEqual(set(payload["resolved_war_ids"]), set(war_ids))
-        self.assertEqual(len(payload[row_field]), 30)
-        if capability != "read_cwl_results":
-            self.assertEqual(len(payload["attack_sample"]), 56 * 30)
-        self.assertTrue(all(row["attacks" if capability == "read_cwl_results" else "attack_count"] == 56
-                            for row in payload[row_field]))
-        view = model_view(payload)
-        content = json.dumps(view, ensure_ascii=False, default=str, separators=(",", ":"))
-        bounded = bound_tool_result(content, MAX_TOOL_RESULT_CHARACTERS)
-        self.assertLessEqual(len(bounded), MAX_TOOL_RESULT_CHARACTERS)
-        bounded_view = json.loads(bounded)
-        self.assertEqual(bounded_view[row_field], view[row_field])
-        self.assertNotIn("result_excerpt", bounded_view)
-        result = json.loads(session.calls[1][0][0].content)["results"]["scores"]
-        self.assertEqual(result[row_field], bounded_view[row_field])
-        if capability == "read_cwl_results":
-            # The scores come back whole, not cut to make room for per-attack records.
-            self.assertNotIn("attack_sample", result)
-            self.assertEqual(content, bounded)
-            self.assertEqual(result["flags"]["status"], "complete")
-            self.assertFalse(result["flags"]["truncated"])
-            return
-        self.assertLess(len(bounded_view["attack_sample"]["rows"]), 56 * 30)
-        self.assertEqual(result["flags"]["status"], "partial")
-        self.assertTrue(result["flags"]["truncated"])
-        self.assertFalse(record["result_complete"])
-
-    async def test_ass_keeps_all_30_player_scores_when_56_wars_exceed_the_result_limit(self):
-        await self._assert_large_selection_keeps_scores("read_cwl_results", "rows")
-
-    async def test_bonus_keeps_all_30_player_scores_when_56_wars_exceed_the_result_limit(self):
-        await self._assert_large_selection_keeps_scores("cwl_bonus_scores", "rows")
 
 
     async def test_registered_threads_include_only_currently_accessible_sources(self):

@@ -86,7 +86,7 @@ async def prepare_cwl_register(context: Any,
 async def run_cwl_register(context: Any,
                            values: Mapping[str, Any]) -> ActionOutcome:
     workflow, prepared = await _registration(context, values)
-    message = await workflow.apply_cwl_thread_registration(prepared)
+    await workflow.apply_cwl_thread_registration(prepared)
     after = await workflow.prepare_cwl_thread_registration(
         values["clan"], values["thread_id"],
     )

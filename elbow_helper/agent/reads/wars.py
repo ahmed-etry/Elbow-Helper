@@ -93,7 +93,7 @@ async def selected_wars(context, arguments, war_type, *, running=False):
     # Regular wars need the record's war reads; league wars need the CWL queries.
     if (war_type != 'CWL' and record_wars.war_reads(context) is None
             or war_type != 'REG' and context.cwl_queries is None):
-        return {'error': 'Stored war evidence is not available.', 'cause': 'missing_setup'}
+        return {'error': 'War record is not available.', 'cause': 'missing_setup'}
     try:
         arguments, after, before = single_selection(context, arguments)
         has_period = any(arguments.get(key) for key in
@@ -157,26 +157,26 @@ async def selected_wars(context, arguments, war_type, *, running=False):
     except ValueError as error:
         return {'error': str(error), 'cause': 'invalid_arguments'}
     except (OSError, sqlite3.Error):
-        return {'error': 'Stored war evidence is unavailable.', 'cause': 'source_unavailable'}
+        return {'error': 'War record is unavailable.', 'cause': 'source_unavailable'}
 
 
 # Each selected account's wars in every family clan, beside the clan-scoped figures.
 FAMILY_FIGURES = ('wars', 'attacks_used', 'attacks_expected', 'missed', 'unconfirmed_opportunities')
 STAY_BATCH = 200
 FAMILY_MEANINGS = {
-    'family_wars': 'One entry per account: its stored wars in every family clan over the same period, '
+    'family_wars': 'One entry per account: its recorded wars in every family clan over the same period, '
                    'whichever clan it was in, and its family clan stays.',
     'by_clan': 'Regular and CWL figures per family clan; types absent from both by_clan and row_figures '
-               'have zero stored wars. '
+               'have zero recorded wars. '
                'Sum clans for each type, and both types for combined figures.',
     'row_figures': 'Clan and war type whose figures equal the row: wars is its distinct war count; '
                    'the other figures are the row fields of the same name.',
-    'wars': 'Zero on an account entry means no stored family lineup in this period. '
+    'wars': 'Zero on an account entry means no recorded family lineup in this period. '
             'In figure blocks it counts distinct wars; other figures mean what they mean on the row.',
     'current_clan_code, in_current_clan_since': 'The family clan it is in now, and the first family roster '
                                                 'that listed it there; null when it is in no family clan.',
     'previous_family_clan_code, previous_family_clan_last_seen_at': 'The family clan it was in before that, '
-        'and the last time a roster listed it there; null when no earlier stay is stored.'}
+        'and the last time a roster listed it there; null when no earlier stay is recorded.'}
 
 
 def family_periods(arguments):
@@ -327,9 +327,11 @@ async def participation_totals(context, arguments, *, separate_seasons=False, fa
         result = aggregate_participation(rows, owners, arguments.get('unit', 'account'))
     unit = arguments.get('unit', 'account')
     selected_tags = set(arguments.get('account_tags', []))
+    unlinked = []
     if arguments.get('member_ids') and not arguments.get('account_tags') and context.account_links:
         member_links = await asyncio.to_thread(context.account_links.get_links_for_members, arguments['member_ids'])
         selected_tags.update(link['player_tag'] for links in member_links.values() for link in links)
+        unlinked = [member for member in arguments['member_ids'] if not member_links.get(member)]
     if selected_tags and context.account_links:
         selected_links = await asyncio.to_thread(context.account_links.get_links_by_tags, sorted(selected_tags))
         owners.update({tag: value['discord_user_id'] for tag, value in selected_links.items() if value})
@@ -369,6 +371,9 @@ async def participation_totals(context, arguments, *, separate_seasons=False, fa
                                        else participation_status(opportunities[key]))
         row['attack_performance'] = {field: value for field, value in
             aggregate_performance(opportunities[key]).items() if field != 'accounts'}
+        facts = [item['account_war'] for item in opportunities[key] if 'account_war' in item]
+        if facts:
+            row['account_wars'] = facts
         member = context.guild.get_member(row['member_id']) if row['member_id'] else None
         row.update(owner_context(member, row['member_id']), account_purpose=None)
     measure = arguments.get('sort', 'missed')
@@ -435,15 +440,18 @@ async def participation_totals(context, arguments, *, separate_seasons=False, fa
             **({'members': member_profiles} if member_profiles is not None else {}),
             **({'family_wars_scope': family_scope} if family_scope is not None else {}),
             **({'record_span': span} if span is not None else {}),
+            **({'unlinked_member_ids': unlinked} if unlinked else {}),
             'ranked_population': population, 'opportunity_unit': 'account-war',
             'clan_participation': participation,
             'participation_meanings': {
-                'warring': 'Joined a stored war and attacked at least once in the selected period.',
-                'joined_without_attacking': 'Joined stored wars but used no attacks; confirmed final participation only.',
-                'unknown': 'Attack participation is incomplete or not stored.',
-                'not_in_checked_lineups': 'In none of the checked wars, all of which have stored lineups; zero opportunities.',
+                'warring': 'Joined a recorded war and attacked at least once in the selected period.',
+                'joined_without_attacking': 'Joined recorded wars but used no attacks; confirmed final participation only.',
+                'unknown': 'Attack participation is incomplete or not recorded.',
+                'not_in_checked_lineups': 'In none of the checked wars, all of which have recorded lineups; zero opportunities.',
+                'totals_complete': 'A finished war\'s missed count is final. totals_complete false and '
+                    'unconfirmed_opportunities count only wars whose misses are not known yet, such as one still under way.',
                 'counting': 'Distinct members within each clan; unlinked accounts counted separately. A member appearing in several clans is counted in each, so clan counts cannot be summed as unique people.'},
-            'ownership_basis': 'current bot links; historical ownership unknown',
+            'ownership_basis': 'current account links; earlier owners unknown',
             'interpretation': 'Participation describes selected account-war opportunities, not a member reliability verdict. '
                 'Account purpose and expected participation remain unknown unless established separately.',
             'ordering': measure + ' descending, expected descending, identity ascending'}
@@ -479,7 +487,7 @@ async def current_wars(context, codes):
 async def current_war(context, arguments):
     codes = arguments.get('clan_codes', list(CLANS))
     if record_wars.war_reads(context) is None:
-        return {'error': 'Stored war evidence is not available.', 'cause': 'missing_setup'}
+        return {'error': 'War record is not available.', 'cause': 'missing_setup'}
     try:
         source = await current_wars(context, codes)
     except record_wars.FAILURES:
@@ -511,7 +519,7 @@ async def current_war(context, arguments):
                      'members': sorted(members, key=lambda row: (row['map_position'] is None,
                          row['map_position'] or 0, row['player_tag'])) if arguments.get('include_roster', True) else [],
                      'observed_at': item.get('observed_at')})
-    return {'rows': rows, 'coverage': 'latest collected current-war check; a failed or overdue check gives no war; '
+    return {'rows': rows, 'coverage': 'latest current-war check; a failed or overdue check gives no war; '
                                       'unused attacks are not misses before war ends'}
 
 

@@ -1,14 +1,8 @@
 """Registry-wide properties of checked agent plans."""
 
-import random
 import unittest
-import copy
-from unittest.mock import patch
 
-from elbow_helper.agent.plan import check_plan
 from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.reports.tools import original_tool
-from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
@@ -55,43 +49,27 @@ def _plan_for(name, tool, contract, selected_field=None):
 
 class PlanContractTests(unittest.TestCase):
 
-    def test_incomplete_elders_step_names_each_missing_key_and_uses_position_without_id(self):
-        step = {'id': 'elders', 'capability': 'read_member_cohort', 'arguments': {
-            'basis': 'selected', 'member_ids': [41, 42], 'include_accounts': True,
-            'include_roles': True, 'limit': 100}, 'depends_on': []}
-        for key in step:
-            with self.subTest(key=key):
-                plan = {'goal': 'List elders and their clans', 'effort': 'high', 'output': 'text',
-                        'steps': [{k:v for k,v in step.items() if k != key}]}
-                checked = check_plan(plan, REGISTRY)
-                self.assertFalse(checked.ok)
-                self.assertEqual(checked.step_id, '1' if key == 'id' else 'elders')
-                self.assertEqual(checked.missing_fields, (key,))
-                self.assertIn(key, checked.error)
-
-    def test_synthetic_replays_reject_four_missing_dates_and_four_oversized_limits(self):
-        for index in range(4):
-            for missing_date in (False, True):
-                arguments = {"account_tags": ["#P0"], "limit": 501 + index}
-                if missing_date:
-                    arguments["limit"] = 500
-                else:
-                    arguments["after"] = "2026-10-01"
-                plan = {"goal": "Synthetic history", "effort": "low", "output": "text",
-                        "steps": [{"id": "history", "capability": "read_ranked_activity",
-                                   "arguments": arguments, "depends_on": []}]}
-                with self.subTest(index=index, missing_date=missing_date):
-                    checked = check_plan(plan, REGISTRY)
-                    error = checked.step_errors.get("history", checked.error)
-                    self.assertTrue(error)
-                    if missing_date:
-                        self.assertIn("Please specify after.", error)
-                        arguments["after"] = "2026-10-01"
-                    else:
-                        self.assertIn('"maximum":500', error)
-                        arguments["limit"] = 500
-                    self.assertTrue(check_plan(plan, REGISTRY).ok)
-                    self.assertFalse(check_plan(plan, REGISTRY).step_errors)
+    def test_shared_argument_check_names_schema_errors(self):
+        from elbow_helper.agent.plan.checker import argument_issue, valid_arguments
+        cases = [('read_cwl_results', {'season': ' '}, 'season'),
+                 ('read_cwl_results', {'limit': 0}, 'limit'),
+                 ('read_cwl_results', {'latest_completed': 5.0}, 'latest_completed'),
+                 ('read_clash', {'kind': 'player'}, 'tags')]
+        for name, arguments, field in cases:
+            with self.subTest(name=name, arguments=arguments):
+                issue = argument_issue(REGISTRY, name, arguments)
+                self.assertIn(field, issue.error)
+                self.assertIs(valid_arguments(arguments, REGISTRY[name].definition.parameters), False)
+        for schema, arguments, field in (
+            ({'type': 'object', 'properties': {'window': {'type': 'object',
+                'properties': {'limit': {'type': 'integer'}}, 'required': ['limit']}},
+             'required': ['window']}, {'window': {'limit': 'bad'}}, 'window'),
+            ({'type': 'object', 'properties': {'mode': {'type': 'integer'}}, 'anyOf': [
+                {'properties': {'mode': {'enum': [1]}}}, {'properties': {'mode': {'enum': [2]}}}]},
+             {'mode': 3}, 'mode'),
+        ):
+            tool = RegisteredAgentTool(AgentToolDefinition('synthetic', 'Synthetic', schema), lambda *_: {})
+            self.assertIn(field, argument_issue({'synthetic': tool}, 'synthetic', arguments).error)
 
 
     def test_extra_parameter_keys_are_allowed_only_by_schema(self):
@@ -106,134 +84,3 @@ class PlanContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.registry = build_agent_tools()
-
-    def test_unexpected_checker_errors_are_logged_before_generic_feedback(self):
-        tool = RegisteredAgentTool(AgentToolDefinition("synthetic", "Synthetic", {
-            "type": "object", "properties": {}, "required": [],
-        }), lambda *_: {})
-        plan = {"goal": "Synthetic", "effort": "low", "output": "text",
-                  "steps": [{
-                    "id": "read", "capability": "synthetic", "arguments": {},
-                    "reason": "Synthetic", "depends_on": [],
-                }]}
-        for error in (RuntimeError("Synthetic"), KeyError("Synthetic")):
-            with (self.subTest(error=type(error).__name__),
-                  patch("elbow_helper.agent.plan.checker.check_step", side_effect=error),
-                  self.assertLogs("elbow_helper.agent.plan.checker", level="ERROR") as logs):
-                result = check_plan(plan, {"synthetic": tool})
-            self.assertFalse(result.ok)
-            self.assertEqual(result.error, "Correct the plan fields and values.")
-            self.assertTrue(any("Traceback" in line for line in logs.output))
-
-    def test_reads_cannot_depend_on_unrun_changes(self):
-        async def handler(context, values):
-            return {}
-        registry = {
-            name: RegisteredAgentTool(AgentToolDefinition(name, "Synthetic", {
-                "type": "object", "properties": {}, "required": [],
-            }), handler, action_class=classification)
-            for name, classification in (
-                ("read", ActionClass.READ), ("change", ActionClass.CHANGE),
-                ("irreversible", ActionClass.IRREVERSIBLE), ("output", ActionClass.OUTPUT),
-            )
-        }
-        for change in ("change", "irreversible"):
-            for indirect in (False, True):
-                steps = [{"id": "changed", "capability": change, "arguments": {},
-                          "reason": "Synthetic", "depends_on": []}]
-                if indirect:
-                    steps.append({"id": "output", "capability": "output", "arguments": {},
-                                  "reason": "Synthetic", "depends_on": ["changed"]})
-                steps.append({"id": "read", "capability": "read", "arguments": {},
-                              "reason": "Synthetic",
-                              "depends_on": ["output" if indirect else "changed"]})
-                plan = {"goal": "Synthetic", "effort": "low", "output": "text",
-                          "steps": steps}
-                with self.subTest(change=change, indirect=indirect):
-                    checked = check_plan(plan, registry)
-                    self.assertFalse(checked.ok)
-                    self.assertEqual(checked.step_id, "read")
-                    self.assertEqual(checked.error,
-                        "Plan reads before changes; a read can't use a change's result.")
-                    steps[-1]["depends_on"] = []
-                    self.assertTrue(check_plan(plan, registry).ok)
-
-    def test_only_same_kind_irreversible_steps_share_a_preview(self):
-        schema = {"type": "object", "properties": {}, "required": [],
-                  "additionalProperties": False}
-        registry = {
-            name: RegisteredAgentTool(
-                AgentToolDefinition(name, "Synthetic capability.", schema),
-                lambda context, arguments: {}, action_class=action_class,
-            ) for name, action_class in (
-                ("read", ActionClass.READ),
-                ("change", ActionClass.CHANGE),
-                ("irreversible", ActionClass.IRREVERSIBLE),
-                ("other_irreversible", ActionClass.IRREVERSIBLE),
-            )
-        }
-        def plan(names):
-            return {"goal": "Synthetic action", "effort": "low", "output": "text",
-                      "steps": [{
-                        "id": str(index), "capability": name, "arguments": {},
-                        "reason": "Synthetic step", "depends_on": [],
-                    } for index, name in enumerate(names)]}
-        self.assertTrue(check_plan(plan(("read", "irreversible")), registry).ok)
-        self.assertFalse(check_plan(plan(("irreversible", "change")), registry).ok)
-        self.assertTrue(check_plan(plan(("irreversible", "irreversible")), registry).ok)
-        self.assertFalse(check_plan(plan(("irreversible", "other_irreversible")), registry).ok)
-
-
-    def test_saved_report_rejects_an_unsupported_filter_with_supported_names(self):
-        name = "read_saved_report"
-        kind = self.registry[name].definition.parameters["properties"]["report_kind"]["enum"][0]
-        selected = original_tool(self.registry, name, {"report_kind": kind})
-        contract = selected.contract
-        plan = _plan_for(selected.definition.name, selected, contract)
-        plan["steps"][0]["capability"] = name
-        plan["steps"][0]["arguments"].update(report_kind=kind, unsupported_filter="value")
-        check = check_plan(plan, self.registry)
-        self.assertTrue(check.ok)
-        self.assertIn("unsupported_filter", check.step_errors["first"])
-        self.assertIn("Supported filters:", check.step_errors["first"])
-
-    def test_malformed_plans_return_errors(self):
-        generator = random.Random(7162)
-        atoms = [None, True, False, 0, 1, "", "x", [], {}, [1, 2]]
-        for _ in range(2000):
-            raw = generator.choice(atoms)
-            if generator.randrange(2):
-                raw = {generator.choice(("goal", "effort", "output", "periods",
-                                         "entities", "steps", "other")): raw}
-            check = check_plan(raw, self.registry)
-            self.assertFalse(check.ok)
-            self.assertTrue(check.error)
-        base = _plan_for(next(iter(self.registry)), next(iter(self.registry.values())),
-                         CONTRACTS[next(iter(self.registry))])
-        for _ in range(2000):
-            raw = copy.deepcopy(base)
-            raw[generator.choice(tuple(raw))] = generator.choice(atoms)
-            check = check_plan(raw, self.registry)
-            self.assertIsInstance(check.ok, bool)
-            if not check.ok:
-                self.assertTrue(check.error)
-
-    def test_nested_malformed_steps_return_fixable_errors(self):
-        generator = random.Random(7364)
-        atoms = [None, True, 0, "", [], {}, [1, {}], {"step": [], "path": [{}]}]
-        base = _plan_for(next(iter(self.registry)), next(iter(self.registry.values())),
-                         CONTRACTS[next(iter(self.registry))])
-        for _ in range(2000):
-            plan = copy.deepcopy(base)
-            step = plan["steps"][0]
-            field = generator.choice(tuple(step))
-            value = generator.choice(atoms)
-            step[field] = value
-            check = check_plan(plan, self.registry)
-            reference = isinstance(value, dict) and set(value) == {"step", "path"}
-            expected = value == base["steps"][0][field] or (
-                field == "arguments" and not reference
-            )
-            self.assertEqual(check.ok, expected)
-            if not check.ok:
-                self.assertTrue(check.error)

@@ -1,23 +1,15 @@
 """Member-target provenance is request-scoped and independent of phrasing."""
 
-from tests.agent.engine.helpers import LegacyCatalogueMixin
-
 import json
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from elbow_helper.agent.actions.contracts import ActionClass
-from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.tool_call import execute_tool
-from elbow_helper.agent.engine.registry import build_agent_tools
-from elbow_helper.agent.engine.capability_contract import CapabilityContract
-from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.research.members import find_discord_members
 from elbow_helper.agent.research.member_provenance import member_target_issue
-from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDefinition, AgentUsage
-from tests.features.agent_plan_helpers import plan_call
-from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession
+from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
 from tests.agent.research.test_member_identity import context
 
 
@@ -28,7 +20,7 @@ def reply(text, *, self_target=False):
     })),), AgentUsage())
 
 
-class MemberProvenanceTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
+class MemberProvenanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_unresolved_action_ids_are_refused_before_handler_runs(self):
         for args, scope in (
             ({"text": "Hello <@42>"}, None),
@@ -101,33 +93,6 @@ class MemberProvenanceTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCa
         self.assertEqual(target.state.resolved_members, {101: "Ahmad (amaj)"})
 
 
-    async def test_action_can_use_only_the_member_resolved_by_an_earlier_step(self):
-        for query, called in (("Ahmad (amaj)", True), ("Ahmad", False)):
-            with self.subTest(query=query):
-                registry = build_agent_tools()
-                action = AsyncMock(return_value={"status": "complete"})
-                registry["synthetic_action"] = RegisteredAgentTool(
-                    AgentToolDefinition("synthetic_action", "Synthetic member action.", {
-                        "type": "object", "properties": {"member_id": {"type": "integer"}},
-                        "required": ["member_id"], "additionalProperties": False,
-                    }), action, action_class=ActionClass.OUTPUT,
-                    contract=CapabilityContract(entity_fields=(("member_id", "discord_member"),)),
-                )
-                plan = plan_call(
-                    AgentToolCall("find", "find_discord_members", json.dumps({"query": query})),
-                    AgentToolCall("act", "synthetic_action", '{"member_id":101}'),
-                    dependencies={"act": ["find"]},
-                )
-                session = _AgentSession([
-                    AgentStep("", (plan,), AgentUsage()), AgentStep("Done." if called else "Which Ahmad?", (), AgentUsage()),
-                ])
-                with patch("elbow_helper.agent.engine.service.build_agent_tools", return_value=registry):
-                    answer = await AgentService(_AgentModel(session)).answer(
-                        question="Give Ahmad amaj a nudge", local_context="", context=context(),
-                    )
-                self.assertEqual(action.await_count, int(called))
-                self.assertEqual(answer, "Done." if called else "Which Ahmad?")
-
     async def test_failed_lookup_cannot_leave_member_provenance(self):
         target = context()
 
@@ -139,56 +104,3 @@ class MemberProvenanceTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCa
                                     arguments={"query": "Ahmad (amaj)"}, context=target)
         self.assertIn("error", json.loads(result))
         self.assertEqual(target.state.resolved_members, {})
-
-    async def test_lookup_provenance_merges_across_steps_and_revisions(self):
-        target = context()
-        lookup = plan_call(AgentToolCall("find", "find_discord_members", '{"query":"Ahmad (amaj)"}'))
-        session = _AgentSession([
-            AgentStep("", (lookup,), AgentUsage()), reply("<@101> synthetic roast"),
-        ])
-        answer = await AgentService(_AgentModel(session)).answer(
-            question="Make Ahmad amaj laugh at himself", local_context="", context=target,
-        )
-        self.assertEqual(answer, "<@101> synthetic roast")
-        self.assertEqual(target.state.resolved_members, {101: "Ahmad (amaj)"})
-
-
-    async def test_invalid_self_flag_does_not_authorize_the_asker(self):
-        invalid = reply("<@42> synthetic self roast", self_target="true")
-        session = _AgentSession([invalid, AgentStep("Who did you mean?", (), AgentUsage())])
-        target = context()
-        answer = await AgentService(_AgentModel(session)).answer(
-            question="Roast me", local_context="", context=target,
-        )
-        self.assertEqual(answer, "Who did you mean?")
-        self.assertFalse(target.state.member_self_target)
-
-    async def test_late_unproven_mention_is_corrected_by_the_model_or_fails_without_a_ping(self):
-        for correction, expected in (("Which Ahmad did you mean?", "Which Ahmad did you mean?"),
-                                     ("<@42> still wrong", "Which member do you mean? Please mention them.")):
-            lookup = plan_call(AgentToolCall("find", "find_discord_members", '{"query":"Ahmad (amaj)"}'))
-            session = _AgentSession([
-                AgentStep("", (lookup,), AgentUsage()),
-                AgentStep("<@42> wrong roast target", (), AgentUsage()),
-                AgentStep(correction, (), AgentUsage()),
-            ])
-            answer = await AgentService(_AgentModel(session)).answer(
-                question="Make Ahmad amaj laugh", local_context="", context=context(),
-            )
-            self.assertEqual(answer, expected)
-            self.assertIn("Resolve them first", session.instructions[-1])
-
-    async def test_previous_request_lookup_does_not_authorize_a_new_reply(self):
-        target = context()
-        target.state.resolved_members = {101: "Ahmad amaj"}
-        target.state.member_self_target = True
-        session = _AgentSession([
-            AgentStep("<@101> synthetic roast", (), AgentUsage()),
-            AgentStep("Which member?", (), AgentUsage()),
-        ])
-        answer = await AgentService(_AgentModel(session)).answer(
-            question="Tell him", local_context="", context=target,
-        )
-        self.assertEqual(answer, "Which member?")
-        self.assertEqual(target.state.resolved_members, {})
-        self.assertFalse(target.state.member_self_target)

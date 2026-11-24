@@ -1,5 +1,3 @@
-from tests.agent.engine.helpers import LegacyCatalogueMixin
-
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -8,7 +6,7 @@ from elbow_helper.agent.discord_actions.messages import prepare_post
 from . import test_agent_discord_messages as fixtures
 
 
-class CurrentChannelPostTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
+class CurrentChannelPostTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         await fixtures.DiscordMessageActionTests.asyncSetUp(self)
         self.context.source_message.channel = self.channel
@@ -23,6 +21,7 @@ class CurrentChannelPostTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
         self.context.source_message.raw_mentions = [7]
         self.channel.permissions_for = lambda _: SimpleNamespace(
             view_channel=True, send_messages=True, read_message_history=True,
+            mention_everyone=True,
         )
         self.context.send_reply = AsyncMock(return_value={"message_ids": [200], "channel_id": 2})
         guard = patch(

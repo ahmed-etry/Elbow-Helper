@@ -59,7 +59,7 @@ class MessageMoveTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(contents[0].endswith(messages[1].content))
         self.assertEqual(files, [b"synthetic"])
         self.assertEqual(result.result["moved_ids"], [1, 2])
-        self.assertEqual(result.text, "")
+        self.assertEqual(result.text, "Moved 2 messages to #synthetic-target and deleted the originals.")
         self.assertEqual(source.history.call_count, 2)
         source.fetch_message.assert_not_awaited()
         self.assertEqual(source.delete_messages.await_args.args[0], list(messages.values()))
@@ -72,7 +72,8 @@ class MessageMoveTests(unittest.IsolatedAsyncioTestCase):
         await prepare_move(context, arguments)
         result = await context.state.proposed_changes[0].run()
         self.assertEqual(result.result["moved_ids"], [1])
-        self.assertEqual("Not moved: " + messages[2].jump_url, result.text)
+        self.assertEqual("Moved 1 message to #synthetic-target and deleted the original.\n"
+                         "Not moved: " + messages[2].jump_url, result.text)
         self.assertEqual(source.delete_messages.await_args.args[0], [messages[1]])
         self.assertEqual(target.send.await_count, 2)
 

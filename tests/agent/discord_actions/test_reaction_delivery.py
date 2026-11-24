@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.engine.models import AgentDelivery
-from tests.agent.engine.test_agent_service import _context
+from tests.agent.request_fixtures import member_context as _context
 
 
 class ReactionDeliveryTests(unittest.IsolatedAsyncioTestCase):

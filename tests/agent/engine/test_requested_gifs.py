@@ -11,13 +11,11 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.core.paths import ApplicationPaths
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
 from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
-from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.engine.social_reply import salvage_choice, social_plan
 from elbow_helper.agent.engine.models import AgentDelivery
-from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from tests.agent.engine.helpers import social_step
-from tests.agent.engine.test_agent_service import _AgentModel, _AgentSession
 from tests.agent.engine.test_banter_gifs import gif_context
+from tests.agent.loop_stub import banter_answer
 
 
 class RequestedGifTests(unittest.IsolatedAsyncioTestCase):
@@ -47,13 +45,10 @@ class RequestedGifTests(unittest.IsolatedAsyncioTestCase):
         return patch.dict(ITEM_BY_ID, items, clear=True)
 
     async def answer(self, question, *, requested=True, query="synthetic", with_text=False, **extra):
-        session = _AgentSession([social_step(
+        answer, session, model = await banter_answer(self.context, social_step(
             "Synthetic fallback.", meme_id=query, gif_requested=requested,
             **({"meme_shortlist": []} if query is None else {}),
-            gif_with_text=with_text, **extra), AgentStep("Synthetic fallback.", (), AgentUsage())])
-        model = _AgentModel(session, route="social")
-        answer = await AgentService(model).answer(
-            question=question, local_context="Synthetic social exchange.", context=self.context)
+            gif_with_text=with_text, **extra), question=question)
         self.assertEqual(len(session.calls), 1)
         self.context.bot.agent_model.complete.assert_not_awaited()
         return answer, model
@@ -74,7 +69,7 @@ class RequestedGifTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(self.context.state.gif_fallback_text, "Synthetic fallback.")
                         self.assertEqual(self.context.state.gif_url, "attachment://" + name)
                         self.assertEqual(self.context.state.channel_bot_gifs, history)
-                        schema = model.request["tools"][0].parameters
+                        schema = model.requests[0]["tools"][-1].parameters
                         self.assertIn("gif_requested", schema["required"])
                         self.assertIn("The three library memes closest to this moment",
                                       schema["properties"]["meme_shortlist"]["description"])
@@ -171,7 +166,7 @@ class RequestedGifTests(unittest.IsolatedAsyncioTestCase):
     async def test_member_clarification_still_precedes_requested_media(self):
         (self.directory / "synthetic.gif").write_bytes(b"synthetic")
         with (self.library(["synthetic.gif"]), patch(
-            "elbow_helper.agent.engine.social_reply.social_member_identity",
+            "elbow_helper.agent.loop.banter.social_member_identity",
             AsyncMock(return_value={"status": "needs_input", "missing": ["Which member?"]}),
         )):
             answer, _ = await self.answer("Show a meme for Alex", member_query="Alex")
@@ -180,17 +175,15 @@ class RequestedGifTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_identity_rewrite_cannot_retain_an_earlier_requested_bypass(self):
         (self.directory / "synthetic.gif").write_bytes(b"synthetic")
-        session = _AgentSession([
-            social_step("Synthetic initial line.", gif_requested=True, meme_id="synthetic", member_query="Alex"),
-            social_step("Synthetic revised line.", gif_requested=False, meme_id=None, member_query="Alex"),
-            AgentStep("Synthetic revised line.", (), AgentUsage()),
-        ])
         with (self.library(["synthetic.gif"]), patch(
-            "elbow_helper.agent.engine.social_reply.social_member_identity",
+            "elbow_helper.agent.loop.banter.social_member_identity",
             AsyncMock(return_value={"status": "resolved", "instruction": "Compose for the resolved member."}),
         )):
-            answer = await AgentService(_AgentModel(session, route="social")).answer(
-                question="Show a meme for Alex", local_context="", context=self.context)
+            answer, session, _ = await banter_answer(
+                self.context,
+                social_step("Synthetic initial line.", gif_requested=True, meme_id="synthetic", member_query="Alex"),
+                social_step("Synthetic revised line.", gif_requested=False, meme_id=None, member_query="Alex"),
+                question="Show a meme for Alex")
         self.assertEqual(answer, "Synthetic revised line.")
         self.assertEqual(len(session.calls), 2)
         self.assertIsNone(self.context.state.gif_url)

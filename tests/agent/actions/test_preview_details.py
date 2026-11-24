@@ -18,7 +18,7 @@ from elbow_helper.agent.actions.outcomes import ActionOutcome
 from elbow_helper.agent.actions.preview import ConfirmationView, preview_text
 from elbow_helper.agent.actions.store import AgentActionRepository
 from elbow_helper.agent.conversation.delivery import AgentDeliveryMixin
-from elbow_helper.agent.engine.service import AgentService
+from elbow_helper.agent.engine.tool_call import execute_tool
 from elbow_helper.agent.engine.models import AgentRequestContext
 from elbow_helper.agent.engine.models import RegisteredAgentTool
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
@@ -191,7 +191,7 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
             context.state.proposed_changes.append(self.action)
             return {"status": "confirmation_required"}
 
-        result = await AgentService.execute_tool(
+        result = await execute_tool(
             name="synthetic_change", handler=prepare, arguments={}, context=self.context,
             capability_scope={"required_access": [ACCESS_LEAD]}, action_class=ActionClass.CHANGE,
         )
@@ -208,7 +208,7 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
         self.context.state.knowledge_title_access = {"recruiter"}
         prepare = AsyncMock()
         with self.assertRaises(AgentAccessLost):
-            await AgentService.execute_tool(name="synthetic_change", handler=prepare,
+            await execute_tool(name="synthetic_change", handler=prepare,
                                            arguments={}, context=self.context,
                                            action_class=ActionClass.CHANGE)
         prepare.assert_not_awaited()

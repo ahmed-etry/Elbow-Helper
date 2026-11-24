@@ -76,7 +76,7 @@ RESEARCH_REPORT = {
         "query,author_id,after,before,observed_at,job_status,coverage_complete,pages_completed,"
         "retained_message_count,total_results_estimate,message_ids_sha256,messages_sha256,"
         "oldest_message_at,newest_message_at,author_counts,coverage,limitations,next_offset,"
-        "complete_retained_snapshot,interpretation"
+        "interpretation"
     ), "messages": [MESSAGE], "author_counts": "{*}", "coverage": JOB["coverage"],
 }
 CSV_REPORT = {
@@ -105,12 +105,12 @@ REPORT_FIELDS = {
     "achievement_progress": {
         **names("report_id,kind,observed_at,member_id,member_name,completed_count,"
                 "in_progress_count,"
-                "total_count,status_filter,matching_rows,next_offset,complete_snapshot"),
+                "total_count,status_filter,matching_rows,next_offset"),
         "achievements": [result_fields(AchievementProgressRow)],
     },
     "event_schedule": {
         **names("report_id,kind,observed_at,event_count,enabled_count,phase_counts,"
-                "counter_coverage_counts,matching_rows,next_offset,complete_snapshot"),
+                "counter_coverage_counts,matching_rows,next_offset"),
         "filters": names("phase,event_type"), "events": [result_fields(EventScheduleRow)],
         "phase_counts": "{*}", "counter_coverage_counts": "{*}",
     },
@@ -118,13 +118,13 @@ REPORT_FIELDS = {
         **names("report_id,kind,observed_at,selected_clan_codes,omitted_inaccessible_clan_codes,"
                 "missing_account_count,missing_account_counts_by_clan,skipped_invalid_row_count,"
                 "complete_for_accessible_selected_clans,calculation_scope,matching_rows,"
-                "next_offset,complete_snapshot"),
+                "next_offset"),
         "filters": names("clan_code,member_id"), "accounts": [result_fields(MissingElderRow)],
         "missing_account_counts_by_clan": "{*}",
     },
     "cwl_performance": {
         **names("report_id,kind,observed_at,history_limit,seasons,row_count,matching_rows,"
-                "matching_accounts,attacks,attacks_expected,next_offset,complete_snapshot"),
+                "matching_accounts,attacks,attacks_expected,next_offset"),
         "filters": names("season,clan_code,player_tag"),
         "clan_seasons": [result_fields(CwlClanSeasonSummary)],
         "players": [result_fields(CwlPerformanceRow)],
@@ -132,7 +132,7 @@ REPORT_FIELDS = {
     "pending_transfer_requests": {
         **names("report_id,kind,observed_at,request_ttl_hours,registered_queue_count,"
                 "accessible_queue_count,omitted_inaccessible_count,pending_request_count,"
-                "expired_stored_count,complete_accessible_queue_snapshot,interpretation,"
+                "expired_stored_count,interpretation,"
                 "matched_count,next_offset"),
         "queue_summaries": [names("clan_code,thread_id,url,pending_count,stored_request_count,"
                                   "expired_stored_count,oldest_created_at,next_expiry_at")],
@@ -142,8 +142,7 @@ REPORT_FIELDS = {
         **names("report_id,kind,observed_at,tracked_current_member_count,"
                 "current_guild_member_count,"
                 "untracked_current_member_count,overdue_applicant_count,activity_observation_count,"
-                "last_weekly_report_at,last_applicant_scan_at,matching_rows,next_offset,"
-                "complete_snapshot"),
+                "last_weekly_report_at,last_applicant_scan_at,matching_rows,next_offset"),
         "coverage": names("stored_member_entry_count,skipped_invalid_member_entries,"
                           "skipped_invalid_platform_counts,skipped_invalid_overdue_entries"),
         "platform_counts": [names("platform,count")],
@@ -154,7 +153,7 @@ REPORT_FIELDS = {
     "active_hibernation": {
         **names("report_id,kind,observed_at,source_channel_id,active_record_count,"
                 "missing_start_time_count,skipped_invalid_member_entries,ignored_metadata_entries,"
-                "complete_valid_record_snapshot,record_order,included_fields,"
+                "record_order,included_fields,"
                 "excluded_sensitive_fields,"
                 "interpretation,matched_count,next_offset"),
         "records": [result_fields(ActiveHibernationRecord)],
@@ -163,7 +162,7 @@ REPORT_FIELDS = {
         **names("report_id,kind,observed_at,registered_ticket_count,accessible_ticket_count,"
                 "omitted_inaccessible_count,owner_status_counts,owner_send_status_counts,"
                 "tickets_without_last_message_id,oldest_known_activity_at,"
-                "complete_accessible_metadata_snapshot,message_history_read,included_fields,"
+                "message_history_read,included_fields,"
                 "excluded_fields,interpretation,matched_count,next_offset"),
         "tickets": [result_fields(SupportTicketMetadata)],
         "owner_status_counts": "{*}", "owner_send_status_counts": "{*}",
@@ -172,14 +171,14 @@ REPORT_FIELDS = {
         **names("report_id,kind,observed_at,accessible_selected_entry_count,"
                 "accessible_active_trial_count,"
                 "skipped_invalid_accessible_count,timing_status_counts,"
-                "complete_valid_accessible_status_snapshot,message_history_read,included_fields,"
+                "message_history_read,included_fields,"
                 "excluded_fields,interpretation,matched_count,next_offset"),
         "trials": [result_fields(ActiveRecruitmentTrial)], "timing_status_counts": "{*}",
     },
     "examination_case_status": {
         **names("report_id,kind,observed_at,accessible_selected_entry_count,accessible_case_count,"
                 "skipped_invalid_accessible_count,case_type_counts,workflow_status_counts,"
-                "response_status_counts,complete_valid_accessible_status_snapshot,"
+                "response_status_counts,"
                 "message_history_read,"
                 "included_fields,excluded_fields,interpretation,matched_count,next_offset"),
         "cases": [result_fields(ExaminationCaseStatus)],
@@ -219,6 +218,7 @@ RESULT_FIELDS = {
                               **names("matched_count,truncated")},
     "find_discord_members": {
         "query": "", "members": [names("member_id,display_name,username?,joined_at,mention,roles")],
+        **names("next_offset"),
     },
     "read_discord_members": {
         **names("total_members,missing_member_ids,offset,limit,next_offset"),
@@ -234,7 +234,7 @@ RESULT_FIELDS = {
         **names("returned_account_count,remaining_account_count,instruction"),
         "next_page_arguments": "{cohort_report_id,after?,before?,league?,limit?,offset} or null",
         **names("source,cohort_report_id,cohort,after,before,metric,league,member_ids,member_count,account_count,unlinked_member_ids,unknown_account_tags,matching_members_in_page,matching_accounts_in_page,offset,next_offset,complete"),
-        "accounts": [{**names("member_id,player_tag,player_name,status,ranked_league,legacy_league,trophies,best_trophies,matches"),
+        "accounts": [{**names("member_id,player_tag,player_name,status,ranked_league,legacy_league?,trophies,best_trophies,matches"),
                       "leagueTier": dict.fromkeys(RANKED_LEAGUE_FIELDS, "")}],
     },
     "find_discord_roles": {
@@ -330,7 +330,7 @@ RESULT_FIELDS = {
     "read_promotion_review": names("ticket_channel_id,review_channel_id,text"),
     "read_role_connections": {
         **names("observed_at,state_fingerprint,total_entries,valid_rules,malformed_rule_count,"
-                "malformed_rule_indexes,cyclic_rule_count,next_offset,complete_valid_rule_snapshot,"
+                "malformed_rule_indexes,cyclic_rule_count,next_offset,"
                 "all_entries_valid"),
         "evaluated_member": names("member_id,member_name,role_ids"),
         "rules": [{**names("index,connection_id,target_role_id,target_role_name,cyclic,"

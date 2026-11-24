@@ -7,7 +7,7 @@ from elbow_helper.data.reads import core as read_core
 from elbow_helper.domain.war_views import war_entry
 from . import record_wars
 from .cache import source_revision
-from .war_span import record_span
+from .war_span import MEANINGS as SPAN_MEANINGS, record_span
 from .wars import selected_wars
 
 # Wars per record read, and the most tags one read filters on.
@@ -58,7 +58,7 @@ async def war_attacks(context, arguments):
         return accounts
     reads = record_wars.war_reads(context)
     if reads is None:
-        return {'error': 'Stored war evidence is not available.', 'cause': 'missing_setup'}
+        return {'error': 'War record is not available.', 'cause': 'missing_setup'}
     war_type = arguments['war_type']
     source = await selected_wars(context, arguments, war_type, running=True)
     if 'error' in source:
@@ -103,6 +103,12 @@ async def war_attacks(context, arguments):
         row['member_name'] = member.display_name if member else None
     attacked = {row['player_tag'] for row in result}
     span = await record_span(context, arguments, source, sorted(tags) if tags is not None else None)
+    # One entry per selected account: a list of its own, paged like any other, not part of the header.
+    spans = span.pop('accounts', None)
+    meanings = MEANINGS
+    if spans is not None:
+        span['meanings'] = {key: value for key, value in span['meanings'].items() if key != 'accounts'}
+        meanings = {**MEANINGS, 'record_span_accounts': SPAN_MEANINGS['accounts']}
     return {'rows': result, 'war_type': war_type,
             **({'accounts_without_attacks': sorted(tags - attacked)} if tags is not None else {}),
             **({'members_without_links': accounts['members_without_links']}
@@ -116,9 +122,10 @@ async def war_attacks(context, arguments):
                                              for war in incomplete],
                          'wars_without_rosters': source.get('wars_without_rosters', []),
                          'as_of': record_wars.iso(now),
-                         'basis': 'Stored attacks by family accounts in the selected wars; '
+                         'basis': 'Recorded attacks by family accounts in the selected wars; '
                                   'an incomplete war may be missing attacks.'},
             'record_span': span,
-            'ownership_basis': 'current bot links; historical ownership unknown',
+            **({'record_span_accounts': spans} if spans is not None else {}),
+            'ownership_basis': 'current account links; earlier owners unknown',
             'ordering': 'war end descending, then clan, war and attack order',
-            'meanings': MEANINGS}
+            'meanings': meanings}

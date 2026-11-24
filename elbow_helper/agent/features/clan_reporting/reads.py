@@ -56,7 +56,7 @@ def clan_reporting_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "read_missing_elder_report",
-            "Read another filtered page from one retained Missing Elder snapshot.",
+            "Read another filtered page from one saved Missing Elder report.",
             {
                 "report_id": {
                     "type": "string", "minLength": 1, "maxLength": 32,
@@ -126,7 +126,7 @@ async def read_missing_elder_accounts(
     except ArtifactCapacityError:
         return {
             "error": (
-                "The complete Missing Elder snapshot is too large to retain "
+                "The complete Missing Elder report is too large to retain "
                 "in this conversation."
             ),
         }
@@ -148,7 +148,7 @@ async def read_missing_elder_report(
     ):
         return {
             "error": (
-                "That Missing Elder snapshot is not available in this "
+                "That Missing Elder report is not available in this "
                 "conversation."
             ),
         }

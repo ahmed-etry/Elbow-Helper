@@ -70,7 +70,7 @@ async def roster_cohort(context, arguments):
                       for clan in roster['clans']],
             'activity_coverage': activity,
             **({'clan_activity': clan_activity} if activity else {}),
-            'coverage': 'Every selected roster account, grouped by current bot-linked owner. Unlinked and departed owners remain explicit.'}
+            'coverage': 'Every selected roster account, grouped by current linked owner. Unlinked and departed owners remain explicit.'}
 
 
 def activity_fields(rows):
@@ -138,7 +138,7 @@ async def activity_projection(context, rows, arguments):
     return {'period': None if not_checked else selection, 'war_coverage': wars.get('coverage'),
             'war_source_status': 'not_checked' if not_checked else
                 wars.get('cause') if 'error' in wars else 'available',
-            'donation_basis': 'Current Clash season counters; not donations within the requested war window.',
+            'donation_basis': 'Donations so far this Clash season; not donations within the requested war window.',
             'war_measure_basis': 'Account war_activity measures that account; row totals combine only the selected '
                 'accounts for that owner, not every account they own. Historical wars may '
                 'have been fought in another selected clan; current location does not establish where attacks occurred.',
@@ -146,7 +146,7 @@ async def activity_projection(context, rows, arguments):
                 'not an overall activity estimate. Regular and CWL wars may allow different attack counts; '
                 'war count is not the denominator. Missing or incomplete opportunities remain unknown.',
             'discord_activity_coverage': activity, 'historical_collection_complete': False,
-            'absence_meaning': 'No stored war participation or no posting record does not prove inactivity. Unlinked accounts cannot establish Discord activity.'}
+            'absence_meaning': 'No war record or no posting record does not prove inactivity. Unlinked accounts cannot establish Discord activity.'}
 
 
 async def discord_activity_projection(context, rows):
@@ -166,7 +166,7 @@ async def discord_activity_projection(context, rows):
     return {'members_checked': len(identifiers) if available else 0,
             'members_not_checked': 0 if available else len(identifiers),
             'source_reads_complete': available,
-            'basis': 'Achievements user_stats posting records from all channels the bot sees; '
+            'basis': 'Posting records from all channels the bot sees; '
                 'last_active_day is a UTC date, not an exact last-message time. Streak and lifetime '
-                'messages are stored counters, not counts within the requested war period. '
+                'messages are running totals, not counts within the requested war period. '
                 'Records are deleted when members leave.'}

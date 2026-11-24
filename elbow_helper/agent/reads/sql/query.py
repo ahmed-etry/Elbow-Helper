@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import closing
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
+from functools import partial
 import json
 import math
 import re
 import sqlite3
 import time
+import zlib
 
 from elbow_helper.agent.safety.access import can_access_message_channel, has_reader_access_requirements, require_evidence_access
+from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID
 
 QUERY_SECONDS = 20.0  # a full pass over the largest table takes ~10s; tool timeout is 30s
 DEFAULT_QUERY_ROWS = 1000
@@ -37,12 +42,64 @@ def _parameters(params):
     return result
 
 
-def _cell(value, truncate=True):
+def _cell(value):
     if isinstance(value, bytes):
         return value.hex()
-    if truncate and isinstance(value, str) and len(value) > 4000:
-        return value[:4000] + "…"
     return value
+
+
+def _unz(value):
+    if value is None:
+        return None
+    try:
+        decoder = zlib.decompressobj()
+        data = decoder.decompress(value, MAX_QUERY_VALUE_BYTES)
+        if decoder.unconsumed_tail:
+            raise ValueError('The decompressed value is too large.')
+        if not decoder.eof:
+            raise ValueError('The compressed value is incomplete.')
+        if decoder.unused_data:
+            raise ValueError('The compressed value contains trailing data.')
+        return data.decode('utf-8')
+    except (TypeError, zlib.error, UnicodeError) as error:
+        raise ValueError('The compressed value could not be read as UTF-8 text.') from error
+
+
+def _army(value):
+    if value is None:
+        return None
+    from elbow_helper.domain.armies import decode_army
+    try:
+        result = decode_army(value)
+        if 'unparsed_code' not in result:
+            return json.dumps(result, ensure_ascii=False)
+    except (ValueError, OverflowError):
+        pass
+    raise ValueError(f'Army code could not be read: {value}')
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _unix_us(value):
+    if value is None:
+        return None
+    try:
+        instant = datetime.fromisoformat(value)
+        if instant.tzinfo is None:
+            instant = instant.replace(tzinfo=timezone.utc)
+        return (instant.astimezone(timezone.utc) - _EPOCH) // timedelta(microseconds=1)
+    except (TypeError, OverflowError) as error:
+        raise ValueError(str(error)) from error
+
+
+def _iso_utc(value):
+    if value is None:
+        return None
+    try:
+        return (_EPOCH + timedelta(microseconds=value)).isoformat(timespec='microseconds')
+    except (TypeError, OverflowError) as error:
+        raise ValueError(str(error)) from error
 
 
 def _identifiers(sql):
@@ -88,7 +145,11 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
     touched = set()
     read_tables = set()
     denied = set()
+    hidden = {(source.alias, table, column) for source in sources for table, column in source.hidden_columns}
+    hidden_read = set()
+    visible_read = set()
     schemas = {}
+    function_error = {}
     deadline = time.monotonic() + QUERY_SECONDS
     try:
         with closing(sqlite3.connect("file::memory:", uri=True)) as connection:
@@ -96,6 +157,21 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
             # allocation. Enforce that bound inside SQLite before execution.
             connection.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, MAX_QUERY_VALUE_BYTES)
             connection.row_factory = sqlite3.Row
+
+            def register(name, function):
+                def call(value):
+                    try:
+                        return function(value)
+                    except ValueError as error:
+                        # SQLite otherwise hides the useful decoder failure.
+                        function_error['error'] = str(error)
+                        raise
+                connection.create_function(name, 1, call, deterministic=True)
+
+            register('unz', _unz)
+            register('army', _army)
+            register('unix_us', _unix_us)
+            register('iso_utc', _iso_utc)
             allowed = {}
             for source in sources:
                 path = source.resolve(paths)
@@ -127,7 +203,8 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
                             f'PRAGMA "{source.alias}".table_info("{name}")').fetchall()
                         schemas[f"{source.alias}.{name}"] = {
                             "access": level,
-                            "columns": {row[1]: row[2] for row in table_info},
+                            "columns": {row[1]: row[2] for row in table_info
+                                        if (source.alias, name, row[1]) not in hidden},
                             "primary_key": [row[1] for row in sorted(table_info, key=lambda row: row[5]) if row[5]],
                         }
             connection.execute("ATTACH DATABASE ':memory:' AS state")
@@ -188,9 +265,15 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
                         return sqlite3.SQLITE_OK
                     if database in (None, "main") and arg1 in ("json_each", "json_tree"):
                         return sqlite3.SQLITE_OK
+                    if (database, arg1, arg2) in hidden:
+                        # Reads as NULL, so the stored value never reaches the model.
+                        hidden_read.add(arg2.lower())
+                        return sqlite3.SQLITE_IGNORE
                     level = allowed.get((database, arg1))
                     if level is not None:
                         read_tables.add((database, arg1))
+                        if arg2:
+                            visible_read.add(arg2.lower())
                         if level != "none":
                             touched.add(level)
                         return sqlite3.SQLITE_OK
@@ -229,12 +312,21 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
                     continue
                 raw_rows.append(row)
             truncated = total_rows > len(raw_rows)
+            cursor_columns = columns
+            # Leave out a hidden column unless a visible read could have supplied it.
+            blank = {index for index, name in enumerate(columns)
+                     if name.lower() in hidden_read and name.lower() not in visible_read
+                     and all(row[index] is None for row in raw_rows)}
+            if len(blank) == len(columns):
+                blank = set()
+            columns = [name for index, name in enumerate(columns) if index not in blank]
             result = {
                 "source": "bot_data",
                 "rows": [
                     {
-                        key: _cell(value, truncate=max_rows is not None)
-                        for key, value in zip(columns, row)
+                        key: _cell(value)
+                        for index, (key, value) in enumerate(zip(cursor_columns, row))
+                        if index not in blank
                     }
                     for row in raw_rows
                 ],
@@ -269,6 +361,8 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
     except ValueError as error:
         return {"error": str(error)}, set()
     except sqlite3.Error as error:
+        if function_error:
+            return function_error, touched
         if denied:
             return {
                 "error": "This needs " + ", ".join(sorted(denied)) + " access.",
@@ -301,32 +395,48 @@ def reader_levels(context):
     return levels
 
 
-async def query_context(context, sql, params=None, max_rows=DEFAULT_QUERY_ROWS):
+async def query_context(context, sql, params=None, max_rows=DEFAULT_QUERY_ROWS, *, sources=None):
     from elbow_helper.agent.reads.sql.catalogue import SOURCES
+    from elbow_helper.agent.reads.sql.reviewed import CLOSED, scoped_sources, current_roles_snapshot
     from elbow_helper.agent.safety.disclosure import exclude_source
+    sources = SOURCES if sources is None else sources
     await require_evidence_access(context)
     levels = reader_levels(context)
-    state_names = set(STATE_NAMES.findall(_identifiers(sql))) if isinstance(sql, str) else set()
+    identifiers = _identifiers(sql) if isinstance(sql, str) else ""
+    state_names = set(STATE_NAMES.findall(identifiers))
     channel_ids = set()
     if any((source.channel_keyed or source.evidence_channels is not None)
            and source.state_name in state_names
-           and (source.level == "none" or source.level in levels) for source in SOURCES):
+           and (source.level == "none" or source.level in levels) for source in sources) or any(
+               source.alias in ("workflows", "activity") and any(
+                   name.lower() in identifiers and (level == "none" or level in levels)
+                   for name, level, _ in source.tables) for source in sources):
         for channel in (*context.guild.channels, *context.guild.threads):
             if await can_access_message_channel(context, channel, relevant=False):
                 channel_ids.add(channel.id)
     read_channels = set()
+    sources = scoped_sources(sources, channel_ids, read_channels)
+    if "member_roles" in identifiers:
+        rows = tuple((member.id, role.id, role.name) for member in context.guild.members
+                     for role in member.roles
+                     if not role.is_default() and role.id != AGENT_TESTER_ROLE_ID)
+        sources = tuple(replace(source, snapshot=partial(current_roles_snapshot, rows=rows))
+                        if source.snapshot is current_roles_snapshot else source for source in sources)
     result, touched = await asyncio.to_thread(
-        run_query, SOURCES, context.bot.paths, levels, sql, params, max_rows,
+        run_query, sources, context.bot.paths, levels, sql, params, max_rows,
         channel_ids=channel_ids, read_channels=read_channels,
     )
     if "required_access" in result:
+        if CLOSED in result["required_access"]:
+            return {"error": "That data is unavailable through SQL.", "cause": "access_denied"}
         for level in result["required_access"]:
             exclude_source(context, "dataset:" + level, "role_scope", relevant=has_reader_access_requirements(
                 context.guild, context.member.id, {level}))
         if context.state.scope_audit.private_candidates:
             result = {**result, "available_privately": True}
-    if "error" not in result:
-        context.state.source_channels.update(read_channels)
+    # Decoder errors can name a value from a row, so their sources must survive
+    # too and be checked again before any result leaves this handler.
+    context.state.source_channels.update(read_channels)
     await require_evidence_access(context)
     if touched and not has_reader_access_requirements(context.guild, context.member.id, touched):
         return {
