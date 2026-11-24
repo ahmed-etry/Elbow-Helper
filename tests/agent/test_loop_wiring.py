@@ -14,6 +14,8 @@ from elbow_helper.agent.conversation.instructions import TaskInstruction
 from elbow_helper.agent.conversation.wording import (
     AGENT_ANSWER_UNFINISHED, AGENT_PRIVATE_CHECK_BUTTON, AGENT_PRIVATE_OFFER,
 )
+from elbow_helper.agent.discord_actions.gif_library import ITEM_BY_ID
+from elbow_helper.agent.discord_actions.meme_usage import RECENT_SECONDS
 from elbow_helper.agent.engine import budgets as limits
 from elbow_helper.agent.engine.models import AgentIdentity, AgentTurnState, ChannelReactions
 from elbow_helper.agent.engine.prompts import CONTINUE_ANSWER_INSTRUCTION, REPEAT_TOOL_CALL_INSTRUCTION
@@ -71,6 +73,42 @@ class MentionThroughCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.reply.await_args.args, ("Synthetic answer.",))
         self.assertTrue(self.turn().delivery_complete)
         self.assertEqual(self.model.requests[0]["prompt"], "@Synthetic Agent synthetic request")
+
+    async def test_a_gif_is_the_whole_reply(self):
+        item = next(iter(ITEM_BY_ID))
+        url = "https://tenor.com/view/synthetic"
+        with patch("elbow_helper.agent.discord_actions.gifs.library_gif", return_value=url):
+            message = await self.mention(social_step("Synthetic line.", meme_id=item, gif_requested=True))
+        message.reply.assert_awaited_once()
+        self.assertEqual(message.reply.await_args.args, (url,))
+        self.assertTrue(self.turn().delivery_complete)
+
+    async def test_a_reaction_goes_on_the_request_and_the_line_is_the_reply(self):
+        async def channel_history(message, referenced, conversation, *, context):
+            context.state.channel_reactions = ChannelReactions(emojis=())
+            return ""
+        self.cog._build_local_context = channel_history
+        message = self.make_message(self.member, 1, "<@999> synthetic request")
+        message.add_reaction = AsyncMock()
+        self.cog.service = loop_service(StubModel(StubSession(call("react_to_request", {"emoji": "👍"}), final("Nice."))))
+        await self.cog.on_message(message)
+        message.add_reaction.assert_awaited_once_with("👍")
+        self.assertEqual(message.reply.await_args.args, ("Nice.",))
+        self.assertIn("[Reactions you added to the asker's message: 👍]", self.turn().delivered_answer)
+
+
+    async def test_a_reaction_alone_is_not_an_answer_and_no_empty_reply_line_goes_beside_it(self):
+        async def channel_history(message, referenced, conversation, *, context):
+            context.state.channel_reactions = ChannelReactions(emojis=())
+            return ""
+        self.cog._build_local_context = channel_history
+        message = self.make_message(self.member, 1, "<@999> synthetic request")
+        message.add_reaction = AsyncMock()
+        self.cog.service = loop_service(StubModel(StubSession(call("react_to_request", {"emoji": "👍"}), final(""))))
+        await self.cog.on_message(message)
+        for sent in message.reply.await_args_list:
+            self.assertNotIn("What result do you need?", str(sent))
+
 
 class ShowFullAnswerThroughCogTests(unittest.IsolatedAsyncioTestCase):
     """A read the room could not see, offered by the loop, then pressed by the asker."""
@@ -164,6 +202,18 @@ class ReactionComboTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_cache_key_ignores_whether_a_combination_is_offered(self):
         keys = {(await self.react(combos, "👍")).requests[0]["prompt_cache_key"] for combos in ((), (True,))}
         self.assertEqual(len(keys), 1)
+
+    async def test_the_first_message_says_what_the_bot_reacted_with_and_posted_lately(self):
+        self.context.state.channel_reactions = ChannelReactions(emojis=("🔥",))
+        self.context = replace(self.context, action_repository=SimpleNamespace(
+            recent_memes=lambda *, guild_id: [
+                {"item_id": "synthetic_meme", "posted_at": time.time()},
+                {"item_id": "synthetic_old_meme", "posted_at": time.time() - RECENT_SECONDS - 60}]))
+        model = await self.react((True,), "👍")
+        prompt = model.requests[0]["prompt"]
+        self.assertIn("Previous bot reaction in this channel: 🔥", prompt)
+        self.assertIn("so shortlist others. synthetic_meme\n", prompt)
+        self.assertNotIn("synthetic_old_meme", prompt)
 
     async def test_a_combination_is_refused_and_not_mentioned_during_the_cooldown(self):
         model = await self.react((True,), ["👍", "🔥"])

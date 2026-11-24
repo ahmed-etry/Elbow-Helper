@@ -28,7 +28,7 @@ from elbow_helper.agent.actions.details import prepare_preview
 from elbow_helper.agent.actions.combined_reply import CombinedReplyView
 from elbow_helper.agent.files.delivery import attachment_files, publish_spreadsheet, spreadsheet_links, spreadsheet_response
 from elbow_helper.agent.files.gif_media import URLS
-from elbow_helper.agent.discord_actions.reply_targets import answer_reply_target
+from elbow_helper.agent.discord_actions.reply_targets import answer_reply_target, member_reply_target
 from elbow_helper.agent.discord_actions.reactions import render_server_emojis
 from elbow_helper.agent.discord_actions.gif_library import upload_limit
 from elbow_helper.agent.discord_actions.meme_usage import record_delivered_meme, usage_repository
@@ -114,8 +114,8 @@ class AgentDeliveryMixin:
             await assert_answer_scope(context, context.state.gif_fallback_text)
             try:
                 await self._send_gif(message, gif, context, conversation, active,
-                                     nonce_seed=options.get("_nonce_seed"))
-                return
+                                     nonce_seed=options.get("_nonce_seed"),
+                                     recipient_id=context.state.gif_recipient_id)
             except discord.HTTPException:
                 # An uncertain send is raised as AgentDeliveryUnknown and must
                 # never trigger a second visible response.
@@ -132,35 +132,59 @@ class AgentDeliveryMixin:
         await self._send_response(message, response, referenced, attachments, conversation,
                                   delivery=active, context=context, **options)
 
-    async def _send_gif(self, message, url, context, conversation, delivery, *, nonce_seed=None):
+    async def _send_gif(self, message, url, context, conversation, delivery, *, nonce_seed=None,
+                        recipient_id=None):
         await require_evidence_access(context)
         delivery.complete = False
-        delivery.generated_parts.append(url)
-        target = (
-            await answer_reply_target(context, message.channel)
-            if not delivery.message_ids else None
-        )
-        sender = message.channel.send if delivery.message_ids else (target or message).reply
-        ping_author = bool(target is not None and context.state.ping_author)
+        channel = message.channel
+        target = None
+        if recipient_id is not None:
+            target = await member_reply_target(context, channel, recipient_id)
+        elif not delivery.message_ids:
+            target = await answer_reply_target(context, channel)
+        sender = (target.reply if target is not None else
+                  channel.send if delivery.message_ids else message.reply)
+        ping_author = bool(target is not None and (recipient_id is not None or context.state.ping_author))
+        mention = f"<@{recipient_id}>" if recipient_id is not None and target is None else None
+        parts = [url, mention] if mention else [url]
+        delivery.generated_parts.extend(parts)
         media = context.state.gif_attachment if url == context.state.gif_url else None
         file = discord.File(io.BytesIO(media.data), filename=media.filename) if media is not None else None
+        nonce_seed = nonce_seed or message.id
         try:
             sent = await self._send_delivery_part(
-                sender, message.channel, _delivery_nonce(nonce_seed or message.id, 2_000_001),
+                sender, channel, _delivery_nonce(nonce_seed, 2_000_001),
                 delivery, None if file else url,
                 allowed_mentions=discord.AllowedMentions(
                     everyone=False, roles=False, users=False, replied_user=ping_author),
                 **({"mention_author": True} if ping_author else {}),
                 **({"file": file} if file else {}),
             )
+        except discord.HTTPException:
+            if mention:
+                delivery.generated_parts.pop()
+            raise
         finally:
             if file is not None:
                 file.close()
                 file.fp.close()
-        delivery.record(sent.id, url)
+        await self._record_gif_part(message, conversation, delivery, sent, url,
+                                    attachment_names=(media.filename,) if file else ())
         await record_delivered_meme(usage_repository(context), guild_id=context.guild.id,
-            channel_id=message.channel.id, url=url,
+            channel_id=channel.id, url=url,
             item_id=context.state.gif_item_id if url == context.state.gif_url else None)
+        if mention:
+            await require_evidence_access(context)
+            sent = await self._send_delivery_part(
+                channel.send, channel, _delivery_nonce(nonce_seed, 2_000_002), delivery, mention,
+                allowed_mentions=discord.AllowedMentions(
+                    everyone=False, roles=False, users=[discord.Object(id=recipient_id)], replied_user=False),
+            )
+            await self._record_gif_part(message, conversation, delivery, sent, mention)
+        delivery.complete = True
+
+    async def _record_gif_part(self, message, conversation, delivery, sent, part, *, attachment_names=()):
+        delivery.record(sent.id, part)
         if conversation is not None:
             self._conversations.register_reply(conversation, sent.id)
         if getattr(message, "archive_reply", True):
@@ -682,8 +706,10 @@ class AgentDeliveryMixin:
                 delivery_complete=complete,
             )
             if (repository := usage_repository(self)) is not None:
+                prefix, _, url = part.partition(" ")
                 await record_delivered_meme(repository, guild_id=conversation.guild_id,
-                                           channel_id=channel.id, url=part)
+                                           channel_id=channel.id,
+                                           url=url if _USER_MENTION.fullmatch(prefix) else part)
             self._conversations.register_reply(conversation, sent.id)
             await self._archive_reply(
                 record.request_message_id, sent.id, part,
@@ -760,19 +786,6 @@ def _without_reply_gif(text: str, url: str) -> str:
         return value[len(url):] if value.rstrip(").,>") == url else value
 
     return URLS.sub(remove, text).strip()
-
-
-def _answer_needs_ping(message, response, referenced, bot) -> bool:
-    named = {int(value) for value in _USER_MENTION.findall(response or "")}
-    candidates = {member.id for member in getattr(message, "mentions", ())
-                  if bot.user is None or member.id != bot.user.id}
-    if referenced is not None and not referenced.author.bot:
-        candidates.add(referenced.author.id)
-    get_member = getattr(getattr(message, "guild", None), "get_member", None)
-    if callable(get_member):
-        candidates.update(member_id for member_id in named
-                          if (member := get_member(member_id)) is not None and not getattr(member, "bot", False))
-    return bool(named & candidates)
 
 
 def _needs_file(response: str) -> bool:

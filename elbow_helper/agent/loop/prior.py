@@ -9,6 +9,7 @@ import discord
 from elbow_helper.agent.conversation.own_output import action_turn_text
 from elbow_helper.agent.conversation.reply_context import prepare_reply_context, turn_identity
 from elbow_helper.agent.conversation.text import message_text
+from elbow_helper.agent.discord_actions.gif_library import describe_sent_gifs, own_message_text
 from elbow_helper.agent.safety.access import accessible_message_channel, has_lookup_access, require_evidence_access
 
 
@@ -70,7 +71,7 @@ async def prior_messages(context, referenced, resolve_reference):
                 {"type": "function_call_output", "call_id": call_id, "output": lookup["output"]},
             ))
         if answer:
-            prior.append({"role": "assistant", "content": answer})
+            prior.append({"role": "assistant", "content": describe_sent_gifs(answer)})
         state.source_channels.update(turn.source_channels)
         state.required_access.update(turn.required_access)
 
@@ -97,7 +98,7 @@ async def prior_messages(context, referenced, resolve_reference):
             if item.channel.id != channel_id:
                 break
             role = "assistant" if item.author.id == context.guild.me.id else "user"
-            content = message_text(item)
+            content = own_message_text(item) if role == "assistant" else message_text(item)
             row = {"message_id": item.id, "author_id": item.author.id,
                    "author": item.author.display_name, "content": content, "source": item.jump_url,
                    "timestamp": item.created_at.isoformat()}

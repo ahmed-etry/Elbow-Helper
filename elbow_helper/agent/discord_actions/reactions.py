@@ -51,7 +51,7 @@ def server_reaction_context(guild):
     ]
     return (
         "Available server reaction emojis and meanings:\n" + "\n".join(emojis)
-        + "\nChoose only a meaning that fits the message. No fitting meaning means no reaction."
+        + "\nChoose only a meaning that fits the member's message. No fitting meaning means no reaction."
     ) if emojis else ""
 
 
@@ -191,4 +191,5 @@ def reaction_tools():
         ),
         react_to_request, action_class=ActionClass.OUTPUT,
         contract=CapabilityContract(source_scope="request_context"),
+        finishes_reply_with_text=True,
     ),)

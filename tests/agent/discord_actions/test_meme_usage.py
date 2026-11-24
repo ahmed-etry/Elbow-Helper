@@ -46,8 +46,7 @@ class MemeUsageTests(unittest.IsolatedAsyncioTestCase):
 
     def test_order_is_fit_then_never_used_then_least_recently_used(self):
         now = 1_000_000
-        filler = [usage('other', now - 100_000 + i) for i in range(30)]
-        rows = [*filler, usage('a', now - 200_000), usage('b', now - 300_000)]
+        rows = [usage('a', now - 700_000), usage('b', now - 800_000)]
         for candidates, expected in (
             ([dict(id='a', fit=4), dict(id='b', fit=4), dict(id='c', fit=4)], 'c'),
             ([dict(id='a', fit=4), dict(id='b', fit=4)], 'b'),
@@ -58,10 +57,11 @@ class MemeUsageTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(select_meme(candidates, usage=rows, now=now), (expected, []))
         self.assertEqual(select_meme([dict(id='c', fit=4)], send_fit=5), (None, []))
 
-    def test_recent_window_is_union_of_last_day_and_last_thirty_with_family_matching(self):
+    def test_recent_window_is_seven_days_regardless_of_post_count_with_family_matching(self):
         now = 1_000_000
-        for count, age, expected in ((29, 200_000, None), (30, 86_400, None),
-                                     (30, 86_401, 'a'), (80, 60, None)):
+        for count, age, expected in ((0, 604_800, None), (0, 604_801, 'a'),
+                                     (14, 700_000, 'a'), (80, 604_800, None),
+                                     (80, 604_801, 'a')):
             rows = [usage('filler', now - i / 100) for i in range(count)] + [usage('a_2', now - age)]
             with self.subTest(count=count, age=age), patch.dict(ITEM_BY_ID, {}, clear=True):
                 picked, skipped = select_meme([dict(id='a', fit=5)], usage=rows, now=now)

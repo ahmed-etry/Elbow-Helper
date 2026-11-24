@@ -46,12 +46,3 @@ def combo_slot_status(context):
 
 def reply_combo_due(context):
     return combo_slot_status(context) == 'available'
-
-
-def combo_slot_context(context):
-    if context.state.reaction_combo_due:
-        return ('Reaction combinations are available as an option. Choose the expression for this exchange. '
-                'Each selected emoji must refer to the same point in the message and contribute '
-                'to that response. An available combination does not need to be used. '
-                'Keep standalone fallback text; a delivered image has no text.')
-    return 'Reaction combinations are unavailable for this reply. Use an available response form.'

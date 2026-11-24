@@ -4,6 +4,7 @@ import json
 from dataclasses import replace
 from types import SimpleNamespace
 
+from elbow_helper.agent.discord_actions.gif_library import describe_sent_gifs, sent_gif_lines
 from elbow_helper.agent.safety.access import accessible_message_channel
 from elbow_helper.agent.conversation.text import message_text
 from elbow_helper.agent.research.history import jump_url
@@ -90,7 +91,8 @@ async def prepare_reply_context(context):
         own = author.id == getattr(getattr(context.guild, "me", None), "id", None)
         result.update(status="resolved", channel_id=channel_id,
                       author={"member_id": author.id, "display_name": author.display_name},
-                      content=_reply_text(referenced),
+                      content="\n".join(filter(None, (
+                          _reply_text(referenced), *(sent_gif_lines(referenced) if own else ())))),
                       source=jump_url(context.guild.id, channel_id, message_id),
                       reply_to_message_id=getattr(getattr(referenced, "reference", None), "message_id", None))
         context.state.source_channels.add(channel_id)
@@ -102,7 +104,7 @@ async def prepare_reply_context(context):
         if record is not None:
             conversation = {"status": "resolved", "request_message_id": request_id,
                             "requester_id": record.member_id, "request": record.question,
-                            "delivered_answer": record.delivered_answer,
+                            "delivered_answer": describe_sent_gifs(record.delivered_answer),
                             "delivery_complete": record.delivery_complete,
                             "report_ids": [key for key in record.report_ids if key in context.state.reports]}
             from elbow_helper.agent.reads.snapshots import FamilyReport
@@ -125,7 +127,7 @@ async def prepare_reply_context(context):
             value = json.loads(turn.text)
             conversation = {"status": "retention_limited", "request_message_id": request_id,
                             "requester_id": value.get("member_id"), "request": value.get("question"),
-                            "delivered_answer": value.get("answer")}
+                            "delivered_answer": describe_sent_gifs(value["answer"]) if value.get("answer") else value.get("answer")}
         if record is not None:
             entities = list(conversation.get('entities', ()))
             known = {row.get('id') for row in entities if row.get('kind') == 'member'}

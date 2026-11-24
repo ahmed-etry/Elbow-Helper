@@ -1,5 +1,7 @@
 """Select the current channel message that the agent's own answer will reply to."""
 
+import discord
+
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from elbow_helper.agent.safety.access import require_evidence_access
@@ -42,6 +44,20 @@ async def answer_reply_target(context, channel):
     return target
 
 
+async def member_reply_target(context, channel, member_id):
+    """Return the chosen reply target only when it belongs to the verified GIF recipient."""
+    current = getattr(context, "delivery_channel", None) or context.source_message.channel
+    if channel.id != current.id or context.state.reply_to is None:
+        return None
+    try:
+        target = await _reply_target(context, channel, context.state.reply_to)
+    except DiscordActionRefused as error:
+        if isinstance(error.__cause__, discord.NotFound):
+            return None
+        raise
+    return target if target.author.id == member_id else None
+
+
 def reply_target_tools():
     return (RegisteredAgentTool(
         AgentToolDefinition(
@@ -51,11 +67,12 @@ def reply_target_tools():
                 "message_id": {"type": "integer", "minimum": 1},
                 "ping_author": {"type": "boolean"},
             }, "required": ["message_id"], "additionalProperties": False},
-            usage_note="No Confirm; answer normally. Ping only with ping_author.",
+            usage_note="No Confirm. Ping only with ping_author.",
         ),
         set_reply_target, action_class=ActionClass.OUTPUT,
         contract=CapabilityContract(
             entity_fields=(("message_id", "discord_message"),),
             filter_fields=("ping_author",), source_scope="request_context",
         ),
+        finishes_reply_with_text=True,
     ),)

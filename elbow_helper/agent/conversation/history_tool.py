@@ -9,6 +9,8 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
 from elbow_helper.agent.safety.access import accessible_message_channel, require_evidence_access, has_lookup_access
+from elbow_helper.agent.discord_actions.gif_library import describe_sent_gifs
+from .own_output import action_turn_text
 from .context import retained_knowledge_sources, model_evidence
 from .state import ConversationTurn
 from elbow_helper.agent.engine.models import AgentRequestContext, RegisteredAgentTool
@@ -47,11 +49,19 @@ def history_tools() -> tuple[RegisteredAgentTool, ...]:
 def _document(turn: ConversationTurn) -> str:
     record = turn.record
     if record is None:
+        try:
+            data = json.loads(turn.text)
+        except ValueError:
+            return turn.text
+        if (action := action_turn_text(data)) is not None:
+            return action
+        if isinstance(data, dict) and isinstance(data.get("answer"), str):
+            return json.dumps({**data, "answer": describe_sent_gifs(data["answer"])}, ensure_ascii=False)
         return turn.text
     # Undelivered generated text is not conversation evidence.
     document = json.dumps({
         "question": record.question,
-        "answer": record.delivered_answer,
+        "answer": describe_sent_gifs(record.delivered_answer),
         "delivery_complete": record.delivery_complete,
         "delivery_unknown": record.delivery_unknown,
         "local_context": record.local_context,

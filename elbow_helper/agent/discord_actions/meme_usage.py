@@ -9,6 +9,8 @@ from elbow_helper.infrastructure.persistence import sqlite_transaction
 
 LOGGER = logging.getLogger(__name__)
 RETENTION_SECONDS = 30 * 24 * 60 * 60
+# A meme posted within this window is skipped by select_meme and listed to the model by recent_meme_context.
+RECENT_SECONDS = 7 * 24 * 60 * 60
 
 
 def create_meme_usage(connection):
@@ -87,11 +89,12 @@ def recent_memes(context):
 
 
 def recent_meme_context(context):
-    ids = [row["item_id"] for row in recent_memes(context)[:20]]
+    cutoff = time.time() - RECENT_SECONDS
+    ids = list(dict.fromkeys(row["item_id"] for row in recent_memes(context) if row["posted_at"] >= cutoff))
     if not ids:
         return ""
-    return ("Memes you posted recently; when another fits as well, pick a fresh one. "
-            + ", ".join(ids))
+    return ("Memes you posted this week. Unless a member asked for one, these are skipped, "
+            "so shortlist others. " + ", ".join(ids))
 
 
 def select_meme(shortlist, *, requested=False, send_fit=4, usage=(), now=None, excluded=()):
@@ -108,9 +111,8 @@ def select_meme(shortlist, *, requested=False, send_fit=4, usage=(), now=None, e
         return None, []
     if requested:
         return candidates[0]["id"], []
-    ordered_usage = sorted(usage, key=lambda row: row["posted_at"], reverse=True)
-    recent_families = {row["clip_family"] for index, row in enumerate(ordered_usage)
-                       if index < 30 or row["posted_at"] >= current - 24 * 60 * 60}
+    recent_families = {row["clip_family"] for row in usage
+                       if row["posted_at"] >= current - RECENT_SECONDS}
     skipped = []
     for item in candidates:
         if clip_family(item["id"]) not in recent_families:
