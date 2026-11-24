@@ -50,6 +50,21 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
     def query(self, sql, params=None, max_rows=200, levels=frozenset({"lead"})):
         return run_query(self.sources, self.paths, levels, sql, params, max_rows)
 
+    def test_roster_query_with_more_source_files_than_sqlite_can_attach(self):
+        tables = (("rosters", "none", "Synthetic rosters"),)
+        sources = []
+        for index in range(11):
+            alias = f"rosters_{index}"
+            path = self.paths.data_root / f"{alias}.sqlite3"
+            with closing(sqlite3.connect(path)) as connection, connection:
+                connection.execute("CREATE TABLE rosters (id INTEGER)")
+                connection.execute("INSERT INTO rosters VALUES (?)", (index,))
+            sources.append(DataSource(alias, path, tables=tables))
+        self.sources += tuple(sources)
+
+        result, _ = self.query('SELECT id FROM "rosters_10" . [rosters]')
+        self.assertEqual(result.get("rows"), [{"id": 10}], result)
+
     def test_hidden_column_is_absent_from_select_star(self):
         from dataclasses import replace
         self.sources = (replace(self.sources[0], hidden_columns=(("accounts", "name"),)), *self.sources[1:])

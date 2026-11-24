@@ -22,7 +22,8 @@ QUERY_SECONDS = 20.0  # a full pass over the largest table takes ~10s; tool time
 DEFAULT_QUERY_ROWS = 1000
 MAX_QUERY_VALUE_BYTES = 8 * 1024 * 1024
 MAX_QUERY_RESULT_BYTES = 16 * 1024 * 1024
-STATE_NAMES = re.compile(r"\bstate\.(\w+)\b", re.I)
+QUALIFIED_NAMES = re.compile(r"\b(\w+)\s*\.\s*(\w+)\b")
+STATE_NAMES = re.compile(r"\bstate\s*\.\s*(\w+)\b")
 
 
 def _parameters(params):
@@ -104,7 +105,7 @@ def _iso_utc(value):
 
 
 def _identifiers(sql):
-    identifiers = re.sub(r"'(?:''|[^'])*'|--[^\n]*|/\*.*?\*/", "", sql, flags=re.S)
+    identifiers = re.sub(r"'(?:''|[^'])*'|--[^\n]*|/\*.*?\*/", " ", sql, flags=re.S)
     return re.sub(
         "\"(\\w+)\"|`(\\w+)`|\\[(\\w+)\\]",
         lambda match: next(value for value in match.groups() if value is not None),
@@ -133,11 +134,16 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
     except (ValueError, TypeError, OverflowError):
         return {"error": "Parameter values must be named scalars, lists or objects."}, set()
     identifiers = _identifiers(sql)
+    qualified = dict.fromkeys(QUALIFIED_NAMES.findall(identifiers))
+    aliases = {alias for alias, _ in qualified}
+    # SQLite also resolves unqualified table names across attached databases.
+    unqualified = set(re.findall(r"\b\w+\b", QUALIFIED_NAMES.sub(" ", identifiers)))
     declared = {
         (source.alias, name): level for source in sources for name, level, note in source.tables
     }
     states = {source.state_name: source for source in sources if source.state_name}
-    for alias, table in re.findall(r"\b(\w+)\.(\w+)\b", identifiers):
+    state_names = states.keys() & set(STATE_NAMES.findall(identifiers))
+    for alias, table in qualified:
         level = declared.get((alias, table))
         if alias.lower() == "state" and table in states:
             level = states[table].level
@@ -173,18 +179,29 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
             register('army', _army)
             register('unix_us', _unix_us)
             register('iso_utc', _iso_utc)
-            allowed = {}
+            attachments = []
             for source in sources:
-                path = source.resolve(paths)
+                if source.state_name or (
+                    source.alias not in aliases and not any(name in unqualified for name, _, _ in source.tables)
+                ):
+                    continue
                 readable = {
                     name: level for name, level, note in source.tables
                     if level == "none" or level in levels
                 }
-                if source.state_name or not readable or (source.snapshot is None and not path.is_file()):
+                path = source.resolve(paths)
+                if not readable or (source.snapshot is None and not path.is_file()):
                     continue
+                attachments.append((source, path, readable))
+            limit = connection.getlimit(sqlite3.SQLITE_LIMIT_ATTACHED)
+            if len(attachments) + bool(state_names) > limit:
+                return {"error": f"Use fewer databases in one query (maximum {limit}).", "cause": "capacity"}, set()
+
+            allowed = {}
+            for source, path, readable in attachments:
                 if source.snapshot is not None:
                     selected = {name: level for name, level in readable.items()
-                                if re.search(r"\b" + re.escape(name) + r"\b", identifiers)}
+                                if (source.alias, name) in qualified or name in unqualified}
                     tables = source.snapshot(paths, path, selected)
                     connection.execute(f'ATTACH DATABASE \':memory:\' AS "{source.alias}"')
                     for name, (columns, rows) in tables.items():
@@ -199,7 +216,7 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
                     )
                 allowed.update({(source.alias, name): level for name, level in readable.items()})
                 for name, level in readable.items():
-                    if re.search(r"\b" + re.escape(source.alias + "." + name) + r"\b", identifiers):
+                    if (source.alias, name) in qualified:
                         table_info = connection.execute(
                             f'PRAGMA "{source.alias}".table_info("{name}")').fetchall()
                         schemas[f"{source.alias}.{name}"] = {
@@ -208,11 +225,10 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_R
                                         if (source.alias, name, row[1]) not in hidden},
                             "primary_key": [row[1] for row in sorted(table_info, key=lambda row: row[5]) if row[5]],
                         }
-            connection.execute("ATTACH DATABASE ':memory:' AS state")
-            for name in set(STATE_NAMES.findall(identifiers)):
-                source = states.get(name)
-                if source is None:
-                    continue
+            if state_names:
+                connection.execute("ATTACH DATABASE ':memory:' AS state")
+            for name in state_names:
+                source = states[name]
                 if source.level != "none" and source.level not in levels:
                     return {
                         "error": f"This needs {source.level} access.",
