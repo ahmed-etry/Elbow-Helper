@@ -376,7 +376,7 @@ class _DeepSeekAgentSession:
         self._text_tool_call_sequence = 0
 
     def replace_tools(self, tools: Sequence[AgentToolDefinition]) -> None:
-        self._tool_definitions = tuple(sorted(tools, key=lambda tool: tool.name))
+        self._tool_definitions = tuple(tools)
         if self._replacement is not None:
             self._replacement.replace_tools(self._tool_definitions)
         self._tools = [

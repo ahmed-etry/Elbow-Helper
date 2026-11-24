@@ -36,7 +36,7 @@ def member_context():
 
 
 def flow_context():
-    actor = SimpleNamespace(id=41, display_name="Test member",
+    actor = SimpleNamespace(id=41, display_name="Test member", bot=False,
                             roles=[SimpleNamespace(id=next(iter(CORE)))])
     channel = SimpleNamespace(
         id=91, type=discord.ChannelType.text, overwrites={},

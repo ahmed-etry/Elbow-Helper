@@ -80,11 +80,14 @@ def selected_role(context, arguments):
     return roles[0]
 
 
+def can_manage_roles(member):
+    return bool(getattr(getattr(member, 'guild_permissions', None), 'manage_roles', False))
+
+
 def role_change_access(context):
     """Expose live requester authority before the model chooses an action."""
     current = context.guild.get_member(context.member.id)
-    return {'requester_allowed': bool(current and getattr(
-                getattr(current, 'guild_permissions', None), 'manage_roles', False)),
+    return {'requester_allowed': can_manage_roles(current),
             'required_permission': 'Manage Roles',
             'operator_roles': [{'role_id': role.id, 'name': role.name}
                 for role in getattr(context.guild, 'roles', ())

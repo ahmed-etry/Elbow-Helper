@@ -49,7 +49,7 @@ class ProviderPrefixTests(unittest.IsolatedAsyncioTestCase):
         for previous, current in zip(requests, requests[1:]):
             self.assertEqual(previous['messages'], current['messages'][:len(previous['messages'])])
             self.assertEqual(previous['tools'], current['tools'])
-        self.assertEqual([tool['function']['name'] for tool in requests[0]['tools']], ['alpha', 'zulu'])
+        self.assertEqual([tool['function']['name'] for tool in requests[0]['tools']], ['zulu', 'alpha'])
         self.assertEqual(requests[-1]['tool_choice'], 'none')
         self.assertEqual(requests[-1]['messages'][2]['reasoning_content'], 'Synthetic reasoning')
 
@@ -98,7 +98,7 @@ class ProviderPrefixTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('prompt_cache_key', requests[0])
         self.assertEqual(len(prior), 10)
 
-    async def test_replacing_tools_is_independent_of_registration_order_and_accepts_empty_tools(self):
+    async def test_replacing_tools_preserves_supplied_order_and_accepts_empty_tools(self):
         requests = []
 
         async def provider(**options):
@@ -111,7 +111,7 @@ class ProviderPrefixTests(unittest.IsolatedAsyncioTestCase):
         await session.advance()
         session.replace_tools(tuple(reversed(tools)))
         await session.advance()
-        self.assertEqual(requests[0]['tools'], requests[1]['tools'])
+        self.assertEqual(requests[0]['tools'], list(reversed(requests[1]['tools'])))
         session.replace_tools(())
         await session.advance(allow_tools=False)
         self.assertNotIn('tools', requests[-1])

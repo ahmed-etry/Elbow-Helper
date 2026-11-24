@@ -26,26 +26,34 @@ class StoredData:
         self.handler = partial(query_stored_data, sources=self.sources)
 
     def describe(self, context):
+        """Return the shared catalogue, visible entries by access, and unavailable names."""
         levels = reader_levels(context)
-        entries = [(level, text.replace(f'[{level}]', f'[{ACCESS.get(level, level)}]', 1))
-                   for level, text in self.guide.entries if level == "none" or level in levels]
-        context.state.required_access.update(level for level, _ in entries if level != "none")
+        public = ["Family clans:", self.guide.clans]
+        restricted = {}
+        if "recruitment" in levels:
+            restricted["recruitment"] = [RECRUITMENT]
         unavailable = {}
         closed = []
         for level, text in self.guide.entries:
             if level == CLOSED:
                 closed.append(text.split(' ', 1)[0])
-            elif level != "none" and level not in levels:
+            elif level == "none":
+                public.append(text)
+            elif level in levels:
+                context.state.required_access.add(level)
+                restricted.setdefault(level, []).append(text.replace(f'[{level}]', f'[{ACCESS.get(level, level)}]', 1))
+            else:
                 unavailable.setdefault(level, []).append(text.split(" ", 1)[0])
-        return "\n".join([
-            *([RECRUITMENT] if "recruitment" in levels else []),
-            "Family clans:", self.guide.clans, *(text for _, text in entries),
-            *(['Closed to SQL: ' + ', '.join(closed) + '.'] if closed else []),
-            *(["Not available to this asker, by the access each needs: " + "; ".join(
+        if closed:
+            public.append('Closed to SQL: ' + ', '.join(closed) + '.')
+        unavailable_text = (
+            "Not available to this asker, by the access each needs: " + "; ".join(
                 f"{ACCESS.get(level, level)}: {', '.join(names)}"
-                for level, names in sorted(unavailable.items())) + "."]
-              if unavailable else []),
-        ])
+                for level, names in sorted(unavailable.items())
+            ) + "."
+            if unavailable else ""
+        )
+        return "\n".join(public), restricted, unavailable_text
 
 
 async def query_stored_data(context, arguments, *, sources):

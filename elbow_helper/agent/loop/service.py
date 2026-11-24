@@ -21,7 +21,7 @@ from elbow_helper.agent.discord_actions.meme_usage import recent_meme_context
 from elbow_helper.agent.discord_actions.permission_checks import asker_permissions
 from elbow_helper.agent.discord_actions.reaction_pacing import combo_slot_status, reply_combo_due
 from elbow_helper.agent.discord_actions.reactions import recent_reaction_context, server_reaction_context
-from elbow_helper.agent.discord_actions.roles import role_change_access
+from elbow_helper.agent.discord_actions.roles import can_manage_roles, role_change_access
 from elbow_helper.agent.engine import budgets as limits
 from elbow_helper.agent.engine.adapters import enabled_adapters
 from elbow_helper.agent.engine.capability_contract import CapabilityBindError, compile_capability_call
@@ -42,7 +42,9 @@ from elbow_helper.agent.knowledge.tools import _section_id, channel_knowledge_ac
 from elbow_helper.agent.plan.checker import argument_issue
 from elbow_helper.agent.reads.snapshots import SLICE_COLUMNS
 from elbow_helper.agent.reports.tools import original_tool
-from elbow_helper.agent.safety.access import AgentAccessLost, leadership_asker, require_access, require_evidence_access
+from elbow_helper.agent.safety.access import (
+    READ_ACCESS_ROLE_SETS, AgentAccessLost, leadership_asker, require_access, require_evidence_access,
+)
 from elbow_helper.agent.safety.disclosure import log_scope, request_scope
 from elbow_helper.infrastructure.ai import OutOfCreditError, TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort, AgentToolDefinition, AgentToolResult
@@ -161,12 +163,14 @@ def read_registry(catalogue=None):
     return registry
 
 
-def request_registry(registry, context):
-    """The tools this request may use. A private pass keeps reads and artifact tools only."""
-    if not context.private_pass:
-        return registry
-    return {name: tool for name, tool in registry.items()
-            if tool.action_class is ActionClass.READ or tool.effect is AgentCapabilityEffect.ARTIFACT}
+def _audience_sizes(guild, audiences):
+    if not audiences:
+        return {}
+    members = [member for member in guild.members if not member.bot]
+    roles = [{role.id for role in member.roles} for member in members]
+    return {audience: (sum(can_manage_roles(member) for member in members) if audience is None
+                       else sum(not audience.isdisjoint(held) for held in roles))
+            for audience in set(audiences.values())}
 
 
 def _role_names(member):
@@ -239,25 +243,49 @@ class LoopService:
         # Command tools may not take the name of any other tool.
         self.reserved_names = {*catalogue, SOCIAL_REPLY_NAME}
         # The latest request's record, for diagnostics; concurrent requests overwrite it.
+        # A private pass keeps reads and artifact tools only. They start either tool list.
+        self.private_registry = {
+            name: tool for name, tool in sorted({**self.registry, **self.outputs}.items())
+            if tool.action_class is ActionClass.READ or tool.effect is AgentCapabilityEffect.ARTIFACT
+        }
         self.last_run = None
         self.member_usage = MemberUsageLimiter()
 
     def request_tools(self, context):
-        """Return the tools this request may use."""
+        """Return the permitted tools, starting with those shared by the most askers."""
+        if context.private_pass:
+            return self.private_registry.copy()
         registry = {**self.registry, **self.outputs}
-        if not context.private_pass and getattr(context.bot, "tree", None) is not None:
+        audiences = {}
+        if getattr(context.bot, "tree", None) is not None:
             registry.update(self.changes)
             command_tools, capabilities = build_command_tools(
                 context.bot, enabled_adapters(), reserved_names=self.reserved_names)
             member = context.guild.get_member(context.member.id)
             held = {role.id for role in member.roles} if member else set()
-            registry.update({
-                name: tool for name, tool in command_tools.items()
-                if capabilities[name].visible_to is None or held.intersection(capabilities[name].visible_to)})
-            if not role_change_access(context)["requester_allowed"]:
-                for name in ("add_discord_roles", "remove_discord_roles"):
+            for name, tool in command_tools.items():
+                visible_to = capabilities[name].visible_to
+                if visible_to is None or held.intersection(visible_to):
+                    registry[name] = tool
+                    if visible_to is not None:
+                        audiences[name] = visible_to
+            may_change_roles = role_change_access(context)["requester_allowed"]
+            for name in ("add_discord_roles", "remove_discord_roles"):
+                if may_change_roles and name in registry:
+                    audiences[name] = None  # Discord Manage Roles, independent of command roles.
+                else:
                     registry.pop(name, None)
-        return request_registry(registry, context)
+        sizes = _audience_sizes(context.guild, audiences)
+
+        def order(name):
+            if name in self.private_registry:
+                return (0, 0, (), name)
+            if name not in audiences:
+                return (1, 0, (), name)
+            audience = audiences[name]
+            return (2, -sizes[audience], tuple(sorted(audience or ())), name)
+
+        return {name: registry[name] for name in sorted(registry, key=order)}
 
     async def answer(self, *, question, context, standing_scope=""):
         state = context.state
@@ -338,6 +366,7 @@ class LoopRun:
         self.page_base = 0
         self.system = {}
         self.note_sections = 0
+        self.audience_context = ""
         self.channels = ""
         self.banter = Banter()
         self.banter_context = ""
@@ -414,22 +443,33 @@ class LoopRun:
         self.knowledge.extend({"title": note.title, "section_id": _section_id(note),
                                "visibility": note.visibility, "source": "system_map"} for note in meanings)
         state.required_access.update(note.visibility for note in meanings if note.visibility != "public")
-        parts = [SYSTEM_OPENING]
+        parts = [SYSTEM_OPENING, "Community map: roles and channels on the server", structure.fixed_text()]
         if not context.private_pass:
             # Only a request that offers the banter reply tool carries the banter rules.
             parts.append(BANTER_SYSTEM)
-        parts.append(NOTES_INTRO)
-        parts.extend(f"### {note.title} ({note.file_name})\n{note.body}" for note in notes)
-        if note_index:
-            parts.append(note_index)
-        parts.extend(("Read-only SQLite catalogue", service.stored_data.describe(context)))
-        parts.extend(("Community map: what roles and terms mean",
-                      "\n\n".join(f"## {note.title} [{note.visibility}]\n{note.body}" for note in meanings),
-                      "Community map: roles and channels on the server",
-                      structure.fixed_text()))
-        # The emoji meanings submit_social_reply tells the model to use; the same for every request on a server.
-        if not context.private_pass and (reactions := server_reaction_context(context.guild)):
-            parts.append(reactions)
+            if reactions := server_reaction_context(context.guild):
+                parts.append(reactions)
+
+        note_text = {"public": []}
+        meaning_text = {"public": []}
+        for note in notes:
+            note_text.setdefault(note.visibility, []).append(f"### {note.title} ({note.file_name})\n{note.body}")
+        for note in meanings:
+            meaning_text.setdefault(note.visibility, []).append(f"## {note.title} [{note.visibility}]\n{note.body}")
+        public_sql, restricted_sql, unavailable_sql = service.stored_data.describe(context)
+        parts.extend((NOTES_INTRO, *note_text.pop("public"),
+                      "Community map: what roles and terms mean", *meaning_text.pop("public"),
+                      "Read-only SQLite catalogue", public_sql))
+        audience_parts = []
+        levels = note_text.keys() | meaning_text.keys() | restricted_sql.keys()
+        # Overlapping groups have no single hierarchy. Sort by eligible roles, then by name.
+        for level in sorted(levels, key=lambda level: (-len(READ_ACCESS_ROLE_SETS.get(level, ())), level)):
+            audience_parts.extend(note_text.get(level, ()))
+            audience_parts.extend(meaning_text.get(level, ()))
+            if level in restricted_sql:
+                audience_parts.append("\n".join(restricted_sql[level]))
+        audience_parts.extend(text for text in (unavailable_sql, note_index) if text)
+        self.audience_context = "\n\n".join(audience_parts)
         system = "\n\n".join(parts)
         encoded = system.encode("utf-8")
         self.system = {"system_text_sha256": sha256(encoded).hexdigest(), "system_text_bytes": len(encoded)}
@@ -438,7 +478,8 @@ class LoopRun:
     def _first_message(self, context, question, standing_scope=""):
         combo = COMBO_AVAILABLE if context.state.reaction_combo_due else ""
         built_by = _built_by(context)
-        return (f"{_request_context(context)}\n" + (f"{built_by}\n" if built_by else "")
+        return ((f"{self.audience_context}\n\n" if self.audience_context else "")
+                + f"{_request_context(context)}\n" + (f"{built_by}\n" if built_by else "")
                 + (f"{combo}\n" if combo else "")
                 + (f"{self.banter_context}\n" if self.banter_context else "")
                 + f"\nCommunity map: roles and channels on the server\n"
@@ -473,10 +514,14 @@ class LoopRun:
         if banter:
             recent_memes = await asyncio.to_thread(recent_meme_context, context)
             self.banter_context = "\n".join(filter(None, (recent_reaction_context(context), recent_memes)))
-        tools = [*model_tools(listed), PAGE_TOOL, *(() if context.private_pass else (OFFER_TOOL,)), *banter]
+        tools = [PAGE_TOOL, *model_tools(listed)]
+        if banter:
+            shared = self.service.private_registry.keys() & listed.keys()
+            tools.insert(1 + len(shared), OFFER_TOOL)
+            tools.extend(banter)
         # Offering a reaction combination changes only the end of the reply tool's schema, so it is not in the key.
         keyed = [*tools[:-1], banter_definition(registry)] if banter else tools
-        fixed = _json([system, sorted([tool.name, tool.description, tool.parameters] for tool in keyed)])
+        fixed = _json([system, [[tool.name, tool.description, tool.parameters] for tool in keyed]])
         session = self.service.model.create_agent_session(
             system_prompt=system, prompt=self._first_message(context, question, standing_scope), tools=tools,
             images=images, prior_messages=prior, sent_reasoning_effort="high",
