@@ -102,14 +102,15 @@ class AgentSpreadsheetToolTests(unittest.IsolatedAsyncioTestCase):
             context.state.report_sources["report"] = frozenset()
             context.state.report_access_requirements["report"] = frozenset()
             arguments = {"title": "Synthetic", "sheets": [
-                {"name": "Query", "sql": "SELECT 7 AS Score"},
+                {"name": "Query", "sql": "SELECT 7 AS score",
+                 "columns": [{"field": "score", "heading": "Score"}]},
                 {"name": "Report", "report_id": "report", "collection": "accounts",
                  "columns": [{"field": "tag", "heading": "Account"}]},
                 {"name": "Notes", "columns": ["Finding"], "rows": [["Synthetic"]]},
             ]}
             with patch(
                 "elbow_helper.agent.files.spreadsheet_tools.query_context",
-                AsyncMock(return_value={"rows": [{"Score": 7}]}),
+                AsyncMock(return_value={"rows": [{"score": 7}]}),
             ):
                 result = await prepare_spreadsheet(context, arguments)
             self.assertEqual(result["sheets"], 3)

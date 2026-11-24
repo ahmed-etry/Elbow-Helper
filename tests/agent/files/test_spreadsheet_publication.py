@@ -19,6 +19,7 @@ from elbow_helper.agent.files.spreadsheet_tools import prepare_spreadsheet
 
 GOOGLE_LINK = "https://docs.google.com/spreadsheets/d/synthetic-sheet/edit"
 DOWNLOAD_LINK = "https://docs.google.com/spreadsheets/d/synthetic-sheet/export?format=xlsx"
+ATTACHMENT_LINK = "https://cdn.discordapp.com/attachments/synthetic-export.xlsx"
 
 
 def _arguments():
@@ -35,6 +36,7 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(button.label, button.url) for button in view.children], [
             ("Google Sheet", GOOGLE_LINK), ("Download", DOWNLOAD_LINK),
         ])
+        self.assertEqual([button.row for button in view.children], [0, 0])
 
     def surface(self, context):
         sent = SimpleNamespace(id=502, edit=AsyncMock(), delete=AsyncMock())
@@ -115,7 +117,10 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await prepare_spreadsheet(context, _arguments()), result)
             context.bot.google_publisher.upload_workbook.assert_not_called()
             self.assertEqual(list(Path(directory).iterdir()), [])
-            surface, message, _, context = self.surface(context)
+            surface, message, sent, context = self.surface(context)
+            sent.attachments = [SimpleNamespace(
+                filename=result["filename"], url=ATTACHMENT_LINK,
+            )]
             with patch("elbow_helper.agent.conversation.delivery.assert_answer_scope",
                        AsyncMock(return_value=True)):
                 await surface.send_response(message, "Synthetic workbook ready", None,
@@ -123,6 +128,9 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             call = message.reply.await_args
             self.assertEqual(call.args[0], "Synthetic workbook ready\n\n" + warning)
             self.assertNotIn("view", call.kwargs)
+            sent.edit.assert_awaited_once()
+            button, = sent.edit.await_args.kwargs["view"].children
+            self.assertEqual((button.label, button.url), ("Download", ATTACHMENT_LINK))
             self.assertEqual(len(call.kwargs["files"]), 1)
             self.assertEqual(call.kwargs["files"][0].fp.read(), context.state.attachments[0].data)
             workbook = load_workbook(BytesIO(context.state.attachments[0].data))

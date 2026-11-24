@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import re
 import copy
 
 import discord
 from discord import app_commands
 
+from elbow_helper.infrastructure.discord.file_buttons import add_file_buttons
 from elbow_helper.infrastructure.discord.interactions import deny
 from elbow_helper.configuration.roles import CWL_HELPERS
 from elbow_helper.configuration.roles import LEAD_PLUS
@@ -157,32 +157,7 @@ class CwlBonusMixin:
         response_lines = bonus_report_lines(report)
 
         view = BonusExportView()
-        google_download_link = None
-        if report.google_link:
-            match = re.search(
-                r"/spreadsheets/d/([a-zA-Z0-9-_]+)",
-                report.google_link,
-            )
-            if match:
-                google_download_link = (
-                    "https://docs.google.com/spreadsheets/d/"
-                    f"{match.group(1)}/export?format=xlsx"
-                )
-            view.add_item(
-                discord.ui.Button(
-                    label="Google Sheet",
-                    style=discord.ButtonStyle.link,
-                    url=report.google_link,
-                )
-            )
-        if google_download_link:
-            view.add_item(
-                discord.ui.Button(
-                    label="Download",
-                    style=discord.ButtonStyle.link,
-                    url=google_download_link,
-                )
-            )
+        add_file_buttons(view, google_link=report.google_link)
         view.add_item(
             BonusSettingsButton(
                 self,
@@ -229,13 +204,7 @@ class CwlBonusMixin:
                 attachment.close()
             delivered = bool(message.attachments)
             if message.attachments:
-                view.add_item(
-                    discord.ui.Button(
-                        label="Download",
-                        style=discord.ButtonStyle.link,
-                        url=message.attachments[0].url,
-                    )
-                )
+                add_file_buttons(view, attachment_url=message.attachments[0].url)
             if view.children:
                 await message.edit(content="\n".join(response_lines), view=view)
                 view.bind_message(message)

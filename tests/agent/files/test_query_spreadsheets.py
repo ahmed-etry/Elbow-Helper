@@ -35,7 +35,15 @@ class QuerySpreadsheetTests(unittest.IsolatedAsyncioTestCase):
                 result = await prepare_spreadsheet(context, {"title": "Synthetic", "sheets": [
                     {
                         "name": "Evidence",
-                        "sql": "SELECT id,note FROM accounts.accounts ORDER BY id",
+                        "sql": ("SELECT id, note, 'P0' AS player_tag, id > 0 AS active, "
+                                "unix_us('2026-11-22') AS seen_at, NULL AS other "
+                                "FROM accounts.accounts ORDER BY id"),
+                        "columns": [{"field": "id", "heading": "Account ID"},
+                                    {"field": "note", "heading": "Note"},
+                                    {"field": "player_tag", "heading": "Account Tag", "format": "tag"},
+                                    {"field": "active", "heading": "Active", "format": "yes_no"},
+                                    {"field": "seen_at", "heading": "Last Seen", "format": "unix_microseconds"},
+                                    {"field": "other", "heading": "Other"}],
                     },
                     {"name": "Notes", "columns": ["Finding"], "rows": [["Synthetic finding"]]},
                 ]})
@@ -43,8 +51,14 @@ class QuerySpreadsheetTests(unittest.IsolatedAsyncioTestCase):
             workbook = load_workbook(BytesIO(context.state.attachments[0].data))
             try:
                 self.assertEqual(workbook["Evidence"].max_row, 151)
+                self.assertEqual(workbook["Evidence"]["A1"].value, "Account ID")
                 self.assertEqual(workbook["Evidence"]["A151"].value, "149")
                 self.assertEqual(workbook["Evidence"]["B151"].data_type, "s")
+                self.assertEqual(
+                    tuple(cell.value for cell in workbook["Evidence"][2][2:]),
+                    ("#P0", "No", "2026-11-22", ""),
+                )
+                self.assertEqual(workbook["Evidence"]["D151"].value, "Yes")
                 self.assertEqual(workbook["Notes"]["A2"].value, "Synthetic finding")
             finally:
                 workbook.close()

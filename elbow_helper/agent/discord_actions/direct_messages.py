@@ -18,6 +18,7 @@ from ..actions.contracts import (
 from ..actions.outcomes import ActionOutcome
 from ..engine.capability_contract import CapabilityContract
 from elbow_helper.agent.engine.models import RegisteredAgentTool, AgentCapabilityEffect
+from ..files.delivery import spreadsheet_links
 from elbow_helper.agent.conversation.wording import ACTION_DM_LINE, ACTION_DM_LABEL, ACTION_DM_TARGET, ACTION_PINGS_LINE, DM_SENT_FOR
 from .messages import resolve_post_attachment
 from .message_parts import image_attachment, outgoing_parts
@@ -91,10 +92,12 @@ async def _deliver_dms(context, identifiers, text, attachment, delivery,
                 if recipient_allowed is not None and not await recipient_allowed(member.id):
                     break
                 view = view_factory(member.id) if view_factory is not None else None
-                file = (
-                    discord.File(io.BytesIO(attachment.data), filename=attachment.filename)
-                    if attachment and part_index == 0 else None
-                )
+                file = None
+                if attachment is not None and part_index == 0:
+                    if attachment.google_link:
+                        view = spreadsheet_links(view, (attachment,))
+                    else:
+                        file = discord.File(io.BytesIO(attachment.data), filename=attachment.filename)
                 try:
                     await member.send(
                         part,

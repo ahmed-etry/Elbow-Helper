@@ -143,8 +143,8 @@ async def prepare_roster_export(context: Any,
         text = f"Exported signups for **{roster.name}**."
         if not link and report.google_warning:
             text += "\n" + report.google_warning
-        attachments = ((AgentAttachment(report.workbook_name, data),)
-                       if data is not None else ())
+        attachments = ((AgentAttachment(report.workbook_name, data or b"", google_link=link),)
+                       if link or data is not None else ())
         return ActionOutcome(
             "complete", "private", text=text,
             attachments=attachments,

@@ -26,7 +26,7 @@ from elbow_helper.agent.actions.preview import CONFIRMATION_TIMEOUT, Confirmatio
 from elbow_helper.agent.actions.preview import preview_text
 from elbow_helper.agent.actions.details import prepare_preview
 from elbow_helper.agent.files.delivery import (
-    attachment_files, publish_spreadsheet, spreadsheet_links,
+    add_spreadsheet_downloads, attachment_files, publish_spreadsheet, spreadsheet_links,
     spreadsheet_response,
 )
 from elbow_helper.agent.files.gif_media import URLS
@@ -388,6 +388,7 @@ class AgentDeliveryMixin:
                     content=content, attachments=files, view=public_view,
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
+                edited = await add_spreadsheet_downloads(edited, public_view, attachments)
             except BaseException:
                 if public_view is not None:
                     public_view.stop()
@@ -446,6 +447,7 @@ class AgentDeliveryMixin:
                     if index == 0 else (),
                 )
                 if index == 0:
+                    sent = await add_spreadsheet_downloads(sent, view, attachments)
                     if private_view is not None:
                         private_view.message = sent
         if confirm_view is not None:

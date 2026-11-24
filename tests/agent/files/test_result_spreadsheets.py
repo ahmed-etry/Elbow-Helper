@@ -33,14 +33,15 @@ class ResultSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
         field_columns = [{"field": "value", "heading": "Value"}]
         sheets = [
             {"name": "Written", "rows": [[""]], "columns": ["Value"]},
-            {"name": "Query", "sql": "SELECT :value", "params": {"value": 7}},
+            {"name": "Query", "sql": "SELECT :value AS value", "params": {"value": 7},
+             "columns": field_columns},
             {"name": "Report", "report_id": "synthetic", "collection": "items",
              "columns": field_columns, "sheet_name": "Source"},
             {"name": "Result", "rows_from": {"step": "read", "path": ["items"]},
              "columns": field_columns},
         ]
         required_fields = (
-            ("name", "rows", "columns"), ("name", "sql"),
+            ("name", "rows", "columns"), ("name", "sql", "columns"),
             ("name", "report_id", "collection", "columns"), ("name", "rows_from", "columns"),
         )
         for sheet, required_fields in zip(sheets, required_fields):

@@ -17,6 +17,7 @@ from discord.ext import commands
 from discord.ext import tasks
 
 from elbow_helper.infrastructure.discord.application_emojis import loading_status
+from elbow_helper.infrastructure.discord.file_buttons import add_file_buttons
 from elbow_helper.infrastructure.discord.interactions import deny
 from elbow_helper.infrastructure.discord.interactions import warn
 from elbow_helper.infrastructure.discord.timezones import build_timezone_choices
@@ -1187,30 +1188,6 @@ class Rosters(commands.Cog):
         result = await self.clear_roster_signups(roster_id)
         await interaction.edit_original_response(content=result.message, view=None)
 
-    @staticmethod
-    def _google_sheet_view(link: str) -> discord.ui.View:
-        view = discord.ui.View(timeout=None)
-        view.add_item(
-            discord.ui.Button(
-                label="Google Sheet",
-                style=discord.ButtonStyle.link,
-                url=link,
-            )
-        )
-        match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", link)
-        if match:
-            view.add_item(
-                discord.ui.Button(
-                    label="Download",
-                    style=discord.ButtonStyle.link,
-                    url=(
-                        "https://docs.google.com/spreadsheets/d/"
-                        f"{match.group(1)}/export?format=xlsx"
-                    ),
-                )
-            )
-        return view
-
     async def _send_roster_export(
         self,
         interaction: discord.Interaction,
@@ -1234,10 +1211,11 @@ class Rosters(commands.Cog):
 
         delivered = False
         try:
-            if report.google_link:
+            view = discord.ui.View(timeout=None)
+            if add_file_buttons(view, google_link=report.google_link):
                 await interaction.edit_original_response(
                     content=f"Exported **{roster.name}**.",
-                    view=self._google_sheet_view(report.google_link),
+                    view=view,
                 )
                 delivered = True
                 return
@@ -1259,14 +1237,7 @@ class Rosters(commands.Cog):
                 attachment.close()
             delivered = bool(message.attachments)
             if message.attachments:
-                view = discord.ui.View(timeout=None)
-                view.add_item(
-                    discord.ui.Button(
-                        label="Download",
-                        style=discord.ButtonStyle.link,
-                        url=message.attachments[0].url,
-                    )
-                )
+                add_file_buttons(view, attachment_url=message.attachments[0].url)
                 await message.edit(view=view)
             else:
                 await message.edit(

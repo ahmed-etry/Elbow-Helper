@@ -17,6 +17,7 @@ from xml.etree import ElementTree
 
 import discord
 
+from elbow_helper.infrastructure.discord.file_buttons import add_file_buttons
 from elbow_helper.infrastructure.exports import ExportColumn
 from elbow_helper.infrastructure.exports import ExportSheet
 from elbow_helper.infrastructure.exports import xlsx_column_name
@@ -453,26 +454,7 @@ class CwlRosterExportMixin:
             )
 
             view = discord.ui.View(timeout=None)
-            if google_link:
-                view.add_item(
-                    discord.ui.Button(
-                        label="Google Sheet",
-                        style=discord.ButtonStyle.link,
-                        url=google_link,
-                    )
-                )
-                match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", google_link)
-                if match:
-                    view.add_item(
-                        discord.ui.Button(
-                            label="Download",
-                            style=discord.ButtonStyle.link,
-                            url=(
-                                "https://docs.google.com/spreadsheets/d/"
-                                f"{match.group(1)}/export?format=xlsx"
-                            ),
-                        )
-                    )
+            if add_file_buttons(view, google_link=google_link):
                 await interaction.followup.send(
                     "\n".join(lines),
                     view=view,
@@ -499,13 +481,7 @@ class CwlRosterExportMixin:
                 attachment.close()
             delivered = bool(message.attachments)
             if message.attachments:
-                view.add_item(
-                    discord.ui.Button(
-                        label="Download",
-                        style=discord.ButtonStyle.link,
-                        url=message.attachments[0].url,
-                    )
-                )
+                add_file_buttons(view, attachment_url=message.attachments[0].url)
                 await message.edit(content="\n".join(lines), view=view)
         finally:
             if delivered:

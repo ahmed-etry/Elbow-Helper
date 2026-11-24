@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import re
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +14,7 @@ from xml.sax.saxutils import escape as xml_escape
 import discord
 import logging
 
+from elbow_helper.infrastructure.discord.file_buttons import add_file_buttons
 from elbow_helper.infrastructure.exports import unique_sheet_name
 from elbow_helper.infrastructure.exports import xlsx_column_name
 
@@ -632,23 +632,7 @@ class ClanHealthExportMixin:
         self, interaction: discord.Interaction, export: PreparedHealthExport,
     ) -> None:
         export_view = discord.ui.View(timeout=None)
-        google_download_link = None
-        if export.google_link:
-            sheet_match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", export.google_link)
-            if sheet_match:
-                google_download_link = (
-                    f"https://docs.google.com/spreadsheets/d/{sheet_match.group(1)}/export?format=xlsx"
-                )
-            export_view.add_item(discord.ui.Button(
-                label="Google Sheet", style=discord.ButtonStyle.link,
-                url=export.google_link,
-            ))
-        if google_download_link:
-            export_view.add_item(discord.ui.Button(
-                label="Download", style=discord.ButtonStyle.link,
-                url=google_download_link,
-            ))
-        if export.google_link and export_view.children:
+        if add_file_buttons(export_view, google_link=export.google_link):
             await interaction.followup.send(
                 content=export.workbook_title, view=export_view, wait=True,
             )
@@ -663,10 +647,5 @@ class ClanHealthExportMixin:
             )
         finally:
             attachment.close()
-        if msg.attachments:
-            export_view.add_item(discord.ui.Button(
-                label="Download", style=discord.ButtonStyle.link,
-                url=msg.attachments[0].url,
-            ))
-        if export_view.children:
+        if msg.attachments and add_file_buttons(export_view, attachment_url=msg.attachments[0].url):
             await msg.edit(content=export.workbook_title, view=export_view)

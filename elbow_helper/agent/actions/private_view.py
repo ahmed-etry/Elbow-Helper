@@ -9,7 +9,10 @@ import discord
 
 from elbow_helper.agent.conversation.wording import ACTION_PRIVATE_BUTTON, ACTION_PRIVATE_SELECT, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER
 from elbow_helper.agent.engine.models import AgentAttachment
-from ..files.delivery import attachment_files, spreadsheet_links, spreadsheet_warnings
+from ..files.delivery import (
+    add_spreadsheet_downloads, attachment_files, has_spreadsheet_download, spreadsheet_links,
+    spreadsheet_warnings,
+)
 from ..discord_actions.message_parts import image_attachment
 from elbow_helper.agent.conversation.text import chunk_response
 from .message_cleanup import log_cleanup_failure
@@ -74,6 +77,7 @@ class PrivateResultView(discord.ui.View):
             return
         files = attachment_files(self.attachments)
         links = spreadsheet_links(None, self.attachments)
+        has_download = has_spreadsheet_download(self.attachments)
         options = {"view": links} if links is not None else {}
         parts = self.parts
         if any(image_attachment(item) for item in self.attachments):
@@ -89,10 +93,14 @@ class PrivateResultView(discord.ui.View):
                         ephemeral=True,
                     )
                 if files or parts or links is not None:
-                    await interaction.followup.send(
+                    if has_download:
+                        options["wait"] = True
+                    sent = await interaction.followup.send(
                         parts[0] if parts else None,
                         files=files, ephemeral=True, **options,
                     )
+                    if has_download:
+                        await add_spreadsheet_downloads(sent, links, self.attachments)
                     for part in parts[1:]:
                         await interaction.followup.send(part, ephemeral=True)
                 return
@@ -104,6 +112,9 @@ class PrivateResultView(discord.ui.View):
                         await interaction.response.send_message(
                             part or None, ephemeral=True, **options,
                         )
+                        if has_download:
+                            sent = await interaction.original_response()
+                            await add_spreadsheet_downloads(sent, links, self.attachments)
                     else:
                         await interaction.response.send_message(part, ephemeral=True)
                 else:

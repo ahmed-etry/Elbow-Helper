@@ -13,12 +13,13 @@ from elbow_helper.agent.discord_actions.direct_messages import (
 from elbow_helper.agent.discord_actions.messages import (
     prepare_edit, prepare_edit_undo, prepare_post,
 )
+from elbow_helper.agent.engine.models import AgentAttachment
 
 
 GIF = "https://tenor.com/view/synthetic-example"
 TEXT = "Big win this week! <@7>\n" + GIF
 DM_TEXT = "Big win this week! <@2>\n" + GIF
-IMAGE = SimpleNamespace(filename="synthetic-chart.png", data=b"synthetic image")
+IMAGE = AgentAttachment(filename="synthetic-chart.png", data=b"synthetic image")
 
 
 class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):

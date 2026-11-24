@@ -26,7 +26,8 @@ def _health_access(context: Any) -> bool:
 def _export_outcome(export: PreparedHealthExport) -> ActionOutcome:
     if export.google_link:
         return ActionOutcome(
-            "complete", text=f"{export.workbook_title}\n{export.google_link}",
+            "complete", text=export.workbook_title,
+            attachments=(AgentAttachment(export.workbook_name, b"", google_link=export.google_link),),
         )
     return ActionOutcome(
         "complete", text="\n".join(export.summary_lines),

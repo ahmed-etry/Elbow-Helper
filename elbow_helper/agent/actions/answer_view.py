@@ -10,7 +10,9 @@ import discord
 from elbow_helper.agent.safety.access import ACCESS_VIEW_AUDIT_LOG, AgentAccessLost, assert_answer_scope, require_evidence_access
 from elbow_helper.agent.safety.disclosure import log_scope_override
 from elbow_helper.agent.conversation.wording import ACTION_POST_HERE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER, ACTION_UNAVAILABLE, FAILURE_MESSAGE, AGENT_PRIVATE_CHECK_BUTTON
-from ..files.delivery import attachment_files
+from ..files.delivery import (
+    add_spreadsheet_downloads, attachment_files, has_spreadsheet_download, spreadsheet_links,
+)
 from ..discord_actions.message_parts import image_attachment
 from elbow_helper.agent.conversation.text import chunk_response
 from ..engine.tool_call import AgentUnavailableError
@@ -83,16 +85,22 @@ class PrivateAnswerView(PrivateResultView):
             files = attachment_files(attachments)
             post_view = (PostAnswerView(self) if self.post is not None
                          and ACCESS_VIEW_AUDIT_LOG not in private.state.required_access else None)
+            view = spreadsheet_links(post_view, attachments)
+            has_download = has_spreadsheet_download(attachments)
             try:
                 parts = () if any(image_attachment(item) for item in attachments) else chunk_response(answer)
                 for index, part in enumerate(parts or ("",)):
                     sent = await interaction.followup.send(
                         part or None, ephemeral=True, allowed_mentions=discord.AllowedMentions.none(),
                         **({"files": files} if index == 0 and files else {}),
-                        **({"view": post_view} if index == 0 and post_view is not None else {}),
+                        **({"view": view} if index == 0 and view is not None else {}),
+                        **({"wait": True} if index == 0 and has_download else {}),
                     )
-                    if index == 0 and post_view is not None:
-                        post_view.message = sent
+                    if index == 0:
+                        if has_download:
+                            sent = await add_spreadsheet_downloads(sent, view, attachments)
+                        if post_view is not None:
+                            post_view.message = sent
             finally:
                 for file in files:
                     file.close()
@@ -146,7 +154,8 @@ class PostAnswerView(discord.ui.View):
             log_scope_override(parent.context, private, parent.message.id)
             self.expired = True
             for item in self.children:
-                item.disabled = True
+                if item.url is None:
+                    item.disabled = True
             self.stop()
             try:
                 await interaction.edit_original_response(view=self)
@@ -156,7 +165,8 @@ class PostAnswerView(discord.ui.View):
     async def on_timeout(self):
         self.expired = True
         for item in self.children:
-            item.disabled = True
+            if item.url is None:
+                item.disabled = True
         if self.message is not None:
             try:
                 await self.message.edit(view=self)

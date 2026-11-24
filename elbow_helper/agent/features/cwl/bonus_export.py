@@ -27,10 +27,8 @@ async def run_cwl_bonus(context: Any, values: Mapping[str, Any]) -> ActionOutcom
     try:
         if report.google_link:
             return ActionOutcome(
-                "complete", text="\n".join((
-                    f"**CWL Bonus Estimate ({report.scope_label}, {report.season})**",
-                    report.google_link,
-                )),
+                "complete", text=f"**CWL Bonus Estimate ({report.scope_label}, {report.season})**",
+                attachments=(AgentAttachment(report.workbook_name, b"", google_link=report.google_link),),
             )
         data = await asyncio.to_thread(report.workbook_path.read_bytes)
         return ActionOutcome(

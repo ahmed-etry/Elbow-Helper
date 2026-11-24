@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 import io
-import re
-
 import discord
 
 from elbow_helper.agent.safety.access import require_evidence_access
+from elbow_helper.infrastructure.discord.file_buttons import add_file_buttons
 from .workbooks import publish_workbook_bytes
 
 
@@ -79,21 +78,29 @@ def spreadsheet_response(response, attachments):
 
 
 def spreadsheet_links(view, attachments):
-    published = [item for item in attachments if item.google_link]
-    if not published:
-        return view
-    view = view if view is not None else SpreadsheetLinksView()
-    for index, item in enumerate(published, 1):
-        match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", item.google_link)
-        label = "Google Sheet"
-        links = [(label, item.google_link)]
-        if match:
-            links.append(("Download", (
-                f"https://docs.google.com/spreadsheets/d/{match.group(1)}/export?format=xlsx"
-            )))
-        for label, url in links:
-            if not any(getattr(button, "url", None) == url for button in view.children):
-                view.add_item(discord.ui.Button(
-                    label=label, style=discord.ButtonStyle.link, url=url, row=index,
-                ))
+    for row, item in enumerate(item for item in attachments if item.google_link):
+        if view is None:
+            view = SpreadsheetLinksView()
+        add_file_buttons(view, google_link=item.google_link, row=row)
     return view
+
+
+def has_spreadsheet_download(attachments):
+    return any(not item.google_link and item.filename.lower().endswith(".xlsx")
+               for item in attachments)
+
+
+async def add_spreadsheet_downloads(message, view, attachments):
+    filenames = {item.filename for item in attachments
+                 if not item.google_link and item.filename.lower().endswith(".xlsx")}
+    if not filenames:
+        return message
+    added = False
+    for attachment in getattr(message, "attachments", ()):
+        if attachment.filename in filenames:
+            if view is None:
+                view = SpreadsheetLinksView()
+            added |= add_file_buttons(view, attachment_url=attachment.url)
+    if added:
+        return await message.edit(view=view)
+    return message

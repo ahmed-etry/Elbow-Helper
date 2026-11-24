@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 import re
 import unicodedata
 from typing import Any, Mapping, Sequence
 from elbow_helper.agent.conversation.wording import SPREADSHEET_FILENAME_STEM
+from elbow_helper.domain.player_tags import canonical_player_tag
 
 
 MAX_SPREADSHEET_SHEETS = 10
@@ -17,6 +19,51 @@ MAX_SPREADSHEET_ROWS_PER_SHEET = 100
 MAX_SPREADSHEET_CELLS = 8_000
 MAX_SPREADSHEET_CELL_CHARACTERS = 2_000
 MAX_SPREADSHEET_CHARACTERS = 100_000
+SOURCE_CELL_FORMATS = ("tag", "yes_no", "iso_date", "unix_seconds", "unix_microseconds")
+
+
+def valid_source_columns(columns: Any) -> bool:
+    return (
+        isinstance(columns, list)
+        and 1 <= len(columns) <= MAX_SPREADSHEET_COLUMNS
+        and all(
+            isinstance(column, dict)
+            and column.keys() <= {"field", "heading", "format"}
+            and valid_text(column.get("field"), maximum=100)
+            and valid_text(column.get("heading"))
+            and ("format" not in column or column["format"] in SOURCE_CELL_FORMATS)
+            for column in columns
+        )
+        and len({column["heading"].casefold() for column in columns}) == len(columns)
+    )
+
+
+def source_cell(value: Any, cell_format: str | None) -> Any:
+    if value is None or value == "":
+        return ""
+    try:
+        if cell_format == "tag":
+            return canonical_player_tag(value) or ""
+        if cell_format == "yes_no":
+            if value in (0, 1):
+                return "Yes" if value else "No"
+            raise ValueError("A spreadsheet row does not match its columns")
+        if cell_format in ("unix_seconds", "unix_microseconds"):
+            epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+            offset = (timedelta(seconds=value) if cell_format == "unix_seconds"
+                      else timedelta(microseconds=value))
+            return (epoch + offset).date().isoformat()
+        if cell_format == "iso_date" and not isinstance(value, date):
+            value = datetime.fromisoformat(value)
+        if isinstance(value, bool):
+            return "Yes" if value else "No"
+        if isinstance(value, datetime):
+            return value.date().isoformat()
+        if isinstance(value, date):
+            return value.isoformat()
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError("A spreadsheet row does not match its columns") from error
+    return value
 
 
 @dataclass(frozen=True, slots=True)

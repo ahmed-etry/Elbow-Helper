@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping, Sequence
 
-from .spreadsheets import AgentSpreadsheetSheet, valid_text
+from .spreadsheets import AgentSpreadsheetSheet, source_cell, valid_text
 
 
 REPORT_PAGE_SIZE = 25
@@ -24,6 +24,7 @@ def materialize_report_table(
         raise ValueError("That report cannot be exported as a table")
     fields = tuple(column["field"] for column in columns)
     headings = tuple(column["heading"] for column in columns)
+    formats = tuple(column.get("format") for column in columns)
     if len(set(fields)) != len(fields):
         raise ValueError("A report column was selected more than once")
 
@@ -56,7 +57,8 @@ def materialize_report_table(
             ):
                 raise ValueError("A selected imported-file column is invalid")
             selected_rows = (
-                tuple(_cell(row[int(field)]) for field in fields)
+                tuple(_cell(row[int(field)], cell_format)
+                      for field, cell_format in zip(fields, formats))
                 for row in batch
             )
         else:
@@ -65,7 +67,7 @@ def materialize_report_table(
             if any(any(field not in row for field in fields) for row in batch):
                 raise ValueError("A selected column is absent from the report table")
             selected_rows = (
-                tuple(_cell(row[field]) for field in fields)
+                tuple(_cell(row[field], cell_format) for field, cell_format in zip(fields, formats))
                 for row in batch
             )
         if len(rows) + len(batch) > MAX_REPORT_TABLE_ROWS:
@@ -83,9 +85,8 @@ def materialize_report_table(
     return AgentSpreadsheetSheet(name, headings, tuple(rows))
 
 
-def _cell(value: Any) -> str:
-    if value is None:
-        return ""
+def _cell(value: Any, cell_format: str | None) -> str:
+    value = source_cell(value, cell_format)
     if isinstance(value, (dict, list, tuple)):
         rendered = json.dumps(value, ensure_ascii=False, default=str)
     else:

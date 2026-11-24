@@ -22,6 +22,7 @@ from ..actions.contracts import (
 )
 from ..actions.outcomes import ActionOutcome
 from elbow_helper.agent.engine.models import AgentAttachment, AgentRequestContext
+from ..files.delivery import spreadsheet_links
 from elbow_helper.agent.conversation.wording import ACTION_ATTACH_LINE, ACTION_DELETE_LABEL, ACTION_DELETE_LINE, ACTION_EDIT_LABEL, ACTION_EDIT_LINE, ACTION_PINGS_LINE, ACTION_POST_FUTURE_LINE, ACTION_POST_LABEL, ACTION_POST_LINE, ACTION_UNDO_CHANGED, ACTION_PREVIEW_BLANK, ACTION_REPLY_NO_PING, ACTION_REPLY_WITH_PING
 from .safety import (DiscordActionRefused, check_ping_access, check_post_access,
                              check_view_access, resolve_channel)
@@ -361,8 +362,12 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
                 message_id=reply.id, channel_id=channel_id, guild_id=context.guild.id,
                 fail_if_not_exists=True,
             )
-        file = (discord.File(io.BytesIO(attachment.data), filename=attachment.filename)
-                if attachment is not None else None)
+        file = None
+        if attachment is not None:
+            if attachment.google_link:
+                options["view"] = spreadsheet_links(None, (attachment,))
+            else:
+                file = discord.File(io.BytesIO(attachment.data), filename=attachment.filename)
         try:
             if file is not None:
                 options["file"] = file

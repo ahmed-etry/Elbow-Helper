@@ -15,8 +15,8 @@ from .workbooks import render_workbook_bytes
 from .report_tables import materialize_report_table
 from elbow_helper.agent.engine.models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from .spreadsheets import (
-    AgentSpreadsheet, AgentSpreadsheetSheet, valid_sheet_name, valid_text,
-    parse_agent_spreadsheet,
+    AgentSpreadsheet, AgentSpreadsheetSheet, SOURCE_CELL_FORMATS, parse_agent_spreadsheet,
+    source_cell, valid_sheet_name, valid_source_columns, valid_text,
 )
 
 
@@ -35,6 +35,7 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
                 "type": "string", "minLength": 1, "maxLength": 100, "x-field-path": True,
             },
             "heading": heading,
+            "format": {"type": "string", "enum": list(SOURCE_CELL_FORMATS)},
         },
         "required": ["field", "heading"],
     }
@@ -60,7 +61,8 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
         sheet({
             "sql": {"type": "string", "minLength": 1, "maxLength": 4000},
             "params": {"type": "object", "additionalProperties": True},
-        }, ["sql"]),
+            "columns": {**columns, "items": source_column},
+        }, ["sql", "columns"]),
         sheet({
             "report_id": {"type": "string", "minLength": 1, "maxLength": 32},
             "collection": {"type": "string", "minLength": 1, "maxLength": 100},
@@ -96,7 +98,10 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
             },
             usage_note=(
                 "Each replaces the last. Queries/result references write exact data; literal rows "
-                "only for proposals or summaries. Never paste or invent spreadsheet links."
+                "only for proposals or summaries. Never paste or invent spreadsheet links.\n"
+                "For sourced sheets, pair each source field (SQL result alias for queries) with a "
+                "heading readers will recognize.\n"
+                "Set format for raw tags, 0/1 flags and timestamps to show #tags, Yes/No and dates."
             ),
         ),
         prepare_spreadsheet,
@@ -138,19 +143,24 @@ async def prepare_spreadsheet(
                     raise ValueError("Choose exactly one kind per sheet.")
                 sheets.append(await _report_sheet(context, specification))
             elif "sql" in specification:
-                if set(specification) - {"name", "sql", "params"}:
+                if set(specification) - {"name", "sql", "params", "columns"}:
                     raise ValueError("Choose exactly one kind per sheet.")
+                columns = specification.get("columns")
+                if not valid_source_columns(columns):
+                    raise ValueError("A spreadsheet table is invalid")
                 result = await query_context(
                     context, specification["sql"], specification.get("params"), max_rows=None,
                 )
                 if "error" in result:
                     return result
-                columns = tuple(result["rows"][0]) if result["rows"] else tuple(result["columns"])
-                rows = tuple(
-                    tuple("" if row[column] is None else str(row[column]) for column in columns)
-                    for row in result["rows"]
-                )
-                sheets.append(AgentSpreadsheetSheet(specification["name"], columns, rows))
+                fields = result["rows"][0] if result["rows"] else result["columns"]
+                if any(column["field"] not in fields for column in columns):
+                    raise ValueError("A spreadsheet row does not match its columns")
+                sheets.append(AgentSpreadsheetSheet(
+                    specification["name"], tuple(column["heading"] for column in columns),
+                    tuple(tuple(str(source_cell(row[column["field"]], column.get("format")))
+                                for column in columns) for row in result["rows"]),
+                ))
             else:
                 sheets.extend(parse_agent_spreadsheet({
                     "title": arguments["title"], "sheets": [specification],
@@ -194,16 +204,7 @@ async def _report_sheet(context, specification) -> AgentSpreadsheetSheet:
         or not isinstance(report_id, str)
         or not isinstance(collection, str)
         or source_sheet is not None and not valid_sheet_name(source_sheet)
-        or not isinstance(columns, list)
-        or not 1 <= len(columns) <= 20
-        or any(
-            not isinstance(column, dict)
-            or not valid_text(column.get("field"), maximum=100)
-            or not valid_text(column.get("heading"))
-            for column in columns
-        )
-        or len({column["heading"].casefold() for column in columns})
-        != len(columns)
+        or not valid_source_columns(columns)
     ):
         raise ValueError("A report sheet is invalid")
     report = context.state.reports.get(report_id)
@@ -228,30 +229,20 @@ def _result_sheet(specification) -> AgentSpreadsheetSheet:
     if not isinstance(records, list) or any(not isinstance(row, dict) for row in records):
         raise ValueError("rows_from must be a list of objects.")
     columns = specification["columns"]
-    if (
-        not isinstance(columns, list) or not 1 <= len(columns) <= 20
-        or any(
-            not isinstance(column, dict) or set(column) != {"field", "heading"}
-            or not valid_text(column.get("field"), maximum=100)
-            or not valid_text(column.get("heading"))
-            for column in columns
-        )
-        or len({column["heading"].casefold() for column in columns}) != len(columns)
-    ):
+    if not valid_source_columns(columns):
         raise ValueError("A result sheet's columns are invalid.")
 
-    def value(record, field):
-        for part in field.split("."):
+    def value(record, column):
+        for part in column["field"].split("."):
             if not isinstance(record, dict):
                 return ""
             record = record.get(part)
-        if record is None:
-            return ""
-        return record if type(record) in (int, float) else str(record)
+        cell = source_cell(record, column.get("format"))
+        return cell if type(cell) in (int, float) else str(cell)
 
     return AgentSpreadsheetSheet(
         specification["name"], tuple(column["heading"] for column in columns),
-        tuple(tuple(value(record, column["field"]) for column in columns) for record in records),
+        tuple(tuple(value(record, column) for column in columns) for record in records),
     )
 
 
