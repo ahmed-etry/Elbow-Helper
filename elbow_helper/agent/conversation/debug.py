@@ -18,6 +18,8 @@ class OperatorDebugRecord:
     route: str | None = None
     error: str | None = None
     terminal_cause: str | None = None
+    usage_started_at: str | None = None
+    usage_exempt: bool = False
 
     def submitted(self, calls):
         for call in calls:

@@ -67,6 +67,18 @@ class TranscriptArchive(ReplyReportArchiveMixin):
             root_message_id=context.conversation_root_id, member_id=context.member.id,
         )
 
+    async def write_member_usage(self, context, record) -> None:
+        """Commit spend before the member's next request can check the allowance."""
+        private = context.private_pass
+        async with self._write_lock:
+            await archive_write(
+                self.record_debug, record=record,
+                request_message_id=None if private else getattr(context.source_message, "id", None),
+                guild_id=context.guild.id, channel_id=context.source_message.channel.id,
+                root_message_id=None if private else context.conversation_root_id,
+                member_id=context.member.id, usage_only=private,
+            )
+
     def enqueue_debug_prune(self) -> None:
         self.enqueue_write(self.prune_debug)
 
@@ -94,9 +106,11 @@ class TranscriptArchive(ReplyReportArchiveMixin):
             return await archive_write(self.record_reply_report, **values)
 
     def record_debug(self, *, record, request_message_id, guild_id, channel_id,
-                     root_message_id, member_id) -> None:
+                     root_message_id, member_id, usage_only=False) -> None:
         now = datetime.now(timezone.utc)
-        encoded = json.dumps(asdict(record), ensure_ascii=False, default=str)
+        values = ({"usage": record.usage, "usage_started_at": record.usage_started_at}
+                  if usage_only else asdict(record))
+        encoded = json.dumps(values, ensure_ascii=False, default=str)
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
             connection.execute("""INSERT INTO operator_debug_records (
                 request_message_id, guild_id, channel_id, root_message_id,
@@ -106,6 +120,22 @@ class TranscriptArchive(ReplyReportArchiveMixin):
             if request_message_id is not None:
                 store_diagnostics(connection, request_message_id, json.loads(encoded))
             self._prune_debug(connection, now)
+
+    def member_usage(self, guild_id, member_id, since, until):
+        with self.connect() as connection:
+            rows = connection.execute("""WITH usage AS (
+                SELECT COALESCE(json_extract(d.record_json, '$.usage_started_at'),
+                                q.created_at, d.created_at) AS ran_at,
+                       json_extract(d.record_json, '$.usage') AS tokens
+                FROM operator_debug_records d
+                LEFT JOIN requests q ON q.message_id = d.request_message_id
+                WHERE d.guild_id = ? AND d.member_id = ? AND d.created_at > ?
+                  AND COALESCE(json_extract(d.record_json, '$.usage_exempt'), 0) = 0
+            )
+            SELECT ran_at, tokens FROM usage
+            WHERE tokens IS NOT NULL AND ran_at > ? AND ran_at <= ? ORDER BY ran_at
+            """, (guild_id, member_id, since.isoformat(), since.isoformat(), until.isoformat())).fetchall()
+        return [(at, json.loads(usage)) for at, usage in rows]
 
     @staticmethod
     def _prune_debug(connection, now):

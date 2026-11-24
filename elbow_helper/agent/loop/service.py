@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import asdict, replace
+from datetime import datetime, timezone
 from hashlib import sha256
 import json
 import logging
@@ -231,23 +233,24 @@ def _note_index(sections):
 class LoopService:
     """Answers one request in one model conversation. Nothing per request is kept on the service."""
 
-    def __init__(self, model, stored_data, notes="core"):
+    def __init__(self, model, stored_data, notes="core", *, transcript_archive=None):
         self.model = model
         self.stored_data = stored_data
         self.notes = notes
+        self.transcript_archive = transcript_archive
         catalogue = build_agent_tools()
         self.registry = read_registry(catalogue)
         self.registry["query_bot_data"] = replace(self.registry["query_bot_data"], handler=stored_data.handler)
         self.changes = change_registry(catalogue)
         self.outputs = output_registry(catalogue, {*self.registry, *self.changes})
-        # Command tools may not take the name of any other tool.
-        self.reserved_names = {*catalogue, SOCIAL_REPLY_NAME}
-        # The latest request's record, for diagnostics; concurrent requests overwrite it.
         # A private pass keeps reads and artifact tools only. They start either tool list.
         self.private_registry = {
             name: tool for name, tool in sorted({**self.registry, **self.outputs}.items())
             if tool.action_class is ActionClass.READ or tool.effect is AgentCapabilityEffect.ARTIFACT
         }
+        # Command tools may not take the name of any other tool.
+        self.reserved_names = {*catalogue, SOCIAL_REPLY_NAME}
+        # The latest request's record, for diagnostics; concurrent requests overwrite it.
         self.last_run = None
         self.member_usage = MemberUsageLimiter()
 
@@ -303,13 +306,22 @@ class LoopService:
             async def run_private():
                 return await private_answer_pass(self, context, question, standing_scope)
             state.private_answer_run = run_private
-        record = OperatorDebugRecord(question)
+        exempt = leadership_asker(context)
+        archive = self.transcript_archive
+        lock = self.member_usage.lock(context.guild.id, context.member.id) if archive and not exempt else nullcontext()
+        async with lock:
+            return await self._answer(question, context, standing_scope, exempt=exempt)
+
+    async def _answer(self, question, context, standing_scope, *, exempt):
+        state = context.state
+        archive = self.transcript_archive
+        charge_member = archive is not None and not exempt
+        record = OperatorDebugRecord(question, usage_exempt=exempt)
         context = replace(context, operator_debug=record)
         run = self.last_run = LoopRun(self)
-        admitted = None
         try:
-            if not leadership_asker(context):
-                admitted = self.member_usage.admit(context.guild.id, context.member.id)
+            if charge_member:
+                await self.member_usage.check(archive, context.guild.id, context.member.id, datetime.now(timezone.utc))
             answer = await run.answer(question, context, standing_scope)
             record.status = "incomplete" if record.error else "completed"
             record.answer = answer
@@ -334,10 +346,6 @@ class LoopService:
                 record.status = "failed"
             raise
         finally:
-            if admitted is not None:
-                # Banter is a request that ended with the banter reply; anything else counts as a question.
-                self.member_usage.settle(context.guild.id, context.member.id, admitted,
-                                         banter=run.banter.reply is not None)
             record.usage = run.usage_summary()
             LOGGER.info("Agent usage: request=%s status=%s invoker=%s rounds=%s tools=%s "
                         "prompt_tokens=%s completion_tokens=%s cache_hit_tokens=%s cache_miss_tokens=%s "
@@ -347,11 +355,13 @@ class LoopService:
                         record.usage["cache_miss_tokens"], record.usage["unknown_token_rounds"])
             record.terminal_cause = state.terminal_cause
             log_scope(context)
-            if context.transcript_archive is not None:
-                try:
+            try:
+                if charge_member and record.usage["reported_rounds"]:
+                    await archive.write_member_usage(context, record)
+                elif context.transcript_archive is not None:
                     context.transcript_archive.enqueue_debug(context, record)
-                except Exception:
-                    LOGGER.exception("Agent operator debug archive enqueue failed")
+            except Exception:
+                LOGGER.exception("Agent operator debug archive write failed")
 
 
 class LoopRun:
@@ -401,6 +411,8 @@ class LoopRun:
     async def _advance(self, session, context, results, continuation_instruction=None):
         """One model round. A provider failure is the request failing, not an answer."""
         record = context.operator_debug
+        if not self.usage.attempted_rounds:
+            record.usage_started_at = datetime.now(timezone.utc).isoformat()
         self.usage.attempted_rounds += 1
         started = time.monotonic()
         step = None

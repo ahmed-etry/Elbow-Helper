@@ -111,7 +111,7 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
         self.transcript_archive = transcript_archive
         self.persistence = persistence
         self._cleanup_task: asyncio.Task | None = None
-        self.service = LoopService(bot.agent_model, stored_data)
+        self.service = LoopService(bot.agent_model, stored_data, transcript_archive=transcript_archive)
         self._conversations = ConversationStore()
         self.read_cache = ReadCache()
         if self.research_runner is not None:
