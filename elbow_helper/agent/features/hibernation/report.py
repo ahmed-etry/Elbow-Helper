@@ -9,7 +9,7 @@ from typing import Any
 
 from elbow_helper.agent.reports.values import aware_timestamp, channel_snapshot_payload
 
-from elbow_helper.configuration.channels import HIBERNATION_LOG
+from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.features.hibernation.queries import ActiveHibernationRecord, ActiveHibernationSnapshot
 
 
@@ -25,7 +25,7 @@ class HibernationReport:
         if (
             not isinstance(self.report_id, str) or not self.report_id
             or len(self.report_id) > 32 or type(self.guild_id) is not int
-            or self.guild_id <= 0 or self.source_channel_id != HIBERNATION_LOG
+            or self.guild_id <= 0 or self.source_channel_id != OVERSEEING_TERRACE
         ):
             raise ValueError("Invalid hibernation report identity")
         _timestamp(self.snapshot.observed_at)

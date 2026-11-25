@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from elbow_helper.data.events import now_us
 from elbow_helper.infrastructure.discord.interactions import deny
-from elbow_helper.configuration.channels import HIBERNATION_FALLBACK, HIBERNATION_LOG
+from elbow_helper.configuration.channels import HIBERNATION_FALLBACK
 
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import (
@@ -53,7 +53,6 @@ class HibernationCommandMixin:
                                 if get_role(role_id) is not None),
                 "missing_role_ids": tuple(role_id for role_id in progress["to_add"]
                                           if get_role(role_id) is None),
-                "log_channel_id": HIBERNATION_LOG,
                 "fallback_channel_id": HIBERNATION_FALLBACK,
             }
         stored_role_ids = [
@@ -92,7 +91,6 @@ class HibernationCommandMixin:
             "to_add": tuple(role for role in to_add if role is not None),
             "missing_role_ids": tuple(role_id for role_id in required_ids
                                       if get_role(role_id) is None),
-            "log_channel_id": HIBERNATION_LOG,
             "fallback_channel_id": HIBERNATION_FALLBACK,
         }
 

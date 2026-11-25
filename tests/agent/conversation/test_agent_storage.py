@@ -12,7 +12,7 @@ from tests.agent.reports.report_helpers import make_event_report
 from elbow_helper.agent.features.event_stats.report import EventScheduleReport
 from elbow_helper.agent.features.member_lifecycle.report import MemberLifecycleReport
 from elbow_helper.agent.features.hibernation.report import HibernationReport
-from elbow_helper.configuration.channels import HIBERNATION_LOG
+from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.features.hibernation.queries import (
     ActiveHibernationRecord, ActiveHibernationSnapshot,
 )
@@ -414,7 +414,7 @@ class ConversationCodecTests(unittest.TestCase):
         original.reports.clear()
         started = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
         report = HibernationReport(
-            "hibernation", 1, HIBERNATION_LOG,
+            "hibernation", 1, OVERSEEING_TERRACE,
             ActiveHibernationSnapshot(
                 "2026-09-17T12:00:00+00:00", 1, 0, 2, 0,
                 (ActiveHibernationRecord(

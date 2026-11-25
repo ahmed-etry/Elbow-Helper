@@ -420,7 +420,6 @@ def source_access_levels(channel, guild, *, examination_queries=None):
         channel_ids.EXAMINATION_ROOM: "promotion",
         channel_ids.EXAMINATION_PANEL_THREAD: "promotion",
         channel_ids.LEAD_NEWS: "lead_plus_or_core", channel_ids.OVERSEEING_TERRACE: "lead_plus_or_core",
-        channel_ids.HIBERNATION_LOG: "lead_plus_or_core",
         **dict.fromkeys(channel_ids.CLAN_LEADERSHIP_CHANNELS.values(), "lead_plus_or_core"),
     }
     if original_id in classified or identifier in classified:

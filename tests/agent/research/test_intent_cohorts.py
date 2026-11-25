@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.configuration.channels import HIBERNATION_LOG
+from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.agent.features.hibernation.reads import read_active_hibernation
 from elbow_helper.agent.conversation.member_names import member_label
 from elbow_helper.agent.engine.models import AgentTurnState
@@ -60,7 +60,7 @@ class IntentCohortTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["cohort"]["unknown_join_member_ids"], [98])
         self.assertEqual(first["cohort"]["record_count"], 15)
         self.assertEqual(first["total_members"], 14)
-        self.assertIn(HIBERNATION_LOG, self.context.state.source_channels)
+        self.assertIn(OVERSEEING_TERRACE, self.context.state.source_channels)
         self.members.reverse()
         second = await read_discord_members(self.context, args)
         self.assertEqual(first, second)

@@ -5,7 +5,7 @@ from functools import partial
 import sqlite3
 
 from elbow_helper.agent.reads.sql.sources import DataSource
-from elbow_helper.configuration.channels import HIBERNATION_LOG, OVERSEEING_TERRACE
+from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.configuration.files import FAMILY_DATABASE
 
 CLOSED = 'feature_access_only'
@@ -133,7 +133,7 @@ def workflow_snapshot(paths, path, readable, *, channel_ids=frozenset(), read_ch
             for raw in connection.execute('SELECT * FROM workflow_events WHERE workflow=? ORDER BY id', (workflow,)):
                 row = list(raw)
                 if workflow == 'hibernation':
-                    row[channel_index] = HIBERNATION_LOG
+                    row[channel_index] = OVERSEEING_TERRACE
                 channel = row[channel_index]
                 if (channel not in channel_ids or
                         (workflow == 'lifecycle' and OVERSEEING_TERRACE not in channel_ids)):

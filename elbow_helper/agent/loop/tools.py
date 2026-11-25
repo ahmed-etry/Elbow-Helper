@@ -13,8 +13,8 @@ from elbow_helper.agent.reports.tools import READ_NAME, original_tool
 from .names import codes_line
 from .wording import FINISH_REPLY_WITH_TEXT, SQL_GUIDE
 
-HIBERNATION_SOURCE = ("Its source is leadership's hibernation log, so it works only where the asker "
-                      "and everyone in this room can read that log.")
+HIBERNATION_SOURCE = ("Its source is leadership's overseeing terrace, so it works only where the asker "
+                      "and everyone in this room can read that channel.")
 # Usage facts written once for this reader; other lookups send their usage note as is.
 NOTES = {
     "read_clash": (

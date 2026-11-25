@@ -5,7 +5,7 @@ from tests.temp_directory import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 
-from elbow_helper.configuration.channels import HIBERNATION_LOG
+from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.agent.reads.workflow_reads import TOOLS
 from elbow_helper.features.hibernation.queries import HibernationQueries
 from tests.agent.request_fixtures import flow_context as _context
@@ -31,8 +31,8 @@ class HibernationWarTimingTests(unittest.IsolatedAsyncioTestCase):
             for role in context.member.roles:
                 role.name = 'Access'
                 role.is_default = lambda: False
-            log = SimpleNamespace(**{**vars(context.source_message.channel), 'id': HIBERNATION_LOG})
-            context.guild.get_channel_or_thread = lambda identifier: log if identifier == HIBERNATION_LOG else context.source_message.channel
+            log = SimpleNamespace(**{**vars(context.source_message.channel), 'id': OVERSEEING_TERRACE})
+            context.guild.get_channel_or_thread = lambda identifier: log if identifier == OVERSEEING_TERRACE else context.source_message.channel
             context = with_record(replace(context, cwl_queries=record.queries(),
                 hibernation_queries=HibernationQueries(lambda: {'41': {'hibernation_date': '<t:1000:F>'}}),
                 account_links=SimpleNamespace(get_links_for_members=lambda ids: {
@@ -54,7 +54,7 @@ class HibernationWarTimingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(within['observed_' + kind + '_attacks_since_start'], 1)
             self.assertEqual(overlap['latest_observed_regular_war_end_at'],
                              datetime.fromtimestamp(1300, timezone.utc).isoformat())
-            self.assertIn(HIBERNATION_LOG, context.state.source_channels)
+            self.assertIn(OVERSEEING_TERRACE, context.state.source_channels)
 
     async def test_a_war_without_a_start_time_that_ended_months_after_the_start_counts_as_since_the_start(self):
         # War-log wars have only an end time. One that ended 90 days into the hibernation was fought in it;
@@ -66,8 +66,8 @@ class HibernationWarTimingTests(unittest.IsolatedAsyncioTestCase):
         for role in context.member.roles:
             role.name = 'Access'
             role.is_default = lambda: False
-        log = SimpleNamespace(**{**vars(context.source_message.channel), 'id': HIBERNATION_LOG})
-        context.guild.get_channel_or_thread = lambda identifier: log if identifier == HIBERNATION_LOG else context.source_message.channel
+        log = SimpleNamespace(**{**vars(context.source_message.channel), 'id': OVERSEEING_TERRACE})
+        context.guild.get_channel_or_thread = lambda identifier: log if identifier == OVERSEEING_TERRACE else context.source_message.channel
         with TemporaryDirectory() as directory:
             record = await LeagueRecord(directory).initialize()
             context = with_record(replace(context, cwl_queries=record.queries(),

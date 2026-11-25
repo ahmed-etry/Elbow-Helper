@@ -8,11 +8,13 @@ from datetime import datetime, timezone
 import chat_exporter
 import discord
 from elbow_helper.infrastructure.discord.transcript_participants import transcript_participants
+from elbow_helper.infrastructure.discord.application_emojis import get_application_emoji_provider
 from elbow_helper.infrastructure.discord.embeds import build_reopened_ticket_embed, build_status_embed
 from elbow_helper.infrastructure.discord.thread_discovery import fetch_thread
 from elbow_helper.infrastructure.discord.views import TranscriptLinkPromptView
 
-from elbow_helper.configuration.channels import HIBERNATION_FALLBACK, HIBERNATION_LOG, RECRUITMENT_TICKET_CATEGORY, TICKETS_LOG
+from elbow_helper.configuration.clans import CLAN_CWL_HELPER_ROLE_IDS, CLAN_MEMBER_ROLE_IDS
+from elbow_helper.configuration.channels import HIBERNATION_FALLBACK, OVERSEEING_TERRACE, RECRUITMENT_TICKET_CATEGORY, TICKETS_LOG
 from elbow_helper.configuration.roles import CORE, LEAD, RECRUITERS
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX, DEFAULT_THUMBNAIL_URL
 
@@ -117,9 +119,9 @@ class HibernationTicketMixin:
         user: discord.Member,
         reason: str,
     ) -> None:
-        log_channel = guild.get_channel(HIBERNATION_LOG)
+        log_channel = guild.get_channel(OVERSEEING_TERRACE)
         if not isinstance(log_channel, discord.TextChannel):
-            LOGGER.warning("Hibernation log channel %s not found for fallback failure", HIBERNATION_LOG)
+            LOGGER.warning("Overseeing terrace %s not found for fallback failure", OVERSEEING_TERRACE)
             return
 
         embed = discord.Embed(
@@ -397,37 +399,75 @@ class HibernationTicketMixin:
     ) -> None:
         if guild is None:
             raise RuntimeError("Hibernation guild is unavailable")
-        log_channel = guild.get_channel(HIBERNATION_LOG)
+        log_channel = guild.get_channel(OVERSEEING_TERRACE)
         if log_channel is None:
-            LOGGER.warning("Hibernation log channel %s not found", HIBERNATION_LOG)
-            raise RuntimeError("Hibernation log channel is unavailable")
+            LOGGER.warning("Overseeing terrace %s not found", OVERSEEING_TERRACE)
+            raise RuntimeError("Overseeing terrace is unavailable")
 
-        snapshot_clans = [
-            HIBERNATION_CLAN_NAMES[role_id]
-            for role_id in stored_role_ids
-            if role_id in HIBERNATION_CLAN_NAMES
-        ]
-        snapshot_rank_names = [
-            role.name
-            for role_id in snapshot_role_ids
-            if (role := guild.get_role(role_id)) is not None
-        ]
+        def lines(entries: list[str], per_line: int) -> str:
+            rows = (" ".join(entries[i:i + per_line])
+                    for i in range(0, len(entries), per_line))
+            return "\n".join(rows) or "*None*"
 
+        def mentions(role_ids: list[int]) -> list[str]:
+            return [f"<@&{role_id}>" for role_id in role_ids
+                    if guild.get_role(role_id) is not None]
+
+        def section(label: str, entries: list[str], per_line: int) -> str:
+            return f"{label if len(entries) > 1 else label[:-1]}\n{lines(entries, per_line)}"
+
+        clan_role_ids = [role_id for role_id in stored_role_ids
+                         if role_id in HIBERNATION_CLAN_NAMES
+                         and role_id != CLAN_MEMBER_ROLE_IDS["BEW"]]
+        townhall_roles = [
+            role for role in sorted(guild.roles, reverse=True)
+            if role.id in stored_role_ids and role.name.startswith("TH")
+        ]
+        rank_role_ids = [role_id for role_id in stored_role_ids if role_id in LEAD]
+        rank_role_ids += [role_id for role_id in snapshot_role_ids
+                          if role_id not in CLAN_CWL_HELPER_ROLE_IDS.values()]
+
+        catalog = await get_application_emoji_provider(self.bot).get(
+            required_names=[role.name for role in townhall_roles],
+        )
+        townhalls = []
+        for role in townhall_roles:
+            emoji = catalog.get(role.name)
+            townhalls.append(f"{emoji} {role.name}" if emoji else role.name)
+
+        clans = mentions(clan_role_ids)
+        ranks = mentions(rank_role_ids)
         embed = discord.Embed(
-            title="Member Moved to Hibernation",
+            title="Moved to Hibernation",
             color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-            timestamp=datetime.now(timezone.utc),
+        )
+        embed.set_author(
+            name=user.nick or user.display_name,
+            icon_url=user.display_avatar.replace(size=64).url,
         )
         embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-        member_name = user.nick or user.name
-        actor_name = getattr(actor, "nick", None) or actor.name
-        embed.add_field(name="Member", value=f"{user.mention} ({member_name})", inline=False)
-        embed.add_field(name="Moved By", value=f"{actor.mention} ({actor_name})", inline=True)
-        embed.add_field(name="Date Moved", value=f"<t:{unix_ts}:F>", inline=True)
-        embed.add_field(name="Roles Saved", value=str(len(stored_role_ids)), inline=True)
-        embed.add_field(name="Previous Clan", value=", ".join(snapshot_clans) if snapshot_clans else "*None*", inline=False)
-        embed.add_field(name="Previous Ranks", value=", ".join(snapshot_rank_names) if snapshot_rank_names else "*None*", inline=False)
-        embed.set_footer(text="Hibernation")
+        embed.add_field(name="Member", value=user.mention, inline=False)
+        embed.add_field(
+            name="Moved By",
+            value=getattr(actor, "nick", None) or actor.display_name,
+            inline=False,
+        )
+        embed.add_field(name="Date Moved", value=f"🗓️ <t:{unix_ts}:R>", inline=False)
+        if user.joined_at is not None:
+            embed.add_field(
+                name="Joined Server",
+                value=f"🚪 <t:{int(user.joined_at.timestamp())}:R>",
+                inline=False,
+            )
+        embed.add_field(
+            name="Membership History",
+            value="\n\n".join((
+                section("Clans", clans, 3),
+                section("Town Halls", townhalls, 3),
+                section("Ranks", ranks, 3),
+            )),
+            inline=False,
+        )
         await log_channel.send(embed=embed)
 
     async def _send_hibernation_notice(self, user: discord.Member) -> None:

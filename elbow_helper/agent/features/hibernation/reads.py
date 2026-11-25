@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 from uuid import uuid4
 
-from elbow_helper.configuration.channels import HIBERNATION_LOG
+from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
@@ -56,17 +56,17 @@ async def read_active_hibernation(
     await require_evidence_access(context)
     if context.hibernation_queries is None:
         return {"error": "Hibernation status evidence is not available."}
-    if await accessible_message_channel(context, HIBERNATION_LOG) is None:
+    if await accessible_message_channel(context, OVERSEEING_TERRACE) is None:
         return {"error": "Hibernation status evidence is not accessible from this conversation.", "cause": "access_denied"}
     try:
         snapshot = context.hibernation_queries.active_snapshot()
     except ValueError:
         return {"error": "Stored hibernation status could not be read."}
-    context.state.source_channels.add(HIBERNATION_LOG)
+    context.state.source_channels.add(OVERSEEING_TERRACE)
     await require_evidence_access(context)
     try:
         report = HibernationReport(
-            uuid4().hex, context.guild.id, HIBERNATION_LOG, snapshot,
+            uuid4().hex, context.guild.id, OVERSEEING_TERRACE, snapshot,
         )
     except ValueError:
         return {"error": "Stored hibernation status could not be read."}

@@ -100,6 +100,6 @@ class RoleCategoryScopeTests(unittest.IsolatedAsyncioTestCase):
         support = self.channel(501, channels.SUPPORT_TICKET_CATEGORY, grants=[77], member_grant=10)
         self.assertIsNone(source_access_levels(support, self.guild))
         self.assertIsNone(await accessible_message_channel(self.context, support.id))
-        for identifier in (502, channels.HIBERNATION_LOG):
+        for identifier in (502, channels.OVERSEEING_TERRACE):
             restricted = self.channel(identifier, 900, grants=[self.recruiter], deny=11)
             self.assertIsNone(source_access_levels(restricted, self.guild))

@@ -131,7 +131,7 @@ class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
             "issue": None, "user": member, "stored_role_ids": [20],
             "snapshot_role_ids": [], "unix_ts": 100,
             "to_remove": (role,), "to_add": (),
-            "missing_role_ids": (), "log_channel_id": 9,
+            "missing_role_ids": (),
             "fallback_channel_id": 10,
         }
         state = None

@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
-from elbow_helper.configuration.channels import HIBERNATION_LOG
-from elbow_helper.configuration.roles import CORE, LEAD
+from elbow_helper.configuration.channels import OVERSEEING_TERRACE
+from elbow_helper.configuration.roles import CORE, LEAD, MEMBER_ROLE_ID
 from elbow_helper.agent.safety.access import AgentAccessLost
 from elbow_helper.agent.features.hibernation.report import HibernationReport
 from elbow_helper.agent.engine.models import AgentRequestContext
@@ -42,9 +42,9 @@ class _Channel:
 class AgentHibernationToolTests(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
-        member = SimpleNamespace(id=42, roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=next(iter(LEAD)))])
+        member = SimpleNamespace(id=42, roles=[SimpleNamespace(id=MEMBER_ROLE_ID), SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=next(iter(LEAD)))])
         self.source = _Channel(100)
-        self.log = _Channel(HIBERNATION_LOG)
+        self.log = _Channel(OVERSEEING_TERRACE)
         channels = {self.source.id: self.source, self.log.id: self.log}
         guild = SimpleNamespace(
             id=1, me=member, get_member=lambda _: member,
@@ -70,7 +70,7 @@ class AgentHibernationToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["records"][0]["member_id"], 42)
         self.assertIn("newest recorded start first", result["record_order"])
         self.assertIn("without a start time last", result["record_order"])
-        self.assertEqual(self.context.state.source_channels, {HIBERNATION_LOG})
+        self.assertEqual(self.context.state.source_channels, {OVERSEEING_TERRACE})
         self.assertNotIn("roles", str(result["records"]))
         self.assertNotIn("ticket", str(result["records"]))
         report = self.context.state.reports[result["report_id"]]
