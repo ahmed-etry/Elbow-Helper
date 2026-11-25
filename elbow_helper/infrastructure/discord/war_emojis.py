@@ -9,12 +9,12 @@ from typing import Mapping
 
 import discord
 
+from elbow_helper.domain.town_halls import TOWN_HALL_LEVELS
 from elbow_helper.infrastructure.discord.application_emojis import ApplicationEmojiCatalog
 from elbow_helper.infrastructure.discord.application_emojis import get_application_emoji_provider
 
 
 LOGGER = logging.getLogger(__name__)
-TOWN_HALL_LEVELS = tuple(range(1, 19))
 WAR_NUMBER_RANGE = tuple(range(0, 51))
 WAR_EMOJI_NAMES = {
     "yellow_star": "war_yellow_star",

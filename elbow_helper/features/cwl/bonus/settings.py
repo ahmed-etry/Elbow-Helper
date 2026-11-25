@@ -48,7 +48,7 @@ def _load_clan_snapshot(cog: Any, clan_code: str) -> tuple[Dict[str, Any], Dict[
 
 
 def _number(value: Any) -> str:
-    return f"{float(value):g}"
+    return "Not set" if value is None else f"{float(value):g}"
 
 
 def _updated_line(meta: Dict[str, Any]) -> str:
@@ -416,7 +416,11 @@ class ExpectedScoreModal(BaseErrorModal):
         self.matchup_key = matchup_key
         self.score = discord.ui.TextInput(
             label="Expected Score (0.00 to 3.00)",
-            default=_number(parent.payload["matchup_expected"][matchup_key]),
+            default=(
+                None
+                if parent.payload["matchup_expected"][matchup_key] is None
+                else _number(parent.payload["matchup_expected"][matchup_key])
+            ),
             required=True,
             max_length=8,
         )
@@ -431,7 +435,7 @@ class ExpectedScoreModal(BaseErrorModal):
         except ValueError as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
-        old_value = float(self.panel.payload["matchup_expected"][self.matchup_key])
+        old_value = self.panel.payload["matchup_expected"][self.matchup_key]
         view = ExpectedScoreConfirmView(
             self.panel,
             self.matchup_key,
@@ -446,7 +450,7 @@ class ExpectedScoreConfirmView(LeadBonusSettingsView):
         self,
         parent: ExpectedScoresView,
         matchup_key: str,
-        old_value: float,
+        old_value: Optional[float],
         new_value: float,
     ):
         super().__init__()

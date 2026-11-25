@@ -18,6 +18,7 @@ from typing import Optional
 from typing import Set
 from typing import Tuple
 
+from elbow_helper.domain.town_halls import TOWN_HALL_LEVELS
 from ..config import BONUS_CONFIG_FILE
 from ..config import CWL_CLAN_CODES
 from elbow_helper.infrastructure.persistence.documents import Document, DocumentConflict, read_document as read_json, save_bonus_revision, encode
@@ -63,8 +64,9 @@ class BonusConfigRepository:
 
     @staticmethod
     def _default_bonus_clan_config() -> Dict[str, Any]:
-        attacker_th_levels = list(range(8, 19))
-        defender_th_levels = list(range(6, 19))
+        top_level = max(TOWN_HALL_LEVELS)
+        attacker_th_levels = list(range(8, top_level + 1))
+        defender_th_levels = list(range(6, top_level + 1))
         max_downhit = 2
         max_uphit = 8
         matchup_expected = {
@@ -133,6 +135,48 @@ class BonusConfigRepository:
             if (attacker_th - defender_th) <= max_downhit
             and (defender_th - attacker_th) <= max_uphit
         }
+
+    @classmethod
+    def _with_current_town_halls(cls, config: Any) -> Any:
+        """Add Town Halls newer than a clan's saved levels, with their matchups unset."""
+        clans = config.get("clans") if isinstance(config, dict) else None
+        if not isinstance(clans, dict):
+            return config
+        top_level = max(TOWN_HALL_LEVELS)
+        extended = copy.deepcopy(config)
+        for payload in extended["clans"].values():
+            if not isinstance(payload, dict):
+                continue
+            levels = {}
+            for field in ("attacker_th_levels", "defender_th_levels"):
+                saved = payload.get(field)
+                if not isinstance(saved, list) or not saved or not all(
+                    isinstance(value, int) and not isinstance(value, bool) for value in saved
+                ):
+                    break
+                levels[field] = saved
+            else:
+                max_downhit = payload.get("max_downhit")
+                max_uphit = payload.get("max_uphit")
+                matchups = payload.get("matchup_expected")
+                if (
+                    not isinstance(matchups, dict)
+                    or any(not isinstance(limit, int) or isinstance(limit, bool) or limit < 0
+                           for limit in (max_downhit, max_uphit))
+                ):
+                    continue
+                added = {}
+                for field, saved in levels.items():
+                    added[field] = list(range(max(saved) + 1, top_level + 1))
+                    saved.extend(added[field])
+                attackers = levels["attacker_th_levels"]
+                defenders = levels["defender_th_levels"]
+                for key in cls._bonus_matchup_keys(attackers, defenders, max_downhit, max_uphit):
+                    attacker, defender = (int(part) for part in key.split(":"))
+                    if (attacker in added["attacker_th_levels"]
+                            or defender in added["defender_th_levels"]):
+                        matchups.setdefault(key, None)
+        return extended
 
     def _validate_bonus_clan_config(self, clan_code: str, payload: Any) -> List[str]:
         errors: List[str] = []
@@ -211,6 +255,8 @@ class BonusConfigRepository:
         impossible_values: List[str] = []
         for key in expected_keys:
             value = matchup_expected.get(key)
+            if value is None:
+                continue
             if (
                 isinstance(value, bool)
                 or not isinstance(value, (int, float))
@@ -251,7 +297,7 @@ class BonusConfigRepository:
     def load(self) -> Tuple[Optional[Dict[str, Any]], List[str]]:
         if isinstance(BONUS_CONFIG_FILE, Document) and self._on_loop():
             return copy.deepcopy(getattr(self, "_snapshot", (None, ["CWL bonus settings aren't available."])))
-        result = self._load()
+        result = self._load()[:2]
         self._snapshot = copy.deepcopy(result)
         try:
             self._history = read_json(BONUS_CONFIG_AUDIT_FILE)
@@ -259,7 +305,8 @@ class BonusConfigRepository:
             self._history = {"entries": []}
         return result
 
-    def _load(self) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    def _load(self) -> Tuple[Optional[Dict[str, Any]], List[str], Optional[Dict[str, Any]]]:
+        """Return the usable settings, their errors, and the settings as saved."""
         self.ensure()
         try:
             raw_config = read_json(BONUS_CONFIG_FILE)
@@ -268,15 +315,16 @@ class BonusConfigRepository:
                 "CWL bonus config file missing after initialization: %s",
                 BONUS_CONFIG_FILE,
             )
-            return None, ["CWL bonus settings aren't available."]
+            return None, ["CWL bonus settings aren't available."], None
         except (OSError, json.JSONDecodeError, TypeError):
             LOGGER.exception("Failed reading CWL bonus config: %s", BONUS_CONFIG_FILE)
-            return None, ["CWL bonus settings aren't available."]
+            return None, ["CWL bonus settings aren't available."], None
 
-        errors = self._validate_bonus_config(raw_config)
+        config = self._with_current_town_halls(raw_config)
+        errors = self._validate_bonus_config(config)
         if errors:
-            return None, errors
-        return raw_config, []
+            return None, errors, raw_config
+        return config, [], raw_config
 
     @staticmethod
     def _bonus_actor(actor: Any) -> Tuple[Optional[int], str]:
@@ -319,7 +367,7 @@ class BonusConfigRepository:
         summary: str,
     ) -> Dict[str, Any]:
         code = str(clan_code or "").upper()
-        config, errors = self.load()
+        config, errors, stored = self._load()
         if config is None:
             raise BonusConfigValidationError(errors)
         if self.revision(config) != int(expected_revision):
@@ -353,7 +401,7 @@ class BonusConfigRepository:
         if isinstance(BONUS_CONFIG_FILE, Document):
             try:
                 save_bonus_revision(BONUS_CONFIG_FILE, BONUS_CONFIG_BACKUP_FILE,
-                                    BONUS_CONFIG_AUDIT_FILE, config, updated, entry,
+                                    BONUS_CONFIG_AUDIT_FILE, stored, updated, entry,
                                     expected_revision, BONUS_CONFIG_AUDIT_LIMIT)
             except DocumentConflict as exc:
                 raise BonusConfigConflictError(
@@ -363,7 +411,7 @@ class BonusConfigRepository:
                 raise RuntimeError("Couldn't save the scoring setup. Nothing was changed.") from exc
         else:
             # Explicit file paths are used by standalone feature fixtures.
-            write_json_atomic(BONUS_CONFIG_BACKUP_FILE, config, indent=2, ensure_ascii=False)
+            write_json_atomic(BONUS_CONFIG_BACKUP_FILE, stored, indent=2, ensure_ascii=False)
             write_json_atomic(BONUS_CONFIG_FILE, updated, indent=2, ensure_ascii=False)
             self._write_bonus_audit_entry(entry)
         self.load()

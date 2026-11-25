@@ -7,13 +7,13 @@ import logging
 
 import discord
 
+from elbow_helper.domain.town_halls import TOWN_HALL_LEVELS
 from elbow_helper.infrastructure.discord.application_emojis import ApplicationEmojiCatalog
 from elbow_helper.infrastructure.discord.application_emojis import get_application_emoji_provider
 
 
 LOGGER = logging.getLogger(__name__)
 TOWN_HALL_HEADER_EMOJI_NAME = "town_hall"
-TOWN_HALL_LEVELS = tuple(range(1, 19))
 
 
 @dataclass(frozen=True)

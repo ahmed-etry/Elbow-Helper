@@ -14,6 +14,7 @@ from typing import Dict
 from typing import Optional
 
 import discord
+from elbow_helper.domain.town_halls import TOWN_HALL_LEVELS
 from elbow_helper.infrastructure.discord.application_emojis import loading_status
 from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
@@ -215,7 +216,7 @@ class PromoTHLevelSelect(discord.ui.Select["PromoIntakeView"]):
         current = (case or {}).get("th_level")
         options = [
             discord.SelectOption(label=f"TH{level}", value=str(level), default=(not register_all and current == level))
-            for level in range(10, 19)  # TH10-TH18; bump upper bound when new TH ships
+            for level in range(10, max(TOWN_HALL_LEVELS) + 1)
         ]
         super().__init__(
             placeholder="Choose your Town Hall level",
