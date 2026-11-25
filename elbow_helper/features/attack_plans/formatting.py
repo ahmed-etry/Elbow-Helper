@@ -70,6 +70,7 @@ HERO_EQUIPMENT_ORDER = {
         "Noble Iron",
         "Dark Crown",
         "Meteor Staff",
+        "Portal Pendant",
     ],
     "Grand Warden": [
         "Eternal Tome",
@@ -205,6 +206,21 @@ SIEGE_MACHINE_ORDER = [
     "Sky Wagon",
 ]
 
+SQUAD_TROOP_ORDER = [
+    "Barch Squad",
+    "Giant Wizard Squad",
+    "Wall Breaker Squad",
+    "Minion Squad",
+    "Balloon Squad",
+    "Golem Witch Squad",
+    "Hog Rider Squad",
+    "Miner Squad",
+    "Healer Squad",
+    "P.E.K.K.A Titan Squad",
+    "Dragons Squad",
+    "Baby Dragon Squad",
+]
+
 SUPER_TROOP_ORDER = [
     "Super Barbarian",
     "Super Archer",
@@ -260,6 +276,8 @@ def required_plan_unit_names() -> tuple[str, ...]:
         *DARK_TROOP_ORDER,
         *ELIXIR_SPELLS_ORDER,
         *DARK_SPELLS_ORDER,
+        *SQUAD_TROOP_ORDER,
+        "Heroic Spell",
     )
     return tuple(dict.fromkeys(names))
 

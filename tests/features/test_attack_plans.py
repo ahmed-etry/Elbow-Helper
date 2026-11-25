@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import discord
 
+from elbow_helper.domain.town_halls import TOWN_HALL_LEVELS
 from elbow_helper.features.attack_plans.cog import Planning
 from elbow_helper.features.attack_plans.formatting import PlanningEmbeds
 from elbow_helper.features.attack_plans.formatting import build_planning_embeds
@@ -55,6 +56,8 @@ class PlanEmojiTests(unittest.TestCase):
             self.assertEqual(town_hall_max_level("Test Unit", 3, 6), 6)
             self.assertEqual(town_hall_max_level("Test Unit", 4, 2), 2)
         self.assertEqual(town_hall_max_level("Unknown Unit", 18, 3), 3)
+        for unit_name, caps in TOWN_HALL_MAX_LEVELS.items():
+            self.assertEqual(len(caps), len(TOWN_HALL_LEVELS), unit_name)
 
 
     def test_missing_emojis_keep_readable_unit_names(self) -> None:

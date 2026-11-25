@@ -1,9 +1,7 @@
 """CopyArmy unit names derived from the public ClashPerk game data.
 
-Source: clashperk/clashofclans.js, commit c4c652654dd6711f7e77c120003c6510952a74f9.
-https://github.com/clashperk/clashofclans.js/blob/c4c652654dd6711f7e77c120003c6510952a74f9/src/util/units.json
-Cross-check: mathsman5133/coc.py, commit ec07b5ab8164521ae5dc60a5186cbbbf9e2dbced,
-coc/static/static_data.json and translations.json; all 169 shared IDs agree.
+Source: clashperk/clashofclans.js 5.1.21, commit 346c4151a9b3479c358721c81f32ab1cf0d7784f.
+https://github.com/clashperk/clashofclans.js/blob/346c4151a9b3479c358721c81f32ab1cf0d7784f/src/util/units.json
 Only category indices and names are retained. Siege membership uses Workshop.
 
 MIT License
@@ -245,8 +243,6 @@ EQUIPMENT = {
     59: 'Electro Fangs',
     60: 'Revenge Deck',
     61: 'Portal Pendant',
-    62: 'Shield Brooch',
-    63: 'Blizzard Axe',
 }
 
 
