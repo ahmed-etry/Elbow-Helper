@@ -36,6 +36,7 @@ async def setup(bot: ElbowHelperBot) -> None:
             repository,
             war_manager.war_lineup_needs_role,
         ),
+        bot.ranked_reads,
     )
     war_manager.set_roster_role_claim(cog.queries.role_has_signup)
     await bot.add_cog(cog)

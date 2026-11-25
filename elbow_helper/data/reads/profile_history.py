@@ -5,10 +5,12 @@ import json
 from ..store.player_projection import COUNTERS
 
 
-def counter_values(connection, account_id, at, *, conflicts=None):
+def counter_values(connection, account_id, at, *, conflicts=None, only=None):
     """Find each field's own last supplied sample; sparse imports never carry values forward."""
     fields, observed, sources = {}, {}, {}
     for index, (key, column) in enumerate(COUNTERS.items()):
+        if only is not None and key not in only:
+            continue
         row = connection.execute(
             f"SELECT {column},sampled_at,field_presence_json FROM player_counters WHERE account_id=? AND sampled_at<=? "
             "AND ((json_type(field_presence_json,'$.fields')='integer' AND "
@@ -21,6 +23,8 @@ def counter_values(connection, account_id, at, *, conflicts=None):
             sources[key] = presence.get("sources", {}).get(key, "player_profile")
             if conflicts is not None and key in presence.get("conflicts", {}):
                 conflicts[key] = {"values": presence["conflicts"][key], "observed_at": row[1], "source": sources[key]}
+    if only is not None:
+        return fields, observed, sources
     row = connection.execute(
         "SELECT legend_counters_json,sampled_at,field_presence_json FROM player_counters WHERE account_id=? "
         "AND sampled_at<=? AND json_extract(field_presence_json,'$.legendStatistics')=1 "

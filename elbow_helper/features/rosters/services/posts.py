@@ -27,6 +27,7 @@ from ..models import RosterMember
 from ..models import RosterPost
 from .profiles import enrich_accounts
 from ..ui.rendering import build_roster_embeds
+from .ordering import RosterOrder
 from ..ui.rendering import roster_page_count
 from ..ui.rendering import roster_rows_per_page
 from .scheduling import due_window
@@ -60,8 +61,10 @@ class RosterPostService:
         accounts: RosterAccountDirectory,
         view_owner: Any,
         emoji_provider: TownHallEmojiProvider | None = None,
+        order: RosterOrder | None = None,
     ):
         self._bot = bot
+        self._order = order or RosterOrder()
         self._repository = repository
         self._player_profiles = player_profiles
         self._accounts = accounts
@@ -157,6 +160,7 @@ class RosterPostService:
                        self._repository.list_members,
                        roster.id, roster.active_cycle_id,
                    ))
+        members = await self._order.apply(members, layout, roster)
         townhall_emojis = await self._emojis.get()
         rows_per_page = roster_rows_per_page(members, layout, townhall_emojis)
         page_count = roster_page_count(len(members), rows_per_page)

@@ -14,6 +14,8 @@ from elbow_helper.infrastructure.time import fixed_utc_offset_name
 from ..config import DB_PATH
 from ..config import ROSTER_DISCORD_COLUMN_MAX_WIDTH
 from ..config import ROSTER_DISCORD_COLUMN_MIN_WIDTH
+from ..config import ROSTER_ORDER_TOWNHALL
+from ..config import ROSTER_ORDER_WAR
 from ..config import ROSTER_PLAYER_COLUMN_MAX_WIDTH
 from ..config import ROSTER_PLAYER_COLUMN_MIN_WIDTH
 from .migrations import initialize_roster_schema
@@ -143,10 +145,10 @@ class RosterRepository:
                 """
                 INSERT INTO roster_layouts(
                     roster_id, show_townhall, show_discord, show_clan,
-                    player_width, discord_width
+                    player_width, discord_width, sort_order
                 )
                 SELECT ?, show_townhall, show_discord, show_clan,
-                       player_width, discord_width
+                       player_width, discord_width, sort_order
                 FROM roster_layouts
                 WHERE roster_id = ?
                 """,
@@ -199,6 +201,7 @@ class RosterRepository:
         show_clan: bool | None = None,
         player_width: int | None = None,
         discord_width: int | None = None,
+        sort_order: str | None = None,
     ) -> RosterLayout:
         current = self.get_layout(roster_id)
         updated = RosterLayout(
@@ -207,7 +210,10 @@ class RosterRepository:
             show_clan=current.show_clan if show_clan is None else show_clan,
             player_width=current.player_width if player_width is None else player_width,
             discord_width=current.discord_width if discord_width is None else discord_width,
+            sort_order=current.sort_order if sort_order is None else sort_order,
         )
+        if updated.sort_order not in (ROSTER_ORDER_TOWNHALL, ROSTER_ORDER_WAR):
+            raise ValueError("Invalid roster order.")
         if not (
             ROSTER_PLAYER_COLUMN_MIN_WIDTH
             <= updated.player_width
@@ -231,14 +237,15 @@ class RosterRepository:
                 """
                 INSERT INTO roster_layouts(
                     roster_id, show_townhall, show_discord, show_clan,
-                    player_width, discord_width
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    player_width, discord_width, sort_order
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(roster_id) DO UPDATE SET
                     show_townhall = excluded.show_townhall,
                     show_discord = excluded.show_discord,
                     show_clan = excluded.show_clan,
                     player_width = excluded.player_width,
-                    discord_width = excluded.discord_width
+                    discord_width = excluded.discord_width,
+                    sort_order = excluded.sort_order
                 """,
                 (
                     roster_id,
@@ -247,6 +254,7 @@ class RosterRepository:
                     int(updated.show_clan),
                     updated.player_width,
                     updated.discord_width,
+                    updated.sort_order,
                 ),
             )
             conn.commit()

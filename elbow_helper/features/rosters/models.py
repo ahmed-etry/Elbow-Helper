@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from .config import ROSTER_DISCORD_COLUMN_WIDTH
+from .config import ROSTER_ORDER_TOWNHALL
 from .config import ROSTER_PLAYER_COLUMN_WIDTH
 
 
@@ -157,6 +158,7 @@ class RosterLayout:
     show_clan: bool = True
     player_width: int = ROSTER_PLAYER_COLUMN_WIDTH
     discord_width: int = ROSTER_DISCORD_COLUMN_WIDTH
+    sort_order: str = ROSTER_ORDER_TOWNHALL
 
     @classmethod
     def from_row(cls, row: dict[str, object]) -> "RosterLayout":
@@ -166,6 +168,7 @@ class RosterLayout:
             show_clan=bool(row["show_clan"]),
             player_width=int(row["player_width"]),
             discord_width=int(row["discord_width"]),
+            sort_order=str(row["sort_order"]),
         )
 
 

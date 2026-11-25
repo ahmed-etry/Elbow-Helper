@@ -10,12 +10,14 @@ from elbow_helper.infrastructure.persistence.migrations import run_sqlite_migrat
 from ..config import ROSTER_DISCORD_COLUMN_MAX_WIDTH
 from ..config import ROSTER_DISCORD_COLUMN_MIN_WIDTH
 from ..config import ROSTER_DISCORD_COLUMN_WIDTH
+from ..config import ROSTER_ORDER_TOWNHALL
+from ..config import ROSTER_ORDER_WAR
 from ..config import ROSTER_PLAYER_COLUMN_MAX_WIDTH
 from ..config import ROSTER_PLAYER_COLUMN_MIN_WIDTH
 from ..config import ROSTER_PLAYER_COLUMN_WIDTH
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 _EXPECTED_COLUMNS = {
     "rosters": {
@@ -80,6 +82,7 @@ _EXPECTED_COLUMNS = {
         "show_clan",
         "player_width",
         "discord_width",
+        "sort_order",
     },
 }
 _EXPECTED_INDEXES = {
@@ -94,7 +97,7 @@ class RosterSchemaError(RuntimeError):
 
 
 def initialize_roster_schema(connection: sqlite3.Connection) -> None:
-    """Create a blank v5 database or migrate a supported older database."""
+    """Create a blank v6 database or migrate a supported older database."""
     connection.execute("PRAGMA journal_mode=WAL")
     run_sqlite_migrations(
         connection,
@@ -258,6 +261,20 @@ def _remove_google_sheet_id(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE rosters DROP COLUMN google_sheet_id")
 
 
+def _add_roster_sort_order(connection: sqlite3.Connection) -> None:
+    columns = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info(roster_layouts)").fetchall()
+    }
+    # A missing table is reported by schema validation, not by this migration.
+    if columns and "sort_order" not in columns:
+        connection.execute(
+            "ALTER TABLE roster_layouts ADD COLUMN sort_order TEXT NOT NULL "
+            f"DEFAULT '{ROSTER_ORDER_TOWNHALL}' "
+            f"CHECK(sort_order IN ('{ROSTER_ORDER_TOWNHALL}', '{ROSTER_ORDER_WAR}'))"
+        )
+
+
 _MIGRATIONS = (
     SQLiteMigration(
         version=4,
@@ -268,5 +285,10 @@ _MIGRATIONS = (
         version=5,
         name="remove persistent roster spreadsheet links",
         apply=_remove_google_sheet_id,
+    ),
+    SQLiteMigration(
+        version=6,
+        name="add roster sort order",
+        apply=_add_roster_sort_order,
     ),
 )

@@ -19,7 +19,7 @@ from elbow_helper.domain.ranked import RANKED_MODES
 from elbow_helper.infrastructure.persistence.revisions import sqlite_revision
 
 from ..store.sources import INTERVALS
-from .core import RecordReads, placeholders, timestamp
+from .core import RecordReads, placeholders, tags, timestamp
 from .coverage import signal
 from .profile_history import counter_values
 
@@ -129,6 +129,38 @@ def ranking(connection, account_id, at):
                 result[key] = {name: value[name] for name in ("id", "name") if name in value}
                 times.append(row[1])
     return result, max(times, default=None)
+
+
+def standings(connection, selected, at, clan_tag=None):
+    """Each tag's latest stored ranked league id and trophies, as the in-game clan list ranks them.
+
+    With a clan tag, ``clan_rank`` is the account's latest stored rank in that clan's member list,
+    only while the record still has the account in that clan; otherwise it is None.
+    """
+    clan = connection.execute("SELECT id FROM clans WHERE tag=?", (clan_tag,)).fetchone() if clan_tag else None
+    result = {}
+    for tag in selected:
+        account = connection.execute("SELECT id FROM accounts WHERE player_tag=? AND first_observed_at<=?",
+                                     (tag, at)).fetchone()
+        if account is None:
+            continue
+        fields, _, _ = counter_values(connection, account[0], at, only=("trophies",))
+        row = connection.execute(
+            "SELECT value_json FROM player_observations WHERE account_id=? AND field_key='leagueTier' "
+            "AND observed_at<=? ORDER BY observed_at DESC LIMIT 1", (account[0], at)).fetchone()
+        tier = json.loads(row[0]) if row else None
+        rank = None
+        if clan is not None:
+            row = connection.execute(
+                "SELECT s.clan_id,s.clan_rank FROM donation_snapshots s WHERE s.account_id=? AND s.sampled_at<=? "
+                "ORDER BY s.sampled_at DESC LIMIT 1", (account[0], at)).fetchone()
+            if row and row[0] == clan[0] and connection.execute(
+                    "SELECT 1 FROM clan_membership WHERE account_id=? AND clan_id=? AND from_at<=? "
+                    "AND (to_at IS NULL OR to_at>?)", (account[0], clan[0], at, at)).fetchone():
+                rank = row[1]
+        result[tag] = {"league_id": tier.get("id") if isinstance(tier, dict) else None,
+                       "trophies": fields.get("trophies"), "clan_rank": rank}
+    return result
 
 
 def memberships(connection, account_id, at):
@@ -291,6 +323,14 @@ class RankedReads(RecordReads):
     def cache_revision(self):
         path = getattr(self.store, "path", None)
         return sqlite_revision(path) if path is not None else None
+
+    async def standings(self, player_tags, as_of=None, *, clan_tag=None):
+        """Latest stored league id (higher is a higher league), trophies and, for a clan, clan rank by tag.
+
+        Unknown tags are absent.
+        """
+        values = tags(player_tags)
+        return await self._read(standings, values, timestamp(as_of), clan_tag)
 
     async def window(self, selector, values, *, after, before, as_of=None, offset=0, limit=200,
                      include_battles=False):

@@ -12,6 +12,8 @@ from elbow_helper.infrastructure.discord.views import BaseErrorModal
 from ..models import RosterLayout
 from ..config import ROSTER_DISCORD_COLUMN_MAX_WIDTH
 from ..config import ROSTER_DISCORD_COLUMN_MIN_WIDTH
+from ..config import ROSTER_ORDER_TOWNHALL
+from ..config import ROSTER_ORDER_WAR
 from ..config import ROSTER_PLAYER_COLUMN_MAX_WIDTH
 from ..config import ROSTER_PLAYER_COLUMN_MIN_WIDTH
 
@@ -46,6 +48,12 @@ def roster_layout_columns_feedback(layout: RosterLayout) -> str:
         f"Roster now shows {_join_labels(columns)}.\n"
         "Google Sheets keeps every column."
     )
+
+
+def roster_layout_order_feedback(layout: RosterLayout) -> str:
+    if layout.sort_order == ROSTER_ORDER_WAR:
+        return "Roster now sorted by war order."
+    return "Roster now sorted by Town Hall."
 
 
 def roster_layout_lengths_feedback(layout: RosterLayout) -> str:
@@ -88,6 +96,36 @@ class RosterLayoutSelect(discord.ui.Select):
                 interaction,
                 view.roster_id,
                 set(self.values),
+            )
+
+
+class RosterOrderSelect(discord.ui.Select):
+    def __init__(self, layout: RosterLayout):
+        super().__init__(
+            placeholder="Choose roster order",
+            options=[
+                discord.SelectOption(
+                    label="Town Hall",
+                    value=ROSTER_ORDER_TOWNHALL,
+                    default=layout.sort_order == ROSTER_ORDER_TOWNHALL,
+                ),
+                discord.SelectOption(
+                    label="War order",
+                    value=ROSTER_ORDER_WAR,
+                    description="Highest league & trophies",
+                    default=layout.sort_order == ROSTER_ORDER_WAR,
+                ),
+            ],
+            row=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        view = self.view
+        if isinstance(view, RosterLayoutView):
+            await view.cog.update_roster_layout_order(
+                interaction,
+                view.roster_id,
+                self.values[0],
             )
 
 
@@ -165,11 +203,12 @@ class RosterLayoutView(BaseTimeoutView):
         self.roster_id = roster_id
         self.layout = layout
         self.add_item(RosterLayoutSelect(layout))
+        self.add_item(RosterOrderSelect(layout))
 
         widths = discord.ui.Button(
             label="Edit name lengths",
             style=discord.ButtonStyle.secondary,
-            row=1,
+            row=2,
         )
         widths.callback = self.edit_widths
         self.add_item(widths)
@@ -177,7 +216,7 @@ class RosterLayoutView(BaseTimeoutView):
         back = discord.ui.Button(
             label="Back",
             style=discord.ButtonStyle.secondary,
-            row=1,
+            row=2,
         )
         back.callback = self.back
         self.add_item(back)

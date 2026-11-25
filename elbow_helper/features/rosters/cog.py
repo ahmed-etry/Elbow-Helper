@@ -29,6 +29,7 @@ from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.domain.timezones import canonical_timezone_name
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.data.collectors import ProfileDemand
+from elbow_helper.data.reads import RankedReads
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import LocalExportStore
 from elbow_helper.infrastructure.exports import WorkbookWriter
@@ -48,6 +49,7 @@ from .services.membership import account_count
 from .services.membership import RosterMembershipService
 from .models import LinkedAccount
 from .models import Roster
+from .services.ordering import RosterOrder
 from .services.posts import message_page
 from .services.posts import RosterPostService
 from .services.profiles import RosterProfileService
@@ -69,6 +71,7 @@ from .ui.views import ConfirmDeleteView
 from .ui.layout import RosterLayoutView
 from .ui.layout import ROSTER_LAYOUT_PROMPT
 from .ui.layout import roster_layout_columns_feedback
+from .ui.layout import roster_layout_order_feedback
 from .ui.layout import roster_layout_lengths_feedback
 from .ui.views import RosterRemovalView
 from .ui.views import RosterSettingsView
@@ -110,8 +113,10 @@ class Rosters(commands.Cog):
         repository: RosterRepository,
         account_directory: RosterAccountDirectory,
         role_synchronizer: RosterRoleSynchronizer,
+        ranked_reads: RankedReads,
     ):
         self.bot = bot
+        self._order = RosterOrder(ranked_reads)
         self._repository = repository
         self._account_directory = account_directory
         self._roles = role_synchronizer
@@ -130,6 +135,7 @@ class Rosters(commands.Cog):
             player_profiles,
             account_directory,
             self,
+            order=self._order,
         )
         self.publisher = RosterSheetPublisher(
             self.bot,
@@ -1052,6 +1058,29 @@ class Rosters(commands.Cog):
             view=RosterLayoutView(self, roster.id, layout),
         )
 
+    async def update_roster_layout_order(
+        self,
+        interaction: discord.Interaction,
+        roster_id: int,
+        sort_order: str,
+    ) -> None:
+        if not self.is_lead(interaction.user):
+            await deny(interaction, action="manage this roster")
+            return
+        await interaction.response.defer()
+        roster, layout = await self.set_roster_layout(
+            roster_id, sort_order=sort_order,
+        )
+        if roster is None:
+            await interaction.edit_original_response(
+                content="That roster no longer exists.", view=None,
+            )
+            return
+        await interaction.edit_original_response(
+            content=roster_layout_order_feedback(layout),
+            view=RosterLayoutView(self, roster.id, layout),
+        )
+
     async def update_roster_layout_widths(
         self,
         interaction: discord.Interaction,
@@ -1090,7 +1119,11 @@ class Rosters(commands.Cog):
                 view=None,
             )
             return
-        members = await self.service.list_members(roster)
+        members = await self._order.apply(
+            await self.service.list_members(roster),
+            await self.service.get_layout(roster.id),
+            roster,
+        )
         if not members:
             await interaction.response.edit_message(
                 content="No signups to remove.",
