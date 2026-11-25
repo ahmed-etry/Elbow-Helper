@@ -6,6 +6,7 @@ from datetime import timedelta
 
 import discord
 
+from elbow_helper.domain.town_halls import TOWN_HALL_LEVELS
 from elbow_helper.infrastructure.discord.timezones import build_timezone_select_options
 
 
@@ -29,12 +30,6 @@ AVAILABILITY_DAY_OPTIONS = [
 TIMEZONE_SELECT_OPTIONS = build_timezone_select_options()[:25]
 
 TH_COVERAGE_OPTIONS = [
-    discord.SelectOption(label="TH11", value="11"),
-    discord.SelectOption(label="TH12", value="12"),
-    discord.SelectOption(label="TH13", value="13"),
-    discord.SelectOption(label="TH14", value="14"),
-    discord.SelectOption(label="TH15", value="15"),
-    discord.SelectOption(label="TH16", value="16"),
-    discord.SelectOption(label="TH17", value="17"),
-    discord.SelectOption(label="TH18", value="18"),
+    discord.SelectOption(label=f"TH{level}", value=str(level))
+    for level in range(11, max(TOWN_HALL_LEVELS) + 1)
 ]

@@ -942,7 +942,7 @@ class ExaminationPromoIntakeMixin:
         except (TypeError, ValueError):
             await interaction.response.defer()
             return
-        if th_level < 10 or th_level > 18:
+        if th_level not in range(10, max(TOWN_HALL_LEVELS) + 1):
             await interaction.response.defer()
             return
         channel = interaction.channel

@@ -77,12 +77,12 @@ class ExaminationPanelMixin:
         if "th_levels" in changes:
             levels = changes["th_levels"]
             valid_levels = {int(option.value) for option in TH_COVERAGE_OPTIONS}
-            if (not isinstance(levels, list) or len(levels) > 8
+            if (not isinstance(levels, list) or len(levels) > len(valid_levels)
                     or any(not isinstance(value, int) or value not in valid_levels
                            for value in levels)):
                 choices = tuple(option.label for option in TH_COVERAGE_OPTIONS)
                 raise ExaminerProfileInputError(
-                    "Town Hall coverage is invalid. Choose up to eight from: "
+                    "Town Hall coverage is invalid. Choose from: "
                     + ", ".join(choices) + ".", field="th_levels", choices=choices,
                 )
         if "status" in changes and changes["status"] not in {"Active", "Away"}:
@@ -556,7 +556,7 @@ class ExaminerPanelView(BaseTimeoutView):
         placeholder="Set Town Hall coverage",
         custom_id="exam_panel_th_select",
         min_values=1,
-        max_values=8,
+        max_values=len(TH_COVERAGE_OPTIONS),
         row=0,
         options=TH_COVERAGE_OPTIONS,
     )

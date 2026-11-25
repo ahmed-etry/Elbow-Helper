@@ -7,7 +7,7 @@ from typing import Any
 
 from elbow_helper.configuration.channels import EXAMINATION_PANEL_THREAD
 from elbow_helper.domain.timezones import format_timezone_display
-from elbow_helper.features.examination.config import TIMEZONE_SELECT_OPTIONS
+from elbow_helper.features.examination.config import TH_COVERAGE_OPTIONS, TIMEZONE_SELECT_OPTIONS
 from elbow_helper.features.examination.panel import ExaminerProfileInputError
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
@@ -31,9 +31,11 @@ def _profile_value(field: str, value: Any) -> str:
 
 
 def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
+    coverage_levels = [int(option.value) for option in TH_COVERAGE_OPTIONS]
     schema = {"type": "object", "properties": {
-        "th_levels": {"type": "array", "items": {"type": "integer", "minimum": 11, "maximum": 18},
-                      "minItems": 1, "maxItems": 8, "uniqueItems": True},
+        "th_levels": {"type": "array",
+                      "items": {"type": "integer", "minimum": min(coverage_levels), "maximum": max(coverage_levels)},
+                      "minItems": 1, "maxItems": len(coverage_levels), "uniqueItems": True},
         "status": {"type": "string", "enum": ["Active", "Away"]},
         "timezone": {"type": "string", "enum": [option.value for option in TIMEZONE_SELECT_OPTIONS]},
         "availability": {"type": "string", "maxLength": 120},
