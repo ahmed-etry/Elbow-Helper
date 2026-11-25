@@ -102,8 +102,9 @@ class RosterOrderSelect(discord.ui.Select):
             placeholder="Choose roster order",
             options=[
                 discord.SelectOption(
-                    label="Town Hall",
+                    label="Town Hall order",
                     value=ROSTER_ORDER_TOWNHALL,
+                    description="Highest Town Hall & heroes",
                     default=layout.sort_order == ROSTER_ORDER_TOWNHALL,
                 ),
                 discord.SelectOption(
