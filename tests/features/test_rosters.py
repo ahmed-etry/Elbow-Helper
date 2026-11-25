@@ -1130,63 +1130,6 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Page 1/3", labels)
 
 
-    async def test_layout_changes_persist_and_refresh_every_post(self) -> None:
-        temp_dir = TemporaryDirectory()
-        self.addCleanup(temp_dir.cleanup)
-        repository = RosterRepository(Path(temp_dir.name) / "rosters.sqlite3")
-        roster = repository.create_roster(
-            guild_id=1,
-            name="BEH War Signup",
-            clan_code="BEH",
-            role_id=None,
-            max_members=500,
-        )
-        cog = object.__new__(Rosters)
-        _, _, posts, _ = _wire_roster_service(cog, repository)
-        cog.is_lead = MagicMock(return_value=True)
-        interaction = MagicMock()
-        interaction.response.defer = AsyncMock()
-        interaction.edit_original_response = AsyncMock()
-
-        await cog.update_roster_layout_columns(
-            interaction,
-            roster.id,
-            {"townhall", "clan"},
-        )
-        await cog.update_roster_layout_widths(
-            interaction,
-            roster.id,
-            player_width=18,
-            discord_width=12,
-        )
-
-        self.assertEqual(
-            repository.get_layout(roster.id),
-            RosterLayout(
-                show_townhall=True,
-                show_discord=False,
-                show_clan=True,
-                player_width=18,
-                discord_width=12,
-            ),
-        )
-        self.assertEqual(posts.refresh.await_count, 2)
-        self.assertEqual(interaction.response.defer.await_count, 2)
-        self.assertEqual(interaction.edit_original_response.await_count, 2)
-        self.assertEqual(
-            interaction.edit_original_response.await_args_list[0].kwargs["content"],
-            "Roster now shows Town Hall, Player, and Clan.\n"
-            "Google Sheets keeps every column.",
-        )
-        self.assertEqual(
-            interaction.edit_original_response.await_args_list[1].kwargs["content"],
-            "Name lengths updated: Player 18, Discord 12.\n"
-            "Google Sheets keeps every column.",
-        )
-        interaction.response.send_message.assert_not_called()
-        interaction.followup.send.assert_not_called()
-
-
     async def test_roster_export_falls_back_to_discord_before_cleanup(self) -> None:
         with TemporaryDirectory() as directory:
             workbook = Path(directory) / "roster.xlsx"

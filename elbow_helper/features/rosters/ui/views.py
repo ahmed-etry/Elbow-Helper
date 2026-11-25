@@ -635,7 +635,7 @@ class RosterSettingsSelect(discord.ui.Select):
                 discord.SelectOption(
                     label="Layout",
                     value="layout",
-                    description="Choose what appears and when names are shortened.",
+                    description="Choose the roster's columns, order and name lengths.",
                 ),
                 discord.SelectOption(
                     label="Add accounts",

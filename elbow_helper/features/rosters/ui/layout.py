@@ -22,8 +22,9 @@ if TYPE_CHECKING:
 
 
 ROSTER_LAYOUT_PROMPT = (
-    "Choose which columns appear in Discord. The Player column is always shown. Google Sheets "
-    "keeps every column."
+    "Pick the roster's columns and order below. War order sorts accounts like the member list "
+    "when you start a war. **Edit name lengths** sets how many letters of player names and "
+    "Discord usernames the roster shows."
 )
 
 
@@ -44,10 +45,7 @@ def roster_layout_columns_feedback(layout: RosterLayout) -> str:
         columns.append("Discord username")
     if layout.show_clan:
         columns.append("Clan")
-    return (
-        f"Roster now shows {_join_labels(columns)}.\n"
-        "Google Sheets keeps every column."
-    )
+    return f"Roster now shows {_join_labels(columns)}."
 
 
 def roster_layout_order_feedback(layout: RosterLayout) -> str:
@@ -59,8 +57,7 @@ def roster_layout_order_feedback(layout: RosterLayout) -> str:
 def roster_layout_lengths_feedback(layout: RosterLayout) -> str:
     return (
         f"Name lengths updated: Player {layout.player_width}, "
-        f"Discord {layout.discord_width}.\n"
-        "Google Sheets keeps every column."
+        f"Discord {layout.discord_width}."
     )
 
 

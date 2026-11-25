@@ -487,7 +487,7 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
         details=(
             "Posts the roster with Signup, Opt-out, refresh, and a gear menu. Every post of the "
             "same roster stays in sync. The gear menu handles account changes, signup controls, "
-            "Google Sheets exports, and the Discord layout. Members can opt out themselves. "
+            "Google Sheets exports, and the layout. Members can opt out themselves. "
             "Larger rosters add page controls. The "
             "message shows the signup role, account limit, Town Hall minimum when set, and signup "
             "timing while signup controls are shown. To remove another member's war or CWL "
@@ -500,7 +500,7 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
         examples=("/roster post roster:CWL Sign-up",),
         notes=(
             "The Player column is always shown. Town Hall, Discord username, and Clan can be hidden.",
-            "Player and Discord username length settings affect Discord only; Google Sheets keeps every column.",
+            "Rosters can be sorted by Town Hall or by war order, like the member list when you start a war.",
         ),
     ),
     HelpEntry(
