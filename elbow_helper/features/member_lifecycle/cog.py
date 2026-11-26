@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Coroutine
 import logging
+import random
+import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
@@ -12,27 +14,37 @@ from discord.ext import commands
 
 from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE, TICKETS_LOG
+from elbow_helper.configuration.clans import CLAN_MEMBER_ROLE_IDS
 from elbow_helper.configuration.guild import GUILD_ID
-from elbow_helper.configuration.roles import APPLICANT_ROLE_ID, HIBERNATING_ROLE_ID
-from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
+from elbow_helper.configuration.roles import APPLICANT_ROLE_ID, HIBERNATING_ROLE_ID, MEMBER_ROLE_ID, TRIAL_ROLE_ID
+from elbow_helper.features.hibernation.config import SNAPSHOT_ONLY_ROLE_IDS
+from elbow_helper.infrastructure.discord.application_emojis import get_application_emoji_provider
+from elbow_helper.infrastructure.discord.membership_history import saved_clan_and_rank_ids
 
-from .config import CWL_ROLE_IDS, HIBERNATION_CLAN_ROLES, WAR_ROLE_IDS
+from .config import CWL_ROLE_IDS, HOME_CLAN_ROLE_IDS, LEAVE_PHRASES, WAR_ROLE_IDS
 from .contracts import HibernationReader
 from .helpers import (
-    account_age_str,
-    find_home_clan_name,
-    human_timedelta,
-    platform_from_inviter,
-    roles_intersection,
-    snapshot_invites,
+    account_age, duration, platform_from_inviter, reason_value, role_lines, snapshot_invites,
+    ticket_log_value,
 )
 from .reports import ReportsMixin
 from .queries import LifecycleRecordSource, MemberLifecycleQueries
 from .state import LifecycleState, WORKFLOW, joined_at_us
 from .tickets import TicketIndexMixin
 from .views import ApplicantCleanupView
+from .weeks import WEEK, month_bounds, ordinal, week_start
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _role_ids(values: Any) -> list[int]:
+    ids: list[int] = []
+    for value in values or ():
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return ids
 
 
 class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
@@ -132,6 +144,19 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
             await self._index_ticket_log_message(message)
 
 
+    async def _application_emoji(self, name: str) -> str | None:
+        if not callable(getattr(self.bot, "fetch_application_emojis", None)):
+            return None
+        catalog = await get_application_emoji_provider(self.bot).get(required_names=(name,))
+        return catalog.get(name)
+
+    async def _emoji_thumbnail_url(self, name: str) -> str | None:
+        token = await self._application_emoji(name)
+        if not token:
+            return None
+        emoji_id = discord.PartialEmoji.from_str(token).id
+        return f"https://cdn.discordapp.com/emojis/{emoji_id}.webp?animated=true"
+
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         if not member.guild or member.guild.id != GUILD_ID:
@@ -165,16 +190,31 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
 
         platform = platform_from_inviter(inviter_name)
 
-        acct_age, _ = account_age_str(member)
-        embed = discord.Embed(
-            title="🛰️ Joined Server",
-            color=discord.Color.green(),
-            timestamp=datetime.now(timezone.utc),
+        embed = discord.Embed(title="Joined Server", color=discord.Color(0x29B15F))
+        embed.set_author(
+            name=member.nick or member.display_name,
+            icon_url=member.display_avatar.replace(size=64).url,
         )
-        embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-        embed.add_field(name="👤 Discord Member", value=f"{member.display_name} • {member.mention}", inline=False)
-        embed.add_field(name="🕒 Account Age", value=acct_age, inline=True)
-        embed.add_field(name="🌍 Platform", value=platform, inline=True)
+        thumbnail_url = await self._emoji_thumbnail_url("join_hi")
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
+        embed.add_field(name="Member", value=member.mention + "\n\u200b", inline=False)
+        embed.add_field(
+            name="Account Age",
+            value=f"🎂 {account_age(member.created_at, datetime.now(timezone.utc))}",
+            inline=False,
+        )
+        embed.add_field(name="Platform", value=f"🪧 {platform}\n\u200b", inline=False)
+        now = datetime.now(timezone.utc)
+        this_week = week_start(now)
+        month_from, month_until = month_bounds(now)
+        # This member's own join is recorded after the post, so they count here unless already counted.
+        in_week = await self.lifecycle_state.stayed_joins(this_week, this_week + WEEK)
+        in_month = await self.lifecycle_state.stayed_joins(month_from, month_until)
+        week_place = len(in_week) + (member.id not in in_week)
+        month_place = len(in_month) + (member.id not in in_month)
+        embed.add_field(name=f"{now:%B %Y}", value=f"📅 {ordinal(month_place)} to join", inline=False)
+        embed.add_field(name="Since Monday", value=f"👥 {ordinal(week_place)} to join", inline=False)
 
         message_id = None
         if overseer is not None:
@@ -182,8 +222,20 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
                 message_id = (await overseer.send(embed=embed)).id
             except (discord.Forbidden, discord.HTTPException) as exc:
                 LOGGER.warning("Failed to send join snapshot: %s", exc)
-        # The join's time is the record's; this keeps its source, counted for the week as before.
+        # The join's time is the record's; this keeps its source.
         await self.lifecycle_state.joined(member.id, joined_at_us(member), platform, message_id)
+
+    async def _days_on_trial(self, member_id: int) -> int | None:
+        try:
+            started = await self.lifecycle_state.events.read(
+                workflow="recruitment", kind="trial_started", subject=member_id)
+        except sqlite3.Error as exc:
+            LOGGER.warning("Trial start read failed: %s", exc)
+            return None
+        if not started:
+            return None
+        now = datetime.now(timezone.utc).timestamp()
+        return max(0, int((now - started[-1]["occurred_at"] / 1_000_000) // 86400))
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
@@ -203,85 +255,109 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
                 any(role.id == HIBERNATING_ROLE_ID for role in member.roles)
                 or hibernation_entry is not None
             )
-            is_applicant = not is_hibernating and any(role.id == APPLICANT_ROLE_ID for role in member.roles)
+            held = {role.id for role in member.roles}
+            status = (
+                "Hibernating" if is_hibernating
+                else "Applicant" if APPLICANT_ROLE_ID in held
+                else "Trial" if TRIAL_ROLE_ID in held
+                else "Member"
+            )
 
-            # Discord's join time for this stay, the one the family record keeps.
-            joined_at = member.joined_at or datetime.now(timezone.utc)
+            reason_icon, reason_text = "🍃", None
 
-            duration = human_timedelta(joined_at, datetime.now(timezone.utc))
-            home_clan = find_home_clan_name(member) or "None"
-            war_roles = ", ".join(roles_intersection(member, WAR_ROLE_IDS)) or "None"
-            cwl_roles = ", ".join(roles_intersection(member, CWL_ROLE_IDS)) or "None"
-            reason_text = "Left voluntarily"
+            def actor_name(user) -> str:
+                # The server nickname or display name, not the account handle.
+                if user is None:
+                    return str(user)
+                return (member.guild.get_member(user.id) or user).display_name
 
             try:
                 async for entry in member.guild.audit_logs(limit=10, action=discord.AuditLogAction.kick):
                     if entry.target.id == member.id and (datetime.now(timezone.utc) - entry.created_at).total_seconds() < 120:
-                        reason_text = f"Kicked by {entry.user}"
+                        reason_icon, reason_text = "🥾", f"Kicked by {actor_name(entry.user)}"
                         reason = "kicked"
                         break
                 else:
                     async for entry in member.guild.audit_logs(limit=10, action=discord.AuditLogAction.ban):
                         if entry.target.id == member.id and (datetime.now(timezone.utc) - entry.created_at).total_seconds() < 120:
-                            reason_text = f"Banned by {entry.user}"
+                            reason_icon, reason_text = "⚖️", f"Banned by {actor_name(entry.user)}"
                             reason = "banned"
                             break
             except (discord.Forbidden, discord.HTTPException, aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
                 LOGGER.warning("Audit log read failed: %s", exc)
 
-            embed = discord.Embed(
-                title="🛰️ Left Server",
-                color=discord.Color.red(),
-                timestamp=datetime.now(timezone.utc),
+            embed = discord.Embed(title="Left Server", color=discord.Color(0xD10A0A))
+            embed.set_author(
+                name=member.nick or member.display_name,
+                icon_url=member.display_avatar.replace(size=64).url,
             )
-            embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-            embed.add_field(name="👤 Discord Member", value=f"{member.nick or member.display_name} • {member.mention}", inline=False)
+            thumbnail_url = await self._emoji_thumbnail_url("leave_bye")
+            if thumbnail_url:
+                embed.set_thumbnail(url=thumbnail_url)
 
-            ticket_links, total_ticket_matches = await self._find_ticket_log_links_for_member(member.guild, member.id)
-            if total_ticket_matches > 0:
-                superscript_digits = str.maketrans("0123456789-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻")
-                if len(ticket_links) == 1:
-                    link_lines = [f"[Jump!]({ticket_links[0]})"]
-                else:
-                    link_lines = [
-                        f"[Jump!{str(index).translate(superscript_digits)}]({url})"
-                        for index, url in enumerate(ticket_links, start=1)
-                    ]
-                extra = total_ticket_matches - len(ticket_links)
-                if extra > 0:
-                    noun = "ticket log" if extra == 1 else "ticket logs"
-                    link_lines.append(f"+{extra} more {noun}")
-                field_name = "📁 Ticket Log" if total_ticket_matches == 1 else "📁 Ticket Logs"
-                embed.add_field(name=field_name, value="\n".join(link_lines), inline=False)
+            now = datetime.now(timezone.utc).timestamp()
+            fields = [("Member", member.mention + "\n\u200b")]
+            if member.joined_at is not None:
+                fields.append(("Time in Server", f"🏕️ {duration(now - member.joined_at.timestamp())}"))
+            status_role_id = {
+                "Member": MEMBER_ROLE_ID, "Trial": TRIAL_ROLE_ID,
+                "Applicant": APPLICANT_ROLE_ID, "Hibernating": HIBERNATING_ROLE_ID,
+            }[status]
+            fields.append(("Status", f"<@&{status_role_id}>"))
+            if status == "Trial":
+                days = await self._days_on_trial(member.id)
+                if days is not None:
+                    lasted = f"{days} day{'' if days == 1 else 's'}" if days else "Less than a day"
+                    fields.append(("Lasted", f"📆 {lasted}"))
+            reason_index = len(fields)
+            blank = await self._application_emoji("blank")
+            reason_text = reason_text or random.choice(LEAVE_PHRASES)
+            fields.append(("Reason", reason_value(reason_icon, reason_text, blank)))
 
-            if is_hibernating:
-                embed.add_field(name="Status", value="Hibernating", inline=True)
-                hib_entry = hibernation_entry or {}
-                saved_roles = hib_entry.get("roles", []) + hib_entry.get("rank_roles", [])
-                fixed_roles: list[int] = []
-                for role_id in saved_roles:
-                    try:
-                        fixed_roles.append(int(role_id))
-                    except (TypeError, ValueError):
-                        continue
-                clan_name = "None"
-                for role_id in fixed_roles:
-                    if role_id in HIBERNATION_CLAN_ROLES:
-                        clan_name = HIBERNATION_CLAN_ROLES[role_id]
-                        break
-                embed.add_field(name="🛡️ Clan Status", value=clan_name, inline=True)
-                embed.add_field(name="📅 Time in Server", value=duration, inline=True)
-                embed.add_field(name="🎯 Reason", value=reason_text, inline=False)
-            elif is_applicant:
-                embed.add_field(name="Status", value="Applicant", inline=True)
-                embed.add_field(name="🎯 Reason", value=reason_text, inline=False)
-            else:
-                embed.add_field(name="Status", value="Member", inline=True)
-                embed.add_field(name="🛡️ Clan Status", value=home_clan, inline=True)
-                embed.add_field(name="📅 Time in Server", value=duration, inline=True)
-                embed.add_field(name="⚔️ War Status", value=war_roles, inline=False)
-                embed.add_field(name="🏅 CWL Status", value=cwl_roles, inline=False)
-                embed.add_field(name="🎯 Reason", value=reason_text, inline=False)
+            def add_roles(name: str, role_ids: list[int]) -> None:
+                if role_ids:
+                    value = role_lines(member.guild.get_role(role_id) for role_id in role_ids)
+                    fields.append((name if len(role_ids) == 1 else f"{name}s", value))
+
+            if status in ("Member", "Trial"):
+                roles = {role.id: role for role in member.roles}
+                for name, role_ids in (
+                    ("Clan", HOME_CLAN_ROLE_IDS), ("War", WAR_ROLE_IDS), ("CWL", CWL_ROLE_IDS),
+                ):
+                    value = role_lines(roles[role_id] for role_id in role_ids if role_id in roles)
+                    if value:
+                        fields.append((name, value))
+                # Split as a hibernation saves them, so both name the same ranks.
+                _, rank_ids = saved_clan_and_rank_ids(
+                    member.guild,
+                    [role_id for role_id in roles if role_id not in SNAPSHOT_ONLY_ROLE_IDS],
+                    [role_id for role_id in roles if role_id in SNAPSHOT_ONLY_ROLE_IDS],
+                )
+                add_roles("Rank", rank_ids)
+            elif status == "Hibernating":
+                saved = hibernation_entry or {}
+                # A finished hibernation keeps only its case start, in microseconds.
+                since = (saved.get("hibernation_progress") or {}).get("unix_ts")
+                if not since and saved.get("_case_started_at"):
+                    since = saved["_case_started_at"] / 1_000_000
+                if since:
+                    fields.append(("Hibernated For", f"🗓️ {duration(now - since)}"))
+                clan_ids, rank_ids = saved_clan_and_rank_ids(
+                    member.guild, _role_ids(saved.get("roles")), _role_ids(saved.get("rank_roles")))
+                # Same order as a current member's clans.
+                clan_ids = [role_id for role_id in CLAN_MEMBER_ROLE_IDS.values() if role_id in clan_ids]
+                add_roles("Clan", clan_ids)
+                add_roles("Rank", rank_ids)
+
+            ticket_links = await self._find_ticket_log_links_for_member(member.guild, member.id)
+            if ticket_links:
+                field_name = "Ticket Log" if len(ticket_links) == 1 else "Ticket Logs"
+                fields.append((field_name, ticket_log_value(ticket_links, blank)))
+
+            if len(fields) > reason_index + 1:
+                fields[reason_index] = ("Reason", fields[reason_index][1] + "\n\u200b")
+            for name, value in fields:
+                embed.add_field(name=name, value=value, inline=False)
 
             message_id = (await overseer.send(embed=embed)).id
         except (
@@ -298,5 +374,5 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
         ):
             LOGGER.exception("Unexpected error building/sending leave snapshot for %s", member)
         finally:
-            # The leave's time is the record's; this keeps why, and the week's source count as before.
+            # The leave's time is the record's; this keeps why.
             await self.lifecycle_state.left(member.id, joined_at_us(member), reason, message_id)

@@ -10,7 +10,6 @@ import discord
 from elbow_helper.configuration.channels import TICKETS_LOG
 
 from .config import (
-    MAX_TICKET_LINKS_IN_LEAVE_EMBED,
     TICKET_LOG_SCAN_BATCH_DELAY_SECONDS,
     TICKET_LOG_SCAN_BATCH_SIZE,
     TICKET_LOG_SCAN_MAX_RETRY_SECONDS,
@@ -135,11 +134,8 @@ class TicketIndexMixin:
         self,
         guild: discord.Guild,
         member_id: int,
-        max_links: int = MAX_TICKET_LINKS_IN_LEAVE_EMBED,
-    ) -> tuple[list[str], int]:
+    ) -> list[str]:
+        """Every ticket log of the member, newest first."""
         await self._refresh_ticket_log_index(guild)
         links = self.state.get("ticket_owner_links", {}).get(str(member_id), [])
-        if not links:
-            return [], 0
-        ordered = list(reversed(links))
-        return ordered[:max_links], len(ordered)
+        return list(reversed(links))

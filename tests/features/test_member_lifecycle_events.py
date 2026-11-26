@@ -113,7 +113,8 @@ class LifecycleHistoryTests(unittest.IsolatedAsyncioTestCase):
         cog = await self.new_cog(PeopleReads(self.family))
         guild = SimpleNamespace(id=GUILD_ID, get_channel=lambda _: None, get_role=lambda _: None)
         member = SimpleNamespace(id=7, guild=guild, joined_at=JOINED, display_name="Synthetic", nick=None,
-                                 mention="<@7>", roles=[], created_at=JOINED - timedelta(days=400))
+                                 mention="<@7>", roles=[], created_at=JOINED - timedelta(days=400),
+                                 display_avatar=SimpleNamespace(replace=lambda size: SimpleNamespace(url="https://avatar")))
         with (patch.object(cog_module.discord, "TextChannel", FakeTextChannel),
               patch.object(cog_module, "snapshot_invites", AsyncMock(return_value={}))):
             await cog.on_member_join(member)
@@ -138,6 +139,25 @@ class LifecycleHistoryTests(unittest.IsolatedAsyncioTestCase):
         await restarted.left(7, OLD_JOIN_US, "left")
         self.assertEqual(len(await self.events.read(kind="left")), 1)
         self.assertNotIn(7, restarted.open_joins())
+
+    async def test_join_post_shows_the_month_and_week_and_how_many_have_joined_and_stayed(self):
+        await self.seed({})
+        cog = await self.new_cog(PeopleReads(self.family))
+        overseer = FakeTextChannel(701)
+        guild = SimpleNamespace(id=GUILD_ID, get_channel=lambda _: overseer, get_role=lambda _: None)
+        member = SimpleNamespace(id=9, guild=guild, joined_at=JOINED, display_name="Synthetic", nick=None,
+                                 mention="<@9>", roles=[], created_at=JOINED - timedelta(days=400),
+                                 display_avatar=SimpleNamespace(replace=lambda size: SimpleNamespace(url="https://avatar")))
+        now = datetime(2026, 11, 18, 9, tzinfo=timezone.utc)
+        with (patch.object(cog_module.discord, "TextChannel", FakeTextChannel),
+              patch.object(cog_module, "datetime", wraps=datetime, now=lambda tz=None: now),
+              patch.object(cog_module, "snapshot_invites", AsyncMock(return_value={}))):
+            await cog.lifecycle_state.joined(5, microseconds(datetime(2026, 11, 17, 9, tzinfo=timezone.utc)),
+                                             "Referral", None)
+            await cog.on_member_join(member)
+        fields = overseer.send.await_args.kwargs["embed"].fields[-2:]
+        self.assertEqual([(f.name, f.value) for f in fields],
+                         [("November 2026", "📅 2nd to join"), ("Since Monday", "👥 2nd to join")])
 
     async def test_stayed_joins_count_one_week_and_ignore_leaves_from_other_weeks(self):
         state = await self.new_state()

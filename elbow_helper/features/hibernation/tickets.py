@@ -8,12 +8,11 @@ from datetime import datetime, timezone
 import chat_exporter
 import discord
 from elbow_helper.infrastructure.discord.transcript_participants import transcript_participants
-from elbow_helper.infrastructure.discord.application_emojis import get_application_emoji_provider
+from elbow_helper.infrastructure.discord.membership_history import membership_history_fields
 from elbow_helper.infrastructure.discord.embeds import build_reopened_ticket_embed, build_status_embed
 from elbow_helper.infrastructure.discord.thread_discovery import fetch_thread
 from elbow_helper.infrastructure.discord.views import TranscriptLinkPromptView
 
-from elbow_helper.configuration.clans import CLAN_CWL_HELPER_ROLE_IDS, CLAN_MEMBER_ROLE_IDS
 from elbow_helper.configuration.channels import HIBERNATION_FALLBACK, OVERSEEING_TERRACE, RECRUITMENT_TICKET_CATEGORY, TICKETS_LOG
 from elbow_helper.configuration.roles import CORE, LEAD, RECRUITERS
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX, DEFAULT_THUMBNAIL_URL
@@ -404,39 +403,6 @@ class HibernationTicketMixin:
             LOGGER.warning("Overseeing terrace %s not found", OVERSEEING_TERRACE)
             raise RuntimeError("Overseeing terrace is unavailable")
 
-        def lines(entries: list[str], per_line: int) -> str:
-            rows = (" ".join(entries[i:i + per_line])
-                    for i in range(0, len(entries), per_line))
-            return "\n".join(rows) or "*None*"
-
-        def mentions(role_ids: list[int]) -> list[str]:
-            return [f"<@&{role_id}>" for role_id in role_ids
-                    if guild.get_role(role_id) is not None]
-
-        def section(label: str, entries: list[str], per_line: int) -> str:
-            return f"{label if len(entries) > 1 else label[:-1]}\n{lines(entries, per_line)}"
-
-        clan_role_ids = [role_id for role_id in stored_role_ids
-                         if role_id in HIBERNATION_CLAN_NAMES
-                         and role_id != CLAN_MEMBER_ROLE_IDS["BEW"]]
-        townhall_roles = [
-            role for role in sorted(guild.roles, reverse=True)
-            if role.id in stored_role_ids and role.name.startswith("TH")
-        ]
-        rank_role_ids = [role_id for role_id in stored_role_ids if role_id in LEAD]
-        rank_role_ids += [role_id for role_id in snapshot_role_ids
-                          if role_id not in CLAN_CWL_HELPER_ROLE_IDS.values()]
-
-        catalog = await get_application_emoji_provider(self.bot).get(
-            required_names=[role.name for role in townhall_roles],
-        )
-        townhalls = []
-        for role in townhall_roles:
-            emoji = catalog.get(role.name)
-            townhalls.append(f"{emoji} {role.name}" if emoji else role.name)
-
-        clans = mentions(clan_role_ids)
-        ranks = mentions(rank_role_ids)
         embed = discord.Embed(
             title="Moved to Hibernation",
             color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
@@ -459,15 +425,10 @@ class HibernationTicketMixin:
                 value=f"🚪 <t:{int(user.joined_at.timestamp())}:R>",
                 inline=False,
             )
-        embed.add_field(
-            name="Membership History",
-            value="\n\n".join((
-                section("Clans", clans, 3),
-                section("Town Halls", townhalls, 3),
-                section("Ranks", ranks, 3),
-            )),
-            inline=False,
-        )
+        for name, value in await membership_history_fields(
+            self.bot, guild, stored_role_ids, snapshot_role_ids,
+        ):
+            embed.add_field(name=name, value=value, inline=False)
         await log_channel.send(embed=embed)
 
     async def _send_hibernation_notice(self, user: discord.Member) -> None:

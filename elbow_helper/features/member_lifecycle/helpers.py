@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import calendar
 import logging
 import re
-from datetime import datetime, timezone
+import textwrap
+from datetime import datetime
+from collections.abc import Iterable
 from typing import Any
 
 import discord
 
 from elbow_helper.configuration.recruitment import INVITER_TO_PLATFORM
-from .config import HOME_CLAN_ROLE_IDS
+
+from .config import VISIBLE_LINE_CHARS
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,44 +36,76 @@ def platform_from_inviter(name: str | None) -> str:
         return "Unknown"
 
 
-def find_home_clan_name(member: discord.Member) -> str | None:
-    for clan_name, role_id in HOME_CLAN_ROLE_IDS.items():
-        role = member.guild.get_role(role_id)
-        if role and role in member.roles:
-            return clan_name
-    return None
+def role_lines(roles: Iterable[discord.Role]) -> str:
+    """Role mentions wrapped by what members see: "@" and the role's name, one space between."""
+    lines: list[list[str]] = []
+    width = 0
+    for role in roles:
+        size = len(role.name) + 1
+        if lines and width + 1 + size <= VISIBLE_LINE_CHARS:
+            lines[-1].append(f"<@&{role.id}>")
+            width += 1 + size
+        else:
+            lines.append([f"<@&{role.id}>"])
+            width = size
+    return "\n".join(" ".join(line) for line in lines)
 
 
-def roles_intersection(member: discord.Member, id_map: dict[str, int]) -> list[str]:
-    names: list[str] = []
-    for name, role_id in id_map.items():
-        role = member.guild.get_role(role_id)
-        if role and role in member.roles:
-            names.append(name)
-    return names
+def reason_value(emoji: str, text: str, blank_emoji: str | None) -> str:
+    """The reason wrapped between words, with continuation lines aligned under the first."""
+    lines = textwrap.wrap(text, VISIBLE_LINE_CHARS, break_long_words=False, break_on_hyphens=False)
+    new_line = f"\n{blank_emoji} " if blank_emoji else "\n"
+    return f"{emoji} {new_line.join(lines)}"
 
 
-def human_timedelta(dt_from: datetime, dt_to: datetime | None = None) -> str:
-    dt_to = dt_to or datetime.now(timezone.utc)
-    delta = dt_to - dt_from
-    days = delta.days
-    hours = delta.seconds // 3600
-    minutes = (delta.seconds % 3600) // 60
-    bits: list[str] = []
-    if days:
-        bits.append(f"{days}d")
-    if hours:
-        bits.append(f"{hours}h")
-    if minutes and not days:
-        bits.append(f"{minutes}m")
-    return " ".join(bits) or "0m"
+def duration(seconds: float) -> str:
+    """A length of time in its two largest units, counting 30-day months."""
+    days = int(seconds // 86400)
+    months, days = divmod(days, 30)
+    years, months = divmod(months, 12)
+    units = ((years, "year"), (months, "month"), (days, "day"))
+    named = [f"{n} {unit}{'' if n == 1 else 's'}" for n, unit in units if n]
+    return ", ".join(named[:2]) or "Less than a day"
 
 
-def account_age_str(user: discord.abc.User) -> tuple[str, int]:
-    created_at = user.created_at.replace(tzinfo=timezone.utc)
-    days_old = (datetime.now(timezone.utc) - created_at).days
-    day_word = "day" if days_old == 1 else "days"
-    return f"{days_old} {day_word}", days_old
+def ticket_log_value(links: list[str], blank_emoji: str | None) -> str:
+    """As many whole ticket-log links as one field holds, three to a line."""
+    superscripts = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+    items = [
+        f"[Jump!{str(index).translate(superscripts) if len(links) > 1 else ''}]({url})"
+        for index, url in enumerate(links, start=1)
+    ]
+    new_line = f"\n{blank_emoji} " if blank_emoji else "\n"
+    for shown in range(len(items), -1, -1):
+        rows = [" ".join(items[i:min(i + 3, shown)]) for i in range(0, shown, 3)]
+        extra = len(items) - shown
+        if extra:
+            rows.append(f"+{extra} more ticket log{'' if extra == 1 else 's'}")
+        value = "📁 " + new_line.join(rows)
+        if len(value) <= 1024:
+            break
+    return value
+
+
+def _add_months(moment: datetime, months: int) -> datetime:
+    index = moment.year * 12 + moment.month - 1 + months
+    year, month = divmod(index, 12)
+    day = min(moment.day, calendar.monthrange(year, month + 1)[1])
+    return moment.replace(year=year, month=month + 1, day=day)
+
+
+def account_age(created_at: datetime, now: datetime) -> str:
+    """How old an account is, in the two largest units, e.g. "3 years, 2 months"."""
+    months = (now.year - created_at.year) * 12 + now.month - created_at.month
+    if _add_months(created_at, months) > now:
+        months -= 1
+    days = (now - _add_months(created_at, months)).days
+    years, months = divmod(months, 12)
+    units = [(years, "year"), (months, "month"), (days, "day")]
+    named = [f"{n} {unit}{'' if n == 1 else 's'}" for n, unit in units if n]
+    if years:
+        return ", ".join(named[:2]) if months else named[0]
+    return ", ".join(named[:2]) or "Under a day"
 
 
 async def snapshot_invites(guild: discord.Guild) -> dict[str, dict[str, Any]]:
