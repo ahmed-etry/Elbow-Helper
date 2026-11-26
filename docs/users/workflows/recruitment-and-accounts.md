@@ -35,6 +35,6 @@ reports.
 `/opinion` gives an AI second opinion based on the application and conversation
 in an applicant's ticket.
 
-`/recstats` posts the week's applicant counts by recruitment source and removes
-the post after 24 hours. Separate automatic reports cover overdue applicants
+`/recstats` posts this week's joins by recruitment source, and removes the post
+after 24 hours. Separate automatic reports cover overdue applicants
 and longer-term recruitment activity.

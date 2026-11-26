@@ -377,9 +377,9 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
     ),
     HelpEntry(
         path="/recstats",
-        summary="See how many applicants came from each recruitment source this week.",
+        summary="See how many applicants came from each recruitment platform this week.",
         details=(
-            "Posts this week's applicant counts by recruitment source in the current channel. "
+            "Posts this week's joins by recruitment platform. "
             "The post is removed after 24 hours."
         ),
         category=CAT_RECRUITMENT,

@@ -3,7 +3,7 @@
 Join and leave times live in the family record's server membership, and last
 messages come from the Discord collector. Lifecycle keeps only each join's
 recruitment source and each departure's reason as events, plus the linger
-reports, weekly source counts and ticket-log index it needs as state.
+reports, weekly report guard and ticket-log index it needs as state.
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ WORKFLOW = "lifecycle"
 
 def default_state() -> dict[str, Any]:
     return {
-        "platform_counts": {},
         "last_weekly_report_iso": None,
+        "last_reported_week": None,
         "last_applicant_scan_iso": None,
         "overdue_applicant_ids": [],
         "applicant_reports": {},
@@ -73,6 +73,26 @@ def open_joins(connection) -> dict[int, dict[str, Any]]:
     return joins
 
 
+def stayed_joins(connection, start_us: int, end_us: int) -> dict[int, str]:
+    """Each member's recruitment source for a join in the range with no recorded departure from that stay."""
+    joins = {}
+    for row in connection.execute(
+            "SELECT j.subject_discord_id,j.case_key,j.detail_json FROM workflow_events j "
+            "WHERE j.workflow=? AND j.kind='joined' AND NOT EXISTS (SELECT 1 FROM workflow_events l "
+            "WHERE l.workflow=j.workflow AND l.kind='left' AND l.case_key=j.case_key) "
+            "ORDER BY j.occurred_at,j.id", (WORKFLOW,)):
+        if start_us <= int(row["case_key"].split(":")[1]) < end_us:
+            joins[row["subject_discord_id"]] = json.loads(row["detail_json"])["platform"]
+    return joins
+
+
+def platform_totals(joins: dict[int, str]) -> dict[str, int]:
+    totals: dict[str, int] = {}
+    for platform in joins.values():
+        totals[platform] = totals.get(platform, 0) + 1
+    return totals
+
+
 class LifecycleState:
     """Save lifecycle state and its events together in SQLite."""
 
@@ -88,6 +108,11 @@ class LifecycleState:
 
     def open_joins(self) -> dict[int, dict[str, Any]]:
         return deepcopy(self.joins)
+
+    async def stayed_joins(self, start: datetime, end: datetime) -> dict[int, str]:
+        """Members recruited from start up to end who are still here, with their source."""
+        start_us, end_us = microseconds(start), microseconds(end)
+        return await self.events.call(lambda connection: stayed_joins(connection, start_us, end_us))
 
     async def startup(self):
         async with self._lock:
@@ -133,8 +158,6 @@ class LifecycleState:
             raise ValueError("Unknown recruitment source")
 
         def edit(connection, state):
-            counts = state["platform_counts"]
-            counts[platform] = counts.get(platform, 0) + 1
             return (lifecycle_event("joined", member_id, joined_us, {"platform": platform},
                                     message_id=message_id),)
         await self.change(edit)
@@ -142,14 +165,6 @@ class LifecycleState:
     async def left(self, member_id: int, joined_us: int, reason: str, message_id: int | None = None) -> None:
         def edit(connection, state):
             joined = open_joins(connection).get(member_id)
-            if joined is not None:
-                # As before, a tracked join leaving this week takes its source off the count.
-                counts = state["platform_counts"]
-                current = counts.get(joined["platform"], 0)
-                if current > 1:
-                    counts[joined["platform"]] = current - 1
-                elif current == 1:
-                    counts.pop(joined["platform"], None)
             case_joined = joined["joined_at"] if joined is not None else joined_us
             return (lifecycle_event("left", member_id, case_joined, {"reason": reason}, message_id=message_id),)
         await self.change(edit)

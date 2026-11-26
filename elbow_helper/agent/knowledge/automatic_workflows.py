@@ -4,7 +4,7 @@ from elbow_helper.agent.scheduled.config import POLL_SECONDS
 from elbow_helper.features.account_links.config import POLL_INTERVAL_MINUTES
 from elbow_helper.features.achievements.config import RAFFLE_HUB_UPDATE_HOURS
 from elbow_helper.features.clan_transfers.config import REQUEST_TTL_HOURS
-from elbow_helper.features.member_lifecycle.config import APPLICANT_LINGER_DAYS, WEEKLY_REPORT_INTERVAL_DAYS
+from elbow_helper.features.member_lifecycle.config import APPLICANT_LINGER_DAYS
 from elbow_helper.features.recruitment.config import APPLICANT_AI_CLEANUP_HOURS, REMINDER_HOURS, TRIAL_RESOLVED_REMINDER_RETENTION_HOURS
 from elbow_helper.features.rosters.config import SCHEDULER_INTERVAL_SECONDS
 
@@ -89,10 +89,12 @@ def automatic_workflows():
         {'workflow': 'member_lifecycle_reports',
          'sources': ['elbow_helper/features/member_lifecycle/reports.py:weekly_report',
                      'elbow_helper/features/member_lifecycle/reports.py:applicant_linger_scan'],
-         'schedule': {'check_every_hours': 24, 'recruitment_report_interval_days': WEEKLY_REPORT_INTERVAL_DAYS,
-                      'applicant_linger_days': APPLICANT_LINGER_DAYS},
-         'effects': ['Post recruitment source reports', 'Report lingering applicants'],
-         'keeps': ['Member lifecycle records; reporting does not remove applicants']},
+         'schedule': {'recruitment_report': {'check_every_minutes': 30,
+                                             'due': 'From Monday 08:00 UTC, once per finished Monday-to-Sunday week'},
+                      'applicant_scan_every_hours': 24, 'applicant_linger_days': APPLICANT_LINGER_DAYS},
+         'effects': ['Post the finished week recruitment source report', 'Report lingering applicants'],
+         'keeps': ['Member lifecycle records; reporting does not remove applicants',
+                   'Last reported week guard']},
         {'workflow': 'achievement_automation',
          'sources': ['elbow_helper/features/achievements/economy.py:salary_task',
                      'elbow_helper/features/achievements/raffle.py:raffle_hub_task',

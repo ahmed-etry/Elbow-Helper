@@ -8,6 +8,9 @@ from datetime import datetime, timezone
 from typing import Any
 from elbow_helper.domain.numbers import positive_int_or_none
 
+from .state import platform_totals
+from .weeks import WEEK, week_start
+
 
 MAX_LIFECYCLE_MEMBERS = 10_000
 MAX_RECRUITMENT_SOURCES = 100
@@ -101,7 +104,9 @@ class LifecycleRecordSource:
             if message is not None:
                 last_seen[str(member_id)] = {"ts_iso": _iso_us(message["message_at"]),
                                              "channel_id": message["channel_id"]}
-        return {**state, "members": members, "last_seen": last_seen}
+        this_week = week_start(datetime.now(timezone.utc))
+        counts = platform_totals(await self._lifecycle.stayed_joins(this_week, this_week + WEEK))
+        return {**state, "members": members, "last_seen": last_seen, "platform_counts": counts}
 
     async def history(self, member_id: int) -> dict[str, Any]:
         """Every recorded stay of one member, oldest first, with its source and leave reason."""

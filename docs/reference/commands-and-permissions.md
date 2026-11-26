@@ -61,7 +61,7 @@ channel permissions also apply.
 | `/decline` | Decline an applicant and send the decision. | Recruiter or Core leadership |
 | `/opinion` | Get an AI second opinion on an applicant ticket. | Recruiter or Core leadership |
 | `/recstatements` | Send an Under 16 or Hyperactive message to an applicant. | Recruiter or Core leadership |
-| `/recstats` | See how many applicants came from each recruitment source this week. | Recruiter or Core leadership |
+| `/recstats` | See how many applicants came from each recruitment platform this week. | Recruiter or Core leadership |
 
 ## CWL
 

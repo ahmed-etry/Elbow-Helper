@@ -14,8 +14,10 @@ from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import APPLICANT_ROLE_ID, CORE, RECRUITERS
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX, DEFAULT_THUMBNAIL_URL
 
-from .config import APPLICANT_LINGER_DAYS, MAX_OVERDUE_APPLICANTS_DISPLAY, WEEKLY_REPORT_INTERVAL_DAYS
+from .config import APPLICANT_LINGER_DAYS, MAX_OVERDUE_APPLICANTS_DISPLAY
+from .state import platform_totals
 from .views import ApplicantCleanupView
+from .weeks import WEEK, week_label, week_start
 
 LOGGER = logging.getLogger(__name__)
 
@@ -39,15 +41,6 @@ class ReportsMixin:
                 await message.edit(view=ApplicantCleanupView(self, report_message_id, disabled=True))
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             LOGGER.debug("Failed to disable applicant cleanup view for %s", report_message_id)
-
-    def _load_last_run(self, state_key: str, now: datetime, *, fallback_days: int) -> datetime:
-        last_iso = self.state.get(state_key)
-        if not last_iso:
-            return now - timedelta(days=fallback_days)
-        try:
-            return datetime.fromisoformat(last_iso)
-        except ValueError:
-            return now - timedelta(days=fallback_days)
 
     @staticmethod
     def _build_applicant_linger_embed(
@@ -88,40 +81,41 @@ class ReportsMixin:
 
         return embed
 
-    @tasks.loop(hours=24)
+    @tasks.loop(minutes=30)
     async def weekly_report(self):
         await self.bot.wait_until_ready()
 
         now = datetime.now(timezone.utc)
-        last = self._load_last_run("last_weekly_report_iso", now, fallback_days=1000)
-
-        if (now - last).days < WEEKLY_REPORT_INTERVAL_DAYS:
+        this_week = week_start(now)
+        if now < this_week + timedelta(hours=8):
+            return
+        finished = this_week - WEEK
+        if self.state.get("last_reported_week") == finished.date().isoformat():
             return
 
         channel = self.bot.get_channel(OVERSEEING_TERRACE)
         if not isinstance(channel, discord.TextChannel):
             return
 
-        iso_year, _, _ = now.isocalendar()
-        month_label = now.strftime("%B")
-        month_week = ((now.day - 1) // 7) + 1
         embed = discord.Embed(
             title="📊 Weekly Recruitment Sources",
-            description=f"Week {month_week} • {month_label} {iso_year}",
+            description=week_label(finished),
             color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
             timestamp=now,
         )
         embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
 
-        platforms = sorted(self.state["platform_counts"].items(), key=lambda row: -row[1])
+        platforms = sorted(platform_totals(await self.lifecycle_state.stayed_joins(finished, finished + WEEK)).items(),
+                           key=lambda row: -row[1])
         if platforms:
             for platform, count in platforms:
                 embed.add_field(name=platform, value=str(count), inline=True)
         else:
-            embed.add_field(name="No recruitment joins", value="No recruitment joins this week.", inline=False)
+            embed.add_field(name="No recruitment joins", value="No recruitment joins that week.", inline=False)
 
         await channel.send(embed=embed)
-        await self.lifecycle_state.update({"platform_counts": {}, "last_weekly_report_iso": now.isoformat()})
+        await self.lifecycle_state.update(
+            {"last_reported_week": finished.date().isoformat(), "last_weekly_report_iso": now.isoformat()})
 
     @weekly_report.before_loop
     async def before_weekly_report(self):
@@ -209,7 +203,7 @@ class ReportsMixin:
 
     @app_commands.command(
         name="recstats",
-        description="See how many applicants came from each recruitment source this week.",
+        description="See how many applicants came from each recruitment platform this week.",
     )
     @app_commands.guilds(discord.Object(id=GUILD_ID))
     async def recruitment_stats(self, interaction: discord.Interaction):
@@ -220,18 +214,17 @@ class ReportsMixin:
         await interaction.response.defer(ephemeral=False, thinking=True)
         try:
             now = datetime.now(timezone.utc)
-            iso_year, _, _ = now.isocalendar()
-            month_label = now.strftime("%B")
-            month_week = ((now.day - 1) // 7) + 1
+            this_week = week_start(now)
             embed = discord.Embed(
                 title="Weekly Recruitment Stats",
-                description=f"📊 Week {month_week} · {month_label} {iso_year}\n\u200b",
+                description=f"📊 {week_label(this_week)}\n\u200b",
                 color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
                 timestamp=now,
             )
             embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
 
-            platforms = sorted(self.state["platform_counts"].items(), key=lambda row: -row[1])
+            platforms = sorted(platform_totals(await self.lifecycle_state.stayed_joins(this_week, this_week + WEEK)).items(),
+                               key=lambda row: -row[1])
             total = sum(count for _, count in platforms)
             if platforms:
                 for platform, count in platforms:

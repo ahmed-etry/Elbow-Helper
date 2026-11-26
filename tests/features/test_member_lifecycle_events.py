@@ -37,7 +37,6 @@ def saved_work():
             "11": {"platform": "Referral", "joined_at_iso": "not a date", "left": False},
         },
         "last_seen": {"7": {"ts_iso": "2026-11-04T00:00:00+00:00", "channel_id": 70}},
-        "platform_counts": {"Referral": 2, "Clash Champs": 1},
         "last_weekly_report_iso": "2026-10-30T16:00:00+00:00",
         "last_applicant_scan_iso": "2026-11-04T15:00:00+00:00",
         "overdue_applicant_ids": [8],
@@ -109,39 +108,8 @@ class LifecycleHistoryTests(unittest.IsolatedAsyncioTestCase):
                 "bot": False, "joined_at": joined_us, "roles": []}
 
 
-    async def test_join_and_leave_from_discord_keep_source_reason_and_weekly_count(self):
-        await self.seed({"platform_counts": {}})
-        cog = await self.new_cog(PeopleReads(self.family))
-        overseer = FakeTextChannel(701)
-
-        async def audit_logs(*, limit, action):
-            yield SimpleNamespace(target=SimpleNamespace(id=7), user="Leader",
-                                  created_at=datetime.now(timezone.utc))
-
-        guild = SimpleNamespace(id=GUILD_ID, get_channel=lambda _: overseer, get_role=lambda _: None,
-                                audit_logs=audit_logs)
-        member = SimpleNamespace(id=7, guild=guild, joined_at=JOINED, display_name="Synthetic", nick=None,
-                                 mention="<@7>", roles=[], created_at=JOINED - timedelta(days=400))
-        cog._find_ticket_log_links_for_member = AsyncMock(return_value=([], 0))
-        with (patch.object(cog_module.discord, "TextChannel", FakeTextChannel),
-              patch.object(cog_module, "snapshot_invites", AsyncMock(return_value={}))):
-            await cog.on_member_join(member)
-            self.assertEqual(cog.state["platform_counts"], {"Referral": 1})
-            await cog.on_member_remove(member)
-        embed = overseer.send.await_args_list[1].kwargs["embed"]
-        self.assertIn("Kicked by Leader", [field.value for field in embed.fields])
-        self.assertEqual(cog.state["platform_counts"], {})
-        joined, left = await self.events.read(workflow="lifecycle")
-        self.assertEqual((joined["kind"], joined["case_key"], joined["detail"], joined["source_message_id"],
-                          joined["actor_kind"]), ("joined", f"7:{JOINED_US}", {"platform": "Referral"}, 701,
-                                                  "automatic"))
-        self.assertEqual((left["kind"], left["case_key"], left["detail"]),
-                         ("left", f"7:{JOINED_US}", {"reason": "kicked"}))
-        self.assertEqual(cog.lifecycle_state.open_joins(), {})
-        self.assertEqual(cog.lifecycle_state.open_joins(), {})
-
     async def test_join_and_leave_are_recorded_when_the_overseeing_channel_is_missing(self):
-        await self.seed({"platform_counts": {}})
+        await self.seed({})
         cog = await self.new_cog(PeopleReads(self.family))
         guild = SimpleNamespace(id=GUILD_ID, get_channel=lambda _: None, get_role=lambda _: None)
         member = SimpleNamespace(id=7, guild=guild, joined_at=JOINED, display_name="Synthetic", nick=None,
@@ -156,23 +124,40 @@ class LifecycleHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((left["kind"], left["case_key"]), ("left", f"7:{JOINED_US}"))
 
     async def test_failed_write_keeps_state_and_history_and_a_restart_records_the_leave_once(self):
-        await self.seed({"members": saved_work()["members"], "platform_counts": {"Referral": 1}})
+        await self.seed({"members": saved_work()["members"]})
         state = await self.new_state()
         await self.events.call(lambda c: c.execute(
             "CREATE TRIGGER fail_left BEFORE INSERT ON workflow_events WHEN NEW.kind='left' "
             "BEGIN SELECT RAISE(ABORT,'failed'); END"))
         with self.assertRaises(sqlite3.IntegrityError):
             await state.left(7, OLD_JOIN_US, "left")
-        self.assertEqual(state.state["platform_counts"], {"Referral": 1})
         self.assertIn(7, state.open_joins())
         await self.events.call(lambda c: c.execute("DROP TRIGGER fail_left"))
         restarted = await self.new_state()
-        self.assertEqual(restarted.state["platform_counts"], {"Referral": 1})
         await restarted.left(7, OLD_JOIN_US, "left")
         await restarted.left(7, OLD_JOIN_US, "left")
         self.assertEqual(len(await self.events.read(kind="left")), 1)
-        self.assertEqual(restarted.state["platform_counts"], {})
         self.assertNotIn(7, restarted.open_joins())
+
+    async def test_stayed_joins_count_one_week_and_ignore_leaves_from_other_weeks(self):
+        state = await self.new_state()
+        monday = datetime(2026, 11, 16, tzinfo=timezone.utc)
+
+        def at(days, hours=12):
+            return microseconds(monday + timedelta(days=days, hours=hours))
+        await state.joined(1, at(-3), "Referral", None)
+        await state.joined(2, at(0, 0), "Referral", None)
+        await state.joined(3, at(2), "Reddit / In-game", None)
+        await state.joined(4, at(6, 23), "Reddit / In-game", None)
+        await state.joined(5, at(7, 0), "Referral", None)
+        # Member 2 leaves and rejoins in the same week: one stayed join. Member 1 joined last week.
+        await state.left(2, at(0, 0), "left")
+        await state.joined(2, at(3), "Referral", None)
+        await state.left(1, at(-3), "left")
+        await state.left(4, at(6, 23), "left")
+        week = timedelta(days=7)
+        self.assertEqual(await state.stayed_joins(monday, monday + week), {2: "Referral", 3: "Reddit / In-game"})
+        self.assertEqual(await state.stayed_joins(monday - week, monday), {})
 
     async def test_member_written_messages_never_produce_an_event(self):
         cog = await self.new_cog()
