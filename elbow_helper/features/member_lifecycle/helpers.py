@@ -58,16 +58,6 @@ def reason_value(emoji: str, text: str, blank_emoji: str | None) -> str:
     return f"{emoji} {new_line.join(lines)}"
 
 
-def duration(seconds: float) -> str:
-    """A length of time in its two largest units, counting 30-day months."""
-    days = int(seconds // 86400)
-    months, days = divmod(days, 30)
-    years, months = divmod(months, 12)
-    units = ((years, "year"), (months, "month"), (days, "day"))
-    named = [f"{n} {unit}{'' if n == 1 else 's'}" for n, unit in units if n]
-    return ", ".join(named[:2]) or "Less than a day"
-
-
 def ticket_log_value(links: list[str], blank_emoji: str | None) -> str:
     """As many whole ticket-log links as one field holds, three to a line."""
     superscripts = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")

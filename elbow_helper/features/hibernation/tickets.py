@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import io
 import logging
+import random
 import re
 from datetime import datetime, timezone
 
 import chat_exporter
 import discord
+from elbow_helper.infrastructure.discord.application_emojis import get_application_emoji_provider
 from elbow_helper.infrastructure.discord.transcript_participants import transcript_participants
-from elbow_helper.infrastructure.discord.membership_history import membership_history_fields
+from elbow_helper.infrastructure.discord.membership_history import duration as time_span, membership_history_fields
 from elbow_helper.infrastructure.discord.embeds import build_reopened_ticket_embed, build_status_embed
 from elbow_helper.infrastructure.discord.thread_discovery import fetch_thread
 from elbow_helper.infrastructure.discord.views import TranscriptLinkPromptView
@@ -22,8 +24,10 @@ from .config import (
     FALLBACK_THREAD_ARCHIVE_DURATIONS,
     FALLBACK_THREAD_NAME_LIMIT,
     FALLBACK_THREAD_PREFIX,
+    LOG_THUMBNAILS,
 )
 from .state import (
+    LOG_THUMBNAIL_KEY,
     extract_owner_id_from_topic,
     get_fallback_info_message_id,
     get_fallback_thread_entry,
@@ -390,6 +394,30 @@ class HibernationTicketMixin:
             return None
 
 
+    async def _application_emoji(self, name: str) -> str | None:
+        if not callable(getattr(self.bot, "fetch_application_emojis", None)):
+            return None
+        catalog = await get_application_emoji_provider(self.bot).get(required_names=(name,))
+        return catalog.get(name)
+
+    def _log_thumbnail_file(self, embed: discord.Embed) -> tuple[str | None, discord.File | None]:
+        """Pick a picture to send with the log post and show it as the embed's thumbnail."""
+        directory = self.bot.paths.avatar_directory
+        available = [name for name in LOG_THUMBNAILS if (directory / f"{name}.webp").is_file()]
+        if not available:
+            return None, None
+        previous = self.hibernation_state.snapshot().get(LOG_THUMBNAIL_KEY)
+        # A lone picture repeats rather than leaving the post without one.
+        name = random.choice([item for item in available if item != previous] or available)
+        filename = f"{name}.webp"
+        try:
+            picture = discord.File(directory / filename, filename=filename)
+        except OSError as exc:
+            LOGGER.warning("Thumbnail %s not attached: %s", filename, exc)
+            return None, None
+        embed.set_thumbnail(url=f"attachment://{filename}")
+        return name, picture
+
     async def send_hibernation_log(
         self, guild: discord.Guild | None,
         actor: discord.Member | discord.User,
@@ -411,25 +439,35 @@ class HibernationTicketMixin:
             name=user.nick or user.display_name,
             icon_url=user.display_avatar.replace(size=64).url,
         )
-        embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-        embed.add_field(name="Member", value=user.mention, inline=False)
-        embed.add_field(
-            name="Moved By",
-            value=getattr(actor, "nick", None) or actor.display_name,
-            inline=False,
-        )
-        embed.add_field(name="Date Moved", value=f"🗓️ <t:{unix_ts}:R>", inline=False)
+        embed.add_field(name="Member", value=user.mention + "\n\u200b", inline=False)
         if user.joined_at is not None:
+            now = datetime.now(timezone.utc).timestamp()
             embed.add_field(
-                name="Joined Server",
-                value=f"🚪 <t:{int(user.joined_at.timestamp())}:R>",
+                name="Time in Server",
+                value=f"🏕️ {time_span(now - user.joined_at.timestamp())}",
                 inline=False,
             )
+        embed.add_field(
+            name="Moved By",
+            value=f"💤 {getattr(actor, 'nick', None) or actor.display_name}",
+            inline=False,
+        )
+        embed.add_field(name="Date Moved", value=f"🗓️ <t:{unix_ts}:D>\n\u200b", inline=False)
         for name, value in await membership_history_fields(
             self.bot, guild, stored_role_ids, snapshot_role_ids,
         ):
             embed.add_field(name=name, value=value, inline=False)
-        await log_channel.send(embed=embed)
+        ticket_field = None
+        if self.ticket_log_field is not None:
+            ticket_field = await self.ticket_log_field(
+                guild, user.id, await self._application_emoji("blank"),
+            )
+        if ticket_field:
+            embed.add_field(name=ticket_field[0], value=ticket_field[1], inline=False)
+        thumbnail, picture = self._log_thumbnail_file(embed)
+        await log_channel.send(embed=embed, file=picture)
+        if thumbnail:
+            await self.hibernation_state.save_log_thumbnail(thumbnail)
 
     async def _send_hibernation_notice(self, user: discord.Member) -> None:
         message = self._build_hibernation_notice_message(user)

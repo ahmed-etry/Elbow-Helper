@@ -1,4 +1,4 @@
-"""The Clans, Town Halls and Ranks text shown for a member's saved roles."""
+"""Text shown for a member's history: time spans and saved Clans, Town Halls and Ranks."""
 
 from __future__ import annotations
 
@@ -7,6 +7,16 @@ import discord
 from elbow_helper.configuration.clans import CLAN_CWL_HELPER_ROLE_IDS, CLAN_MEMBER_ROLE_IDS, CLAN_NAMES
 from elbow_helper.configuration.roles import LEAD
 from elbow_helper.infrastructure.discord.application_emojis import get_application_emoji_provider
+
+
+def duration(seconds: float) -> str:
+    """A length of time in its two largest units, counting 30-day months."""
+    days = int(seconds // 86400)
+    months, days = divmod(days, 30)
+    years, months = divmod(months, 12)
+    units = ((years, "year"), (months, "month"), (days, "day"))
+    named = [f"{n} {unit}{'' if n == 1 else 's'}" for n, unit in units if n]
+    return ", ".join(named[:2]) or "Less than a day"
 
 
 def _lines(entries: list[str], per_line: int) -> str:

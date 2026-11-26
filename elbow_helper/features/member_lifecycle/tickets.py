@@ -15,6 +15,8 @@ from .config import (
     TICKET_LOG_SCAN_MAX_RETRY_SECONDS,
     TICKET_LOG_SCAN_RETRY_SECONDS,
 )
+from .helpers import ticket_log_value
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -129,6 +131,19 @@ class TicketIndexMixin:
                 if finished:
                     return
                 await asyncio.sleep(TICKET_LOG_SCAN_BATCH_DELAY_SECONDS)
+
+    async def ticket_log_field(
+        self,
+        guild: discord.Guild,
+        member_id: int,
+        blank_emoji: str | None,
+    ) -> tuple[str, str] | None:
+        """The member's ticket-log field for a log post, or None when they have no logs."""
+        links = await self._find_ticket_log_links_for_member(guild, member_id)
+        if not links:
+            return None
+        name = "Ticket Log" if len(links) == 1 else "Ticket Logs"
+        return name, ticket_log_value(links, blank_emoji)
 
     async def _find_ticket_log_links_for_member(
         self,

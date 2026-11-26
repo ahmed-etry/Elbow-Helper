@@ -25,6 +25,7 @@ from elbow_helper.configuration.roles import (
 FALLBACK_THREAD_PREFIX = "Hibernation "
 FALLBACK_THREAD_NAME_LIMIT = 100
 FALLBACK_THREAD_ARCHIVE_DURATIONS = (10080, 4320, 1440, 60)
+LOG_THUMBNAILS = ("hib_vine_heart", "hib_pekka", "hib_pig")
 
 HIBERNATE_REMOVE_ROLE_IDS = frozenset(
     (

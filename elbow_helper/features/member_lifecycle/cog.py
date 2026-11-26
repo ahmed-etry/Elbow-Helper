@@ -19,13 +19,12 @@ from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import APPLICANT_ROLE_ID, HIBERNATING_ROLE_ID, MEMBER_ROLE_ID, TRIAL_ROLE_ID
 from elbow_helper.features.hibernation.config import SNAPSHOT_ONLY_ROLE_IDS
 from elbow_helper.infrastructure.discord.application_emojis import get_application_emoji_provider
-from elbow_helper.infrastructure.discord.membership_history import saved_clan_and_rank_ids
+from elbow_helper.infrastructure.discord.membership_history import duration, saved_clan_and_rank_ids
 
 from .config import CWL_ROLE_IDS, HOME_CLAN_ROLE_IDS, LEAVE_PHRASES, WAR_ROLE_IDS
 from .contracts import HibernationReader
 from .helpers import (
-    account_age, duration, platform_from_inviter, reason_value, role_lines, snapshot_invites,
-    ticket_log_value,
+    account_age, platform_from_inviter, reason_value, role_lines, snapshot_invites,
 )
 from .reports import ReportsMixin
 from .queries import LifecycleRecordSource, MemberLifecycleQueries
@@ -347,10 +346,9 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
                 add_roles("Clan", clan_ids)
                 add_roles("Rank", rank_ids)
 
-            ticket_links = await self._find_ticket_log_links_for_member(member.guild, member.id)
-            if ticket_links:
-                field_name = "Ticket Log" if len(ticket_links) == 1 else "Ticket Logs"
-                fields.append((field_name, ticket_log_value(ticket_links, blank)))
+            ticket_field = await self.ticket_log_field(member.guild, member.id, blank)
+            if ticket_field:
+                fields.append(ticket_field)
 
             if len(fields) > reason_index + 1:
                 fields[reason_index] = ("Reason", fields[reason_index][1] + "\n\u200b")

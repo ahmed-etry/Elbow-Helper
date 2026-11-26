@@ -9,6 +9,7 @@ from elbow_helper.data.events import Event, finish_on_cancel, initialize_state, 
 
 FALLBACK_THREADS_KEY = "_fallback_threads"
 FALLBACK_INFO_MESSAGE_KEY = "_fallback_info_message_id"
+LOG_THUMBNAIL_KEY = "_log_thumbnail"
 
 
 class HibernationStateReader:
@@ -84,6 +85,9 @@ class HibernationState:
 
     async def save_fallback_info(self, message_id):
         await self.change(lambda state: set_fallback_info_message_id(state, message_id))
+
+    async def save_log_thumbnail(self, name):
+        await self.change(lambda state: state.update({LOG_THUMBNAIL_KEY: name}))
 
     async def save_fallback_thread(self, member_id, entry):
         entry = deepcopy(entry)

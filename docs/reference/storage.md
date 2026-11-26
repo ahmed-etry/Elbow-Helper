@@ -15,6 +15,9 @@ data/
   appearance/avatar.gif
   appearance/join.webp
   appearance/leave.webp
+  appearance/hib_vine_heart.webp
+  appearance/hib_pekka.webp
+  appearance/hib_pig.webp
   agent/knowledge/*.md
   agent/gifs/
   logs/
@@ -38,6 +41,7 @@ data/
 | `settings/health-defaults.json` | Hand-edited health-report defaults. Anything missing uses the values built into the code. |
 | `appearance/avatar.gif` | The bot's profile image. The bot uploads it again when the file changes. |
 | `appearance/join.webp`, `appearance/leave.webp` | Pictures on join and leave posts. |
+| `appearance/hib_vine_heart.webp`, `appearance/hib_pekka.webp`, `appearance/hib_pig.webp` | Pictures on hibernation posts, one for each post. |
 | `agent/knowledge/` | The approved [community reference files](../operators/agent-knowledge.md). |
 | `agent/gifs/` | Approved meme GIFs the agent can post. Copy these when moving the bot. |
 | `logs/` | `bot.log`, `bot.debug.log` and their older numbered copies. |

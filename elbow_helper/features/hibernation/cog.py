@@ -18,6 +18,7 @@ class Hibernate(commands.Cog, HibernationTicketMixin, HibernationCommandMixin):
         self.reader = HibernationStateReader(self.hibernation_state)
         self.queries = HibernationQueries(self.hibernation_state.snapshot)
         self._fallback_info_ready = False
+        self.ticket_log_field = None  # Member Lifecycle, which loads later, provides it.
 
     async def cog_load(self):
         await self.hibernation_state.startup()

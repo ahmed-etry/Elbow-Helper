@@ -8,7 +8,9 @@ async def setup(bot: commands.Bot) -> None:
     hibernation_reader = getattr(hibernation, "reader", None)
     if hibernation_reader is None:
         raise RuntimeError("Member Lifecycle requires Hibernation")
-    await bot.add_cog(MemberLifecycle(bot, hibernation_reader))
+    cog = MemberLifecycle(bot, hibernation_reader)
+    await bot.add_cog(cog)
+    hibernation.ticket_log_field = cog.ticket_log_field
 
 
 __all__ = ("MemberLifecycle", "setup")
