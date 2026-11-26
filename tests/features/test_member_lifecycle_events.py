@@ -167,16 +167,21 @@ class LifecycleHistoryTests(unittest.IsolatedAsyncioTestCase):
             return microseconds(monday + timedelta(days=days, hours=hours))
         await state.joined(1, at(-3), "Referral", None)
         await state.joined(2, at(0, 0), "Referral", None)
-        await state.joined(3, at(2), "Reddit / In-game", None)
-        await state.joined(4, at(6, 23), "Reddit / In-game", None)
+        await state.joined(3, at(2), "Reddit", None)
+        await state.joined(4, at(6, 23), "Reddit", None)
         await state.joined(5, at(7, 0), "Referral", None)
+        # Joins saved before the rename keep counting under today's names.
+        for member_id, former in ((2, "Unknown"), (3, "Reddit / In-game")):
+            await self.events.call(lambda c, member_id=member_id, former=former: c.execute(
+                "UPDATE workflow_events SET detail_json=? WHERE kind='joined' AND subject_discord_id=?",
+                (f'{{"platform":"{former}"}}', member_id)))
         # Member 2 leaves and rejoins in the same week: one stayed join. Member 1 joined last week.
         await state.left(2, at(0, 0), "left")
         await state.joined(2, at(3), "Referral", None)
         await state.left(1, at(-3), "left")
         await state.left(4, at(6, 23), "left")
         week = timedelta(days=7)
-        self.assertEqual(await state.stayed_joins(monday, monday + week), {2: "Referral", 3: "Reddit / In-game"})
+        self.assertEqual(await state.stayed_joins(monday, monday + week), {2: "Referral", 3: "Reddit"})
         self.assertEqual(await state.stayed_joins(monday - week, monday), {})
 
     async def test_member_written_messages_never_produce_an_event(self):

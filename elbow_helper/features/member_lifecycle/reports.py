@@ -14,7 +14,7 @@ from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import APPLICANT_ROLE_ID, CORE, RECRUITERS
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX, DEFAULT_THUMBNAIL_URL
 
-from .config import APPLICANT_LINGER_DAYS, MAX_OVERDUE_APPLICANTS_DISPLAY
+from .config import APPLICANT_LINGER_DAYS, MAX_OVERDUE_APPLICANTS_DISPLAY, PLATFORM_EMOJIS
 from .state import platform_totals
 from .views import ApplicantCleanupView
 from .weeks import WEEK, week_label, week_start
@@ -23,6 +23,42 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ReportsMixin:
+    async def _recruitment_embed(self, start: datetime, empty_text: str) -> discord.Embed:
+        """One week's joins by platform, compared with the week before."""
+        joins = await self.lifecycle_state.stayed_joins(start, start + WEEK)
+        before = len(await self.lifecycle_state.stayed_joins(start - WEEK, start))
+        embed = discord.Embed(
+            title="New Recruits",
+            description=f"🗓️ {week_label(start)}\n\u200b",
+            color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
+        )
+        embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
+
+        totals = platform_totals(joins)
+        fields = []
+        for platform, emoji_name in PLATFORM_EMOJIS:
+            if platform in totals:
+                emoji = await self._application_emoji(emoji_name) if emoji_name else "👥"
+                prefix = f"{emoji} " if emoji else ""
+                fields.append((platform, f"{prefix}{totals[platform]} joined"))
+        if not fields:
+            fields.append(("No recruitment joins", empty_text))
+        # One platform's count is already the total.
+        if len(totals) != 1:
+            name, value = fields[-1]
+            fields[-1] = (name, value + "\n\u200b")
+            total, change = len(joins), len(joins) - before
+            if change > 0:
+                comparison = f"📈 {total}, up {change} from last week"
+            elif change < 0:
+                comparison = f"📉 {total}, down {-change} from last week"
+            else:
+                comparison = f"➖ {total}, same as last week"
+            fields.append(("Total", comparison))
+        for name, value in fields:
+            embed.add_field(name=name, value=value, inline=False)
+        return embed
+
     async def close_applicant_report(self, report_message_id: int, guild: discord.Guild) -> None:
         """Close an overdue-applicant report and disable its button."""
         key = str(report_message_id)
@@ -97,22 +133,7 @@ class ReportsMixin:
         if not isinstance(channel, discord.TextChannel):
             return
 
-        embed = discord.Embed(
-            title="📊 Weekly Recruitment Sources",
-            description=week_label(finished),
-            color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-            timestamp=now,
-        )
-        embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-
-        platforms = sorted(platform_totals(await self.lifecycle_state.stayed_joins(finished, finished + WEEK)).items(),
-                           key=lambda row: -row[1])
-        if platforms:
-            for platform, count in platforms:
-                embed.add_field(name=platform, value=str(count), inline=True)
-        else:
-            embed.add_field(name="No recruitment joins", value="No recruitment joins that week.", inline=False)
-
+        embed = await self._recruitment_embed(finished, "No recruitment joins that week.")
         await channel.send(embed=embed)
         await self.lifecycle_state.update(
             {"last_reported_week": finished.date().isoformat(), "last_weekly_report_iso": now.isoformat()})
@@ -213,27 +234,8 @@ class ReportsMixin:
 
         await interaction.response.defer(ephemeral=False, thinking=True)
         try:
-            now = datetime.now(timezone.utc)
-            this_week = week_start(now)
-            embed = discord.Embed(
-                title="Weekly Recruitment Stats",
-                description=f"📊 {week_label(this_week)}\n\u200b",
-                color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-                timestamp=now,
-            )
-            embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-
-            platforms = sorted(platform_totals(await self.lifecycle_state.stayed_joins(this_week, this_week + WEEK)).items(),
-                               key=lambda row: -row[1])
-            total = sum(count for _, count in platforms)
-            if platforms:
-                for platform, count in platforms:
-                    noun = "join" if count == 1 else "joins"
-                    embed.add_field(name=platform, value=f"**{count}** {noun}", inline=False)
-            else:
-                embed.add_field(name="No recruitment joins", value="No recruitment joins this week.", inline=False)
-
-            embed.set_footer(text=f"Total joins: {total}")
+            this_week = week_start(datetime.now(timezone.utc))
+            embed = await self._recruitment_embed(this_week, "No recruitment joins this week.")
             msg = await interaction.followup.send(embed=embed, ephemeral=False)
 
             async def _cleanup(message: discord.Message):

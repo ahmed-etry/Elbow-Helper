@@ -13,6 +13,12 @@ MAX_OVERDUE_APPLICANTS_DISPLAY = 15
 
 APPLICANT_LINGER_DAYS = 14
 
+# The recruitment report's order, each with its application emoji; Referral stays last and has none.
+PLATFORM_EMOJIS = (
+    ("Reddit", "from_reddit"), ("CoC Discord", "from_coc_discord"),
+    ("Clash Champs", "from_clash_champs"), ("Jo Nation", "from_jo_nation"), ("Referral", None),
+)
+
 VISIBLE_LINE_CHARS = 30
 LEAVE_PHRASES = (
     "Chose to kick rocks", "Packed up and dipped", "Folded under pressure", "Couldn't hang",

@@ -2,11 +2,13 @@
 from contextlib import closing
 from dataclasses import replace
 from functools import partial
+import json
 import sqlite3
 
 from elbow_helper.agent.reads.sql.sources import DataSource
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.configuration.files import FAMILY_DATABASE
+from elbow_helper.configuration.recruitment import platform_name
 
 CLOSED = 'feature_access_only'
 
@@ -127,11 +129,17 @@ def workflow_snapshot(paths, path, readable, *, channel_ids=frozenset(), read_ch
     with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)) as connection:
         columns = [(row[1], row[2]) for row in connection.execute('PRAGMA table_info(workflow_events)')]
         channel_index = next(i for i, (name, _) in enumerate(columns) if name == 'source_channel_id')
+        detail_index = next(i for i, (name, _) in enumerate(columns) if name == 'detail_json')
         for name in readable:
             workflow = name.removesuffix('_events')
             rows = []
             for raw in connection.execute('SELECT * FROM workflow_events WHERE workflow=? ORDER BY id', (workflow,)):
                 row = list(raw)
+                if workflow == 'lifecycle':
+                    detail = json.loads(row[detail_index])
+                    if 'platform' in detail:
+                        detail['platform'] = platform_name(detail['platform'])
+                        row[detail_index] = json.dumps(detail, sort_keys=True, separators=(',', ':'))
                 if workflow == 'hibernation':
                     row[channel_index] = OVERSEEING_TERRACE
                 channel = row[channel_index]

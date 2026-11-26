@@ -10,7 +10,7 @@ from typing import Any
 
 import discord
 
-from elbow_helper.configuration.recruitment import INVITER_TO_PLATFORM
+from elbow_helper.configuration.recruitment import INVITER_TO_PLATFORM, REFERRAL_PLATFORM
 
 from .config import VISIBLE_LINE_CHARS
 
@@ -19,7 +19,7 @@ LOGGER = logging.getLogger(__name__)
 
 def platform_from_inviter(name: str | None) -> str:
     if not name:
-        return "Referral"
+        return REFERRAL_PLATFORM
     try:
         cleaned = re.sub(r"^[^A-Za-z0-9]+|[^A-Za-z0-9]+$", "", name).strip()
         for candidate in (name, cleaned):
@@ -31,9 +31,9 @@ def platform_from_inviter(name: str | None) -> str:
             for key, value in INVITER_TO_PLATFORM.items():
                 if key.lower() == lowered:
                     return value
-        return "Referral"
+        return REFERRAL_PLATFORM
     except (TypeError, re.error):
-        return "Unknown"
+        return REFERRAL_PLATFORM
 
 
 def role_lines(roles: Iterable[discord.Role]) -> str:

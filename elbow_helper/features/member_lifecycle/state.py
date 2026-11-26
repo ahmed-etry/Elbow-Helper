@@ -15,7 +15,7 @@ import json
 from typing import Any
 
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE
-from elbow_helper.configuration.recruitment import PLATFORMS
+from elbow_helper.configuration.recruitment import PLATFORMS, platform_name
 from elbow_helper.data.events import Event, finish_on_cancel, initialize_state, load_state, now_us, record, save_state
 
 WORKFLOW = "lifecycle"
@@ -67,7 +67,7 @@ def open_joins(connection) -> dict[int, dict[str, Any]]:
             "ORDER BY j.occurred_at,j.id", (WORKFLOW,)):
         joins[row["subject_discord_id"]] = {
             "joined_at": int(row["case_key"].split(":")[1]),
-            "platform": json.loads(row["detail_json"])["platform"],
+            "platform": platform_name(json.loads(row["detail_json"])["platform"]),
             "message_id": row["source_message_id"],
         }
     return joins
@@ -82,7 +82,7 @@ def stayed_joins(connection, start_us: int, end_us: int) -> dict[int, str]:
             "WHERE l.workflow=j.workflow AND l.kind='left' AND l.case_key=j.case_key) "
             "ORDER BY j.occurred_at,j.id", (WORKFLOW,)):
         if start_us <= int(row["case_key"].split(":")[1]) < end_us:
-            joins[row["subject_discord_id"]] = json.loads(row["detail_json"])["platform"]
+            joins[row["subject_discord_id"]] = platform_name(json.loads(row["detail_json"])["platform"])
     return joins
 
 

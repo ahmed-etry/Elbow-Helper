@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from elbow_helper.configuration.recruitment import platform_name
 from elbow_helper.domain.numbers import positive_int_or_none
 
 from .state import platform_totals
@@ -121,7 +122,7 @@ class LifecycleRecordSource:
         def entry(kind, at, basis, event):
             detail = event["detail"] if event else {}
             return {"event": kind, "at": at, "basis": basis,
-                    "platform": detail.get("platform") if kind == "join" else None,
+                    "platform": platform_name(detail.get("platform")) if kind == "join" else None,
                     "reason": detail.get("reason") if kind == "leave" else None,
                     "message_id": event["source_message_id"] if event else None}
 
