@@ -79,7 +79,8 @@ class LifecycleHistoryTests(unittest.IsolatedAsyncioTestCase):
         await self.events.call(write)
 
     async def new_cog(self, people_reads=None):
-        bot = SimpleNamespace(workflow_events=self.events, people_reads=people_reads)
+        bot = SimpleNamespace(workflow_events=self.events, people_reads=people_reads,
+                              paths=SimpleNamespace(avatar_directory=self.root))
         cog = MemberLifecycle(bot, SimpleNamespace(get_member=lambda _: None))
         cog.lifecycle_state = LifecycleState(self.events)
         await cog.lifecycle_state.startup()

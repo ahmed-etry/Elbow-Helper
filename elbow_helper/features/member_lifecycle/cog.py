@@ -150,12 +150,15 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
         catalog = await get_application_emoji_provider(self.bot).get(required_names=(name,))
         return catalog.get(name)
 
-    async def _emoji_thumbnail_url(self, name: str) -> str | None:
-        token = await self._application_emoji(name)
-        if not token:
+    def _thumbnail_file(self, embed: discord.Embed, name: str) -> discord.File | None:
+        """Open a picture to send with the post and show it as the embed's thumbnail."""
+        try:
+            picture = discord.File(self.bot.paths.avatar_directory / name, filename=name)
+        except OSError as exc:
+            LOGGER.warning("Thumbnail %s not attached: %s", name, exc)
             return None
-        emoji_id = discord.PartialEmoji.from_str(token).id
-        return f"https://cdn.discordapp.com/emojis/{emoji_id}.webp?animated=true"
+        embed.set_thumbnail(url=f"attachment://{name}")
+        return picture
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
@@ -195,9 +198,6 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
             name=member.nick or member.display_name,
             icon_url=member.display_avatar.replace(size=64).url,
         )
-        thumbnail_url = await self._emoji_thumbnail_url("join_hi")
-        if thumbnail_url:
-            embed.set_thumbnail(url=thumbnail_url)
         embed.add_field(name="Member", value=member.mention + "\n\u200b", inline=False)
         embed.add_field(
             name="Account Age",
@@ -219,7 +219,8 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
         message_id = None
         if overseer is not None:
             try:
-                message_id = (await overseer.send(embed=embed)).id
+                picture = self._thumbnail_file(embed, "join.webp")
+                message_id = (await overseer.send(embed=embed, file=picture)).id
             except (discord.Forbidden, discord.HTTPException) as exc:
                 LOGGER.warning("Failed to send join snapshot: %s", exc)
         # The join's time is the record's; this keeps its source.
@@ -291,9 +292,6 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
                 name=member.nick or member.display_name,
                 icon_url=member.display_avatar.replace(size=64).url,
             )
-            thumbnail_url = await self._emoji_thumbnail_url("leave_bye")
-            if thumbnail_url:
-                embed.set_thumbnail(url=thumbnail_url)
 
             now = datetime.now(timezone.utc).timestamp()
             fields = [("Member", member.mention + "\n\u200b")]
@@ -359,7 +357,8 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
             for name, value in fields:
                 embed.add_field(name=name, value=value, inline=False)
 
-            message_id = (await overseer.send(embed=embed)).id
+            picture = self._thumbnail_file(embed, "leave.webp")
+            message_id = (await overseer.send(embed=embed, file=picture)).id
         except (
             discord.Forbidden,
             discord.HTTPException,

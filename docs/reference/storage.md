@@ -13,6 +13,8 @@ data/
   agent.sqlite3
   settings/health-defaults.json
   appearance/avatar.gif
+  appearance/join.webp
+  appearance/leave.webp
   agent/knowledge/*.md
   agent/gifs/
   logs/
@@ -35,6 +37,7 @@ data/
 | `agent.sqlite3` | Conversations and the bot replies that belong to them; request and reply text, attachment names, a short note of each lookup, reports of wrong answers and troubleshooting records; longer Discord searches; actions in progress and what each did; messages the agent posted, saved requests, watches, member timezones and memes already posted. |
 | `settings/health-defaults.json` | Hand-edited health-report defaults. Anything missing uses the values built into the code. |
 | `appearance/avatar.gif` | The bot's profile image. The bot uploads it again when the file changes. |
+| `appearance/join.webp`, `appearance/leave.webp` | Pictures on join and leave posts. |
 | `agent/knowledge/` | The approved [community reference files](../operators/agent-knowledge.md). |
 | `agent/gifs/` | Approved meme GIFs the agent can post. Copy these when moving the bot. |
 | `logs/` | `bot.log`, `bot.debug.log` and their older numbered copies. |
