@@ -141,6 +141,8 @@ class AgentTurnState:
     reply_delivery: RequestReplyDelivery = field(default_factory=RequestReplyDelivery)
     source_channels: set[int] = field(default_factory=set)
     source_access: dict[int, frozenset[str]] = field(default_factory=dict)
+    # The conversation's kept earlier pictures, shared by every request in it.
+    earlier_pictures: dict[tuple[int, int], tuple[Any, ...]] = field(default_factory=dict)
     scope: EvidenceScope | None = None
     scope_audit: ScopeAudit = field(default_factory=ScopeAudit)
     private_answer_run: Callable[[], Awaitable[Any]] | None = None

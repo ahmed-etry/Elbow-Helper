@@ -208,15 +208,15 @@ class Structure:
         return text
 
     def fixed_text(self) -> str:
-        """Shared facts about server roles and which roles can assign them."""
-        lines = ["Community roles (highest first; count = holders; powers are granted by that role)"]
+        """Shared facts about server roles and which roles can assign them. Holder counts are in holder_text."""
+        lines = ["Community roles (highest first; powers are granted by that role)"]
         for role in self.roles:
             permissions = discord.Permissions(role.permissions)
             powers = [label for key, label in POWERS if getattr(permissions, key)]
             markers = ["bot-managed"] if role.managed else []
             if _divider(role.name):
                 markers.append("divider")
-            lines.append(f"{self.label(role)}: {self.holders[role.id]}"
+            lines.append(self.label(role)
                          # Discord's names can hold commas ("Mention @everyone, @here, and All Roles").
                          + ("; " + "; ".join(markers + powers) if markers or powers else ""))
         lines.extend(("\nGiving roles", "Manage Roles also comes from Administrator. A giver can assign "
@@ -228,6 +228,12 @@ class Structure:
             targets = [r for r in self.roles[index + 1:] if not r.managed and r.id != self.server.id]
             reach = f"starting at {self.label(targets[0])}" if targets else "no assignable roles below it"
             lines.append(f"{self.label(role)}: below {self.label(role)}, {reach} ({len(targets)} roles)")
+        return "\n".join(lines)
+
+    def holder_text(self) -> str:
+        """Live holder counts, kept out of the cached start because they change as roles are given and removed."""
+        lines = ["Community role holders (count = members holding each role, highest role first)"]
+        lines.extend(f"{self.label(role)}: {self.holders[role.id]}" for role in self.roles)
         return "\n".join(lines)
 
     def channel_text(self, asker_id: int, bot_id: int) -> str:

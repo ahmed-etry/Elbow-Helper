@@ -23,7 +23,7 @@ from elbow_helper.agent.discord_actions.meme_usage import recent_meme_context
 from elbow_helper.agent.discord_actions.permission_checks import asker_permissions
 from elbow_helper.agent.discord_actions.reaction_pacing import combo_slot_status, reply_combo_due
 from elbow_helper.agent.discord_actions.reactions import recent_reaction_context, server_reaction_context
-from elbow_helper.agent.discord_actions.roles import can_manage_roles, role_change_access
+from elbow_helper.agent.discord_actions.roles import role_change_access
 from elbow_helper.agent.engine import budgets as limits
 from elbow_helper.agent.engine.adapters import enabled_adapters
 from elbow_helper.agent.engine.capability_contract import CapabilityBindError, compile_capability_call
@@ -165,14 +165,15 @@ def read_registry(catalogue=None):
     return registry
 
 
-def _audience_sizes(guild, audiences):
-    if not audiences:
-        return {}
-    members = [member for member in guild.members if not member.bot]
-    roles = [{role.id for role in member.roles} for member in members]
-    return {audience: (sum(can_manage_roles(member) for member in members) if audience is None
-                       else sum(not audience.isdisjoint(held) for held in roles))
-            for audience in set(audiences.values())}
+def _audience_position(guild, audience):
+    """Lowest server position among the audience roles: the broadest audience sorts first.
+
+    Manage Roles tools have no audience roles and sort ahead of role-gated tools.
+    """
+    if audience is None:
+        return -1
+    positions = [role.position for role in map(guild.get_role, audience) if role is not None]
+    return min(positions, default=float("inf"))
 
 
 def _role_names(member):
@@ -188,18 +189,23 @@ def _permission_line(context):
             f"can: {names(can)}. cannot: {names(cannot)}.")
 
 
-def _request_context(context):
-    mentioned = [{"member_id": member.id, "display_name": member.display_name}
-                 for member in getattr(context.source_message, "mentions", ())]
-    instructions = [asdict(instruction) for instruction in context.state.authorized_instructions]
-    open_cards = sorted(context.state.open_confirmation_ids)
-    return (f"Request context\nElbow Helper Discord ID (you): {context.guild.me.id}\n"
+def _asker_context(context):
+    """The request lines that stay the same for this asker in this channel."""
+    return (f"Elbow Helper Discord ID (you): {context.guild.me.id}\n"
             f"Requester Discord ID: {context.member.id}\n"
             f"Requester display name: {context.member.display_name}\n"
             f"Requester Discord roles: {_role_names(context.member)}\n"
             f"{_permission_line(context)}\n"
-            f"Channel Discord ID: {context.source_message.channel.id}\n"
-            f"Request time: {context.source_message.created_at.isoformat()}"
+            f"Channel Discord ID: {context.source_message.channel.id}")
+
+
+def _question_context(context):
+    """The request lines that can change between two questions."""
+    mentioned = [{"member_id": member.id, "display_name": member.display_name}
+                 for member in getattr(context.source_message, "mentions", ())]
+    instructions = [asdict(instruction) for instruction in context.state.authorized_instructions]
+    open_cards = sorted(context.state.open_confirmation_ids)
+    return (f"Request time: {context.source_message.created_at.isoformat()}"
             + (f"\nMentioned members: {_json(mentioned)}" if mentioned else "")
             + (f"\nYour open Confirm card IDs: {_json(open_cards)}" if open_cards else "")
             + (f"\nInstructions remembered for this thread: {_json(instructions)}" if instructions else ""))
@@ -278,15 +284,13 @@ class LoopService:
                     audiences[name] = None  # Discord Manage Roles, independent of command roles.
                 else:
                     registry.pop(name, None)
-        sizes = _audience_sizes(context.guild, audiences)
-
         def order(name):
             if name in self.private_registry:
                 return (0, 0, (), name)
             if name not in audiences:
                 return (1, 0, (), name)
-            audience = audiences[name]
-            return (2, -sizes[audience], tuple(sorted(audience or ())), name)
+            # Server positions do not move with member counts, so the cached tool order stays put.
+            return (2, _audience_position(context.guild, audiences[name]), name)
 
         return {name: registry[name] for name in sorted(registry, key=order)}
 
@@ -378,6 +382,8 @@ class LoopRun:
         self.note_sections = 0
         self.audience_context = ""
         self.channels = ""
+        self.holders = ""
+        self.reactions = ""
         self.banter = Banter()
         self.banter_context = ""
         self.registry = {}
@@ -456,11 +462,12 @@ class LoopRun:
                                "visibility": note.visibility, "source": "system_map"} for note in meanings)
         state.required_access.update(note.visibility for note in meanings if note.visibility != "public")
         parts = [SYSTEM_OPENING, "Community map: roles and channels on the server", structure.fixed_text()]
+        # Holder counts and reaction emojis change between requests, so they travel in the first message.
+        self.holders = structure.holder_text()
+        self.reactions = "" if context.private_pass else server_reaction_context(context.guild)
         if not context.private_pass:
             # Only a request that offers the banter reply tool carries the banter rules.
             parts.append(BANTER_SYSTEM)
-            if reactions := server_reaction_context(context.guild):
-                parts.append(reactions)
 
         note_text = {"public": []}
         meaning_text = {"public": []}
@@ -487,15 +494,21 @@ class LoopRun:
         self.system = {"system_text_sha256": sha256(encoded).hexdigest(), "system_text_bytes": len(encoded)}
         return system
 
-    def _first_message(self, context, question, standing_scope=""):
-        combo = COMBO_AVAILABLE if context.state.reaction_combo_due else ""
+    def _stable_message(self, context):
+        """What repeats for this asker in this channel; it leads the conversation so the prompt cache covers it."""
         built_by = _built_by(context)
         return ((f"{self.audience_context}\n\n" if self.audience_context else "")
-                + f"{_request_context(context)}\n" + (f"{built_by}\n" if built_by else "")
+                + (f"{self.reactions}\n" if self.reactions else "")
+                + f"Community map: roles and channels on the server\n"
+                f"{self.holders}\n\n{self.channels}\n\n"
+                + f"Request context\n{_asker_context(context)}\n" + (f"{built_by}\n" if built_by else ""))
+
+    def _question_message(self, context, question, standing_scope=""):
+        combo = COMBO_AVAILABLE if context.state.reaction_combo_due else ""
+        return (f"{_question_context(context)}\n"
                 + (f"{combo}\n" if combo else "")
                 + (f"{self.banter_context}\n" if self.banter_context else "")
-                + f"\nCommunity map: roles and channels on the server\n"
-                f"{self.channels}\n\n" + (f"{standing_scope}\n\n" if standing_scope else "") + question)
+                + (f"{standing_scope}\n\n" if standing_scope else "") + question)
 
     async def answer(self, question, context, standing_scope=""):
         referenced = next((item for item in context.attachment_sources
@@ -535,8 +548,9 @@ class LoopRun:
         keyed = [*tools[:-1], banter_definition(registry)] if banter else tools
         fixed = _json([system, [[tool.name, tool.description, tool.parameters] for tool in keyed]])
         session = self.service.model.create_agent_session(
-            system_prompt=system, prompt=self._first_message(context, question, standing_scope), tools=tools,
-            images=images, prior_messages=prior, sent_reasoning_effort="high",
+            system_prompt=system, prompt=self._question_message(context, question, standing_scope), tools=tools,
+            images=images, prior_messages=[{"role": "user", "content": self._stable_message(context)}, *prior],
+            sent_reasoning_effort="high",
             max_output_tokens=limits.AGENT_MAX_OUTPUT_TOKENS,
             prompt_cache_key=sha256(fixed.encode("utf-8")).hexdigest(),
         )

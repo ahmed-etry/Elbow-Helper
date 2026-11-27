@@ -13,7 +13,7 @@ from elbow_helper.infrastructure.gifs.images import animation_sheet
 from PIL import Image, UnidentifiedImageError
 from elbow_helper.agent.safety.access import accessible_message_channel, can_access_message_channel
 
-from .gif_media import gif_embed, gif_media
+from .gif_media import gif_embed, gif_links, gif_media
 
 MIME_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 EXTENSIONS = {
@@ -145,13 +145,22 @@ async def _earlier_images(context, turns, found, wait_until):
             if key not in seen:
                 seen.add(key)
                 keys.append((index, key))
+    kept = getattr(getattr(context, "state", None), "earlier_pictures", None)
     for index, key in reversed(keys):
+        # The message is still checked on every question; only the download is skipped once it is kept.
         source = await _fetch_source(context, key)
         if source is None:
             continue
-        images = []
-        await _collect_images(context, _one(source, "an earlier conversation image"), images,
-                              MAX_REQUEST_IMAGES, wait_until, earlier=True)
+        if kept is not None and key in kept:
+            images = kept[key]
+        else:
+            fetched, misses = [], []
+            await _collect_images(context, _one(source, "an earlier conversation image"), fetched,
+                                  MAX_REQUEST_IMAGES, wait_until, earlier=True, misses=misses)
+            images = tuple(fetched)
+            # A picture that failed to download is read again on the next question.
+            if kept is not None and not misses:
+                kept[key] = images
         if images:
             found[index] = [*images, *found.get(index, [])]
 
@@ -160,8 +169,16 @@ async def _one(source, label):
     yield source, label
 
 
-async def _collect_images(context, pairs, result, limit, wait_until, *, earlier=False):
-    """Append the pictures of each (source, label) pair to result, stopping at limit."""
+def _miss(misses):
+    if misses is not None:
+        misses.append(True)
+
+
+async def _collect_images(context, pairs, result, limit, wait_until, *, earlier=False, misses=None):
+    """Append the pictures of each (source, label) pair to result, stopping at limit.
+
+    Each download that failed is added to misses, when given.
+    """
     async for source, label_source in pairs:
         label_source = _source_label(context, source, label_source, earlier=earlier)
         for attachment in getattr(source, "attachments", ()):
@@ -176,6 +193,7 @@ async def _collect_images(context, pairs, result, limit, wait_until, *, earlier=
             try:
                 data = await attachment.read()
             except (discord.HTTPException, OSError, asyncio.TimeoutError):
+                _miss(misses)
                 continue
             if isinstance(data, bytes) and 0 < len(data) <= MAX_IMAGE_BYTES:
                 image = await model_image(data, mime, label_source, source.id, len(result) + 1)
@@ -196,6 +214,7 @@ async def _collect_images(context, pairs, result, limit, wait_until, *, earlier=
                 try:
                     data = await sticker.read()
                 except (discord.HTTPException, OSError, asyncio.TimeoutError):
+                    _miss(misses)
                     data = None
                 if isinstance(data, bytes) and 0 < len(data) <= MAX_IMAGE_BYTES:
                     image = await model_image(
@@ -209,7 +228,13 @@ async def _collect_images(context, pairs, result, limit, wait_until, *, earlier=
                 result.append(image)
             if len(result) == limit:
                 return tuple(result)
-        for data in await gif_media(context, source, wait_until):
+        gif_pictures = await gif_media(context, source, wait_until)
+        # GIF links or GIF embeds that produced no picture: a failed download, read again on the next question.
+        if not gif_pictures and (gif_links(source) or any(
+            gif_embed(embed) for embed in getattr(source, "embeds", ())
+        )):
+            _miss(misses)
+        for data in gif_pictures:
             image = await model_image(data, "image/jpeg", label_source, source.id, len(result) + 1,
                                       gif_source=True)
             if image is not None:
@@ -229,6 +254,7 @@ async def _collect_images(context, pairs, result, limit, wait_until, *, earlier=
                 try:
                     data = await context.bot.http.get_from_cdn(url)
                 except (discord.HTTPException, OSError, asyncio.TimeoutError):
+                    _miss(misses)
                     continue
                 mime = EXTENSIONS.get(
                     PurePosixPath(url.split("?", 1)[0]).suffix.lower(), "image/jpeg",

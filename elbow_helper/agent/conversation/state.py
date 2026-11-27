@@ -15,6 +15,7 @@ from ..reports.base import ReportArtifact
 from .instructions import WorkingState
 
 if TYPE_CHECKING:
+    from ...infrastructure.ai.agent import AgentImage
     from ..actions.preview import ConfirmationView
 
 
@@ -190,6 +191,11 @@ class Conversation:
     evicted_turns: int = 0
     working: WorkingState = field(default_factory=WorkingState)
     checkpoint: ConversationCheckpoint | None = None
+    # Pictures of earlier turns, read once per (channel, message) and kept while this conversation is in memory.
+    # Never written to a snapshot: the codec lists its fields by name.
+    earlier_pictures: dict[tuple[int, int], tuple[AgentImage, ...]] = field(
+        default_factory=dict, repr=False, compare=False,
+    )
     pending_confirmations: WeakValueDictionary[int, ConfirmationView] = field(
         default_factory=WeakValueDictionary, init=False, repr=False, compare=False,
     )
