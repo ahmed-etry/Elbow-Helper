@@ -95,11 +95,13 @@ class AchievementCommandMixin:
         in_progress_pages = payload["in_progress_pages"]
         completed_pages = payload["completed_pages"]
         view = AchievementOverviewView(in_progress_pages, completed_pages) if (len(in_progress_pages) + len(completed_pages)) > 1 else None
+        send_kwargs = {"file": payload["picture"]} if payload["picture"] is not None else {}
         message = await interaction.followup.send(
             embed=payload["embed"],
             view=view,
             ephemeral=True,
             wait=True,
+            **send_kwargs,
         )
         if view is not None:
             view.bind_message(message)
@@ -111,7 +113,7 @@ class AchievementCommandMixin:
             self._achievements_leaderboard_internal,
             interaction,
             False,
-            "🏆 Member Achievement Leaderboard",
+            "🏆 Achievement Leaderboard",
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -122,9 +124,12 @@ class AchievementCommandMixin:
         if user and not self._is_leadership(interaction.user):
             await interaction.response.send_message("You can only view your own inventory.", ephemeral=True)
             return
-        balance, has_ticket = await self._retry_db_operation(self._get_inventory_internal, target.id)
-        embed = self._build_inventory_embed(target, balance, has_ticket)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        inventory = await self._retry_db_operation(self._get_inventory_internal, target.id)
+        embed, picture = self._build_inventory_embed(target, inventory)
+        if picture is None:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=embed, file=picture, ephemeral=True)
 
     @app_commands.command(name="coinlog", description="See a member's latest coin earnings and spending.")
     @app_commands.describe(user="Member whose coin activity you want to view.")

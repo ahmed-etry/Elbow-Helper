@@ -9,8 +9,8 @@ from datetime import timezone
 import discord
 from elbow_helper.infrastructure.discord.pagination import format_page_footer
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
-from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 
+from .config import ACHIEVEMENTS_THUMBNAIL
 from .definitions import COIN_REWARDS
 from .queries import (
     achievement_leaderboard_eligible, achievement_progress_value,
@@ -65,10 +65,8 @@ class AchievementProgressMixin:
 
             total_achievements = len(all_achievements)
             completed_count = len(completed_map)
-            completion_rate = (completed_count / total_achievements * 100) if total_achievements else 0
+            percent = round(completed_count / total_achievements * 100)
 
-            completed_entries = []
-            in_progress_entries = []
             in_progress_raw = []
             completed_raw = []
             for achievement_id, name, description, required_count, emoji in all_achievements:
@@ -79,78 +77,81 @@ class AchievementProgressMixin:
                 current = progress_info.get("current", 0)
 
                 reward = COIN_REWARDS.get(achievement_id)
-                reward_text = f" `(+{reward}🪙)`" if reward else ""
+                field_name = f"{emoji} {name}"
+                if reward:
+                    field_name += f" · 🪙 {reward}"
+                if description.endswith("."):
+                    description = description[:-1]
 
                 if progress_info.get("completed"):
                     completed_on = completed_map.get(achievement_id)
-                    completed_raw.append((completed_on or 0, emoji, name, reward_text, description))
+                    completed_raw.append((completed_on or 0, field_name, description))
                 else:
                     ratio = current / max(required, 1)
-                    progress_bar = self.create_progress_bar(current, required)
-                    in_progress_raw.append((ratio, emoji, name, reward_text, progress_bar, current, required, description))
+                    in_progress_raw.append((ratio, field_name, description, current, required))
 
             in_progress_raw.sort(key=lambda x: x[0], reverse=True)
             completed_raw.sort(key=lambda x: x[0])
 
-            for _, emoji, name, reward_text, progress_bar, current, required, description in in_progress_raw:
-                entry = (
-                    f"{emoji} **{name}**{reward_text}\n"
-                    f"{progress_bar} {current}/{required}\n"
-                    f"{description}"
-                )
-                in_progress_entries.append(entry)
+            in_progress_fields = []
+            for _, field_name, description, current, required in in_progress_raw:
+                if required == 1:
+                    value = description
+                else:
+                    bar = self.create_progress_bar(current, required)
+                    value = f"{description}\n{bar} {int(current)}/{required}"
+                in_progress_fields.append((field_name, value))
 
-            for completed_on, emoji, name, reward_text, description in completed_raw:
-                date_txt = (
-                    datetime.fromtimestamp(completed_on, tz=timezone.utc).strftime("%b %d, %Y")
-                    if completed_on
-                    else "Completed"
-                )
-                entry = (
-                    f"{emoji} **{name}**{reward_text}\n"
-                    f"{description}\n"
-                    f"_Completed: {date_txt}_"
-                )
-                completed_entries.append(entry)
+            completed_fields = []
+            for completed_on, field_name, description in completed_raw:
+                status = f"✅ <t:{completed_on}:D>" if completed_on else "✅ Completed"
+                completed_fields.append((field_name, f"{description}\n{status}"))
 
             page_size = 6
-            if not completed_entries:
-                completed_entries.append("No achievements completed yet.")
-            if not in_progress_entries:
-                in_progress_entries.append("🎉 All achievements completed!")
+            if not completed_fields:
+                completed_fields.append(("\u200b", "No achievements completed yet."))
+            if not in_progress_fields:
+                in_progress_fields.append(("\u200b", "🎉 All achievements completed!"))
 
-            def build_pages(items, section_title):
+            picture = None
+            picture_path = self.bot.paths.avatar_directory / ACHIEVEMENTS_THUMBNAIL
+            if picture_path.is_file():
+                try:
+                    picture = discord.File(picture_path, filename=ACHIEVEMENTS_THUMBNAIL)
+                except OSError as exc:
+                    self.logger.warning("Achievements thumbnail %s not attached: %s", ACHIEVEMENTS_THUMBNAIL, exc)
+
+            def build_pages(fields):
                 section_pages = []
-                for idx in range(0, len(items), page_size):
-                    chunk = items[idx:idx + page_size]
+                for idx in range(0, len(fields), page_size):
                     embed = discord.Embed(
-                        title=f"🏆 Achievements: {member.display_name}",
+                        title="🏆 Achievements",
                         description=(
-                            f"Completed **{completed_count}/{total_achievements}** "
-                            f"({completion_rate:.1f}%).\n{section_title}"
+                            f"🏅 **{completed_count}** of {total_achievements} unlocked\n"
+                            f"{self.create_progress_bar(completed_count, total_achievements)} {percent}%\n\u200b"
                         ),
                         color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
                     )
-                    embed.add_field(
-                        name="\u200b",
-                        value="\n\n".join(chunk),
-                        inline=False,
+                    embed.set_author(
+                        name=member.nick or member.display_name,
+                        icon_url=member.display_avatar.with_size(64).url,
                     )
-                    embed.set_thumbnail(
-                        url=DEFAULT_THUMBNAIL_URL
-                    )
+                    for field_name, value in fields[idx:idx + page_size]:
+                        embed.add_field(name=field_name, value=value, inline=False)
+                    if picture is not None:
+                        embed.set_thumbnail(url=f"attachment://{ACHIEVEMENTS_THUMBNAIL}")
                     section_pages.append(embed)
                 return section_pages
 
-            in_progress_pages = build_pages(in_progress_entries, "")
-            completed_pages = build_pages(completed_entries, "")
+            in_progress_pages = build_pages(in_progress_fields)
+            completed_pages = build_pages(completed_fields)
 
             first_embed = (in_progress_pages or completed_pages)[0]
             initial_section = "In Progress" if in_progress_pages else "Completed"
             initial_total = len(in_progress_pages) if in_progress_pages else len(completed_pages)
             first_embed.set_footer(text=format_page_footer(1, initial_total, section=initial_section))
 
-            return {"error": None, "embed": first_embed,
+            return {"error": None, "embed": first_embed, "picture": picture,
                     "in_progress_pages": in_progress_pages, "completed_pages": completed_pages}
 
         except sqlite3.Error as e:
@@ -159,17 +160,21 @@ class AchievementProgressMixin:
     
 
     async def _achievements_leaderboard_internal(self, cursor, interaction: discord.Interaction, include_leadership: bool, title: str):
-        sql = """
-            SELECT ua.user_id, COUNT(*) as achievement_count
+        cursor.execute(
+            """
+            SELECT ua.user_id, COUNT(*) AS achievement_count
             FROM user_achievements ua
             WHERE ua.completed_date IS NOT NULL
-        """
-        sql += " GROUP BY ua.user_id ORDER BY achievement_count DESC"
-        cursor.execute(sql)
+            GROUP BY ua.user_id
+            ORDER BY achievement_count DESC, MAX(ua.completed_date) ASC, ua.user_id ASC
+            """
+        )
         rows = cursor.fetchall()
+        cursor.execute("SELECT COUNT(*) FROM achievements")
+        total = cursor.fetchone()[0]
 
         guild = interaction.guild
-        leaderboard = []
+        ranking = []
         for user_id, count in rows:
             member = guild.get_member(user_id)
             if not member:
@@ -179,26 +184,42 @@ class AchievementProgressMixin:
                 include_leadership=include_leadership,
             ):
                 continue
-            leaderboard.append((member, count))
-            if len(leaderboard) >= 10:
-                break
+            ranking.append((user_id, count))
 
         embed = discord.Embed(
             title=title,
-            description="Top achievement earners",
             color=discord.Color(DEFAULT_EMBED_COLOR_HEX)
         )
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
 
-        for i, (member, count) in enumerate(leaderboard, 1):
-            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
-            embed.add_field(
-                name=f"{medal} {member.display_name}",
-                value="1 achievement" if count == 1 else f"{count} achievements",
-                inline=False
-            )
-
-        if not leaderboard:
+        if not ranking:
             embed.description = "No members have earned any achievements yet."
+            return embed
+
+        medals = ["🥇", "🥈", "🥉"]
+        blocks = []
+        for index, (user_id, count) in enumerate(ranking[:3]):
+            blocks.append(
+                f"{medals[index]} <@{user_id}>\n"
+                f"{self.create_progress_bar(count, total)} **{count}** / {total}"
+            )
+        if len(ranking) >= 4:
+            lines = [
+                f"`{('#' + str(rank)).ljust(3)}` <@{user_id}> · {count}"
+                for rank, (user_id, count) in enumerate(ranking[3:10], 4)
+            ]
+            blocks.append("\n".join(lines))
+        embed.description = "\n\n".join(blocks)
+
+        viewer_rank = next(
+            (rank for rank, (user_id, _) in enumerate(ranking, 1) if user_id == interaction.user.id),
+            None,
+        )
+        if viewer_rank is not None:
+            viewer_count = ranking[viewer_rank - 1][1]
+            noun = "achievement" if viewer_count == 1 else "achievements"
+            embed.set_footer(text=f"You're #{viewer_rank} with {viewer_count} {noun}")
 
         return embed
 

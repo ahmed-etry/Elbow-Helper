@@ -18,6 +18,9 @@ data/
   appearance/hib_vine_heart.webp
   appearance/hib_pekka.webp
   appearance/hib_pig.webp
+  appearance/inv_golem.webp
+  appearance/inv_golem_heart.webp
+  appearance/ach_king.webp
   agent/knowledge/*.md
   agent/gifs/
   logs/
@@ -42,6 +45,8 @@ data/
 | `appearance/avatar.gif` | The bot's profile image. The bot uploads it again when the file changes. |
 | `appearance/join.webp`, `appearance/leave.webp` | Pictures on join and leave posts. |
 | `appearance/hib_vine_heart.webp`, `appearance/hib_pekka.webp`, `appearance/hib_pig.webp` | Pictures on hibernation posts, one for each post. |
+| `appearance/inv_golem.webp`, `appearance/inv_golem_heart.webp` | Pictures on inventories, one picked each time. |
+| `appearance/ach_king.webp` | Picture on /achievements. |
 | `agent/knowledge/` | The approved [community reference files](../operators/agent-knowledge.md). |
 | `agent/gifs/` | Approved meme GIFs the agent can post. Copy these when moving the bot. |
 | `logs/` | `bot.log`, `bot.debug.log` and their older numbered copies. |

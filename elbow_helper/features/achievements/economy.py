@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 from datetime import datetime
 from datetime import timezone
 
@@ -13,12 +14,12 @@ from elbow_helper.configuration.roles import ELDER_ROLE_ID
 from elbow_helper.configuration.roles import LEAD
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
-from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 
 from .config import DAILY_MIN_CHARS
 from .config import DAILY_MSG_THRESHOLD
 from .config import DAILY_REWARD
 from .config import DAILY_REWARD_ELDER
+from .config import INVENTORY_THUMBNAILS
 from .config import MANUAL_CAP_CWL
 from .config import MANUAL_CAP_ENCOURAGEMENT
 from .config import MANUAL_CAP_TOTAL
@@ -92,18 +93,40 @@ class AchievementEconomyMixin:
     def _require_command_role(self, interaction: discord.Interaction) -> bool:
         return self._is_command_runner(interaction.user)
 
-    def _build_inventory_embed(self, member: discord.Member, balance: int, has_ticket: bool) -> discord.Embed:
+    def _build_inventory_embed(self, member: discord.Member, inventory: tuple):
+        """Return the inventory embed and the picture to attach, or None when no picture is used."""
+        balance, has_ticket, achievements_done, achievements_total, raffle_wins = inventory
+        month_name = self._month_label_from_key(self._month_key()).rsplit(" ", 1)[0]
         embed = discord.Embed(
-            title=f"{member.display_name}'s Inventory",
+            title="Inventory",
             color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-            timestamp=datetime.now(timezone.utc),
         )
-        raffle_status = "Has a ticket this month" if has_ticket else "No ticket this month"
-        embed.description = f"Coins: **{balance}**\nRaffle ticket: **{raffle_status}**"
-        embed.set_thumbnail(
-            url=DEFAULT_THUMBNAIL_URL
+        embed.set_author(
+            name=member.nick or member.display_name,
+            icon_url=member.display_avatar.with_size(64).url,
         )
-        return embed
+        embed.add_field(name="🪙 Coins", value=f"{balance:,}", inline=False)
+        ticket_value = month_name if has_ticket else f"None for {month_name}"
+        embed.add_field(name="🎟️ Raffle ticket", value=ticket_value, inline=False)
+        progress = self.create_progress_bar(achievements_done, achievements_total)
+        embed.add_field(
+            name="🏅 Achievements",
+            value=f"{progress} **{achievements_done}**",
+            inline=False,
+        )
+        if raffle_wins > 0:
+            embed.add_field(name="🏆 Raffle wins", value=str(raffle_wins), inline=False)
+        picture = None
+        available = [name for name in INVENTORY_THUMBNAILS if (self.bot.paths.avatar_directory / name).is_file()]
+        if available:
+            filename = random.choice(available)
+            try:
+                picture = discord.File(self.bot.paths.avatar_directory / filename, filename=filename)
+            except OSError as exc:
+                self.logger.warning("Inventory thumbnail %s not attached: %s", filename, exc)
+            else:
+                embed.set_thumbnail(url=f"attachment://{filename}")
+        return embed, picture
 
     async def _get_inventory_internal(self, cursor, user_id: int):
         cursor.execute("SELECT balance, last_ticket_month FROM user_coins WHERE user_id = ?", (user_id,))
@@ -111,7 +134,23 @@ class AchievementEconomyMixin:
         balance = row[0] if row else 0
         last_ticket_month = row[1] if row and len(row) > 1 else None
         has_ticket = last_ticket_month == self._month_key()
-        return balance, has_ticket
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM user_achievements ua
+            JOIN achievements a ON a.id = ua.achievement_id
+            WHERE ua.user_id = ? AND ua.completed_date IS NOT NULL
+            """,
+            (user_id,),
+        )
+        achievements_done = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM achievements")
+        achievements_total = cursor.fetchone()[0]
+        cursor.execute(
+            "SELECT COUNT(*) FROM raffle_winners WHERE user_id = ? AND is_active = 1",
+            (user_id,),
+        )
+        raffle_wins = cursor.fetchone()[0]
+        return balance, has_ticket, achievements_done, achievements_total, raffle_wins
 
     async def _coinlog_internal(self, cursor, user_id: int):
         cursor.execute(

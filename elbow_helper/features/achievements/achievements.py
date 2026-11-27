@@ -104,13 +104,29 @@ class AchievementServiceMixin:
             if not self._queue_post_commit_action(
                 self.send_achievement_notification,
                 user_id,
+                achievement_id,
                 name,
                 description,
                 emoji,
             ):
-                await self.send_achievement_notification(user_id, name, description, emoji)
-    
-    async def send_achievement_notification(self, user_id: int, name: str, description: str, emoji: str):
+                await self.send_achievement_notification(
+                    user_id, achievement_id, name, description, emoji,
+                )
+
+    async def _achievement_counts_internal(self, cursor: sqlite3.Cursor, user_id: int):
+        """Return how many achievements the member has completed and how many exist."""
+        cursor.execute(
+            "SELECT COUNT(*) FROM user_achievements "
+            "WHERE user_id = ? AND completed_date IS NOT NULL",
+            (user_id,),
+        )
+        completed = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM achievements")
+        return completed, cursor.fetchone()[0]
+
+    async def send_achievement_notification(
+        self, user_id: int, achievement_id: str, name: str, description: str, emoji: str,
+    ):
         """Send achievement notification"""
         guild = self.bot.get_guild(self.GUILD_ID)
         member = guild.get_member(user_id)
@@ -119,20 +135,37 @@ class AchievementServiceMixin:
             return
         
         phrase = random.choice(ACHIEVEMENT_PHRASES)
-        
-        colored_name = f"**{name}**"
-        
-        notification_text = f"<@{user_id}> {phrase} {colored_name}!"
-        
+
+        notification_text = f"<@{user_id}> {phrase} an achievement!"
+
         embed = discord.Embed(
-            title=f"{emoji} Achievement Unlocked!",
-            description=f"**{name}**\n\n{description}",
+            title="Achievement Unlocked!",
             color=discord.Color(DEFAULT_EMBED_COLOR_HEX)
         )
+        embed.set_author(
+            name=member.nick or member.display_name,
+            icon_url=member.display_avatar.with_size(64).url,
+        )
         embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-        embed.add_field(name="👤 Member", value=member.display_name, inline=True)
-        embed.add_field(name="📅 Date", value=datetime.fromtimestamp(int(datetime.now(timezone.utc).timestamp()), tz=timezone.utc).strftime("%B %d, %Y"), inline=True)
-        
+        embed.add_field(name=name, value=f"{emoji} {description}\n\u200b", inline=False)
+
+        # Leadership earns no coins.
+        reward = 0 if self._is_leadership_any(member) else COIN_REWARDS.get(achievement_id, 0)
+        if reward:
+            coins = "coin" if reward == 1 else "coins"
+            embed.add_field(name="Reward", value=f"🪙 {reward} {coins}", inline=False)
+
+        try:
+            completed, total = await self._retry_db_operation(
+                self._achievement_counts_internal, user_id,
+            )
+        except sqlite3.Error:
+            self.logger.exception("Failed to count achievements for user_id=%s", user_id)
+        else:
+            embed.add_field(
+                name="Progress", value=f"🏆 {completed} of {total} achievements", inline=False,
+            )
+
         channel = self.bot.get_channel(GENERAL_CHAT)
         
         if channel:

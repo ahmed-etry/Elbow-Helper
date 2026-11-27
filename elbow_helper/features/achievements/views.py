@@ -45,12 +45,15 @@ class RaffleHubView(BaseTimeoutView):
         await interaction.followup.send(msg, ephemeral=True)
 
     async def inventory(self, interaction: discord.Interaction):
-        balance, has_ticket = await self.cog._retry_db_operation(
+        inventory = await self.cog._retry_db_operation(
             self.cog._get_inventory_internal,
             interaction.user.id,
         )
-        embed = self.cog._build_inventory_embed(interaction.user, balance, has_ticket)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        embed, picture = self.cog._build_inventory_embed(interaction.user, inventory)
+        if picture is None:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=embed, file=picture, ephemeral=True)
 
 
 class CoinLogView(BaseTimeoutView):

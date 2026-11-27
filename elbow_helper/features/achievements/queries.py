@@ -96,10 +96,7 @@ def achievement_progress_value(
             value = int(float(value))
         return value, "counter"
     if achievement_id == "silent_lurker":
-        return (
-            round(float(values["silent_voice_seconds"] or 0) / 3600.0, 2),
-            "counter",
-        )
+        return int(values["silent_voice_seconds"] or 0) // 3600, "counter"
     if achievement_id in _CHANNEL_COUNTERS:
         return len(str(values["active_channels"] or "").split()), "counter"
     if achievement_id in _MEMBERSHIP_DAYS:
