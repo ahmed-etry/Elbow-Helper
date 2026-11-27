@@ -121,7 +121,7 @@ class AchievementCommandMixin:
     @app_commands.describe(user="Leadership can choose another member. Leave empty to view your own inventory.")
     async def inventory(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
         target = user or interaction.user
-        if user and not self._is_leadership(interaction.user):
+        if user and user.id != interaction.user.id and not self._is_leadership(interaction.user):
             await interaction.response.send_message("You can only view your own inventory.", ephemeral=True)
             return
         inventory = await self._retry_db_operation(self._get_inventory_internal, target.id)
