@@ -106,7 +106,7 @@ def automatic_workflows():
                       'raffle_hub_refresh_hours': RAFFLE_HUB_UPDATE_HOURS,
                       'departed_member_cleanup_hours': 24, 'initial_achievement_check': 'Once at startup'},
          'effects': ['Pay eligible salaries', 'Refresh raffle hub', 'Award time achievements',
-                     'Remove departed members from stats/achievement rows'],
+                     'Remove departed members from stats/achievement rows and reset their coin balance'],
          'keeps': ['Current member rows', 'Monthly salary payment guards']},
         {'workflow': 'transfer_request_expiry',
          'sources': ['elbow_helper/features/clan_transfers/queues.py:request_expiry_loop'],

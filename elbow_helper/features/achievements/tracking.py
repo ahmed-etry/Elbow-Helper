@@ -80,7 +80,7 @@ class AchievementTrackingMixin:
     
     @tasks.loop(hours=24)
     async def cleanup_database(self):
-        """Clean up stats/achievement rows for users who left the server."""
+        """Clean up stats/achievement rows and reset coin balances for users who left the server."""
         guild = self.bot.get_guild(self.GUILD_ID)
         if not guild or guild.unavailable:
             return
@@ -102,7 +102,10 @@ class AchievementTrackingMixin:
             conn = DATABASE.connect(self.db_path, timeout=20.0)
             cursor = conn.cursor()
 
-            cursor.execute('SELECT DISTINCT user_id FROM user_stats')
+            cursor.execute(
+                'SELECT user_id FROM user_stats UNION SELECT user_id FROM user_achievements '
+                'UNION SELECT user_id FROM user_coins WHERE balance != 0'
+            )
             db_user_ids = {row[0] for row in cursor.fetchall()}
 
             left_user_ids = db_user_ids - current_member_ids
@@ -113,7 +116,8 @@ class AchievementTrackingMixin:
                 for user_id in left_user_ids:
                     cursor.execute('DELETE FROM user_stats WHERE user_id = ?', (user_id,))
                     cursor.execute('DELETE FROM user_achievements WHERE user_id = ?', (user_id,))
-                
+                    cursor.execute('UPDATE user_coins SET balance = 0 WHERE user_id = ?', (user_id,))
+
                 conn.commit()
                 self.logger.info("Cleaned up data for %s users", len(left_user_ids))
             else:
@@ -146,9 +150,10 @@ class AchievementTrackingMixin:
             self.logger.exception("Failed member cleanup for %s", member.display_name)
 
     async def _member_remove_cleanup_internal(self, cursor: sqlite3.Cursor, user_id: int):
-        """Delete per-user stats/achievements for a departed member."""
+        """Delete per-user stats/achievements and reset coin balance for a departed member."""
         cursor.execute('DELETE FROM user_stats WHERE user_id = ?', (user_id,))
         cursor.execute('DELETE FROM user_achievements WHERE user_id = ?', (user_id,))
+        cursor.execute('UPDATE user_coins SET balance = 0 WHERE user_id = ?', (user_id,))
     
 
     
