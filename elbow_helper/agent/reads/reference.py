@@ -1,106 +1,14 @@
-"""Exact approved reference selections and scoped conversation evidence."""
-import asyncio
+"""Scoped conversation evidence."""
 from dataclasses import replace
 import discord
-from elbow_helper.agent.knowledge.store import VISIBILITIES
 from elbow_helper.agent.reads.snapshots import family_tool, Whole, IDS, DATE
-from elbow_helper.agent.safety.access import READ_ACCESS_ROLE_SETS, has_reader_access_requirements, require_lookup_access, accessible_message_channel, require_evidence_access
+from elbow_helper.agent.safety.access import accessible_message_channel, require_evidence_access
 from ..files.attachment_tools import list_supported_attachments, import_text_attachment
 from ..files.attachments import attachment_metadata
-from .domain_facts import domain_reference
-from .war_tools import CLANS_INPUT
-from elbow_helper.agent.safety.disclosure import request_scope, exclude_source
-from ..knowledge.tools import _section_id, has_section_id, SECTION_ID_LENGTH
 from ..conversation.replay import replay_answer
 from elbow_helper.agent.conversation.wording import ACTION_EMPTY
 from ..research.history import read_discord_channel_history, read_message_context
 from ..research.search import search_discord_messages
-from elbow_helper.agent.knowledge.clan_roles import configured_clan_roles
-
-
-async def community_reference(context, arguments):
-    kind = arguments.get('reference_kind','knowledge')
-    if kind == 'bot_workflows':
-        from .bot_workflows import bot_workflows
-        return bot_workflows(context)
-    if kind != 'knowledge':
-        result = domain_reference(kind, arguments.get('clan_codes'))
-        if kind == 'clans':
-            for row in result['rows']:
-                row['roles'] = configured_clan_roles(context.guild, row['clan_code'])
-        return result
-    if context.knowledge_store is None:
-        return {'error':'Community reference is not available.', 'cause':'missing_setup'}
-    catalog = await asyncio.to_thread(context.knowledge_store.load)
-    if catalog.store_status == 'unavailable':
-        return {'error':'Community reference is not available.', 'cause':'source_unavailable'}
-    scope = await request_scope(context)
-    levels = scope.levels & (VISIBILITIES-{'public'})
-    ids, titles = set(arguments.get('section_ids',[])), set(arguments.get('titles',[]))
-    selection = bool(ids or titles)
-    selected_headings = {(section.file_name, section.title, section.visibility)
-                         for section in catalog.active_sections
-                         if any(has_section_id(section, identifier) for identifier in ids)}
-    def selected(section):
-        return ((section.file_name, section.title, section.visibility) in selected_headings
-                or section.title in titles or section.file_name in titles)
-    excluded_levels = set()
-    for section in catalog.active_sections:
-        if selection and selected(section) and section.visibility != 'public' and section.visibility not in levels:
-            authorized = has_reader_access_requirements(context.guild, context.member.id, {section.visibility})
-            if authorized:
-                excluded_levels.add(section.visibility)
-            exclude_source(context,'knowledge:'+_section_id(section),'role_scope',
-                relevant=authorized)
-    visible = [section for section in catalog.visible_sections(levels) if not selection or selected(section)]
-    needed = {section.visibility for section in visible if section.visibility != 'public'}
-    require_lookup_access(context, needed)
-    context.state.required_access.update(needed)
-    rows = []
-    for section in visible:
-        identifier = _section_id(section)
-        rows.append({'section_id':identifier,'title':section.title,'file_name':section.file_name,
-                     'visibility':section.visibility, 'part':section.part, 'parts':section.parts,
-                     **({'applicability': section.applicability} if section.applicability else {}), **({'body':section.body} if selection else {})})
-        if selection:
-            context.state.knowledge_sources.add(identifier)
-    # Exact approved section identities connect policy to its owning implementation.
-    # No request or message prose is classified to decide which workflow applies.
-    recruitment_sections = {
-        ('leadership.md', 'Clan placement and skill questions: open a ticket'),
-        ('recruitment-promotions.md', 'Clan promotion exams: BES to BE4, casual entry and Hellbow assessment'),
-        ('recruitment-promotions.md', 'Trial: competitive, casual and starter placements'),
-        ('recruitment-promotions.md', 'Joining in game: approval, join requests and a full clan'),
-    }
-    implementation = {}
-    workflows_needed = set()
-    if selection and any((section.file_name, section.title) in recruitment_sections for section in visible):
-        workflows_needed.add('recruit_placement')
-    account_sections = {
-        ('faq.md', 'Adding a village and leaving an unused account linked'),
-        ('faq.md', 'Joining tickets and adding alts to the family'),
-        ('faq.md', 'Can I bring a second account or a strategically rushed alt?'),
-    }
-    if selection and any((section.file_name, section.title) in account_sections for section in visible):
-        workflows_needed.add('account_linking')
-    if workflows_needed:
-        from .bot_workflows import bot_workflows
-        workflows = bot_workflows()
-        implementation['implementation_reference'] = {
-            **workflows, 'rows': [row for row in workflows['rows'] if row['workflow'] in workflows_needed]}
-    return {'rows':sorted(rows,key=lambda row:(row['file_name'],row['title'],row['part'],row['section_id'])),
-            **implementation,
-            'mode':'sections' if selection else 'index','store_status':catalog.store_status,
-            'available_privately':bool(excluded_levels),
-            'access_limits': [{'reader_roles': [
-                {'role_id': role.id, 'name': role.name} for role in context.guild.roles
-                if role.id in READ_ACCESS_ROLE_SETS[level] and getattr(role, 'name', None)],
-                'available_privately': True} for level in sorted(excluded_levels)],
-            'selection_complete':catalog.store_status=='available' and (
-                not selection or bool(visible)
-                and all(any(has_section_id(section, identifier) for section in visible) for identifier in ids)
-                and all(any(section.title == title or section.file_name == title for section in visible) for title in titles)),
-            'coverage':'Exact approved titles or section IDs. Index rows contain no section bodies.'}
 
 
 async def conversation_evidence(context, arguments):
@@ -255,18 +163,7 @@ CONVERSATION_RULES = (
      'error': 'Use channel_id or channel_ids, not both.'},
     {'when': {'mode': ['channel_window']}, 'needs_all': ['channel_id'], 'error': 'Which channel should I read?'})
 
-def selected_facts(result):
-    """Selected facts are writer evidence; an index still needs source reads."""
-    return result.get('mode') in ('sections', 'domain_facts', 'implementation_reference')
-
-
 TOOLS = (
- family_tool('read_community_reference','Read sourced clan, role and workflow facts, approved headings or complete reference sections.',
-    {'reference_kind':{'type':'string','enum':['knowledge','clans','roles','workflows','bot_workflows']},
-     'clan_codes':CLANS_INPUT,
-     'titles':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','maxLength':200}},
-     'section_ids':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','minLength':SECTION_ID_LENGTH,'maxLength':64}}}, community_reference,
-    whole=Whole(selected_facts, selected_facts, selected_facts)),
  family_tool('read_conversation_evidence','Search full messages or read discussion chunks, causal replies and attachments.',
     {'mode':{'type':'string','enum':['reply','replay','reply_chain','message_window','channel_window','search','author_mentions','attachments']},
      'projection': {'type': 'string', 'enum': ['messages', 'attachment_text', 'media', 'extract_entities']},

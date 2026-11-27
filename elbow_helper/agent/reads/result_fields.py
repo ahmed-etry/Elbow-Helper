@@ -175,18 +175,17 @@ RESULT_FIELDS['read_hibernation']['rows'][0]['accounts'][0].update(names(
     'observed_regular_war_attacks_since_start,observed_cwl_attacks_since_start,latest_observed_regular_war_at,latest_observed_cwl_at'))
 
 RESULT_FIELDS.update({
- 'read_community_reference': {**COMMON, 'rows':[names('section_id,title,file_name,visibility,body,clan_code,name,tag,branch,purpose,configured_cwl_only,operational_cwl_only,has_placeholders,membership_basis,town_hall_min,town_hall_max,subject,holds,event,establishes,does_not_establish')]},
  'read_conversation_evidence': {**COMMON, 'rows':[names('message_id,channel_id?,channel?,author_id,author,timestamp,content,reply_to_message_id?,content_complete?')],
                                 **names('channel_id?,channel?,message_content_complete?,source_next_cursor,delivered_answer')},
 })
 
 RESULT_FIELDS['read_conversation_evidence'].update(names('remaining_message_id,projection,selection_complete'))
 RESULT_FIELDS['read_conversation_evidence']['rows'][0].update(names('source'))
-RESULT_FIELDS['read_community_reference']['rows'][0].update(names(
-    'workflow,sources,formula,profiles,profile_selection,support,recruitment,requester_lookup,new_applicant_route,supported_clan_codes'))
-RESULT_FIELDS['read_community_reference']['rows'][0]['roles'] = [names('role_id,name,purpose,status')]
-RESULT_FIELDS['read_community_reference']['access_limits'] = [{
-    'reader_roles': [names('role_id,name')], 'available_privately': None}]
+RESULT_FIELDS.update({
+ 'search_bot_code': {**names('total_matches,offset,files_searched,next_offset?,more_matches?'), 'matches': ['']},
+ 'read_bot_code': {**names('path,start_line,end_line,total_lines,truncated?,next_start_line?'), 'lines': ['']},
+ 'find_bot_files': {**names('total_matches,offset,next_offset?,more_matches?,top_level_folders?'), 'files': ['']},
+})
 RESULT_FIELDS['read_conversation_evidence']['rows'][0].update(
     **names('attachment_id,filename,content_type,size,attachment_contents_read'),
     **{'embeds?': [{'title':None,'description':None,'author':{'name':None},'footer':{'text':None},

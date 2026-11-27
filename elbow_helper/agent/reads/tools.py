@@ -9,6 +9,7 @@ from .reference import TOOLS as REFERENCE_TOOLS
 from .ranked_tools import TOOLS as RANKED_TOOLS
 from .access import TOOLS as ACCESS_TOOLS
 from .donations import TOOLS as DONATION_TOOLS
+from .bot_code import TOOLS as BOT_CODE_TOOLS
 
 TOOLS = (*WAR_TOOLS, *IDENTITY_TOOLS, *WORKFLOW_TOOLS, *REFERENCE_TOOLS, *RANKED_TOOLS, *ACCESS_TOOLS,
-         *DONATION_TOOLS)
+         *DONATION_TOOLS, *BOT_CODE_TOOLS)

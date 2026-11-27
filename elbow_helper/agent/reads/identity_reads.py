@@ -227,8 +227,6 @@ async def member_accounts(context, arguments):
                         and read.get('cause') == 'invalid_arguments' and read.get('error')), None)
         if refused:
             return {'error': refused['error'], 'cause': 'invalid_arguments'}
-    from elbow_helper.agent.reads.domain_facts import clan_profile
-    current_clans = {row.get('clan', {}).get('tag') for row in matched if row.get('clan')}
     await require_evidence_access(context)
     for identifier in resolved_name_identifiers if name_selection else identifiers:
         # Following candidate IDs into another read must not promote them to
@@ -248,7 +246,6 @@ async def member_accounts(context, arguments):
             'unknown_profile_count':sum(unknown_account_data(row,arguments) for row in result),
             'unknown_accounts':[row for row in result if unknown_account_data(row,arguments)],
             'count_complete':not any(unknown_account_data(row,arguments) for row in result),
-            'clan_facts': [clan_profile(code) for code, clan in CLANS.items() if clan.tag in current_clans],
             **({'home_role_comparisons': [{key: row[key] for key in (
                     'member_id', 'member_name', 'player_tag', 'player_name')} |
                     {'clan_codes': sorted(roster_clans.get(row.get('player_tag'), ()))} for row in matched],
@@ -284,7 +281,6 @@ async def account_members(context, identifiers, *, links=None, include_roles=Fal
 
 
 async def clan_rosters(context, arguments, people=None):
-    from elbow_helper.agent.reads.domain_facts import clan_profile
     deadline = time.monotonic() + TOOL_TIMEOUT_SECONDS - 3
     context = replace(context, deadline_monotonic=min(deadline, context.deadline_monotonic)
                       if context.deadline_monotonic is not None else deadline)
@@ -338,7 +334,7 @@ async def clan_rosters(context, arguments, people=None):
             'observed_at': min((value for value in (item.get('observed_at'), cohort_observed_at)
                                 if value), default=None),
             'entry_settings': entry_settings(data, item['status']),
-            'profile':clan_profile(code), 'basis': source_basis, 'season': selected_season,
+            'basis': source_basis, 'season': selected_season,
             'status': item['status'] if source_basis == 'current_in_game' else source_basis,
             'cohort_accounts':len(roster) if (source_basis=='current_in_game' and item['status']=='ok'
                 or source_basis in ('league_group_cohort','stored_completed_cwl_participants')) else None,
