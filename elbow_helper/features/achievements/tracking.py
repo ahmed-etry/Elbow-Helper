@@ -11,6 +11,7 @@ from datetime import timezone
 from typing import Optional
 
 import discord
+import emoji as emoji_library
 from discord.ext import commands
 from discord.ext import tasks
 
@@ -259,7 +260,12 @@ class AchievementTrackingMixin:
                 new_message_count,
             )
 
-        emoji_count = len(re.findall(r'<:\w*:\d*>', message.content)) + len(re.findall(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]', message.content))
+        # A flag, skin-tone or joined emoji is one; custom emoji may be animated.
+        # The package does not list a lone regional-indicator letter, which shows as an emoji.
+        unlisted = emoji_library.replace_emoji(message.content, '')
+        emoji_count = (len(re.findall(r'<a?:\w+:\d+>', message.content))
+                       + len(emoji_library.emoji_list(message.content))
+                       + len(re.findall(r'[\U0001F1E6-\U0001F1FF]', unlisted)))
         if emoji_count > 0:
             day_key = int(message.created_at.replace(tzinfo=timezone.utc).strftime("%Y%m%d"))
             current_daily = self._emoji_daily_counts.get((user_id, day_key), 0)
@@ -366,11 +372,15 @@ class AchievementTrackingMixin:
             VALUES (?, 0, 0, 0, 0.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, '', 0, 0, 0, 0, 0, 0, 0)
         ''', (user_id,))
 
+        # Joining from outside voice and moving between channels both count.
+        entered_channel = after.channel and (
+            not before.channel or before.channel.id != after.channel.id
+        )
+        if entered_channel and len(after.channel.members) >= 5:
+            await self.award_achievement(user_id, "party_animal", cursor=cursor)
+
         if not before.channel and after.channel:
             await self.award_achievement(user_id, "mic_check", cursor=cursor)
-
-            if len(after.channel.members) >= 5:
-                await self.award_achievement(user_id, "party_animal", cursor=cursor)
 
             cursor.execute('''
                 UPDATE user_stats 
@@ -382,7 +392,7 @@ class AchievementTrackingMixin:
                 UPDATE user_stats 
                 SET voice_unmuted = ? 
                 WHERE user_id = ?
-            ''', (0, user_id))
+            ''', (0 if after.self_mute else 1, user_id))
 
         elif before.channel and not after.channel:
             cursor.execute('SELECT last_voice_join, voice_unmuted FROM user_stats WHERE user_id = ?', (user_id,))
