@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime
 from datetime import timezone
+from itertools import groupby
 from typing import Literal
 from typing import Optional
 
@@ -13,7 +15,9 @@ from discord import app_commands
 from elbow_helper.infrastructure.discord.interactions import deny
 from elbow_helper.infrastructure.discord.interactions import fail
 from elbow_helper.infrastructure.discord.interactions import warn
+from elbow_helper.infrastructure.discord.pagination import format_page_footer
 from elbow_helper.configuration.channels import GIVEAWAYS
+from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.configuration.roles import LEAD
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
@@ -29,10 +33,22 @@ from .config import MANUAL_CAP_TOTAL
 from .config import SALARY_AMOUNT
 from .config import TICKET_COST
 from .config import TICKET_LIMIT_PER_MONTH
+from .definitions import ALL_ACHIEVEMENTS
 from .definitions import COIN_REWARDS
 from .schema import DATABASE
 from .views import CoinLogView
 from .views import AchievementOverviewView
+
+# Reasons written by raffle.py and economy.py: salary_{k}, ticket_{k}, ticket_removed_{k},
+# raffle_{k}, and raffle_{k}_reroll, where k = year * 12 + month.
+_COINLOG_MONTH_REASON = re.compile(r"(?:salary|ticket|ticket_removed|raffle)_(\d+)(?:_reroll)?")
+# Reasons of the form cwl_bonus_{CLAN}_{k}.
+_COINLOG_CWL_REASON = re.compile(r"cwl_bonus_(.+)_(\d+)")
+_COINLOG_HIDDEN_TYPES = frozenset({"raffle_win", "raffle_reroll"})
+_COINLOG_PAGE_SIZE = 10
+# Ten lines at this limit, even escaped at most twice, stay under Discord's 4096-character description limit.
+_COINLOG_REASON_LIMIT = 120
+_COINLOG_ACHIEVEMENT_NAMES = {achievement[0]: achievement[1] for achievement in ALL_ACHIEVEMENTS}
 
 class AchievementCommandMixin:
     raffle_group = app_commands.Group(name="raffle", description="Manage raffles")
@@ -131,17 +147,19 @@ class AchievementCommandMixin:
         else:
             await interaction.response.send_message(embed=embed, file=picture, ephemeral=True)
 
-    @app_commands.command(name="coinlog", description="See a member's latest coin earnings and spending.")
+    @app_commands.command(name="transactions", description="See a member's latest coin earnings and spending.")
     @app_commands.describe(user="Member whose coin activity you want to view.")
     async def coinlog(self, interaction: discord.Interaction, user: discord.Member):
         if not self._is_core(interaction.user):
             await deny(interaction)
             return
         rows = await self._retry_db_operation(self._coinlog_internal, user.id)
+        rows = [row for row in rows if (row[1] or "").strip().lower() not in _COINLOG_HIDDEN_TYPES]
         if not rows:
             await interaction.response.send_message("No coin activity found.", ephemeral=True)
             return
-        embeds = self._build_coinlog_embeds(user, rows)
+        balance = (await self._retry_db_operation(self._get_inventory_internal, user.id))[0]
+        embeds = self._build_coinlog_embeds(user, balance or 0, rows)
         view = CoinLogView(embeds)
         await interaction.response.send_message(
             embed=embeds[0],
@@ -149,83 +167,102 @@ class AchievementCommandMixin:
             ephemeral=True,
         )
 
-    def _build_coinlog_embeds(self, user: discord.Member, rows) -> list[discord.Embed]:
-        page_size = 10
-        total_pages = max(1, (len(rows) + page_size - 1) // page_size)
+    def _build_coinlog_embeds(self, user: discord.Member, balance: int, rows) -> list[discord.Embed]:
+        total_pages = max(1, (len(rows) + _COINLOG_PAGE_SIZE - 1) // _COINLOG_PAGE_SIZE)
+        coin_word = "coin" if abs(balance) == 1 else "coins"
         pages: list[discord.Embed] = []
         for page_index in range(total_pages):
-            start = page_index * page_size
-            page_rows = rows[start : start + page_size]
-            blocks = [
-                self._format_coinlog_entry(start + offset, *row)
-                for offset, row in enumerate(page_rows, start=1)
-            ]
+            start = page_index * _COINLOG_PAGE_SIZE
+            page_rows = rows[start : start + _COINLOG_PAGE_SIZE]
+            blocks = [f"🪙 **{balance:,}** {coin_word}"]
+            # Rows arrive newest first, so each UTC day is one run of consecutive rows.
+            for day, day_rows in groupby(
+                page_rows,
+                key=lambda row: datetime.fromtimestamp(row[4], tz=timezone.utc).date(),
+            ):
+                lines = [
+                    self._format_coinlog_line(user.id, amount, typ, reason, actor_id)
+                    for amount, typ, reason, actor_id, _created_at in day_rows
+                ]
+                blocks.append("\n".join([self._coinlog_day_heading(day), *lines]))
             embed = discord.Embed(
-                title=f"Coin log for {user.display_name}",
-                description="\n\n".join(blocks)[:3900],
+                title="Transactions",
+                description="\n\n".join(blocks),
                 color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
             )
-            embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-            embed.set_footer(
-                text=f"Page {page_index + 1}/{total_pages} • Most recent first."
+            embed.set_author(
+                name=user.nick or user.display_name,
+                icon_url=user.display_avatar.with_size(64).url,
             )
+            embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
+            embed.set_footer(text=format_page_footer(page_index + 1, total_pages))
             pages.append(embed)
         return pages
 
-    def _format_coinlog_entry(self, index: int, amount: int, typ: str, reason, actor_id, ts: int) -> str:
-        amount_text = f"+{amount:,}" if amount >= 0 else f"{amount:,}"
-        kind_text = self._coinlog_type_label(typ)
-        actor_text = f"<@{actor_id}>" if actor_id else "System"
-        reason_text = self._coinlog_reason_text(typ, reason)
-        coin_word = "coin" if abs(amount) == 1 else "coins"
-        lines = [
-            f"**{index}. {kind_text}**",
-            f"Change: **{amount_text} {coin_word}**",
-            f"By: {actor_text}",
-        ]
-        if reason_text:
-            lines.append(f"Reason: {reason_text}")
-        lines.append(f"Date: <t:{ts}:F> (<t:{ts}:R>)")
-        return "\n".join(lines)
+    @staticmethod
+    def _coinlog_day_heading(day) -> str:
+        noon = datetime(day.year, day.month, day.day, 12, tzinfo=timezone.utc)
+        return f"**<t:{int(noon.timestamp())}:D>**"
 
-    def _coinlog_type_label(self, typ: str) -> str:
-        labels = {
-            "achievement": "Achievement reward",
-            "daily": "Daily activity reward",
-            "salary": "Monthly salary",
-            "manual_cwl": "CWL bonus",
-            "manual_encouragement": "Encouragement bonus",
-            "raffle_purchase": "Raffle ticket purchase",
-            "ticket_grant": "Raffle ticket grant",
-            "ticket_remove": "Raffle ticket removal",
-            "raffle_win": "Raffle win",
-            "raffle_reroll": "Raffle reroll",
-        }
+    def _format_coinlog_line(self, user_id: int, amount: int, typ: str, reason, actor_id) -> str:
+        emoji, label = self._coinlog_type_label(typ, reason)
+        parts = [f"{emoji} {label}"]
+        detail = self._coinlog_detail(reason)
+        if detail:
+            parts.append(detail)
+        if amount:
+            parts.append(f"`{amount:+,}`")
+        if actor_id and actor_id != user_id:
+            parts.append(f"by <@{actor_id}>")
+        return " · ".join(parts)
+
+    def _coinlog_type_label(self, typ: str, reason) -> tuple[str, str]:
+        """Return the emoji and label for one coin transaction."""
         key = (typ or "").strip().lower()
-        if key in labels:
-            return labels[key]
-        return key.replace("_", " ").title() if key else "Coin activity"
+        text = str(reason or "").strip()
+        if key in {"achievement", "achievement_reversal"}:
+            name = _COINLOG_ACHIEVEMENT_NAMES.get(text) or text.replace("_", " ").title()
+            if key == "achievement_reversal":
+                return "🏅", f"{name} removed"
+            return "🏅", name
+        if key == "daily":
+            return "💬", "Daily activity"
+        if key == "salary":
+            return "💰", "Elder bonus"
+        if key in {"bonus_cwl", "manual_cwl"}:
+            return "⚔️", "CWL bonus"
+        if key == "manual_encouragement":
+            return "🌟", "Encouragement"
+        if key == "raffle_purchase":
+            return "🎟️", "Raffle ticket"
+        if key == "ticket_grant":
+            return "🎟️", "Raffle ticket given"
+        if key == "ticket_remove":
+            return "🎟️", "Raffle ticket removed"
+        label = key.replace("_", " ")
+        return "🪙", label[:1].upper() + label[1:]
 
-    def _coinlog_reason_text(self, typ: str, reason) -> str:
-        if not reason:
+    def _coinlog_detail(self, reason) -> str:
+        """Return the detail shown after a transaction's label, or an empty string."""
+        text = str(reason or "").strip()
+        if not text:
             return ""
-        text = str(reason).strip()
-        key = (typ or "").strip().lower()
-        if key == "daily" and text == "daily_drip":
-            return "Daily activity reward"
-        if key == "achievement":
-            return f"Achievement: {text.replace('_', ' ').title()}"
-        if key == "salary" and text.startswith("salary_") and len(text) == 13 and text[7:].isdigit():
-            month_key = text[7:]
-            year = int(month_key[:4])
-            month = int(month_key[4:])
-            month_label = datetime(year, month, 1).strftime("%B %Y")
-            return f"Salary for {month_label}"
-        if key in {"manual_cwl", "manual_encouragement"}:
-            return text
-        if key in {"ticket_grant", "ticket_remove", "raffle_purchase", "raffle_win", "raffle_reroll"}:
-            return text.replace("_", " ").title()
-        return text
+        cwl_match = _COINLOG_CWL_REASON.fullmatch(text)
+        if cwl_match:
+            code = cwl_match.group(1)
+            clan = CLANS.get(code)
+            if clan and clan.member_role_id:
+                return f"<@&{clan.member_role_id}>"
+            return self._coinlog_text(code)
+        # Generated reasons name a month, a daily drip or an achievement id; they are not shown.
+        if text == "daily_drip" or text in _COINLOG_ACHIEVEMENT_NAMES or _COINLOG_MONTH_REASON.fullmatch(text):
+            return ""
+        return self._coinlog_text(text)
+
+    @staticmethod
+    def _coinlog_text(text: str) -> str:
+        flat = " ".join(text.split())[:_COINLOG_REASON_LIMIT]
+        return discord.utils.escape_markdown(flat)
 
     @raffle_group.command(name="list", description="See which members have a raffle ticket this month.")
     async def raffle_list(self, interaction: discord.Interaction):
@@ -494,7 +531,7 @@ class AchievementCommandMixin:
         user="Member receiving the coins.",
         category="Type of coin award: CWL or encouragement.",
         amount="How many coins to give.",
-        reason="Short reason that will appear in the coin log.",
+        reason="Short reason that will appear in /transactions.",
     )
     async def grant_coins(self, interaction: discord.Interaction, user: discord.Member, category: Literal["cwl", "encouragement"], amount: int, reason: str):
         if not self._require_command_role(interaction):

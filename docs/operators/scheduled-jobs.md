@@ -16,7 +16,7 @@ due. A check that fails is saved as a failure, never as an empty result.
 | Feature | Work and normal timing |
 |---|---|
 | Account links | Update which clan each account is in and the missing-Elder boards every 15 minutes, from saved clan data |
-| Achievements | Check time achievements, salaries, and members who left daily; refresh the raffle hub hourly |
+| Achievements | Check time achievements, Elder bonuses, and members who left daily; refresh the raffle hub hourly |
 | Clan reports | Check for the previous month's war reports every 30 minutes, due from day 1 at 08:00 UTC |
 | Clan transfers | Remove expired requests every 5 minutes |
 | CWL | Check reminders and war results every minute; refresh dashboards every 20 minutes; open discussion threads daily during the discussion window; check monthly thread cleanup daily from day 13 UTC |

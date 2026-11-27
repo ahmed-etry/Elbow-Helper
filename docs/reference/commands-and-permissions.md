@@ -37,7 +37,7 @@ channel permissions also apply.
 | `/economyinfo` | See how coins, tickets, and rewards work. | Member |
 | `/grant coins` | Add coins to a member's balance. | Lead Plus or Core leadership |
 | `/grant ticket` | Give a raffle ticket to a member. | Lead Plus or Core leadership |
-| `/coinlog` | Check a member's coin history. | Core leadership |
+| `/transactions` | Check a member's coin history. | Core leadership |
 | `/raffle list` | See who has raffle tickets right now. | Lead Plus or Core leadership |
 | `/raffle draw` | Draw raffle winners for this month or an earlier month. | Lead Plus or Core leadership |
 | `/raffle reroll` | Draw this month's raffle winners again. | Lead Plus or Core leadership |

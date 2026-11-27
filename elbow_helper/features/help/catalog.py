@@ -153,7 +153,7 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
         notes=(MANAGEMENT_GUIDE_NOTE,),
     ),
     HelpEntry(
-        path="/coinlog",
+        path="/transactions",
         summary="Check a member's coin history.",
         details=(
             "Shows a member's latest coin earnings and spending, including each amount, reason, "
@@ -161,7 +161,7 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
         ),
         category=CAT_ECONOMY,
         visible_to=CORE,
-        examples=("/coinlog user:@User",),
+        examples=("/transactions user:@User",),
     ),
     HelpEntry(
         path="/raffle list",

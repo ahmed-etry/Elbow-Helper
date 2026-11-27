@@ -39,7 +39,7 @@ SOURCES = (
             ("economy_meta", "none", "One economy setting key/value."),
             (
                 "coin_transactions", "core",
-                "One coin movement; amount signed; actor_id is Discord member ID; "
+                "One coin movement; amount signed; type salary is the monthly Elder bonus; actor_id is Discord member ID; "
                 "created_at is UTC Unix seconds.",
             ),
         ),

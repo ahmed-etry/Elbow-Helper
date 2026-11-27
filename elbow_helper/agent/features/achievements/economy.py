@@ -22,7 +22,7 @@ def achievement_economy_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_achievement_economy_rules",
-            "Read coin, ticket, salary and achievement reward rules.",
+            "Read coin, ticket, Elder bonus and achievement reward rules.",
             {},
             (),
             read_achievement_economy_rules,
@@ -64,7 +64,7 @@ async def read_achievement_economy_rules(
             "member_coins": snapshot.daily_member_reward,
             "elder_coins": snapshot.daily_elder_reward,
         },
-        "elder_monthly_salary_coins": snapshot.elder_monthly_salary,
+        "elder_monthly_bonus_coins": snapshot.elder_monthly_salary,
         "tickets": {
             "cost_coins": snapshot.ticket_cost,
             "limit_per_month": snapshot.ticket_limit_per_month,

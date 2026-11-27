@@ -304,7 +304,7 @@ RESULT_FIELDS = {
     "read_member_inventory": names("observed_at,member_id,member_name,balance,has_current_ticket,"
                                    "current_month_key"),
     "read_achievement_economy_rules": {
-        **names("observed_at,elder_monthly_salary_coins,achievement_reward_total_coins"),
+        **names("observed_at,elder_monthly_bonus_coins,achievement_reward_total_coins"),
         "daily_activity": names("qualifying_messages,minimum_characters_per_message,"
                                 "member_coins,elder_coins"),
         "tickets": names("cost_coins,limit_per_month"),
