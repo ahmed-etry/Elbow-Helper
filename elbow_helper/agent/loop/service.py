@@ -507,7 +507,7 @@ class LoopRun:
         context.state.source_channels.update(
             instruction.source_channel_id for instruction in context.state.authorized_instructions)
         system = await self._system_prompt(context)
-        images = await request_images(replace(context, history=context.state.authorized_history or ()))
+        images = await request_images(context)
         registry = self.service.request_tools(context)
         # Every second reply under the channel's pacing may carry a reaction combination.
         context.state.reaction_combo_due = "react_to_request" in registry and reply_combo_due(context)

@@ -34,8 +34,29 @@ def _source_status(context, text):
         state.image_source_status.append(text)
 
 
+async def _fetch_source(context, key):
+    """The message behind a linked, replied-to or earlier image, or None when it cannot be read."""
+    channel_id, message_id = key
+    channel = await accessible_message_channel(context, channel_id)
+    if channel is None:
+        _source_status(context, f"Image source cannot be read (message {message_id}).")
+        return None
+    try:
+        source = await channel.fetch_message(message_id)
+    except discord.NotFound:
+        _source_status(context, f"Image source is gone (message {message_id}).")
+        return None
+    except (discord.HTTPException, OSError):
+        _source_status(context, f"Image source is unavailable right now (message {message_id}).")
+        return None
+    if not await can_access_message_channel(context, channel):
+        _source_status(context, f"Image source cannot be read (message {message_id}).")
+        return None
+    return source
+
+
 async def _sources(context):
-    """Current sources first, then previously seen sources from the newest turn."""
+    """Current sources first, then the linked and replied-to messages."""
     seen = set()
     replies = []
     for source in getattr(context, "attachment_sources", ()):
@@ -59,34 +80,19 @@ async def _sources(context):
     request = getattr(state, "request_text", "") or getattr(context.source_message, "content", "")
     linked = [(int(channel), int(message)) for guild, channel, message in _MESSAGE_LINK.findall(request)
               if hasattr(context, "guild") and int(guild) == context.guild.id]
-    retained = [source for turn in reversed(getattr(context, "history", ())) if turn.record is not None
-                for source in getattr(turn.record, "image_sources", ())]
     for key, label in [*((source, "the replied-to message") for source in replies),
-                       *((source, "a linked message") for source in linked),
-                       *((source, "an earlier conversation image") for source in retained)]:
+                       *((source, "a linked message") for source in linked)]:
         if key in seen:
             continue
         seen.add(key)
-        channel_id, message_id = key
-        channel = await accessible_message_channel(context, channel_id)
-        if channel is None:
-            _source_status(context, f"Image source cannot be read (message {message_id}).")
-            continue
-        try:
-            source = await channel.fetch_message(message_id)
-        except discord.NotFound:
-            _source_status(context, f"Image source is gone (message {message_id}).")
-            continue
-        except (discord.HTTPException, OSError):
-            _source_status(context, f"Image source is unavailable right now (message {message_id}).")
-            continue
-        if not await can_access_message_channel(context, channel):
-            _source_status(context, f"Image source cannot be read (message {message_id}).")
-            continue
-        yield source, label
+        source = await _fetch_source(context, key)
+        if source is not None:
+            yield source, label
 
 
-def _remember_source(context, source):
+def _remember_source(context, source, earlier=False):
+    if earlier:
+        return
     state = getattr(context, "state", None)
     channel_id = getattr(getattr(source, "channel", None), "id", None)
     if state is not None and channel_id is not None:
@@ -96,10 +102,14 @@ def _remember_source(context, source):
         state.source_channels.add(channel_id)
 
 
+def _available_seconds(context):
+    deadline = getattr(context, "deadline_monotonic", None)
+    return 10 if deadline is None else max(0, min(10, deadline - time.monotonic() - 2))
+
+
 async def request_images(context):
     result = []
-    deadline = getattr(context, "deadline_monotonic", None)
-    available = 10 if deadline is None else max(0, min(10, deadline - time.monotonic() - 2))
+    available = _available_seconds(context)
     if available <= 0:
         return ()
     try:
@@ -110,8 +120,50 @@ async def request_images(context):
 
 
 async def _request_images(context, result, wait_until):
-    async for source, label_source in _sources(context):
-        label_source = _source_label(context, source, label_source)
+    return await _collect_images(context, _sources(context), result, MAX_REQUEST_IMAGES, wait_until)
+
+
+async def earlier_images(context, turns):
+    """Pictures from earlier turns, by turn index. Each stays with the first turn that carried it."""
+    found = {}
+    available = _available_seconds(context)
+    if available <= 0:
+        return found
+    try:
+        async with asyncio.timeout(available):
+            await _earlier_images(context, turns, found, time.monotonic() + min(2, available))
+    except TimeoutError:
+        pass
+    return found
+
+
+async def _earlier_images(context, turns, found, wait_until):
+    keys = []
+    seen = set()
+    for index, turn in enumerate(turns):
+        for key in (() if turn.record is None else turn.record.image_sources):
+            if key not in seen:
+                seen.add(key)
+                keys.append((index, key))
+    for index, key in reversed(keys):
+        source = await _fetch_source(context, key)
+        if source is None:
+            continue
+        images = []
+        await _collect_images(context, _one(source, "an earlier conversation image"), images,
+                              MAX_REQUEST_IMAGES, wait_until, earlier=True)
+        if images:
+            found[index] = [*images, *found.get(index, [])]
+
+
+async def _one(source, label):
+    yield source, label
+
+
+async def _collect_images(context, pairs, result, limit, wait_until, *, earlier=False):
+    """Append the pictures of each (source, label) pair to result, stopping at limit."""
+    async for source, label_source in pairs:
+        label_source = _source_label(context, source, label_source, earlier=earlier)
         for attachment in getattr(source, "attachments", ()):
             mime = str(getattr(attachment, "content_type", "") or "").split(";")[0].lower()
             if not mime:
@@ -129,8 +181,8 @@ async def _request_images(context, result, wait_until):
                 image = await model_image(data, mime, label_source, source.id, len(result) + 1)
                 if image is not None:
                     result.append(image)
-                    _remember_source(context, source)
-            if len(result) == MAX_REQUEST_IMAGES:
+                    _remember_source(context, source, earlier)
+            if len(result) == limit:
                 return tuple(result)
         for sticker in getattr(source, "stickers", ()):
             label = f"{label_source}; sticker {json.dumps(sticker.name, ensure_ascii=False)}"
@@ -150,20 +202,20 @@ async def _request_images(context, result, wait_until):
                         data, mime, label, source.id, len(result) + 1,
                         animated=sticker.format == discord.StickerFormatType.apng,
                     )
-            _remember_source(context, source)
+            _remember_source(context, source, earlier)
             if image is None:
                 _source_status(context, f"Sticker image could not be viewed: {label} (message {source.id}).")
             else:
                 result.append(image)
-            if len(result) == MAX_REQUEST_IMAGES:
+            if len(result) == limit:
                 return tuple(result)
         for data in await gif_media(context, source, wait_until):
             image = await model_image(data, "image/jpeg", label_source, source.id, len(result) + 1,
                                       gif_source=True)
             if image is not None:
                 result.append(image)
-                _remember_source(context, source)
-            if len(result) == MAX_REQUEST_IMAGES:
+                _remember_source(context, source, earlier)
+            if len(result) == limit:
                 return tuple(result)
         for embed in getattr(source, "embeds", ()):
             if gif_embed(embed):
@@ -185,14 +237,14 @@ async def _request_images(context, result, wait_until):
                     image = await model_image(data, mime, label_source, source.id, len(result) + 1)
                     if image is not None:
                         result.append(image)
-                        _remember_source(context, source)
-                if len(result) == MAX_REQUEST_IMAGES:
+                        _remember_source(context, source, earlier)
+                if len(result) == limit:
                     return tuple(result)
                 break
     return tuple(result)
 
 
-def _source_label(context, source, label):
+def _source_label(context, source, label, *, earlier=False):
     """Keep visual speakers and reply targets attached to their own media."""
     bot_id = getattr(getattr(getattr(context, "bot", None), "user", None), "id", None)
 
@@ -206,12 +258,16 @@ def _source_label(context, source, label):
         details["sender"] = author_identity(source.author)
     if getattr(source, "content", ""):
         details["message_text"] = source.content
+    if earlier and getattr(source, "created_at", None) is not None:
+        details["posted_at"] = source.created_at.isoformat()
     reference = getattr(source, "reference", None)
     reply_id = getattr(reference, "message_id", None)
     if reply_id is not None:
         details["replies_to_message_id"] = reply_id
         channel_id = getattr(getattr(source, "channel", None), "id", None)
-        targets = (*getattr(context, "attachment_sources", ()), getattr(reference, "resolved", None))
+        # An earlier picture must not depend on what the current request carries.
+        current = () if earlier else getattr(context, "attachment_sources", ())
+        targets = (*current, getattr(reference, "resolved", None))
         for target in targets:
             if (channel_id is not None and getattr(target, "id", None) == reply_id
                     and getattr(getattr(target, "channel", None), "id", None) == channel_id

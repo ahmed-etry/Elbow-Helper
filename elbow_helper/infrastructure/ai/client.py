@@ -351,21 +351,10 @@ class _DeepSeekAgentSession:
         self._prior_messages = tuple(prior_messages)
         self._sent_reasoning_effort = sent_reasoning_effort
         self._replacement = None
-        self._image_fallback_available = bool(images) and image_failure_fallback
+        earlier_pictures = any(item.get("images") for item in self._prior_messages)
+        self._image_fallback_available = (bool(images) or earlier_pictures) and image_failure_fallback
         self._first_round = True
-        content = prompt if not images else [{"type": "text", "text": prompt}]
-        for item in images:
-            content.extend([
-                {"type": "text", "text": item.label},
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": "data:" + item.mime_type + ";base64,"
-                        + base64.b64encode(item.data).decode("ascii"),
-                        "detail": "high",
-                    },
-                },
-            ])
+        content = [{"type": "text", "text": prompt}, *_image_parts(images)] if images else prompt
         self._messages: list[Any] = [
             {"role": "system", "content": system_prompt},
             *_chat_messages(self._prior_messages),
@@ -507,7 +496,7 @@ class _DeepSeekAgentSession:
                     client=self._client, system_prompt=self._system_prompt,
                     prompt=self._prompt + "\nImages were attached but could not be viewed.",
                     tools=self._tool_definitions, max_output_tokens=self._max_output_tokens,
-                    prior_messages=self._prior_messages,
+                    prior_messages=_without_images(self._prior_messages),
                     sent_reasoning_effort=self._sent_reasoning_effort,
                     record_credit=self._record_credit,
                 )
@@ -602,9 +591,37 @@ def _chat_messages(prior: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             messages.append(
                 {"role": "tool", "tool_call_id": item["call_id"], "content": item["output"]}
             )
+        elif item.get("images"):
+            text = [{"type": "text", "text": item["content"]}] if item["content"] else []
+            messages.append({"role": item["role"], "content": [*text, *_image_parts(item["images"])]})
         else:
             messages.append({"role": item["role"], "content": item["content"]})
     return messages
+
+
+def _image_parts(images: Sequence[AgentImage]) -> list[dict[str, Any]]:
+    """Each picture as a label followed by its image, in chat-completions content."""
+
+    parts: list[dict[str, Any]] = []
+    for item in images:
+        parts.extend([
+            {"type": "text", "text": item.label},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "data:" + item.mime_type + ";base64,"
+                    + base64.b64encode(item.data).decode("ascii"),
+                    "detail": "high",
+                },
+            },
+        ])
+    return parts
+
+
+def _without_images(prior: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """The earlier turns with their pictures removed, for a session that cannot view images."""
+
+    return [{key: value for key, value in item.items() if key != "images"} for item in prior]
 
 
 def _message_value(message: object, key: str) -> Any:

@@ -10,6 +10,7 @@ from elbow_helper.agent.conversation.own_output import action_turn_text
 from elbow_helper.agent.conversation.reply_context import prepare_reply_context, turn_identity
 from elbow_helper.agent.conversation.text import message_text
 from elbow_helper.agent.discord_actions.gif_library import describe_sent_gifs, own_message_text
+from elbow_helper.agent.files.images import earlier_images
 from elbow_helper.agent.safety.access import accessible_message_channel, has_lookup_access, require_evidence_access
 
 
@@ -40,8 +41,9 @@ async def prior_messages(context, referenced, resolve_reference):
     await require_evidence_access(context)
     state = context.state
     authorized = state.authorized_history or ()
+    pictures = await earlier_images(context, authorized)
     prior = []
-    for turn in authorized:
+    for index, turn in enumerate(authorized):
         record = turn.record
         data = json.loads(turn.text) if record is None else {}
         if (action := action_turn_text(data)) is not None:
@@ -50,8 +52,12 @@ async def prior_messages(context, referenced, resolve_reference):
         question = record.question if record else data.get("question")
         answer = record.delivered_answer if record else data.get("answer")
         request_id, reply_ids = turn_identity(turn)
-        if question:
-            prior.append({"role": "user", "content": question})
+        images = pictures.get(index, ())
+        if question or images:
+            message = {"role": "user", "content": question or ""}
+            if images:
+                message["images"] = images
+            prior.append(message)
         for index, encoded in enumerate(record.lookup_results if record else data.get("lookup_results", ())):
             lookup = json.loads(encoded) if isinstance(encoded, str) else encoded
             requirements = frozenset(lookup["required_access"])
