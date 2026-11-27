@@ -160,7 +160,7 @@ class AchievementServiceMixin:
         
         phrase = random.choice(ACHIEVEMENT_PHRASES)
 
-        notification_text = f"<@{user_id}> {phrase} **{name}**."
+        notification_text = f"<@{user_id}> {phrase} **{name}**!"
 
         embed = discord.Embed(
             title="Achievement Unlocked!",
