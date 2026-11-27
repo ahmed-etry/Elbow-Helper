@@ -8,7 +8,8 @@ import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from elbow_helper.agent.safety.access import ACCESS_LEAD, LookupAccessDenied, has_access_requirements, require_evidence_access
+from elbow_helper.agent.loop.names import access_labels
+from elbow_helper.agent.safety.access import ACCESS_LEAD, ACCESS_ROLE_SETS, LookupAccessDenied, has_access_requirements, require_evidence_access
 from ..actions.contracts import (
     PreparedAction,
     ChangePreview,
@@ -30,8 +31,9 @@ LOGGER = logging.getLogger(__name__)
 class DirectMessageAccessDenied(LookupAccessDenied, ActionRefused):
     """A DM recipient choice requires Lead access."""
 
-    def __init__(self):
-        ActionRefused.__init__(self, "DMs to other members need lead access.")
+    def __init__(self, guild):
+        label = access_labels(guild, {ACCESS_LEAD: ACCESS_ROLE_SETS[ACCESS_LEAD]})[ACCESS_LEAD]
+        ActionRefused.__init__(self, f"DMs to other members need {label}.")
         self.requirements = frozenset({ACCESS_LEAD})
 
 
@@ -51,7 +53,7 @@ def dm_recipients(context, identifiers):
     if any(member.id != context.member.id for member in members) and not has_access_requirements(
         context.guild, context.member.id, {ACCESS_LEAD},
     ):
-        raise DirectMessageAccessDenied()
+        raise DirectMessageAccessDenied(context.guild)
     return members
 
 
@@ -176,7 +178,7 @@ def direct_message_tools():
     return (RegisteredAgentTool(
         AgentToolDefinition(
             "send_direct_messages",
-            "Send confirmed DMs to current members; other recipients need Lead access.",
+            "Send confirmed DMs to current members.",
             {
                 "type": "object",
                 "properties": {

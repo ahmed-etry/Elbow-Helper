@@ -7,16 +7,8 @@ from __future__ import annotations
 
 import re
 
-_ACCESS_LABELS = {
-    "lead": "Lead", "lead_plus": "Lead Plus", "core": "Core",
-    "recruiter": "Recruiter or Lead Plus", "cwl_helper": "CWL helper or Lead Plus",
-    "examiner": "Examiner or Lead Plus",
-    "recruiter_or_core": "Recruiter or Core", "lead_or_recruiter": "Lead or Recruiter",
-    "lead_plus_or_cwl_helper": "Lead Plus or CWL helper",
-    "lead_plus_or_core": "Lead Plus or Core",
-    "recruitment": "Recruiter, Lead Plus or Core",
-    "promotion": "Examiner, Lead Plus or Core", "cwl": "CWL helper, Lead Plus or Core",
-}
+NO_ROLE_SET = "a role not set up on this server"
+FEATURE_ACCESS_ONLY_LABEL = "only through its own lookup"
 
 # Discord's own permission names, as the server settings show them, keyed by discord.py flag.
 PERMISSIONS = {
@@ -52,8 +44,6 @@ WAR_STATES = {"warEnded": "ended", "inWar": "in war", "notInWar": "not in war",
               "preparation": "preparation"}
 # The only result fields that hold a war type or war state; a code anywhere else is not renamed.
 WAR_FIELDS = {"war_type": WAR_TYPES, "type": WAR_TYPES, "war_state": WAR_STATES, "state": WAR_STATES}
-# Access levels as people here say them; FEATURE_ACCESS_ONLY is the harness's own SQL level.
-ACCESS = {**_ACCESS_LABELS, "feature_access_only": "only through its own lookup"}
 # Causes and status words; any other snake_case one reads as its words.
 PHRASES = {
     "access_denied": "no access", "scope_refused": "not readable here", "needs_input": "needs more input",
@@ -71,12 +61,26 @@ _SNAKE = re.compile(r"[a-z]+(?:_[a-z]+)+")
 _NEEDS = re.compile(r"This needs ([a-z_]+(?:, [a-z_]+)*) access\.")
 
 
-def _needs(text):
+def access_labels(guild, role_sets):
+    """Each access level as the server's own roles that grant it, e.g. 'Co-Leader or Cross-Leader'.
+
+    Group names stay out of what the model reads; a level with no role on the server reads as NO_ROLE_SET.
+    """
+    roles = sorted(guild.roles, key=lambda role: -role.position) if guild is not None else []
+    labels = {"feature_access_only": FEATURE_ACCESS_ONLY_LABEL}
+    for level, role_ids in role_sets.items():
+        names = [role.name for role in roles if role.id in role_ids and getattr(role, "name", None)]
+        labels[level] = (", ".join(names[:-1]) + " or " + names[-1] if len(names) > 1
+                         else names[0] if names else NO_ROLE_SET)
+    return labels
+
+
+def _needs(text, labels):
     match = _NEEDS.fullmatch(text)
     levels = match.group(1).split(", ") if match else ()
-    if not levels or not all(level in ACCESS for level in levels):
+    if not levels or not all(level in labels for level in levels):
         return text
-    return "This needs " + ", ".join(ACCESS[level] for level in levels) + " access."
+    return "This needs " + " and ".join(labels[level] for level in levels) + " access."
 
 
 def phrase(value):
@@ -91,41 +95,41 @@ def _permissions(value):
     return PERMISSIONS.get(value, value) if isinstance(value, str) else value
 
 
-def _access(value):
+def _access(value, labels):
     if isinstance(value, list):
-        return [_access(item) for item in value]
-    return ACCESS.get(value, phrase(value)) if isinstance(value, str) else value
+        return [_access(item, labels) for item in value]
+    return labels.get(value, phrase(value)) if isinstance(value, str) else value
 
 
-def _value(key, value):
+def _value(key, value, labels):
     if key in PERMISSION_KEYS and isinstance(value, list):
         return _permissions(value)
     if key in ACCESS_KEYS and isinstance(value, (str, list)):
-        return _access(value)
+        return _access(value, labels)
     if key in WAR_FIELDS and isinstance(value, (str, list)):
         names = WAR_FIELDS[key]
-        return [names.get(item, item) if isinstance(item, str) else named(item) for item in value] \
+        return [names.get(item, item) if isinstance(item, str) else named(item, labels) for item in value] \
             if isinstance(value, list) else names.get(value, value)
     if not isinstance(value, str):
-        return named(value)
+        return named(value, labels)
     if key in RANK_FIELDS or key in RANK_FIELDS.values():
         return RANKS.get(value, value)
     if key in ("cause", "status") or key.endswith("_status"):
         return phrase(value)
     if key == "error":
-        return _needs(value)
+        return _needs(value, labels)
     return value
 
 
-def named(value, *, skip=()):
+def named(value, labels, *, skip=()):
     """Name the war, permission, rank and access fields; keys in skip stay."""
     if isinstance(value, list):
-        return [named(item) for item in value]
+        return [named(item, labels) for item in value]
     if not isinstance(value, dict):
         return value
     return {(RANK_FIELDS.get(key, key) if key not in skip and
              (item is None or isinstance(item, str) and item in (*RANKS, "")) else key):
-            item if key in skip else _value(key, item) for key, item in value.items()}
+            item if key in skip else _value(key, item, labels) for key, item in value.items()}
 
 
 def codes_line(enum):

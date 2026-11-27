@@ -99,14 +99,10 @@ class MissingElderReport:
                 self.snapshot.skipped_invalid_row_count
             ),
             "complete_for_accessible_selected_clans": True,
-            "calculation_scope": (
-                "current linked family-clan accounts whose Discord member has "
-                "the Elder role, is not Lead Plus, and is below Elder in-game"
-            ),
         }
 
     def page(
-        self, *, clan_code: str | None = None, member_id: int | None = None,
+        self, *, lead_plus_label: str, clan_code: str | None = None, member_id: int | None = None,
         offset: int = 0, limit: int = 25,
     ) -> dict[str, Any]:
         if (
@@ -122,6 +118,11 @@ class MissingElderReport:
         ))
         return {
             **self.manifest(),
+            "calculation_scope": (
+                "current linked family-clan accounts whose Discord member has "
+                "the Elder role, holds none of " + lead_plus_label
+                + ", and is below Elder in-game"
+            ),
             "filters": {"clan_code": clan_code, "member_id": member_id},
             "matching_rows": len(rows),
             "accounts": [asdict(row) for row in rows[offset:offset + limit]],

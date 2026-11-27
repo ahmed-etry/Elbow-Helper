@@ -224,7 +224,6 @@ def hibernation_adapters() -> tuple[CommandAdapter, ...]:
             prepare=prepare_reactivate, action_class=ActionClass.CHANGE,
             entity_options=(("user", "discord_member"),), capability_name="reactivate_member",
             tool_description=(
-                "Restore roles and open a reactivation ticket for the requester as /reactivate or Reactivate Me does, "
-                "or for another member when the requester has Lead Plus access."
+                "Restore roles and open a reactivation ticket for the requester as /reactivate or Reactivate Me does."
             )),
     )

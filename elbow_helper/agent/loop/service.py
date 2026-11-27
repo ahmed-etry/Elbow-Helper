@@ -635,9 +635,12 @@ class LoopRun:
                                       for section in (*result.get("sections", []), *result.get("hits", [])))
             if call.name in (OFFER_TOOL.name, SOCIAL_REPLY_NAME) or (tool is not None and is_action(tool)):
                 # Offers, replies, changes and commands are not lookups: their outcomes reach the thread through the turn.
-                entry["sent_bytes"] = size
                 if call.name not in (OFFER_TOOL.name, SOCIAL_REPLY_NAME):
                     entry["source"] = "action"
+                    if "error" in result:
+                        # A refused action names its access the way a refused lookup does.
+                        raw = _json(shape(context, arguments, result, name=call.name))
+                entry["sent_bytes"] = len(raw.encode("utf-8"))
                 return raw
             if call.name != PAGE_TOOL.name:
                 shown = shape(context, arguments, result, name=call.name)

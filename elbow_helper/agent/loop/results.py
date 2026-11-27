@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import json
 
-from .names import named
+from elbow_helper.agent.safety.access import READ_ACCESS_ROLE_SETS
+
+from .names import access_labels, named
 
 WAR_NUMBERS = "The n of each of the row's wars in war_aliases."
 # query_bot_data's rows are the asker's own SQL output and stay as stored.
@@ -23,12 +25,13 @@ def shape(context, arguments, result, *, name=None):
     if not isinstance(result, dict):
         return result
     skip = SQL_OUTPUT if name == "query_bot_data" else ()
+    labels = access_labels(context.guild, READ_ACCESS_ROLE_SETS)
     if "error" in result:
-        return named(result, skip=skip)
+        return named(result, labels, skip=skip)
     if result.get('kind') == 'family':
         result = {key: value for key, value in result.items()
                   if key not in ('next_cursor', 'next_offset')}
-    return named(_war_lists_once(_roster_state(result)), skip=skip)
+    return named(_war_lists_once(_roster_state(result)), labels, skip=skip)
 
 
 def _roster_state(result):

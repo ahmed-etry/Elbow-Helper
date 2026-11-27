@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from uuid import uuid4
 
 from elbow_helper.configuration.channels import CLAN_LEADERSHIP_CHANNELS
+from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from elbow_helper.agent.engine.capability_contract import CapabilityContract
@@ -131,7 +132,7 @@ async def read_missing_elder_accounts(
             ),
         }
     try:
-        return _page(report, arguments)
+        return _page(report, arguments, context.guild)
     except ValueError as error:
         context.state.reports.pop(report.report_id, None)
         return {"error": str(error)}
@@ -153,7 +154,7 @@ async def read_missing_elder_report(
             ),
         }
     try:
-        result = _page(report, arguments)
+        result = _page(report, arguments, context.guild)
     except ValueError as error:
         return {"error": str(error)}
     await require_evidence_access(context)
@@ -175,9 +176,12 @@ def _clan_codes(value: Any) -> tuple[str, ...]:
 
 
 def _page(
-    report: MissingElderReport, arguments: Mapping[str, Any],
+    report: MissingElderReport, arguments: Mapping[str, Any], guild: Any,
 ) -> dict[str, Any]:
+    # Imported at call time: the agent loop imports these reads, so a module-level import could cycle.
+    from elbow_helper.agent.loop.names import access_labels
     return report.page(
+        lead_plus_label=access_labels(guild, {"lead_plus": LEAD_PLUS})["lead_plus"],
         clan_code=arguments.get("clan_code"),
         member_id=arguments.get("member_id"),
         offset=arguments.get("offset", 0),

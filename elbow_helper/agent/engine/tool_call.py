@@ -15,7 +15,7 @@ from ..actions.contracts import ActionClass, ActionRefused, PreparedAction
 from ..actions.discord_failure import DiscordFailure, discord_failure
 from elbow_helper.agent.conversation.wording import ACTION_UNAVAILABLE
 from elbow_helper.agent.safety.access import AgentAccessLost, LookupAccessDenied
-from elbow_helper.agent.safety.access import has_access_requirements, has_lookup_access
+from elbow_helper.agent.safety.access import has_access_requirements, has_lookup_access, has_reader_access_requirements
 from elbow_helper.agent.safety.access import require_evidence_access
 from .capability_contract import CapabilityBindError
 from .capability_contract import require_source_provenance
@@ -26,6 +26,20 @@ from .lookup_health import lookup_problem
 LOGGER = logging.getLogger(__name__)
 # A lookup that raised or broke its own result contract: the cause is in the log, not the data.
 BOT_ERROR = "That lookup failed because of a bot error."
+CHANNEL_SCOPE_ERROR = "This data is hidden from this channel's audience. The asker can get it in a private answer."
+
+
+def channel_scope_refusal(context, payload):
+    """Refuse a read because of the channel, when the asker holds the access itself.
+
+    Such a refusal names no access group and is not a missing permission, so the model
+    is told to offer a private answer. Anything else keeps its payload.
+    """
+    required = frozenset(payload.get("required_access") or ())
+    if not required or not has_reader_access_requirements(context.guild, context.member.id, required):
+        return payload
+    scoped = {key: value for key, value in payload.items() if key != "required_access"}
+    return {**scoped, "error": CHANNEL_SCOPE_ERROR, "cause": "scope_refused", "available_privately": True}
 
 
 class AgentUnavailableError(RuntimeError):
@@ -67,8 +81,11 @@ async def execute_tool(
                 allowed = has_lookup_access(context, required_access)
             if not allowed:
                 outcome = "refused"
-                return json.dumps({"error": ACTION_UNAVAILABLE,
-                                   "required_access": sorted(required_access), "cause": "access_denied"})
+                refusal = {"error": ACTION_UNAVAILABLE,
+                           "required_access": sorted(required_access), "cause": "access_denied"}
+                if action_class is ActionClass.READ:
+                    refusal = channel_scope_refusal(context, refusal)
+                return json.dumps(refusal)
         async with asyncio.timeout(timeout_seconds):
             payload = await handler(context, arguments)
         if not isinstance(payload, Mapping):
@@ -78,7 +95,7 @@ async def execute_tool(
                                for level in payload.get("required_access", ())))
         denied = payload.get('cause') in ('scope_refused', 'access_denied')
         if refused_here and denied and "error" in payload:
-            payload = {**payload, "available_privately": True}
+            payload = channel_scope_refusal(context, {**payload, "available_privately": True})
         failed = "error" in payload or payload.get("flags", {}).get("status") == "failed"
         if not failed:
             context.state.required_access.update(required_access)
@@ -102,9 +119,9 @@ async def execute_tool(
     except LookupAccessDenied as error:
         outcome = "refused"
         restore_tool_state(context, snapshot)
-        return json.dumps({"error": str(error), "required_access": sorted(error.requirements),
-                           "cause": "access_denied",
-                           "available_privately": bool(context.state.scope_audit.private_candidates)})
+        return json.dumps(channel_scope_refusal(context, {
+            "error": str(error), "required_access": sorted(error.requirements), "cause": "access_denied",
+            "available_privately": bool(context.state.scope_audit.private_candidates)}))
     except ActionRefused as error:
         outcome = "refused"
         restore_tool_state(context, snapshot)

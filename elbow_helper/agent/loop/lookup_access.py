@@ -5,6 +5,7 @@ from typing import Any
 
 from elbow_helper.agent.actions.contracts import ActionClass
 from elbow_helper.agent.engine.models import AgentRequestContext
+from elbow_helper.agent.engine.tool_call import channel_scope_refusal
 from elbow_helper.agent.reports.tools import original_tool
 from elbow_helper.agent.safety.access import (
     accessible_message_channel, has_lookup_access, message_channel_unavailable,
@@ -34,8 +35,9 @@ async def disclosure_issue(
             channels.update(item for item in value if type(item) is int)
     await require_evidence_access(context)
     if not has_lookup_access(context, contract.required_access):
-        return {"error": "This needs " + ", ".join(sorted(contract.required_access)) + " access.",
-                "required_access": sorted(contract.required_access), "cause": "access_denied"}
+        return channel_scope_refusal(context, {
+            "error": "This needs " + ", ".join(sorted(contract.required_access)) + " access.",
+            "required_access": sorted(contract.required_access), "cause": "access_denied"})
     for channel_id in channels:
         if await accessible_message_channel(context, channel_id) is None:
             result = message_channel_unavailable(context, channel_id)
