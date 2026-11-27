@@ -13,6 +13,14 @@ from elbow_helper.infrastructure.persistence.versioned import (
 
 LOGGER = logging.getLogger(__name__)
 
+RAFFLE_TICKETS_SQL = '''
+    CREATE TABLE IF NOT EXISTS raffle_tickets (
+        month_key INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        PRIMARY KEY (month_key, user_id)
+    )
+    '''
+
 COIN_DB_INIT = [
     '''
     CREATE TABLE IF NOT EXISTS user_coins (
@@ -60,12 +68,7 @@ COIN_DB_INIT = [
     FROM coin_transactions
     WHERE type = 'bonus_cwl' AND reason IS NOT NULL
     ''',
-    '''
-    CREATE TABLE IF NOT EXISTS raffle_tickets (
-        month_key INTEGER NOT NULL,
-        user_id INTEGER PRIMARY KEY
-    )
-    ''',
+    RAFFLE_TICKETS_SQL,
     '''
     CREATE TABLE IF NOT EXISTS raffle_winners (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -179,12 +182,15 @@ _OMITTED_COLUMNS = {
 }
 
 
-def validate_schema(conn: sqlite3.Connection, *, warn: bool = True, legacy: bool = False) -> None:
+def validate_schema(conn: sqlite3.Connection, *, warn: bool = True, legacy: bool = False,
+                    old_raffle_key: bool = False) -> None:
     # Coin history and raffle draws order by generated id. Every INSERT names
     # its columns, and missing FK enforcement is harmless (foreign_keys is OFF).
+    # Before version 3, raffle_tickets had one row per member, so its key differs.
     validate_sqlite_shape(
         conn, create_schema,
         optional_tables=frozenset({"cwl_reward_grants"}) if legacy else frozenset(),
+        optional_keys=frozenset({"raffle_tickets"}) if old_raffle_key else frozenset(),
         required_defaults=_REQUIRED_DEFAULTS,
         required_nullable={"coin_transactions": {"reason", "actor_id"}, "raffle_winners": {"reroll_of"}},
         generated_ids={"coin_transactions": "id", "raffle_winners": "id"},
@@ -193,16 +199,16 @@ def validate_schema(conn: sqlite3.Connection, *, warn: bool = True, legacy: bool
 
 
 def adopt_schema(conn: sqlite3.Connection) -> None:
-    validate_schema(conn, warn=False, legacy=True)
+    validate_schema(conn, warn=False, legacy=True, old_raffle_key=True)
     # Keep the deployed reward-ledger backfill; no other stored values change.
     for statement in COIN_DB_INIT:
         conn.execute(statement)
-    validate_schema(conn, warn=False)
+    validate_schema(conn, warn=False, old_raffle_key=True)
 
 
 def clean_legacy_tables(conn: sqlite3.Connection) -> None:
     """Rebuild all current tables atomically, retaining unrecognised data."""
-    validate_schema(conn, warn=False)
+    validate_schema(conn, warn=False, old_raffle_key=True)
     with closing(sqlite3.connect(":memory:")) as reference:
         create_schema(reference)
         expected = reference.execute(
@@ -288,13 +294,29 @@ def compact_database(conn: sqlite3.Connection) -> None:
     conn.execute("VACUUM")
 
 
-SCHEMA_VERSION = 2
+def rebuild_raffle_tickets(conn: sqlite3.Connection) -> None:
+    """Key raffle tickets by month and member, keeping every existing row."""
+    columns = conn.execute("PRAGMA table_info(raffle_tickets)").fetchall()
+    key = [row[1] for row in sorted((row for row in columns if row[5]), key=lambda row: row[5])]
+    if key == ["month_key", "user_id"]:
+        return
+    conn.execute("ALTER TABLE raffle_tickets RENAME TO raffle_tickets_legacy")
+    conn.execute(RAFFLE_TICKETS_SQL)
+    conn.execute(
+        "INSERT INTO raffle_tickets (month_key, user_id) "
+        "SELECT month_key, user_id FROM raffle_tickets_legacy"
+    )
+    conn.execute("DROP TABLE raffle_tickets_legacy")
+
+
+SCHEMA_VERSION = 3
 
 DATABASE = VersionedSQLiteDatabase(
     "achievements", create_schema, adopt_schema,
     migrations=(
         SQLiteMigration(1, "achievements baseline", create_schema),
         SQLiteMigration(2, "rebuild achievements database", clean_legacy_tables),
+        SQLiteMigration(3, "one raffle ticket per member per month", rebuild_raffle_tickets),
     ),
     target_version=SCHEMA_VERSION, validate=validate_schema, after_migrate=compact_database,
 )

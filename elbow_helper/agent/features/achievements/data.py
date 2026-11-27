@@ -30,7 +30,7 @@ SOURCES = (
                 "last_voice_join Unix seconds UTC; last_activity_date,early_bird_last_local_day,"
                 "night_owl_last_local_day YYYYMMDD integers.",
             ),
-            ("raffle_tickets", "lead", "One member ticket; month_key=year*12+month."),
+            ("raffle_tickets", "lead", "One ticket per member per month; month_key=year*12+month."),
             (
                 "raffle_winners", "none",
                 "One draw; is_active marks retained winners; drawn_at is UTC Unix seconds; "
