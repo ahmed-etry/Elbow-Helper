@@ -11,9 +11,12 @@ import discord
 from elbow_helper.configuration.channels import GENERAL_CHAT
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
+from elbow_helper.infrastructure.discord.application_emojis import get_application_emoji_provider
 
+from .config import UNLOCK_THUMBNAILS
 from .definitions import ACHIEVEMENT_PHRASES
 from .definitions import COIN_REWARDS
+from .definitions import description_lines
 
 class AchievementServiceMixin:
     async def achievement_change_state(self, user_id: int, query: str):
@@ -124,6 +127,27 @@ class AchievementServiceMixin:
         cursor.execute("SELECT COUNT(*) FROM achievements")
         return completed, cursor.fetchone()[0]
 
+    def _pick_unlock_thumbnail(self) -> str | None:
+        """Return the next unlock picture in rotation, or None when no picture exists.
+
+        Each picture is shown once before any repeats, and a new round never starts
+        with the picture shown last.
+        """
+        directory = self.bot.paths.avatar_directory
+        available = [name for name in UNLOCK_THUMBNAILS if (directory / name).is_file()]
+        if not available:
+            return None
+        left = [name for name in self._unlock_thumbnails_left if name in available]
+        if not left:
+            left = list(available)
+            random.shuffle(left)
+            if len(left) > 1 and left[0] == self._last_unlock_thumbnail:
+                left.append(left.pop(0))
+        picked = left.pop(0)
+        self._unlock_thumbnails_left = left
+        self._last_unlock_thumbnail = picked
+        return picked
+
     async def send_achievement_notification(
         self, user_id: int, achievement_id: str, name: str, description: str, emoji: str,
     ):
@@ -136,7 +160,7 @@ class AchievementServiceMixin:
         
         phrase = random.choice(ACHIEVEMENT_PHRASES)
 
-        notification_text = f"<@{user_id}> {phrase} an achievement!"
+        notification_text = f"<@{user_id}> {phrase} **{name}**."
 
         embed = discord.Embed(
             title="Achievement Unlocked!",
@@ -146,8 +170,25 @@ class AchievementServiceMixin:
             name=member.nick or member.display_name,
             icon_url=member.display_avatar.with_size(64).url,
         )
-        embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-        embed.add_field(name=name, value=f"{emoji} {description}\n\u200b", inline=False)
+        thumbnail_url = DEFAULT_THUMBNAIL_URL
+        picture = None
+        filename = self._pick_unlock_thumbnail()
+        if filename:
+            try:
+                picture = discord.File(self.bot.paths.avatar_directory / filename, filename=filename)
+            except OSError as exc:
+                self.logger.warning("Unlock thumbnail %s not attached: %s", filename, exc)
+            else:
+                thumbnail_url = f"attachment://{filename}"
+        embed.set_thumbnail(url=thumbnail_url)
+        lines = description_lines(description)
+        blank = None
+        if callable(getattr(self.bot, "fetch_application_emojis", None)):
+            catalog = await get_application_emoji_provider(self.bot).get(required_names=("blank",))
+            blank = catalog.get("blank")
+        new_line = f"\n{blank} " if blank else "\n"
+        value = f"{emoji} {new_line.join(lines)}"
+        embed.add_field(name=name, value=f"{value}\n\u200b", inline=False)
 
         # Leadership earns no coins.
         reward = 0 if self._is_leadership_any(member) else COIN_REWARDS.get(achievement_id, 0)
@@ -171,7 +212,8 @@ class AchievementServiceMixin:
         if channel:
             await channel.send(
                 content=notification_text,
-                embed=embed
+                embed=embed,
+                file=picture,
             )
     
 

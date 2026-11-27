@@ -21,6 +21,13 @@ data/
   appearance/inv_golem.webp
   appearance/inv_golem_heart.webp
   appearance/ach_king.webp
+  appearance/unlock_archer.webp
+  appearance/unlock_pekka_shades.webp
+  appearance/unlock_pekka_thumbs.webp
+  appearance/unlock_duke.webp
+  appearance/unlock_skeleton.webp
+  appearance/unlock_giant.webp
+  appearance/unlock_barbarian.webp
   agent/knowledge/*.md
   agent/gifs/
   logs/
@@ -46,7 +53,8 @@ data/
 | `appearance/join.webp`, `appearance/leave.webp` | Pictures on join and leave posts. |
 | `appearance/hib_vine_heart.webp`, `appearance/hib_pekka.webp`, `appearance/hib_pig.webp` | Pictures on hibernation posts, one for each post. |
 | `appearance/inv_golem.webp`, `appearance/inv_golem_heart.webp` | Pictures on inventories, one picked each time. |
-| `appearance/ach_king.webp` | Picture on /achievements. |
+| `appearance/ach_king.webp` | Picture on /achievements and on achievement unlock posts. |
+| `appearance/unlock_archer.webp`, `appearance/unlock_pekka_shades.webp`, `appearance/unlock_pekka_thumbs.webp`, `appearance/unlock_duke.webp`, `appearance/unlock_skeleton.webp`, `appearance/unlock_giant.webp`, `appearance/unlock_barbarian.webp` | Pictures on achievement unlock posts. Each one shows once before any repeats. |
 | `agent/knowledge/` | The approved [community reference files](../operators/agent-knowledge.md). |
 | `agent/gifs/` | Approved meme GIFs the agent can post. Copy these when moving the bot. |
 | `logs/` | `bot.log`, `bot.debug.log` and their older numbered copies. |

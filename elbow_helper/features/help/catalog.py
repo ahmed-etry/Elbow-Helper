@@ -114,7 +114,7 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
             "Leadership can choose another member to view their inventory."
         ),
         category=CAT_ECONOMY,
-        examples=("/inventory", "/inventory user:@User"),
+        examples=("/inventory", "/inventory member:@User"),
     ),
     HelpEntry(
         path="/economyinfo",

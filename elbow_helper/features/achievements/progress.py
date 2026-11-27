@@ -12,6 +12,7 @@ from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 
 from .config import ACHIEVEMENTS_THUMBNAIL
 from .definitions import COIN_REWARDS
+from .definitions import description_lines
 from .queries import (
     achievement_leaderboard_eligible, achievement_progress_value,
 )
@@ -82,6 +83,7 @@ class AchievementProgressMixin:
                     field_name += f" · 🪙 {reward}"
                 if description.endswith("."):
                     description = description[:-1]
+                description = "\n".join(description_lines(description))
 
                 if progress_info.get("completed"):
                     completed_on = completed_map.get(achievement_id)

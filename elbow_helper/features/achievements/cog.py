@@ -57,6 +57,8 @@ class Achievements(
         self._active_channel_daily_sets = {}
         self._clan_role_change_tasks = {}
         self._pending_clan_role_baselines = {}
+        self._unlock_thumbnails_left = []
+        self._last_unlock_thumbnail = None
 
         database_path = bot.paths.data_root / ACHIEVEMENTS_DATABASE
         self.db_path = os.fspath(database_path)

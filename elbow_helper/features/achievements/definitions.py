@@ -2,18 +2,34 @@
 
 from __future__ import annotations
 
+import textwrap
+
 from elbow_helper.configuration.channels import MEMES
 from elbow_helper.configuration.roles import ELDER_ROLE_ID
 from elbow_helper.configuration.roles import TRIAL_ROLE_ID
 
+from .config import DESCRIPTION_LINE_CHARS
+
+
+def description_lines(description: str) -> list[str]:
+    """Wrap an achievement description between words for the card and progress fields.
+
+    A description with a mention ("<") stays on one line, since its raw text is longer
+    than what members see.
+    """
+    if "<" in description:
+        return [description]
+    return textwrap.wrap(
+        description, DESCRIPTION_LINE_CHARS, break_long_words=False, break_on_hyphens=False,
+    )
+
+
 # Achievement notification phrases
 ACHIEVEMENT_PHRASES = [
-    "earned",
-    "just earned",
-    "has earned",
-    "has just earned",
-    "unlocked",
-    "has unlocked",
+    "has made the advancement",
+    "has just earned the achievement",
+    "has unlocked the achievement",
+    "has completed the challenge",
 ]
 
 COIN_REWARDS = {

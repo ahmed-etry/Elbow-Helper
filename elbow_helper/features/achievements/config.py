@@ -28,3 +28,14 @@ RAFFLE_HUB_UPDATE_HOURS = 1
 RAFFLE_END_CUTOFF_DAYS = 2
 INVENTORY_THUMBNAILS = ("inv_golem.webp", "inv_golem_heart.webp")
 ACHIEVEMENTS_THUMBNAIL = "ach_king.webp"
+DESCRIPTION_LINE_CHARS = 30
+UNLOCK_THUMBNAILS = (
+    "unlock_archer.webp",
+    "unlock_pekka_shades.webp",
+    "unlock_pekka_thumbs.webp",
+    "unlock_duke.webp",
+    "unlock_skeleton.webp",
+    "unlock_giant.webp",
+    "unlock_barbarian.webp",
+    "ach_king.webp",
+)
