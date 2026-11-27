@@ -78,11 +78,6 @@ class AchievementsDatabaseMixin:
             for key, value in self._reaction_daily_counts.items()
             if key[1] in valid_days
         }
-        self._meme_daily_counts = {
-            key: value
-            for key, value in self._meme_daily_counts.items()
-            if key[1] in valid_days
-        }
         self._active_channel_daily_sets = {
             key: value
             for key, value in self._active_channel_daily_sets.items()

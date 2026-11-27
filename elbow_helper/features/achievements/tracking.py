@@ -27,7 +27,6 @@ from .config import ACTIVE_CHANNEL_MIN_CHARS
 from .config import CLAN_ROLE_CHANGE_DELAY_SECONDS
 from .config import EMOJI_DAILY_LIMIT
 from .config import MEME_COOLDOWN_SECONDS
-from .config import MEME_DAILY_LIMIT
 from .config import MESSAGE_COUNT_COOLDOWN_SECONDS
 from .config import RANDOM_CRIT_TRIGGER_RE
 from .config import REACTION_DAILY_LIMIT
@@ -282,18 +281,14 @@ class AchievementTrackingMixin:
                 msg_ts = int(message.created_at.replace(tzinfo=timezone.utc).timestamp())
                 last_ts = self._meme_cooldowns.get(user_id)
                 if last_ts is None or (msg_ts - last_ts) >= MEME_COOLDOWN_SECONDS:
-                    day_key = int(message.created_at.replace(tzinfo=timezone.utc).strftime("%Y%m%d"))
-                    current_daily = self._meme_daily_counts.get((user_id, day_key), 0)
-                    if current_daily < MEME_DAILY_LIMIT:
-                        self._meme_cooldowns[user_id] = msg_ts
-                        self._meme_daily_counts[(user_id, day_key)] = current_daily + 1
-                        cursor.execute('SELECT meme_posts FROM user_stats WHERE user_id = ?', (user_id,))
-                        result = cursor.fetchone()
-                        meme_posts = (result[0] or 0) + 1
-                        cursor.execute('UPDATE user_stats SET meme_posts = ? WHERE user_id = ?', (meme_posts, user_id))
+                    self._meme_cooldowns[user_id] = msg_ts
+                    cursor.execute('SELECT meme_posts FROM user_stats WHERE user_id = ?', (user_id,))
+                    result = cursor.fetchone()
+                    meme_posts = (result[0] or 0) + 1
+                    cursor.execute('UPDATE user_stats SET meme_posts = ? WHERE user_id = ?', (meme_posts, user_id))
 
-                        if meme_posts >= 25:
-                            await self.award_achievement(user_id, "meme_dealer", cursor=cursor)
+                    if meme_posts >= 25:
+                        await self.award_achievement(user_id, "meme_dealer", cursor=cursor)
 
         if len(message.content or "") >= ACTIVE_CHANNEL_MIN_CHARS:
             await self._track_active_channels_internal(cursor, user_id, message.channel.id, message.created_at)

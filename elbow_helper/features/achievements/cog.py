@@ -53,7 +53,6 @@ class Achievements(
         self._message_count_cooldowns = {}
         self._emoji_daily_counts = {}
         self._reaction_daily_counts = {}
-        self._meme_daily_counts = {}
         self._meme_cooldowns = {}
         self._active_channel_daily_sets = {}
         self._clan_role_change_tasks = {}
