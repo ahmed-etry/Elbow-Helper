@@ -42,7 +42,8 @@ def argument_errors(arguments, schema, dependencies, valid_value):
     if alternatives and not any(fields <= arguments.keys() for fields in alternatives):
         issues.append("Supply one of: " + " or ".join(", ".join(sorted(fields)) for fields in alternatives))
     if unknown and schema.get("additionalProperties") is not True:
-        issues.append("Unsupported fields: " + ", ".join(sorted(unknown)))
+        issues.append("Unsupported fields: " + ", ".join(sorted(unknown))
+                      + ". Accepted fields: " + ", ".join(sorted(properties)))
     for field, value in arguments.items():
         if field not in properties or valid_value(value, properties[field], dependencies):
             continue

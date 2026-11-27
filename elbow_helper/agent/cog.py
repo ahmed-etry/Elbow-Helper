@@ -291,7 +291,7 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
                 message.id, member.id, message.channel.id,
                 int((time.monotonic() - queued_at) * 1_000),
             )
-            await self._recover_stopped_request(message, "That request ran out of time.")
+            await self._send_failure(message, "That request ran out of time.")
         except asyncio.CancelledError:
             self._archive_request_failure(message.id, "Agent request cancelled", "cancelled")
             LOGGER.warning(
@@ -308,7 +308,7 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
                 "Agent request failed: request=%s invoker=%s channel=%s",
                 message.id, member.id, message.channel.id,
             )
-            await self._recover_stopped_request(message, "That request stopped before I could finish.")
+            await self._send_failure(message, "That request stopped before I could finish.")
         finally:
             if conversation is not None:
                 conversation.pending -= 1
@@ -316,24 +316,6 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
             self._active_contexts.pop(message.id, None)
             finished.set()
             self._request_finished.pop(message.id, None)
-
-    async def _recover_stopped_request(self, message, reason):
-        """Retain authorized findings without duplicating a started delivery."""
-        from .conversation.wording import AGENT_ANSWER_UNFINISHED
-
-        context = self._active_contexts.get(message.id)
-        if context is None or not context.state.grounding_evidence:
-            await self._send_failure(message, reason)
-            return
-        delivery = context.state.reply_delivery.delivery
-        if delivery.message_ids or delivery.unknown:
-            return
-        try:
-            await self._check_sources(context)
-            await self.send_response(message, AGENT_ANSWER_UNFINISHED, None, attachments=context.state.attachments,
-                                     context=context, delivery=delivery)
-        except AgentAccessLost:
-            return
 
     def cog_unload(self):
         if self._cleanup_task is not None:

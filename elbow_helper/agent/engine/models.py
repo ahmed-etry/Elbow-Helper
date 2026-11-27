@@ -148,7 +148,6 @@ class AgentTurnState:
     private_answer_run: Callable[[], Awaitable[Any]] | None = None
     evidence: list[str] = field(default_factory=list)
     lookup_results: list[str] = field(default_factory=list)
-    grounding_evidence: dict[str, Any] = field(default_factory=dict)
     local_messages: list[dict[str, Any]] = field(default_factory=list)
     reply_context: dict[str, Any] = field(default_factory=dict)
     channel_bot_gifs: tuple[bool, ...] | None = None

@@ -93,6 +93,15 @@ NOTES_VARIANTS = ("core", "all")
 NOTES_INTRO = "Approved community notes"
 
 
+def _reply_text(written, final):
+    """Every round's text in order, final round last, as one reply. A round's exact repeat is sent once."""
+    parts = []
+    for text in (*written, final):
+        if text.strip() and text.strip() not in parts:
+            parts.append(text.strip())
+    return "\n\n".join(parts)
+
+
 def _built_by(context):
     owner = getattr(context, "application_owner", None)
     if owner is None:
@@ -388,6 +397,7 @@ class LoopRun:
         self.banter_context = ""
         self.registry = {}
         self.usage = RequestUsage()
+        self.change_refused = False
 
     def usage_summary(self):
         """What the operator record and the 👎 card show: rounds and tokens."""
@@ -557,21 +567,24 @@ class LoopRun:
         if session is None:
             raise AgentUnavailableError("The AI backend is not configured")
         results = []
+        written = []
         while True:
             await require_evidence_access(context)
             step = await self._round(session, context, results)
             if step is None:
                 context.operator_debug.error = AGENT_ANSWER_UNFINISHED
                 await require_evidence_access(context)
-                return await self._deliverable(context, AGENT_ANSWER_UNFINISHED)
+                return await self._deliverable(context, _reply_text(written, AGENT_ANSWER_UNFINISHED))
             lookups = []
             self.rounds.append({"lookups": lookups})
             if not step.tool_calls:
                 await require_evidence_access(context)
-                if not step.content.strip() and _nothing_to_deliver(context.state):
+                text = _reply_text(written, step.content)
+                if not text.strip() and _nothing_to_deliver(context.state):
                     raise AgentUnavailableError("The model returned no answer")
-                return await self._deliverable(context, step.content)
+                return await self._deliverable(context, text)
             results = []
+            self.change_refused = False
             for call in step.tool_calls:
                 output = await self._run_call(context, listed, call, lookups)
                 results.append(AgentToolResult(call.call_id, output))
@@ -581,12 +594,16 @@ class LoopRun:
                 return await self._deliverable(context, self.banter.reply)
             if step.content.strip() and all(
                 lookup["status"] == "completed"
-                and (tool := listed.get(lookup["capability"])) is not None
-                and tool.finishes_reply_with_text
+                and (lookup["capability"] == OFFER_TOOL.name
+                     or ((tool := listed.get(lookup["capability"])) is not None and tool.finishes_reply_with_text))
                 for lookup in lookups
             ):
                 await require_evidence_access(context)
-                return await self._deliverable(context, step.content)
+                return await self._deliverable(context, _reply_text(written, step.content))
+            # Text written beside tool calls is part of the reply, except beside a refused change: the
+            # note told the LLM that text reached no one.
+            if not self.change_refused:
+                written.append(step.content)
 
     async def _deliverable(self, context, text):
         """Add command results to the reply and track any separate Confirm card."""
@@ -751,6 +768,7 @@ class LoopRun:
         if not prepared:
             if (tool.action_class in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE)
                     and result.get("cause") in ("access_denied", "scope_refused") and "error" in result):
+                self.change_refused = True
                 return _json({**result, "note": REFUSED_CHANGE_NOTE})
             return raw
         try:
@@ -764,6 +782,7 @@ class LoopRun:
                 state.replaces_card_id = replaces_card_id
             return _json({**result, "step_id": step_id})
         del state.proposed_changes[before:]
+        self.change_refused = True
         return _json({**refusal, "note": REFUSED_CHANGE_NOTE})
 
     def _page(self, result_id, number):
